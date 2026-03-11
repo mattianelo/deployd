@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <!-- Ko-fi brand background -->
+  <rect width="48" height="48" rx="10" fill="#FF5E5B"/>
+  <!-- Coffee cup body -->
+  <rect x="10" y="21" width="22" height="17" rx="3" fill="white"/>
+  <!-- Cup saucer -->
+  <rect x="8" y="37" width="26" height="3" rx="1.5" fill="white"/>
+  <!-- Cup handle -->
+  <path d="M32 24 Q40 24 40 30 Q40 36 32 36" stroke="white" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <!-- Steam lines -->
+  <path d="M17 18 Q19 14 17 10" stroke="white" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <path d="M24 16 Q26 12 24 8" stroke="white" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <!-- Heart on cup -->
+  <path d="M19 27 Q19 25 21 25 Q23 25 23 27 Q23 25 25 25 Q27 25 27 27 Q27 31 23 33 Q19 31 19 27Z" fill="#FF5E5B"/>
+</svg>

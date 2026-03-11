@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <!-- Main box: gradient flows light top → rich blue → dark base for integrated 3D depth -->
+    <linearGradient id="boxGrad" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%"   stop-color="#62a0ea"/>
+      <stop offset="65%"  stop-color="#1c71d8"/>
+      <stop offset="100%" stop-color="#0d4191"/>
+    </linearGradient>
+
+    <!-- Arrow: crisp white, barely-there blue at the bottom tip -->
+    <linearGradient id="arrowGrad" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%"   stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#e8f2ff"/>
+    </linearGradient>
+
+    <!-- Drop shadow: straight down, light source from above per HIG -->
+    <filter id="shadow" x="-15%" y="-5%" width="130%" height="135%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#shadow)">
+    <!-- Single unified body: gradient runs light→rich blue→dark at base for integrated depth -->
+    <rect x="12" y="14" width="104" height="94" rx="10" fill="url(#boxGrad)"/>
+
+    <!-- Three mod-layer bands, evenly spaced in the lower region -->
+    <rect x="22" y="62" width="84" height="9" rx="3.5" fill="#1a5fb4" opacity="0.38"/>
+    <rect x="22" y="76" width="84" height="9" rx="3.5" fill="#1a5fb4" opacity="0.38"/>
+    <rect x="22" y="90" width="84" height="9" rx="3.5" fill="#1a5fb4" opacity="0.38"/>
+
+    <!-- Deploy arrow — more breathing room above the bands -->
+    <rect x="59" y="16" width="10" height="22" rx="3" fill="url(#arrowGrad)"/>
+    <polygon points="46,36 82,36 64,53" fill="url(#arrowGrad)"/>
+  </g>
+
+</svg>

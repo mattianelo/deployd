@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2025 Mattianelo -->
+<component type="desktop-application">
+  <id>io.github.mattianelo.Deployd</id>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+
+  <name>Deployd</name>
+  <summary>Linux-native mod manager for Bethesda and REDEngine games</summary>
+
+  <developer id="io.github.mattianelo">
+    <name>Mattianelo</name>
+  </developer>
+
+  <description>
+    <p>
+      Deployd is a Linux-native mod manager for Bethesda and REDEngine games,
+      built with GTK4 and libadwaita. It integrates with Steam and Heroic Launcher,
+      handles Nexus Mods downloads via SSO login and NXM links, and deploys mods
+      as hardlinks for safe, non-destructive mod management.
+    </p>
+    <p>Currently in public beta (v0.9.3).</p>
+    <ul>
+      <li>Supports Skyrim SE, Fallout 4, Fallout: New Vegas, Starfield, The Witcher 3, and Cyberpunk 2077</li>
+      <li>Game detection from Steam and Heroic Launcher (GOG/Epic)</li>
+      <li>Nexus Mods SSO login and NXM deep-link support</li>
+      <li>Install mods from ZIP, 7z, and RAR archives</li>
+      <li>FOMOD installer wizard with conditional steps and visibility rules</li>
+      <li>Drag-and-drop mod and plugin load order</li>
+      <li>Profile system for switching between mod configurations</li>
+      <li>Conflict detection with per-file detail</li>
+      <li>Non-destructive deployment via hardlinks</li>
+      <li>External tool launcher with Wine/Proton support</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">io.github.mattianelo.Deployd.desktop</launchable>
+
+  <url type="homepage">https://github.com/mattianelo/deployd</url>
+  <url type="bugtracker">https://github.com/mattianelo/deployd/issues</url>
+  <url type="contact">https://github.com/mattianelo/deployd/issues</url>
+  <url type="vcs-browser">https://github.com/mattianelo/deployd</url>
+  <url type="donation">https://ko-fi.com/mattianelo</url>
+
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/mattianelo/deployd/v0.9.3/data/screenshots/main-window.png</image>
+      <caption>Main window showing mod list and load order</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/mattianelo/deployd/v0.9.3/data/screenshots/settings.png</image>
+      <caption>Settings dialog with Nexus Mods integration</caption>
+    </screenshot>
+  </screenshots>
+
+  <categories>
+    <category>Game</category>
+    <category>Utility</category>
+  </categories>
+
+  <keywords>
+    <keyword>mod manager</keyword>
+    <keyword>Skyrim</keyword>
+    <keyword>Fallout</keyword>
+    <keyword>Bethesda</keyword>
+    <keyword>REDEngine</keyword>
+    <keyword>Witcher</keyword>
+    <keyword>Cyberpunk</keyword>
+    <keyword>Starfield</keyword>
+    <keyword>mods</keyword>
+    <keyword>gaming</keyword>
+    <keyword>Steam</keyword>
+    <keyword>Heroic</keyword>
+  </keywords>
+
+  <releases>
+    <release version="0.9.3" date="2026-03-10" type="development">
+      <description>
+        <p>Fixes a crash when switching the downloads sort order while a download is in progress.
+        Adds self-update support: when an update is available and deployd is running as an AppImage,
+        a "Download Update" button appears in the banner to download and apply the update in-place.</p>
+      </description>
+    </release>
+    <release version="0.9.2" date="2026-03-09" type="development">
+      <description>
+        <p>Fixes the "Add a Game from Custom Directory" button and adds a visible Properties
+        button to each mod row.</p>
+      </description>
+    </release>
+    <release version="0.9.1" date="2026-03-08" type="development">
+      <description>
+        <p>Adds SSO login for Nexus Mods, Steam library detection, and promotes REDEngine
+        support (The Witcher 3, Cyberpunk 2077) to stable. Adds Fallout: New Vegas and
+        Starfield support.</p>
+      </description>
+    </release>
+    <release version="0.9.0" date="2025-03-03" type="development">
+      <description>
+        <p>First public beta. Includes Nexus Mods integration, FOMOD installer wizard,
+        profile system, drag-and-drop load order, and REDEngine game support.</p>
+      </description>
+    </release>
+    <release version="0.1.0" date="2025-02-10" type="development">
+      <description>
+        <p>Initial release.</p>
+      </description>
+    </release>
+  </releases>
+
+  <content_rating type="oars-1.1">
+    <content_attribute id="violence-cartoon">none</content_attribute>
+    <content_attribute id="violence-fantasy">none</content_attribute>
+    <content_attribute id="violence-realistic">none</content_attribute>
+    <content_attribute id="violence-bloodshed">none</content_attribute>
+    <content_attribute id="violence-sexual">none</content_attribute>
+    <content_attribute id="drugs-alcohol">none</content_attribute>
+    <content_attribute id="drugs-narcotics">none</content_attribute>
+    <content_attribute id="drugs-tobacco">none</content_attribute>
+    <content_attribute id="sex-nudity">none</content_attribute>
+    <content_attribute id="sex-themes">none</content_attribute>
+    <content_attribute id="language-profanity">none</content_attribute>
+    <content_attribute id="language-humor">none</content_attribute>
+    <content_attribute id="language-discrimination">none</content_attribute>
+    <content_attribute id="social-chat">none</content_attribute>
+    <content_attribute id="social-info">none</content_attribute>
+    <content_attribute id="social-audio">none</content_attribute>
+    <content_attribute id="social-location">none</content_attribute>
+    <content_attribute id="social-contacts">none</content_attribute>
+    <content_attribute id="money-purchasing">none</content_attribute>
+    <content_attribute id="money-gambling">none</content_attribute>
+  </content_rating>
+</component>

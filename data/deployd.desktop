@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Deployd
+Comment=Mod manager for Bethesda games
+Exec=deployd %u
+Icon=deployd
+Terminal=false
+Type=Application
+Categories=Game;Utility;
+Keywords=mod;manager;bethesda;skyrim;fallout;
+MimeType=x-scheme-handler/nxm;
+StartupWMClass=deployd
