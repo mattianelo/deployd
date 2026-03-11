@@ -11,21 +11,10 @@ pub fn lowercase_path(rel: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
-/// Return the data directory for Deployd.
-///
-/// Inside a Flatpak sandbox `dirs::data_dir()` returns the app-private path
-/// `~/.var/app/$FLATPAK_ID/data/` which is a separate mount from `$HOME`.
-/// Hardlinks cannot cross mount boundaries, so when running as a Flatpak we
-/// use `$HOME/.local/share` instead — this lives on the same `--filesystem=home`
-/// mount as game directories.
+/// Return the data directory for Deployd (`$XDG_DATA_HOME/deployd`).
 fn deployd_data_dir() -> Result<PathBuf> {
-    if std::env::var_os("FLATPAK_ID").is_some() {
-        let home = dirs::home_dir().ok_or_else(|| anyhow!("Cannot determine HOME"))?;
-        Ok(home.join(".local/share/deployd"))
-    } else {
-        let data_dir = dirs::data_dir().ok_or_else(|| anyhow!("Cannot determine XDG_DATA_HOME"))?;
-        Ok(data_dir.join("deployd"))
-    }
+    let data_dir = dirs::data_dir().ok_or_else(|| anyhow!("Cannot determine XDG_DATA_HOME"))?;
+    Ok(data_dir.join("deployd"))
 }
 
 /// Deployd cache root: <data>/deployd/cache
@@ -34,10 +23,6 @@ pub fn cache_root() -> Result<PathBuf> {
 }
 
 /// Per-profile save storage root: <data>/deployd/saves
-///
-/// Uses the same Flatpak-aware base as the DB and cache so that saves written
-/// by a native `cargo run` and saves written by the installed Flatpak end up in
-/// the same location.
 pub fn saves_root() -> Result<PathBuf> {
     Ok(deployd_data_dir()?.join("saves"))
 }

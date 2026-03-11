@@ -10,12 +10,6 @@ use crate::utils::paths;
 
 /// Returns the per-profile save storage directory:
 /// `<deployd-data>/saves/{game_id}/{profile_id}/`
-///
-/// Delegates to `paths::saves_root()` so the base path is resolved with the
-/// same Flatpak-aware logic used for the DB and cache (avoids the app-private
-/// `~/.var/app/…/data` path that `dirs::data_local_dir()` returns inside the
-/// Flatpak sandbox, which differs from the `~/.local/share` path used by
-/// `cargo run`).
 pub fn deployd_save_dir(game_id: &str, profile_id: &str) -> PathBuf {
     paths::saves_root()
         .unwrap_or_else(|_| {

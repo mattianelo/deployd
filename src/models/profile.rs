@@ -26,7 +26,6 @@ impl SaveMode {
 #[derive(Debug, Clone)]
 pub struct Profile {
     pub id: String,
-    pub game_id: String,
     pub name: String,
     pub is_active: bool,
     /// Whether this profile manages its own save files.

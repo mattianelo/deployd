@@ -1155,6 +1155,23 @@ impl Tracker {
         Ok(())
     }
 
+    /// Remove specific deployed file records by their lowercase path.
+    pub async fn remove_deployed_files(&self, paths: &[&str]) -> Result<()> {
+        if paths.is_empty() {
+            return Ok(());
+        }
+        let mut tx = self.pool.begin().await?;
+        for path in paths {
+            sqlx::query("DELETE FROM deployed_files WHERE game_rel_lowercase = ?")
+                .bind(*path)
+                .execute(&mut *tx)
+                .await?;
+        }
+        tx.commit()
+            .await
+            .context("Failed to remove deployed files")
+    }
+
     /// Record the currently deployed files in a single transaction.
     pub async fn record_deployed_files(&self, files: &[ModFile]) -> Result<()> {
         let mut tx = self.pool.begin().await?;
@@ -1332,8 +1349,8 @@ impl Tracker {
 
     /// List all profiles for a game.
     pub async fn list_profiles(&self, game_id: &str) -> Result<Vec<Profile>> {
-        let rows = sqlx::query_as::<_, (String, String, String, bool, String)>(
-            "SELECT id, game_id, name, is_active, save_mode FROM profiles WHERE game_id = ? ORDER BY name",
+        let rows = sqlx::query_as::<_, (String, String, bool, String)>(
+            "SELECT id, name, is_active, save_mode FROM profiles WHERE game_id = ? ORDER BY name",
         )
         .bind(game_id)
         .fetch_all(&self.pool)
@@ -1342,9 +1359,8 @@ impl Tracker {
 
         Ok(rows
             .into_iter()
-            .map(|(id, game_id, name, is_active, save_mode)| Profile {
+            .map(|(id, name, is_active, save_mode)| Profile {
                 id,
-                game_id,
                 name,
                 is_active,
                 save_mode: SaveMode::from_db(&save_mode),
@@ -1355,8 +1371,8 @@ impl Tracker {
 
     /// Get the active profile for a game (if any).
     pub async fn get_active_profile(&self, game_id: &str) -> Result<Option<Profile>> {
-        let row = sqlx::query_as::<_, (String, String, String, bool, String)>(
-            "SELECT id, game_id, name, is_active, save_mode FROM profiles
+        let row = sqlx::query_as::<_, (String, String, bool, String)>(
+            "SELECT id, name, is_active, save_mode FROM profiles
              WHERE game_id = ? AND is_active = TRUE LIMIT 1",
         )
         .bind(game_id)
@@ -1365,9 +1381,8 @@ impl Tracker {
         .context("Failed to query active profile")?;
 
         Ok(
-            row.map(|(id, game_id, name, is_active, save_mode)| Profile {
+            row.map(|(id, name, is_active, save_mode)| Profile {
                 id,
-                game_id,
                 name,
                 is_active,
                 save_mode: SaveMode::from_db(&save_mode),
@@ -1558,7 +1573,6 @@ impl Tracker {
         self.save_to_profile(&id, game_id).await?;
         Ok(Profile {
             id,
-            game_id: game_id.to_string(),
             name: "Default".to_string(),
             is_active: true,
             save_mode: SaveMode::Global,
@@ -2510,8 +2524,6 @@ impl Tracker {
     }
 
     /// Persist full game configuration (path, wine prefix, engine, custom flag).
-    ///
-    /// Used both by the Flatpak portal path-confirmation flow and the game setup dialog.
     pub async fn upsert_game(
         &self,
         id: &str,
@@ -2546,7 +2558,7 @@ impl Tracker {
         Ok(())
     }
 
-    /// Backwards-compatible shim: persist only the game folder path (Flatpak portal flow).
+    /// Persist only the game folder path (used by the game folder confirmation dialog).
     pub async fn upsert_game_path(&self, game_id: &str, path: &std::path::Path) -> Result<()> {
         sqlx::query(
             "INSERT INTO games (id, path) VALUES (?, ?)
@@ -2603,12 +2615,4 @@ impl Tracker {
         Ok(rows.into_iter().map(|(id,)| id).collect())
     }
 
-    /// Remove a game record from the games table (used when user removes a custom game).
-    pub async fn remove_game(&self, game_id: &str) -> Result<()> {
-        sqlx::query("DELETE FROM games WHERE id = ?")
-            .bind(game_id)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
-    }
 }

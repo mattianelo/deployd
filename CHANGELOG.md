@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Delta deployment now actually speeds up re-deploys** — the database was still being fully cleared and rebuilt on every deploy regardless of how few mods changed. Now only the affected files are removed or inserted, making small re-deploys proportionally faster.
+
+### Improved
+
+- **Faster deploys** — deployd now computes a diff between the current and desired state and only touches files that actually changed. Mods that were already correctly deployed are left untouched, making re-deploys much faster on large modlists when only a few mods change.
+
 ---
 
 ## [0.9.3] — 2026-03-10 · Public Beta

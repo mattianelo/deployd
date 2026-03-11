@@ -63,12 +63,11 @@ pub enum AppMsg {
     DeployConfirmed,
     PurgeClicked,
     PurgeConfirmed,
-    /// Open the file-chooser portal so the user grants access to the current
-    /// game's installation folder (required when the path is outside the
-    /// Flatpak sandbox permissions).
+    /// Open a file-chooser dialog so the user can confirm access to the current
+    /// game's installation folder.
     GrantGameFolderAccess,
-    /// The user confirmed a game folder path via the portal; update the
-    /// in-memory path and persist it as a hint for future sessions.
+    /// The user confirmed a game folder path; update the in-memory path and
+    /// persist it as a hint for future sessions.
     GameFolderGranted(PathBuf),
     LaunchTool(String),
     /// Fired from the background wait-thread when a launched tool's Wine process exits.

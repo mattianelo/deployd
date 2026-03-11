@@ -20,11 +20,6 @@ target
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# Flatpak build artifacts
-.flatpak-builder/
-repo/
-build-dir/
-
 # AppImage build artifacts
 .appimage-tools/
 AppDir/

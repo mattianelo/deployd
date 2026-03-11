@@ -55,8 +55,7 @@ pub enum SettingsCmdMsg {
 pub enum SettingsDialogOutput {
     Closed,
     /// Emitted whenever the active API key changes (login, logout, manual save).
-    /// `None` means the key was cleared (logged out).
-    ApiKeyChanged(Option<String>),
+    ApiKeyChanged,
     /// User wants to open the game setup dialog.
     ManageGames,
 }
@@ -551,12 +550,7 @@ impl Component for SettingsDialog {
                         self.status_label.set_label("Saved.");
                         self.status_label.remove_css_class("error");
                         self.status_label.add_css_class("success");
-                        let _ =
-                            sender.output(SettingsDialogOutput::ApiKeyChanged(if self.has_key {
-                                Some(key)
-                            } else {
-                                None
-                            }));
+                        let _ = sender.output(SettingsDialogOutput::ApiKeyChanged);
                     }
                     Err(e) => {
                         self.status_label.set_label(&format!("Save failed: {e}"));
@@ -569,7 +563,7 @@ impl Component for SettingsDialog {
             SettingsCmdMsg::SsoResult(result) => {
                 self.sso_in_progress = false;
                 match result {
-                    Ok(api_key) => {
+                    Ok(_api_key) => {
                         self.has_key = true;
                         self.login_source = Some(LoginSource::Sso);
                         // Don't populate the entry — SSO key is managed automatically
@@ -577,7 +571,7 @@ impl Component for SettingsDialog {
                             .set_label("Logged in via Nexus SSO — key saved.");
                         self.status_label.remove_css_class("error");
                         self.status_label.add_css_class("success");
-                        let _ = sender.output(SettingsDialogOutput::ApiKeyChanged(Some(api_key)));
+                        let _ = sender.output(SettingsDialogOutput::ApiKeyChanged);
                     }
                     Err(e) => {
                         self.status_label.set_label(&format!("Login failed: {e}"));
@@ -597,7 +591,7 @@ impl Component for SettingsDialog {
                         self.status_label.set_label("Logged out.");
                         self.status_label.remove_css_class("error");
                         self.status_label.add_css_class("success");
-                        let _ = sender.output(SettingsDialogOutput::ApiKeyChanged(None));
+                        let _ = sender.output(SettingsDialogOutput::ApiKeyChanged);
                     }
                     Err(e) => {
                         self.status_label.set_label(&format!("Logout failed: {e}"));

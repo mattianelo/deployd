@@ -34,8 +34,7 @@ pub fn hash_archive_file(path: &Path) -> Result<String> {
 /// Supports ZIP, 7z, and RAR formats (detected by file extension).
 /// The caller owns the returned `TempDir`; dropping it removes all extracted files.
 ///
-/// The temp directory is placed under the app data directory (not `/tmp`)
-/// because Flatpak's `/tmp` is a small tmpfs that can't hold large archives.
+/// The temp directory is placed under the app data directory (not `/tmp`) for reliability.
 ///
 /// `on_progress` is called with `(done, total)` as each file is extracted.
 /// Total is always known for ZIP and 7z; for RAR the callback is not invoked.

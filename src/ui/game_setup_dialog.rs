@@ -246,6 +246,10 @@ impl Component for GameSetupDialog {
             set_title: Some("Manage Games"),
             set_default_size: (520, 480),
             set_modal: true,
+            connect_close_request[sender] => move |_| {
+                sender.input(GameSetupMsg::Cancel);
+                glib::Propagation::Proceed
+            },
 
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,

@@ -18,9 +18,6 @@ const HEROIC_FLATPAK_ID: &str = "com.heroicgameslauncher.hgl";
 ///
 /// For native Heroic installs, runs the Wine binary directly.
 ///
-/// When Deployd itself is a Flatpak, all host commands are dispatched through
-/// `flatpak-spawn --host` to escape the sandbox.
-///
 /// Before launching, ensures the standard Bethesda registry key exists so modding tools
 /// can find the game (GOG installers don't create it).
 ///
@@ -54,10 +51,9 @@ pub fn launch_tool(
     };
 
     dlog!(
-        "deployd: launching tool '{}' | flatpak={} | deployd_sandboxed={} | wine={}",
+        "deployd: launching tool '{}' | heroic_flatpak={} | wine={}",
         tool.name,
         wine_config.heroic_flatpak,
-        is_flatpak(),
         wine_bin.display()
     );
 
@@ -69,12 +65,10 @@ pub fn launch_tool(
             "Could not start Wine ({}).\n\
              Binary: {}\n\
              Heroic Flatpak: {}\n\
-             Deployd sandboxed: {}\n\
              Error: {e}",
             tool.name,
             wine_bin.display(),
             wine_config.heroic_flatpak,
-            is_flatpak(),
         )
     })?;
 
@@ -115,59 +109,11 @@ pub fn launch_tool(
     Ok(pid)
 }
 
-/// Whether Deployd itself is running inside a Flatpak sandbox.
-fn is_flatpak() -> bool {
-    std::env::var_os("FLATPAK_ID").is_some()
-}
-
-/// Build a `Command` that escapes the Flatpak sandbox when necessary.
-///
-/// When Deployd runs as a Flatpak, wraps the command in `flatpak-spawn --host`
-/// so it executes on the host. Environment variables and working directory are
-/// forwarded via `flatpak-spawn` flags. When running natively, builds a plain
-/// `Command` with standard `.env()` / `.current_dir()` calls.
-fn spawn_host_command(
-    program: &str,
-    args: &[String],
-    envs: &[(&str, String)],
-    working_dir: Option<&Path>,
-) -> Command {
-    if is_flatpak() {
-        let mut cmd = Command::new("flatpak-spawn");
-        cmd.arg("--host");
-
-        for (key, val) in envs {
-            cmd.arg(format!("--env={key}={val}"));
-        }
-        if let Some(dir) = working_dir {
-            cmd.arg(format!("--directory={}", dir.display()));
-        }
-
-        cmd.arg(program);
-        for arg in args {
-            cmd.arg(arg);
-        }
-        cmd
-    } else {
-        let mut cmd = Command::new(program);
-        for (key, val) in envs {
-            cmd.env(key, val);
-        }
-        if let Some(dir) = working_dir {
-            cmd.current_dir(dir);
-        }
-        for arg in args {
-            cmd.arg(arg);
-        }
-        cmd
-    }
-}
 
 /// Ensure the standard Bethesda Softworks registry key exists for modding tool discovery.
 ///
 /// GOG installers only create `GOG.com\Games\...` keys, but tools like xEdit look for
-/// `Bethesda Softworks\<Game>\Installed Path`. This runs `wine reg add` to create it
-/// if missing. Runs inside the Flatpak sandbox when applicable.
+/// `Bethesda Softworks\<Game>\Installed Path`. This runs `wine reg add` to create it if missing.
 fn ensure_bethesda_reg_key(game: &Game, wine_config: &WineConfig, wine_bin: &PathBuf) {
     let Some((reg_key, wine_path)) = game::missing_bethesda_reg_key(game) else {
         return; // Key already exists
@@ -201,19 +147,13 @@ fn ensure_bethesda_reg_key(game: &Game, wine_config: &WineConfig, wine_bin: &Pat
         ];
         flatpak_args.extend(reg_args);
 
-        let mut cmd = spawn_host_command("flatpak", &flatpak_args, &[], None);
-        cmd.output()
+        Command::new("flatpak").args(&flatpak_args).output()
     } else {
-        let envs = vec![
-            (
-                "WINEPREFIX",
-                wine_config.prefix.to_string_lossy().into_owned(),
-            ),
-            ("WINEDEBUG", "-all".to_string()),
-        ];
-
-        let mut cmd = spawn_host_command(&wine_bin.to_string_lossy(), &reg_args, &envs, None);
-        cmd.output()
+        Command::new(wine_bin)
+            .env("WINEPREFIX", &wine_config.prefix)
+            .env("WINEDEBUG", "-all")
+            .args(&reg_args)
+            .output()
     };
 
     match result {
@@ -236,7 +176,6 @@ fn ensure_bethesda_reg_key(game: &Game, wine_config: &WineConfig, wine_bin: &Pat
 /// Build a command that runs Wine inside Heroic's Flatpak sandbox.
 ///
 /// Uses `flatpak run --command=<wine_bin> --env=KEY=VAL ... com.heroicgameslauncher.hgl <exe>`.
-/// When Deployd is also a Flatpak, wraps the whole thing in `flatpak-spawn --host`.
 ///
 /// CWD is set to the game root so modding tools can find game files.
 /// The tool's directory and the game directory are both exposed to Heroic's sandbox.
@@ -301,11 +240,12 @@ fn build_flatpak_command(
         flatpak_args.push(arg.to_string());
     }
 
-    spawn_host_command("flatpak", &flatpak_args, &[], None)
+    let mut cmd = Command::new("flatpak");
+    cmd.args(flatpak_args);
+    cmd
 }
 
 /// Build a command that runs Wine directly (native Heroic install).
-/// When Deployd is a Flatpak, escapes the sandbox via `flatpak-spawn --host`.
 ///
 /// CWD is set to the game root so modding tools can find game files.
 fn build_native_command(
@@ -314,52 +254,50 @@ fn build_native_command(
     game: &Game,
     wine_config: &WineConfig,
 ) -> Command {
-    let mut envs: Vec<(&str, String)> = vec![
-        (
-            "WINEPREFIX",
-            wine_config.prefix.to_string_lossy().into_owned(),
-        ),
-        ("WINEDEBUG", "-all".to_string()),
-    ];
-
     let compat_data = if wine_config.prefix.ends_with("pfx") {
         wine_config
             .prefix
             .parent()
             .unwrap_or(&wine_config.prefix)
-            .to_string_lossy()
-            .into_owned()
+            .to_path_buf()
     } else {
-        wine_config.prefix.to_string_lossy().into_owned()
+        wine_config.prefix.clone()
     };
-    envs.push(("STEAM_COMPAT_DATA_PATH", compat_data));
+
+    let mut cmd = Command::new(wine_bin);
+    cmd.env("WINEPREFIX", &wine_config.prefix)
+        .env("WINEDEBUG", "-all")
+        .env("STEAM_COMPAT_DATA_PATH", &compat_data);
 
     if let Some(proton_dir) = &wine_config.proton_dir {
         let lib_dir = proton_dir.join("files/lib");
-
-        let ld_val = format!(
-            "{}:{}",
-            lib_dir.join("x86_64-linux-gnu").display(),
-            lib_dir.join("i386-linux-gnu").display(),
+        cmd.env(
+            "LD_LIBRARY_PATH",
+            format!(
+                "{}:{}",
+                lib_dir.join("x86_64-linux-gnu").display(),
+                lib_dir.join("i386-linux-gnu").display(),
+            ),
         );
-        envs.push(("LD_LIBRARY_PATH", ld_val));
-
-        let dll_val = format!(
-            "{}:{}",
-            lib_dir.join("vkd3d").display(),
-            lib_dir.join("wine").display(),
+        cmd.env(
+            "WINEDLLPATH",
+            format!(
+                "{}:{}",
+                lib_dir.join("vkd3d").display(),
+                lib_dir.join("wine").display(),
+            ),
         );
-        envs.push(("WINEDLLPATH", dll_val));
     }
 
-    let mut args = vec![tool.exe_path.clone()];
+    cmd.arg(&tool.exe_path);
     for arg in tool.custom_args.split_whitespace() {
-        args.push(arg.to_string());
+        cmd.arg(arg);
     }
 
     // CWD: use the tool's explicit working_dir when set, otherwise the exe's parent directory.
     let cwd = effective_cwd(tool, game);
-    spawn_host_command(&wine_bin.to_string_lossy(), &args, &envs, Some(&cwd))
+    cmd.current_dir(&cwd);
+    cmd
 }
 
 /// Determine the working directory to use when launching a tool.

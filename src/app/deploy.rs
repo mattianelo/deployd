@@ -242,9 +242,22 @@ impl App {
                     });
                 }
                 self.rebuild_tool_buttons(sender);
-                let files = deploy_result.files_deployed;
+                let added = deploy_result.files_added;
+                let removed = deploy_result.files_removed;
+                let total = deploy_result.files_total;
                 let conflicts = deploy_result.conflicts_resolved;
-                let mut msg = format!("Deployed {files} files");
+                let mut msg = if added == 0 && removed == 0 {
+                    format!("Nothing changed ({total} files deployed)")
+                } else {
+                    let mut parts: Vec<String> = Vec::new();
+                    if added > 0 {
+                        parts.push(format!("+{added}"));
+                    }
+                    if removed > 0 {
+                        parts.push(format!("-{removed}"));
+                    }
+                    format!("Deployed {} ({total} total)", parts.join(", "))
+                };
                 if conflicts > 0 {
                     msg.push_str(&format!(", {conflicts} conflict(s) resolved"));
                 }

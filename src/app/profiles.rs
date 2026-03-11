@@ -461,7 +461,7 @@ impl App {
                 .launch(tracker)
                 .forward(sender.input_sender(), |output| match output {
                     SettingsDialogOutput::Closed => AppMsg::SettingsClosed,
-                    SettingsDialogOutput::ApiKeyChanged(_) => AppMsg::NexusApiKeyUpdated,
+                    SettingsDialogOutput::ApiKeyChanged => AppMsg::NexusApiKeyUpdated,
                     SettingsDialogOutput::ManageGames => AppMsg::ManageGamesClicked,
                 }),
         );
