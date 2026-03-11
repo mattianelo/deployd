@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Copyright 2025 Mattianelo -->
 <component type="desktop-application">
-  <id>io.github.mattianelo.Deployd</id>
+  <id>io.mattianelo.Deployd</id>
 
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-only</project_license>
@@ -9,7 +9,7 @@
   <name>Deployd</name>
   <summary>Linux-native mod manager for Bethesda and REDEngine games</summary>
 
-  <developer id="io.github.mattianelo">
+  <developer id="io.mattianelo">
     <name>Mattianelo</name>
   </developer>
 
@@ -35,21 +35,21 @@
     </ul>
   </description>
 
-  <launchable type="desktop-id">io.github.mattianelo.Deployd.desktop</launchable>
+  <launchable type="desktop-id">io.mattianelo.Deployd.desktop</launchable>
 
-  <url type="homepage">https://github.com/mattianelo/deployd</url>
-  <url type="bugtracker">https://github.com/mattianelo/deployd/issues</url>
-  <url type="contact">https://github.com/mattianelo/deployd/issues</url>
-  <url type="vcs-browser">https://github.com/mattianelo/deployd</url>
+  <url type="homepage">https://www.nexusmods.com/site/mods/174218</url>
+  <url type="bugtracker">https://gitlab.com/mattianelo/deployd/-/issues</url>
+  <url type="contact">https://gitlab.com/mattianelo/deployd/-/issues</url>
+  <url type="vcs-browser">https://gitlab.com/mattianelo/deployd</url>
   <url type="donation">https://ko-fi.com/mattianelo</url>
 
   <screenshots>
     <screenshot type="default">
-      <image>https://raw.githubusercontent.com/mattianelo/deployd/v0.9.3/data/screenshots/main-window.png</image>
+      <image>https://gitlab.com/mattianelo/deployd/-/raw/v0.9.3/data/screenshots/main-window.png</image>
       <caption>Main window showing mod list and load order</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/mattianelo/deployd/v0.9.3/data/screenshots/settings.png</image>
+      <image>https://gitlab.com/mattianelo/deployd/-/raw/v0.9.3/data/screenshots/settings.png</image>
       <caption>Settings dialog with Nexus Mods integration</caption>
     </screenshot>
   </screenshots>

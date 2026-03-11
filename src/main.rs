@@ -21,7 +21,7 @@ fn main() {
     libadwaita::init().unwrap();
 
     let gtk_app = libadwaita::Application::builder()
-        .application_id("io.github.mattianelo.Deployd")
+        .application_id("io.mattianelo.Deployd")
         .flags(gio::ApplicationFlags::HANDLES_COMMAND_LINE)
         .build();
 

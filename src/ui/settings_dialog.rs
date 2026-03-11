@@ -310,7 +310,7 @@ impl Component for SettingsDialog {
         let widgets = view_output!();
 
         // Ko-fi support row suffix
-        let kofi_image = gtk::Image::from_resource("/io/github/mattianelo/Deployd/kofi-logo.svg");
+        let kofi_image = gtk::Image::from_resource("/io/mattianelo/Deployd/kofi-logo.svg");
         kofi_image.set_pixel_size(24);
         kofi_image.set_valign(gtk::Align::Center);
 

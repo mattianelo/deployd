@@ -238,9 +238,6 @@ fn heroic_gog_installed_paths() -> Vec<PathBuf> {
                 ".var/app/com.heroicgameslauncher.hgl/config/heroic/gog_store/installed.json",
             ),
         );
-        // Native installation — use absolute path so this works from inside the
-        // Deployd Flatpak sandbox where XDG_CONFIG_HOME is redirected to
-        // ~/.var/app/io.github.mattianelo.Deployd/config.
         paths.push(home.join(".config/heroic/gog_store/installed.json"));
     }
 

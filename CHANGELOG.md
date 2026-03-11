@@ -5,6 +5,7 @@
 ### Fixed
 
 - **Delta deployment now actually speeds up re-deploys** — the database was still being fully cleared and rebuilt on every deploy regardless of how few mods changed. Now only the affected files are removed or inserted, making small re-deploys proportionally faster.
+- **Update notifications now work for all users** — the previous release check fell back to GitHub (where no releases exist), so free users running an older version never saw the update banner. The check now uses Nexus exclusively, matching where releases are actually published.
 
 ### Improved
 
