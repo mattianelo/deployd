@@ -1,5 +1,5 @@
 use std::fs;
-use std::io::{self, Read as _, Seek};
+use std::io::{self, Read as _, Seek, Write as _};
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
@@ -305,9 +305,13 @@ fn run_zip_extraction<R: io::Read + Seek>(
             // If the target path is already a directory (directory entry processed before
             // this file entry), skip creating the file rather than failing with EISDIR.
             match fs::File::create(&out_path) {
-                Ok(mut outfile) => {
-                    io::copy(&mut entry, &mut outfile)
+                Ok(outfile) => {
+                    let mut writer = io::BufWriter::with_capacity(131_072, outfile);
+                    io::copy(&mut entry, &mut writer)
                         .with_context(|| format!("Failed to write file: {}", out_path.display()))?;
+                    writer
+                        .flush()
+                        .with_context(|| format!("Failed to flush file: {}", out_path.display()))?;
                 }
                 Err(e) if e.raw_os_error() == Some(21) => {
                     // EISDIR — a directory with this name was already created.
@@ -440,26 +444,17 @@ fn extract_7z(
     archive_path: &Path,
     on_progress: Option<&(dyn Fn(usize, usize) + Send)>,
 ) -> Result<TempDir> {
-    let result = extract_7z_native(archive_path, on_progress);
-
-    if let Err(ref e) = result {
-        dlog!("[deployd] sevenz_rust2 failed: {e:#}");
-        #[cfg(feature = "libarchive-fallback")]
-        {
-            dlog!(
-                "[deployd] trying libarchive fallback for: {}",
-                archive_path.display()
-            );
-            return extract_7z_libarchive(archive_path).with_context(|| {
-                format!(
-                    "All 7z methods failed for '{}' (sevenz: {e:#})",
-                    archive_path.display()
-                )
-            });
+    // libarchive (liblzma C) is orders of magnitude faster than the pure-Rust
+    // lzma-rust2 decoder for solid LZMA archives. Try it first when available.
+    #[cfg(feature = "libarchive-fallback")]
+    {
+        match extract_7z_libarchive(archive_path) {
+            Ok(tmp) => return Ok(tmp),
+            Err(e) => dlog!("[deployd] libarchive failed for 7z, falling back to sevenz_rust2: {e:#}"),
         }
     }
 
-    result
+    extract_7z_native(archive_path, on_progress)
 }
 
 /// Returns `true` when a 7z archive entry is a genuine directory.
@@ -509,31 +504,33 @@ fn extract_7z_native(
         0
     };
 
+    // Open the archive file once and pass the handle directly so the file is not
+    // re-opened inside decompress_with_extract_fn (avoiding a second OS open call).
+    let file = fs::File::open(archive_path)
+        .with_context(|| format!("Cannot open archive: {}", archive_path.display()))?;
+
     // Always use a custom extract fn so is_genuine_7z_dir applies regardless of
     // whether progress reporting is requested. Without this, the default decompress_file
     // misidentifies zero-byte sentinel files (e.g. Domains/.force-install) as directories
     // when the 7z archive lacks the EmptyFiles header attribute.
     let mut count = 0usize;
-    sevenz_rust2::decompress_file_with_extract_fn(
-        archive_path,
-        tmp.path(),
-        |entry, reader, dest_path| {
-            if is_genuine_7z_dir(entry) {
-                fs::create_dir_all(dest_path)?;
-                return Ok(true);
-            }
-            if let Some(parent) = dest_path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            let mut outfile = fs::File::create(dest_path)?;
-            io::copy(reader, &mut outfile)?;
-            if let Some(cb) = on_progress {
-                count += 1;
-                cb(count, total);
-            }
-            Ok(true)
-        },
-    )
+    sevenz_rust2::decompress_with_extract_fn(file, tmp.path(), |entry, reader, dest_path| {
+        if is_genuine_7z_dir(entry) {
+            fs::create_dir_all(dest_path)?;
+            return Ok(true);
+        }
+        if let Some(parent) = dest_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let mut writer = io::BufWriter::with_capacity(131_072, fs::File::create(dest_path)?);
+        io::copy(reader, &mut writer)?;
+        writer.flush()?;
+        if let Some(cb) = on_progress {
+            count += 1;
+            cb(count, total);
+        }
+        Ok(true)
+    })
     .map_err(|e| anyhow::anyhow!("Failed to extract 7z '{}': {e}", archive_path.display()))?;
 
     dlog!("[deployd] 7z extraction complete (native)");
