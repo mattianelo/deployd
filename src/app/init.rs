@@ -1,0 +1,480 @@
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+
+use gtk::prelude::*;
+use gtk::glib;
+use relm4::abstractions::Toaster;
+use relm4::factory::FactoryVecDeque;
+use relm4::prelude::*;
+
+use crate::core::game;
+use crate::core::tracker::Tracker;
+use crate::models::game::Game;
+use crate::ui::download_row::DownloadRowOutput;
+use crate::ui::mod_list::ModListItemOutput;
+use crate::ui::plugin_list::PluginRowOutput;
+use crate::utils::paths;
+
+use super::{App, AppMsg, AppCmdMsg};
+use super::free_fns::{clear_drop_indicators, update_drop_indicator};
+use super::types::{DownloadSort, InitData, SearchScope};
+use super::free_fns::load_game_data;
+
+/// Builds the initial App model, wires up factory lists, constructs UI helpers
+/// (profile rename popover, search bar), and registers the global NXM sender.
+/// Returns the model, the game ID list for the async init, the game list for
+/// the async init, the profile-rename menu button, and the search bar — all
+/// needed as `#[local_ref]` values by `view_output!()`.
+pub(super) fn build_model(
+    nxm_link: Option<String>,
+    sender: &ComponentSender<App>,
+) -> (App, Vec<String>, Vec<Game>, gtk::MenuButton, gtk::SearchBar) {
+    let mods =
+        FactoryVecDeque::builder()
+            .launch_default()
+            .forward(sender.input_sender(), |output| match output {
+                ModListItemOutput::Remove(index) => AppMsg::RemoveMod(index),
+                ModListItemOutput::ToggleEnabled(index, enabled) => {
+                    AppMsg::ToggleModEnabled(index, enabled)
+                }
+                ModListItemOutput::RenameMod(index, name) => AppMsg::RenameMod(index, name),
+                ModListItemOutput::OpenProperties(index) => AppMsg::OpenModProperties(index),
+                ModListItemOutput::ToggleGroupCollapse(index) => {
+                    AppMsg::ToggleGroupCollapse(index)
+                }
+                ModListItemOutput::DeleteGroup(index) => AppMsg::DeleteGroup(index),
+                ModListItemOutput::RenameGroup(index, name) => AppMsg::RenameGroup(index, name),
+            });
+
+    let plugins =
+        FactoryVecDeque::builder()
+            .launch_default()
+            .forward(sender.input_sender(), |output| match output {
+                PluginRowOutput::ToggleEnabled(index, enabled) => {
+                    AppMsg::TogglePluginEnabled(index, enabled)
+                }
+            });
+
+    let downloads =
+        FactoryVecDeque::builder()
+            .launch_default()
+            .forward(sender.input_sender(), |output| match output {
+                DownloadRowOutput::Install(index) => AppMsg::InstallDownload(index),
+                DownloadRowOutput::FetchMetadata(index) => AppMsg::FetchDownloadMetadata(index),
+                DownloadRowOutput::ClearMetadata(index) => AppMsg::ClearDownloadMetadata(index),
+                DownloadRowOutput::Rename(index) => AppMsg::RenameDownload(index),
+            });
+
+    let games = game::detect_games();
+
+    // Build dropdown model from detected game titles (StringList allows dynamic updates)
+    let game_names: Vec<&str> = games.iter().map(|g| g.title.as_str()).collect();
+    let game_model = gtk::StringList::new(&game_names);
+    let game_dropdown = gtk::DropDown::new(Some(game_model.clone()), None::<gtk::Expression>);
+
+    let profile_model = gtk::StringList::new(&[]);
+    let profile_dropdown =
+        gtk::DropDown::new(Some(profile_model.clone()), None::<gtk::Expression>);
+
+    let game_ids: Vec<String> = games.iter().map(|g| g.id.clone()).collect();
+    let games_for_init = games.clone();
+
+    let tool_buttons_box = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    let profile_rename_entry = gtk::Entry::builder().hexpand(true).build();
+    let mod_scroll = gtk::ScrolledWindow::new();
+    let downloads_scroll = gtk::ScrolledWindow::new();
+
+    let model = App {
+        tracker: None,
+        games,
+        selected_game_idx: 0,
+        mods,
+        plugins,
+        installing: false,
+        deploying: false,
+        needs_deploy: false,
+        last_deployed_profile_id: None,
+        status_msg: None,
+        install_progress: None,
+        toaster: Toaster::default(),
+        profiles: vec![],
+        active_profile_idx: 0,
+        profile_model,
+        profile_dropdown,
+        game_model,
+        game_dropdown,
+        updating_profiles: false,
+        pending_install: None,
+        pre_install_dialog: None,
+        fomod_dialog: None,
+        tools: vec![],
+        tool_buttons_box,
+        tool_manager_dialog: None,
+        game_setup_dialog: None,
+        settings_dialog: None,
+        mod_properties_dialog: None,
+        absorb_dialog: None,
+        profile_rename_entry: profile_rename_entry.clone(),
+        pending_nxm: nxm_link,
+        pending_nexus_ids: None,
+        downloads,
+        all_downloads: Vec::new(),
+        downloads_visible: false,
+        active_download_id: None,
+        active_download_count: 0,
+        global_active_downloads: 0,
+        downloads_dir: paths::default_downloads_dir(),
+        initial_scan_done: false,
+        search_active: false,
+        search_text: String::new(),
+        search_scope: SearchScope::All,
+        rate_limit_info: None,
+        collapsed_groups: HashSet::new(),
+        download_sort: DownloadSort::Default,
+        pending_external_files: Vec::new(),
+        external_changes_count: 0,
+        pending_replace_mod_id: None,
+        mod_scroll,
+        downloads_scroll,
+        #[cfg(feature = "loot")]
+        dirty_plugins: HashMap::new(),
+        save_mode_btn: gtk::Button::new(),
+        sync_saves_btn: gtk::Button::new(),
+        show_vanilla_plugins: false,
+        managed_plugins_count: 0,
+        vanilla_plugin_names: Vec::new(),
+        plugin_masters: HashMap::new(),
+        update_banner: adw::Banner::new(""),
+        update_url: None,
+        running_as_appimage: std::env::var("APPIMAGE").is_ok(),
+    };
+
+    // Profile rename popover
+    let rename_apply = gtk::Button::builder()
+        .label("Rename")
+        .css_classes(["suggested-action"])
+        .build();
+    let rename_box = gtk::Box::builder()
+        .orientation(gtk::Orientation::Horizontal)
+        .spacing(4)
+        .margin_start(4)
+        .margin_end(4)
+        .margin_top(4)
+        .margin_bottom(4)
+        .build();
+    rename_box.append(&profile_rename_entry);
+    rename_box.append(&rename_apply);
+    let rename_popover = gtk::Popover::builder().child(&rename_box).build();
+    let profile_rename_btn = gtk::MenuButton::builder().popover(&rename_popover).build();
+
+    {
+        let entry_ref = model.profile_rename_entry.clone();
+        let sender = sender.input_sender().clone();
+        let popover = rename_popover.clone();
+        rename_apply.connect_clicked(move |_| {
+            let new_name = entry_ref.text().to_string();
+            if !new_name.is_empty() {
+                sender.send(AppMsg::RenameProfile(new_name)).unwrap();
+            }
+            popover.popdown();
+        });
+    }
+
+    // Store sender globally so the command-line signal handler can forward NXM links
+    let _ = crate::NXM_SENDER.set(sender.input_sender().clone());
+
+    // Search bar with entry and scope dropdown
+    let search_entry = gtk::SearchEntry::builder()
+        .placeholder_text("Search mods...")
+        .hexpand(true)
+        .build();
+    let scope_dropdown =
+        gtk::DropDown::from_strings(&["All", "Mod Order", "Plugin Order", "Downloads"]);
+    scope_dropdown.set_selected(0);
+    let search_box = gtk::Box::builder()
+        .orientation(gtk::Orientation::Horizontal)
+        .spacing(8)
+        .margin_start(8)
+        .margin_end(8)
+        .margin_top(4)
+        .margin_bottom(4)
+        .build();
+    search_box.append(&search_entry);
+    search_box.append(&scope_dropdown);
+    let search_bar = gtk::SearchBar::builder()
+        .child(&search_box)
+        .show_close_button(true)
+        .build();
+    search_bar.connect_entry(&search_entry);
+
+    {
+        let sender = sender.input_sender().clone();
+        search_entry.connect_search_changed(move |entry| {
+            sender
+                .send(AppMsg::SearchChanged(entry.text().to_string()))
+                .unwrap();
+        });
+    }
+    {
+        let sender = sender.input_sender().clone();
+        scope_dropdown.connect_selected_notify(move |dd| {
+            sender
+                .send(AppMsg::SearchScopeChanged(dd.selected()))
+                .unwrap();
+        });
+    }
+
+    (model, game_ids, games_for_init, profile_rename_btn, search_bar)
+}
+
+/// Attaches drag-and-drop `DropTarget` controllers to the mod and plugin list widgets.
+pub(super) fn wire_drag_drop(
+    sender: &ComponentSender<App>,
+    mod_list: &gtk::ListBox,
+    plugin_list: &gtk::ListBox,
+) {
+    let mod_drop = gtk::DropTarget::new(glib::Type::STRING, gtk::gdk::DragAction::MOVE);
+    let mod_sender = sender.input_sender().clone();
+    mod_drop.connect_drop(move |target, value, _x, y| {
+        let Some(widget) = target.widget() else {
+            return false;
+        };
+        let list_box = widget.downcast::<gtk::ListBox>().unwrap();
+        clear_drop_indicators(&list_box);
+        let Ok(data) = value.get::<String>() else {
+            return false;
+        };
+        // A group separator was dragged — just reposition it.
+        if let Some(from) = data
+            .strip_prefix("group:")
+            .and_then(|s| s.parse::<usize>().ok())
+        {
+            if let Some(row) = list_box.row_at_y(y as i32) {
+                let to = gtk::prelude::ListBoxRowExt::index(&row) as usize;
+                if from != to {
+                    mod_sender.send(AppMsg::MoveGroupTo(from, to)).unwrap();
+                }
+            }
+            return true;
+        }
+        let Some(from) = data
+            .strip_prefix("mod:")
+            .and_then(|s| s.parse::<usize>().ok())
+        else {
+            return false;
+        };
+        if let Some(row) = list_box.row_at_y(y as i32) {
+            let to = gtk::prelude::ListBoxRowExt::index(&row) as usize;
+            let mut selected: Vec<usize> = list_box
+                .selected_rows()
+                .iter()
+                .map(|r| gtk::prelude::ListBoxRowExt::index(r) as usize)
+                .collect();
+            list_box.unselect_all();
+            if selected.contains(&from) && selected.len() > 1 {
+                selected.sort_unstable();
+                mod_sender
+                    .send(AppMsg::MoveSelectedModsTo { selected, from, to })
+                    .unwrap();
+            } else if from != to {
+                mod_sender.send(AppMsg::MoveModTo(from, to)).unwrap();
+            }
+        }
+        true
+    });
+    mod_drop.connect_motion(|target, _x, y| {
+        if let Some(widget) = target.widget() {
+            let list_box = widget.downcast::<gtk::ListBox>().unwrap();
+            update_drop_indicator(&list_box, y);
+        }
+        gtk::gdk::DragAction::MOVE
+    });
+    mod_drop.connect_leave(|target| {
+        if let Some(widget) = target.widget() {
+            let list_box = widget.downcast::<gtk::ListBox>().unwrap();
+            clear_drop_indicators(&list_box);
+        }
+    });
+    mod_list.add_controller(mod_drop);
+
+    let plugin_drop = gtk::DropTarget::new(glib::Type::STRING, gtk::gdk::DragAction::MOVE);
+    let plugin_sender = sender.input_sender().clone();
+    plugin_drop.connect_drop(move |target, value, _x, y| {
+        let Some(widget) = target.widget() else {
+            return false;
+        };
+        let list_box = widget.downcast::<gtk::ListBox>().unwrap();
+        clear_drop_indicators(&list_box);
+        let Ok(data) = value.get::<String>() else {
+            return false;
+        };
+        let Some(from) = data
+            .strip_prefix("plugin:")
+            .and_then(|s| s.parse::<usize>().ok())
+        else {
+            return false;
+        };
+        if let Some(row) = list_box.row_at_y(y as i32) {
+            let to = gtk::prelude::ListBoxRowExt::index(&row) as usize;
+            let mut selected: Vec<usize> = list_box
+                .selected_rows()
+                .iter()
+                .map(|r| gtk::prelude::ListBoxRowExt::index(r) as usize)
+                .collect();
+            list_box.unselect_all();
+            if selected.contains(&from) && selected.len() > 1 {
+                selected.sort_unstable();
+                plugin_sender
+                    .send(AppMsg::MoveSelectedPluginsTo { selected, from, to })
+                    .unwrap();
+            } else if from != to {
+                plugin_sender.send(AppMsg::MovePluginTo(from, to)).unwrap();
+            }
+        }
+        true
+    });
+    plugin_drop.connect_motion(|target, _x, y| {
+        if let Some(widget) = target.widget() {
+            let list_box = widget.downcast::<gtk::ListBox>().unwrap();
+            update_drop_indicator(&list_box, y);
+        }
+        gtk::gdk::DragAction::MOVE
+    });
+    plugin_drop.connect_leave(|target| {
+        if let Some(widget) = target.widget() {
+            let list_box = widget.downcast::<gtk::ListBox>().unwrap();
+            clear_drop_indicators(&list_box);
+        }
+    });
+    plugin_list.add_controller(plugin_drop);
+}
+
+/// Asynchronously opens the database, loads game data, and fetches initial
+/// settings.  Returns an `AppCmdMsg::Initialized` variant ready to dispatch.
+pub(super) async fn load_init_data(
+    game_ids: Vec<String>,
+    games_for_init: Vec<Game>,
+) -> AppCmdMsg {
+    let init = async {
+        let db_path = paths::db_path().map_err(|e| e.to_string())?;
+        if let Some(parent) = db_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let db_url = format!("sqlite://{}?mode=rwc", db_path.display());
+        let tracker = Tracker::open(&db_url).await.map_err(|e| e.to_string())?;
+
+        // Determine which game to select: prefer last_game_id from settings
+        let last_game_id = tracker.get_setting("last_game_id").await.ok().flatten();
+        let selected_game_idx = last_game_id
+            .as_ref()
+            .and_then(|id| game_ids.iter().position(|g| g == id))
+            .unwrap_or(0);
+
+        let (
+            mods,
+            plugins,
+            plugin_masters,
+            overrides,
+            profiles,
+            active_idx,
+            tools,
+            vanilla_plugins,
+            groups,
+        ) = if let Some(game) = games_for_init.get(selected_game_idx) {
+            // Ensure a default profile exists
+            tracker
+                .ensure_default_profile(&game.id)
+                .await
+                .map_err(|e| e.to_string())?;
+            let loaded = load_game_data(&tracker, game, false).await?;
+            (
+                loaded.mods,
+                loaded.plugins,
+                loaded.plugin_masters,
+                loaded.overrides,
+                loaded.profiles,
+                loaded.active_profile_idx,
+                loaded.tools,
+                loaded.vanilla_plugins,
+                loaded.groups,
+            )
+        } else {
+            (
+                vec![],
+                vec![],
+                Default::default(),
+                Default::default(),
+                vec![],
+                0,
+                vec![],
+                HashSet::new(),
+                vec![],
+            )
+        };
+
+        let downloads_dir = tracker
+            .get_setting("downloads_dir")
+            .await
+            .ok()
+            .flatten()
+            .map(PathBuf::from);
+
+        let download_entries = tracker
+            .load_download_entries()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        // Fetch fresh rate limits from the API; fall back to DB-cached values
+        let rate_limit_info = if let Some(api_key) = tracker
+            .get_setting("nexus_api_key")
+            .await
+            .ok()
+            .flatten()
+            .filter(|k| !k.is_empty())
+        {
+            let client = crate::core::nexus_api::NexusClient::new(api_key);
+            match client.validate_key().await {
+                Ok((_, Some(rl))) => Some(rl),
+                _ => tracker.load_rate_limits().await.unwrap_or(None),
+            }
+        } else {
+            tracker.load_rate_limits().await.unwrap_or(None)
+        };
+
+        let persisted_games = tracker.load_persisted_games().await.unwrap_or_default();
+        let hidden_game_ids = tracker.load_hidden_game_ids().await.unwrap_or_default();
+
+        let last_deployed_profile_id = if let Some(game) =
+            games_for_init.get(selected_game_idx)
+        {
+            tracker
+                .get_setting(&format!("last_deployed_profile_{}", game.id))
+                .await
+                .ok()
+                .flatten()
+        } else {
+            None
+        };
+
+        Ok::<_, String>(InitData {
+            tracker,
+            mods,
+            plugins,
+            plugin_masters,
+            overrides,
+            profiles,
+            active_profile_idx: active_idx,
+            tools,
+            selected_game_idx,
+            downloads_dir,
+            download_entries,
+            rate_limit_info,
+            vanilla_plugins,
+            groups,
+            persisted_games,
+            hidden_game_ids,
+            last_deployed_profile_id,
+        })
+    };
+    AppCmdMsg::Initialized(init.await)
+}

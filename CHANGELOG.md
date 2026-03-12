@@ -14,6 +14,7 @@
 ### Improved
 
 - **Faster deploys** — deployd now computes a diff between the current and desired state and only touches files that actually changed. Mods that were already correctly deployed are left untouched, making re-deploys much faster on large modlists when only a few mods change.
+- **Internal code organization** — large source files have been split into focused modules, making the codebase easier to navigate and maintain.
 
 ---
 
