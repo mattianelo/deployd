@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.9.4] — 2026-03-12 · Public Beta
 
 ### Added
 
