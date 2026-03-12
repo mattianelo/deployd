@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use crate::core::game;
+use crate::core::mod_folders;
 use crate::core::tracker::Tracker;
 use crate::dlog;
 use crate::models::game::{Game, GameEngine};
@@ -35,6 +36,11 @@ pub async fn purge(game: &Game, tracker: &Tracker) -> Result<usize> {
         remove_deployed_file(f, game, &game_data);
     }
     tracker.clear_deployed_files().await?;
+
+    if let Err(e) = mod_folders::refresh_named_mod_folders(tracker, &game.id).await {
+        eprintln!("[deployd] named_mods refresh failed: {e}");
+    }
+
     Ok(count)
 }
 
@@ -251,6 +257,10 @@ pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
         for ini_path in &ini_paths {
             plugins_txt::ensure_archive_invalidation(ini_path)?;
         }
+    }
+
+    if let Err(e) = mod_folders::refresh_named_mod_folders(tracker, &game.id).await {
+        eprintln!("[deployd] named_mods refresh failed: {e}");
     }
 
     Ok(DeployResult {

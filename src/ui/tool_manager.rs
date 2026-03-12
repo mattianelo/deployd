@@ -233,6 +233,14 @@ impl Component for ToolManager {
                             add_css_class: "flat",
                             connect_clicked => ToolManagerMsg::AddCustom,
                         },
+
+                        gtk::Label {
+                            set_label: "Tip: your mod folders are accessible from tools at M:\\ — e.g. configure NPC Plugin Chooser 2 to look for mods in M:\\",
+                            set_halign: gtk::Align::Start,
+                            set_wrap: true,
+                            add_css_class: "dim-label",
+                            set_margin_top: 4,
+                        },
                     },
                 },
             },

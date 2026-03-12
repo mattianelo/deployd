@@ -37,6 +37,12 @@ pub fn db_path() -> Result<PathBuf> {
     Ok(deployd_data_dir()?.join("deployd.db"))
 }
 
+/// Named mod folders directory: cache_root/named_mods/
+/// Contains human-readable symlinks for each enabled mod, used for tool compatibility.
+pub fn named_mods_dir() -> Result<PathBuf> {
+    Ok(cache_root()?.join("named_mods"))
+}
+
 /// The target deployment directory: game.path / game.data_subdir
 pub fn game_data_dir(game: &Game) -> PathBuf {
     game.data_dir()

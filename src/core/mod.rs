@@ -2,6 +2,7 @@ pub mod deployer;
 pub mod detector;
 pub mod game;
 pub mod installer;
+pub mod mod_folders;
 #[cfg(feature = "loot")]
 pub mod loot_sort;
 pub mod nexus_api;

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Mod folders accessible to tools via M:\\** — all installed mod folders are now mapped as a Wine drive (`M:\`) when launching external tools. Tools like NPC Plugin Chooser 2 that need to see all versions of conflicting files (not just the deployed winner) can be configured to read from `M:\`. Folders are named by priority and mod name (e.g. `M:\00010-Bijin_NPCs\`) and are kept in sync automatically after deploy, purge, and priority changes.
+
 ### Fixed
 
 - **Delta deployment now actually speeds up re-deploys** — the database was still being fully cleared and rebuilt on every deploy regardless of how few mods changed. Now only the affected files are removed or inserted, making small re-deploys proportionally faster.

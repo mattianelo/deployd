@@ -7,6 +7,7 @@ use crate::core::game::{self, WineConfig};
 use crate::dlog;
 use crate::models::game::Game;
 use crate::models::tool::Tool;
+use crate::utils::paths;
 
 const HEROIC_FLATPAK_ID: &str = "com.heroicgameslauncher.hgl";
 
@@ -43,6 +44,9 @@ pub fn launch_tool(
     ensure_bethesda_reg_key(game, wine_config, &wine_bin);
     game::ensure_ini_symlinks(game);
     ensure_bodyslide_config(tool, game, wine_config);
+
+    // Map M: → named_mods/ so tools like NPC Plugin Chooser 2 can access all mod folders.
+    ensure_named_mods_drive(wine_config);
 
     let mut cmd = if wine_config.heroic_flatpak {
         build_flatpak_command(&wine_bin, tool, game, wine_config)
@@ -387,6 +391,49 @@ fn ensure_bodyslide_config(tool: &Tool, game: &Game, wine_config: &WineConfig) {
             data_path
         ),
         Err(e) => eprintln!("deployd: failed to write BodySlide Config.xml: {e}"),
+    }
+}
+
+/// Create (or update) `<prefix>/dosdevices/m:` → `named_mods/` so the deployd mod
+/// library is accessible as `M:\` inside any Wine/Proton process.
+///
+/// `M:` is used as the deployd-specific drive letter. If it is already mapped to the
+/// correct target, this is a no-op. Errors are logged but do not abort the tool launch.
+fn ensure_named_mods_drive(wine_config: &WineConfig) {
+    let named_mods = match paths::named_mods_dir() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("[deployd] named_mods_dir: {e}");
+            return;
+        }
+    };
+
+    if !named_mods.exists() {
+        return; // No mods installed yet — nothing to map.
+    }
+
+    let dosdevices = wine_config.prefix.join("dosdevices");
+    if !dosdevices.is_dir() {
+        return;
+    }
+
+    let link = dosdevices.join("m:");
+    if link.exists() || link.is_symlink() {
+        if link.is_symlink() {
+            if let Ok(target) = std::fs::read_link(&link) {
+                if target == named_mods {
+                    return; // Already correct.
+                }
+            }
+            let _ = std::fs::remove_file(&link);
+        }
+    }
+
+    #[cfg(unix)]
+    if let Err(e) = std::os::unix::fs::symlink(&named_mods, &link) {
+        eprintln!("[deployd] failed to create M: drive in dosdevices: {e}");
+    } else {
+        dlog!("deployd: mapped M: → {}", named_mods.display());
     }
 }
 
