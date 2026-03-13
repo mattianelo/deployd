@@ -72,6 +72,42 @@ pub(super) fn build_model(
     let game_model = gtk::StringList::new(&game_names);
     let game_dropdown = gtk::DropDown::new(Some(game_model.clone()), None::<gtk::Expression>);
 
+    // Constrain the dropdown button label so it never widens the window
+    let game_factory = gtk::SignalListItemFactory::new();
+    game_factory.connect_setup(|_, item| {
+        let label = gtk::Label::builder()
+            .max_width_chars(25)
+            .ellipsize(gtk::pango::EllipsizeMode::End)
+            .xalign(0.0_f32)
+            .build();
+        item.downcast_ref::<gtk::ListItem>().unwrap().set_child(Some(&label));
+    });
+    game_factory.connect_bind(|_, item| {
+        let list_item = item.downcast_ref::<gtk::ListItem>().unwrap();
+        if let Some(s) = list_item.item().and_downcast::<gtk::StringObject>() {
+            if let Some(lbl) = list_item.child().and_downcast::<gtk::Label>() {
+                lbl.set_text(&s.string());
+            }
+        }
+    });
+    game_dropdown.set_factory(Some(&game_factory));
+
+    // Popup list shows full titles without truncation
+    let game_list_factory = gtk::SignalListItemFactory::new();
+    game_list_factory.connect_setup(|_, item| {
+        let label = gtk::Label::builder().xalign(0.0_f32).build();
+        item.downcast_ref::<gtk::ListItem>().unwrap().set_child(Some(&label));
+    });
+    game_list_factory.connect_bind(|_, item| {
+        let list_item = item.downcast_ref::<gtk::ListItem>().unwrap();
+        if let Some(s) = list_item.item().and_downcast::<gtk::StringObject>() {
+            if let Some(lbl) = list_item.child().and_downcast::<gtk::Label>() {
+                lbl.set_text(&s.string());
+            }
+        }
+    });
+    game_dropdown.set_list_factory(Some(&game_list_factory));
+
     let profile_model = gtk::StringList::new(&[]);
     let profile_dropdown =
         gtk::DropDown::new(Some(profile_model.clone()), None::<gtk::Expression>);
@@ -138,6 +174,7 @@ pub(super) fn build_model(
         downloads_scroll,
         #[cfg(feature = "loot")]
         dirty_plugins: HashMap::new(),
+        profile_menu_btn: gtk::MenuButton::new(),
         save_mode_btn: gtk::Button::new(),
         sync_saves_btn: gtk::Button::new(),
         show_vanilla_plugins: false,
@@ -171,12 +208,14 @@ pub(super) fn build_model(
         let entry_ref = model.profile_rename_entry.clone();
         let sender = sender.input_sender().clone();
         let popover = rename_popover.clone();
+        let profile_menu_btn = model.profile_menu_btn.clone();
         rename_apply.connect_clicked(move |_| {
             let new_name = entry_ref.text().to_string();
             if !new_name.is_empty() {
                 sender.send(AppMsg::RenameProfile(new_name)).unwrap();
             }
             popover.popdown();
+            profile_menu_btn.popdown();
         });
     }
 

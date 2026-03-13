@@ -137,6 +137,8 @@ pub struct App {
     /// drop automatically once the user cleans a plugin and re-sorts.
     #[cfg(feature = "loot")]
     pub(crate) dirty_plugins: HashMap<String, PluginDirtyInfo>,
+    /// MenuButton that opens the profile management popover.
+    pub(crate) profile_menu_btn: gtk::MenuButton,
     /// Button that shows/switches the active profile's save mode.
     pub(crate) save_mode_btn: gtk::Button,
     /// Button to manually sync saves from the game directory to the active profile snapshot.
@@ -179,11 +181,10 @@ impl Component for App {
                 set_orientation: gtk::Orientation::Vertical,
 
                 adw::HeaderBar {
+                    set_centering_policy: adw::CenteringPolicy::Loose,
                     #[wrap(Some)]
                     set_title_widget = &adw::WindowTitle {
                         set_title: "Deployd",
-                        #[watch]
-                        set_subtitle: model.current_game_title(),
                     },
 
                     #[local_ref]
@@ -197,13 +198,6 @@ impl Component for App {
                     },
 
                     pack_start = &gtk::Button {
-                        set_icon_name: "view-refresh-symbolic",
-                        set_tooltip_text: Some("Rescan for games"),
-                        add_css_class: "flat",
-                        connect_clicked => AppMsg::RescanGames,
-                    },
-
-                    pack_start = &gtk::Button {
                         set_icon_name: "window-close-symbolic",
                         set_tooltip_text: Some("Stop managing this game"),
                         add_css_class: "flat",
@@ -214,86 +208,116 @@ impl Component for App {
                         },
                     },
 
-                    pack_start = &gtk::Box {
-                        set_orientation: gtk::Orientation::Horizontal,
-                        set_spacing: 4,
+                    #[local_ref]
+                    pack_start = profile_dropdown -> gtk::DropDown {
+                        set_tooltip_text: Some("Active profile"),
                         #[watch]
                         set_visible: model.has_games(),
+                        connect_selected_notify[sender] => move |dd| {
+                            sender.input(AppMsg::ProfileSelected(dd.selected()));
+                        }
+                    },
 
-                        #[local_ref]
-                        profile_dropdown -> gtk::DropDown {
-                            set_tooltip_text: Some("Active profile"),
-                            connect_selected_notify[sender] => move |dd| {
-                                sender.input(AppMsg::ProfileSelected(dd.selected()));
+                    // Profile management MenuButton — icon-only, opens action popover
+                    #[local_ref]
+                    pack_start = profile_menu_btn -> gtk::MenuButton {
+                        set_icon_name: "view-more-symbolic",
+                        set_tooltip_text: Some("Profile options"),
+                        #[watch]
+                        set_visible: model.has_games(),
+                        add_css_class: "flat",
+                        #[wrap(Some)]
+                        set_popover = &gtk::Popover {
+                            #[wrap(Some)]
+                            set_child = &gtk::Box {
+                                set_orientation: gtk::Orientation::Vertical,
+                                set_spacing: 4,
+                                set_margin_all: 8,
+
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Horizontal,
+                                    set_spacing: 4,
+                                    set_halign: gtk::Align::Center,
+
+                                    gtk::Button {
+                                        set_icon_name: "list-add-symbolic",
+                                        set_tooltip_text: Some("New empty profile (all mods disabled)"),
+                                        add_css_class: "flat",
+                                        connect_clicked => AppMsg::NewProfileClicked,
+                                    },
+
+                                    gtk::Button {
+                                        set_icon_name: "edit-copy-symbolic",
+                                        set_tooltip_text: Some("Clone current profile"),
+                                        add_css_class: "flat",
+                                        connect_clicked => AppMsg::CloneProfileClicked,
+                                    },
+
+                                    #[local_ref]
+                                    profile_rename_btn -> gtk::MenuButton {
+                                        set_icon_name: "document-edit-symbolic",
+                                        set_tooltip_text: Some("Rename profile"),
+                                        add_css_class: "flat",
+                                    },
+
+                                    gtk::Button {
+                                        set_icon_name: "user-trash-symbolic",
+                                        set_tooltip_text: Some("Delete profile"),
+                                        add_css_class: "flat",
+                                        #[watch]
+                                        set_sensitive: model.profiles.len() > 1,
+                                        connect_clicked => AppMsg::DeleteProfileClicked,
+                                    },
+
+                                    gtk::Button {
+                                        set_icon_name: "document-save-symbolic",
+                                        set_tooltip_text: Some("Export active profile to file"),
+                                        add_css_class: "flat",
+                                        connect_clicked => AppMsg::ExportProfileClicked,
+                                    },
+
+                                    gtk::Button {
+                                        set_icon_name: "document-open-symbolic",
+                                        set_tooltip_text: Some("Import profile from file"),
+                                        add_css_class: "flat",
+                                        connect_clicked => AppMsg::ImportProfileClicked,
+                                    },
+                                },
+
+                                #[local_ref]
+                                save_mode_btn -> gtk::Button {
+                                    #[watch]
+                                    set_label: model.save_mode_label().as_str(),
+                                    #[watch]
+                                    set_visible: model.game_has_save_management(),
+                                    set_tooltip_text: Some("Toggle per-profile save file isolation"),
+                                    add_css_class: "flat",
+                                    connect_clicked => AppMsg::ToggleProfileSaveMode,
+                                },
+
+                                #[local_ref]
+                                sync_saves_btn -> gtk::Button {
+                                    set_icon_name: "view-refresh-symbolic",
+                                    #[watch]
+                                    set_visible: model.can_sync_saves(),
+                                    #[watch]
+                                    set_sensitive: !model.is_busy(),
+                                    set_tooltip_text: Some("Sync saves: update profile snapshot from game save directory"),
+                                    add_css_class: "flat",
+                                    connect_clicked => AppMsg::SyncSaves,
+                                },
                             }
                         },
+                    },
 
-                        gtk::Button {
-                            set_icon_name: "list-add-symbolic",
-                            set_tooltip_text: Some("New empty profile (all mods disabled)"),
-                            add_css_class: "flat",
-                            connect_clicked => AppMsg::NewProfileClicked,
-                        },
-
-                        gtk::Button {
-                            set_icon_name: "edit-copy-symbolic",
-                            set_tooltip_text: Some("Clone current profile"),
-                            add_css_class: "flat",
-                            connect_clicked => AppMsg::CloneProfileClicked,
-                        },
-
-                        #[local_ref]
-                        profile_rename_btn -> gtk::MenuButton {
-                            set_icon_name: "document-edit-symbolic",
-                            set_tooltip_text: Some("Rename profile"),
-                            add_css_class: "flat",
-                        },
-
-                        gtk::Button {
-                            set_icon_name: "user-trash-symbolic",
-                            set_tooltip_text: Some("Delete profile"),
-                            add_css_class: "flat",
-                            #[watch]
-                            set_sensitive: model.profiles.len() > 1,
-                            connect_clicked => AppMsg::DeleteProfileClicked,
-                        },
-
-                        gtk::Button {
-                            set_icon_name: "document-save-symbolic",
-                            set_tooltip_text: Some("Export active profile to file"),
-                            add_css_class: "flat",
-                            connect_clicked => AppMsg::ExportProfileClicked,
-                        },
-
-                        gtk::Button {
-                            set_icon_name: "document-open-symbolic",
-                            set_tooltip_text: Some("Import profile from file"),
-                            add_css_class: "flat",
-                            connect_clicked => AppMsg::ImportProfileClicked,
-                        },
-
-                        #[local_ref]
-                        save_mode_btn -> gtk::Button {
-                            #[watch]
-                            set_label: model.save_mode_label().as_str(),
-                            #[watch]
-                            set_visible: model.game_has_save_management(),
-                            set_tooltip_text: Some("Toggle per-profile save file isolation"),
-                            add_css_class: "flat",
-                            connect_clicked => AppMsg::ToggleProfileSaveMode,
-                        },
-
-                        #[local_ref]
-                        sync_saves_btn -> gtk::Button {
-                            set_icon_name: "view-refresh-symbolic",
-                            #[watch]
-                            set_visible: model.can_sync_saves(),
-                            #[watch]
-                            set_sensitive: !model.is_busy(),
-                            set_tooltip_text: Some("Sync saves: update profile snapshot from game save directory"),
-                            add_css_class: "flat",
-                            connect_clicked => AppMsg::SyncSaves,
-                        },
+                    pack_start = &gtk::Button {
+                        set_icon_name: "list-add-symbolic",
+                        set_tooltip_text: Some("Add Mod"),
+                        #[watch]
+                        set_sensitive: !model.is_busy() && model.has_games(),
+                        #[watch]
+                        set_visible: model.has_games(),
+                        connect_clicked => AppMsg::InstallClicked,
                     },
 
                     pack_end = &gtk::Button {
@@ -317,14 +341,6 @@ impl Component for App {
                         #[watch]
                         set_sensitive: !model.is_busy() && model.has_games(),
                         connect_clicked => AppMsg::PurgeClicked,
-                    },
-
-                    pack_end = &gtk::Button {
-                        set_icon_name: "list-add-symbolic",
-                        set_tooltip_text: Some("Add Mod"),
-                        #[watch]
-                        set_sensitive: !model.is_busy() && model.has_games(),
-                        connect_clicked => AppMsg::InstallClicked,
                     },
 
                     pack_end = &gtk::Button {
@@ -496,6 +512,13 @@ impl Component for App {
                                 set_tooltip_text: Some("Scan downloads folder"),
                                 add_css_class: "flat",
                                 connect_clicked => AppMsg::ScanDownloadsFolder,
+                            },
+
+                            gtk::Button {
+                                set_icon_name: "go-next-rtl-symbolic",
+                                set_tooltip_text: Some("Hide downloads panel"),
+                                add_css_class: "flat",
+                                connect_clicked => AppMsg::ToggleDownloads,
                             },
 
                         },
@@ -727,6 +750,7 @@ impl Component for App {
         let tool_buttons_box = &model.tool_buttons_box;
         let mod_scroll = &model.mod_scroll;
         let downloads_scroll = &model.downloads_scroll;
+        let profile_menu_btn = &model.profile_menu_btn;
         let save_mode_btn = &model.save_mode_btn;
         let sync_saves_btn = &model.sync_saves_btn;
         let update_banner = &model.update_banner;
@@ -776,10 +800,19 @@ impl Component for App {
             }
             AppMsg::RenameMod(idx, name) => self.handle_rename_mod(idx, name, &sender),
             AppMsg::ProfileSelected(idx) => self.handle_profile_selected(idx, &sender),
-            AppMsg::NewProfileClicked => self.handle_new_profile_clicked(&sender),
-            AppMsg::CloneProfileClicked => self.handle_clone_profile_clicked(&sender),
+            AppMsg::NewProfileClicked => {
+                self.profile_menu_btn.popdown();
+                self.handle_new_profile_clicked(&sender);
+            }
+            AppMsg::CloneProfileClicked => {
+                self.profile_menu_btn.popdown();
+                self.handle_clone_profile_clicked(&sender);
+            }
             AppMsg::RenameProfile(name) => self.handle_rename_profile(name, &sender),
-            AppMsg::DeleteProfileClicked => self.handle_delete_profile_clicked(&sender),
+            AppMsg::DeleteProfileClicked => {
+                self.profile_menu_btn.popdown();
+                self.handle_delete_profile_clicked(&sender);
+            }
             AppMsg::DeployClicked => self.handle_deploy_clicked(root, &sender),
             AppMsg::DeployConfirmed => self.execute_deploy(&sender),
             AppMsg::PurgeClicked => self.handle_purge_clicked(root, &sender),
@@ -879,8 +912,14 @@ impl Component for App {
             }
             AppMsg::CreateEmptyMod => self.handle_create_empty_mod(&sender),
             AppMsg::ScanModFromCache(mod_id) => self.handle_scan_mod_from_cache(mod_id, &sender),
-            AppMsg::ExportProfileClicked => self.handle_export_profile_clicked(root, &sender),
-            AppMsg::ImportProfileClicked => self.handle_import_profile_clicked(root, &sender),
+            AppMsg::ExportProfileClicked => {
+                self.profile_menu_btn.popdown();
+                self.handle_export_profile_clicked(root, &sender);
+            }
+            AppMsg::ImportProfileClicked => {
+                self.profile_menu_btn.popdown();
+                self.handle_import_profile_clicked(root, &sender);
+            }
             AppMsg::ImportProfileFileChosen(path) => {
                 self.handle_import_profile_file_chosen(path, &sender)
             }
@@ -897,8 +936,14 @@ impl Component for App {
             AppMsg::DisableAllPlugins => self.handle_disable_all_plugins(&sender),
             AppMsg::ToggleShowVanillaPlugins => self.handle_toggle_show_vanilla_plugins(),
             AppMsg::ShowToast(msg) => self.handle_show_toast(msg),
-            AppMsg::ToggleProfileSaveMode => self.handle_toggle_profile_save_mode(&sender),
-            AppMsg::SyncSaves => self.handle_sync_saves(&sender),
+            AppMsg::ToggleProfileSaveMode => {
+                self.profile_menu_btn.popdown();
+                self.handle_toggle_profile_save_mode(&sender);
+            }
+            AppMsg::SyncSaves => {
+                self.profile_menu_btn.popdown();
+                self.handle_sync_saves(&sender);
+            }
             AppMsg::AppUpdateAvailable(version, url) => {
                 self.update_banner
                     .set_title(&format!("Deployd {version} is available"));

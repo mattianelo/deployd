@@ -104,12 +104,6 @@ impl App {
         );
     }
 
-    pub(crate) fn current_game_title(&self) -> &str {
-        self.selected_game()
-            .map(|g| g.title.as_str())
-            .unwrap_or("No game detected")
-    }
-
     pub(crate) fn has_games(&self) -> bool {
         !self.games.is_empty()
     }
@@ -195,6 +189,7 @@ impl App {
             .unwrap_or_else(|| mod_id.to_string())
     }
 
+
     pub(crate) fn rate_limit_label(&self) -> String {
         match &self.rate_limit_info {
             Some(rl) => format!(
@@ -258,14 +253,24 @@ impl App {
     }
 
     /// Rebuild tool buttons in the headerbar for the current game's tools.
+    /// Up to 3 tools are shown as individual buttons; any beyond that are
+    /// collected into an overflow `gtk::MenuButton`.
     pub(crate) fn rebuild_tool_buttons(&self, sender: &ComponentSender<Self>) {
+        const MAX_VISIBLE: usize = 3;
+
         // Remove all existing tool buttons
         while let Some(child) = self.tool_buttons_box.first_child() {
             self.tool_buttons_box.remove(&child);
         }
 
         let busy = self.is_busy();
-        for tool in &self.tools {
+        let (visible, overflow) = if self.tools.len() > MAX_VISIBLE {
+            self.tools.split_at(MAX_VISIBLE)
+        } else {
+            (&self.tools[..], &[][..])
+        };
+
+        for tool in visible {
             let btn = gtk::Button::new();
             btn.set_icon_name(&tool.icon_name);
             btn.set_tooltip_text(Some(&tool.name));
@@ -281,6 +286,46 @@ impl App {
             });
 
             self.tool_buttons_box.append(&btn);
+        }
+
+        if !overflow.is_empty() {
+            let popover_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+            for tool in overflow {
+                let btn = gtk::Button::new();
+                btn.set_icon_name(&tool.icon_name);
+                btn.set_tooltip_text(Some(&tool.name));
+                btn.set_label(&tool.name);
+                btn.set_sensitive(!busy);
+                btn.add_css_class("flat");
+
+                let tool_id = tool.id.clone();
+                let input_sender = sender.input_sender().clone();
+                btn.connect_clicked(move |b| {
+                    input_sender
+                        .send(AppMsg::LaunchTool(tool_id.clone()))
+                        .unwrap();
+                    if let Some(p) = b
+                        .ancestor(gtk::Popover::static_type())
+                        .and_downcast::<gtk::Popover>()
+                    {
+                        p.popdown();
+                    }
+                });
+
+                popover_box.append(&btn);
+            }
+
+            let popover = gtk::Popover::new();
+            popover.set_child(Some(&popover_box));
+
+            let overflow_btn = gtk::MenuButton::new();
+            overflow_btn.set_icon_name("view-more-symbolic");
+            overflow_btn.set_tooltip_text(Some("More tools"));
+            overflow_btn.set_sensitive(!busy);
+            overflow_btn.add_css_class("flat");
+            overflow_btn.set_popover(Some(&popover));
+
+            self.tool_buttons_box.append(&overflow_btn);
         }
 
         self.tool_buttons_box

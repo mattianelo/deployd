@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+### Improved
+
+- **Cleaner headerbar** — game selector and a remove button sit on the left, profile management lives in a compact dropdown, and "Add Mod" has moved next to the profile for better balance. "Rescan for games" is now in Settings → Games.
+- **Tools overflow menu** — when more than three external tools are configured, the extra ones are collected into a "more tools" button so the headerbar stays tidy regardless of how many tools you add.
+- **Downloads panel now has its own close button** — you can dismiss the downloads panel directly from inside the panel, without going back to the toolbar.
+- **Headerbar title no longer causes the window to resize** — the game title in the headerbar now ellipsizes gracefully when long, and the window stays at its current size when buttons appear or disappear.
+- **Popovers now close after selecting an option** — clicking an action in the profile popover (new, clone, delete, import/export, save mode, sync) or a tool in the overflow tools menu now dismisses the popover immediately.
+- **"Deployd" title stays visible** — the app title in the headerbar no longer gets squeezed away when many controls are shown on the left.
+
+---
+
 ## [0.9.4] — 2026-03-12 · Public Beta
 
 ### Added

@@ -38,6 +38,7 @@ pub enum SettingsMsg {
     BrowseDownloadsDir,
     DownloadsDirChosen(PathBuf),
     ManageGames,
+    RescanGames,
 }
 
 #[derive(Debug)]
@@ -58,6 +59,8 @@ pub enum SettingsDialogOutput {
     ApiKeyChanged,
     /// User wants to open the game setup dialog.
     ManageGames,
+    /// User wants to rescan for installed games.
+    RescanGames,
 }
 
 #[relm4::component(pub)]
@@ -228,6 +231,17 @@ impl Component for SettingsDialog {
                                     connect_activated => SettingsMsg::ManageGames,
 
                                     add_suffix = &gtk::Image::from_icon_name("go-next-symbolic") {
+                                        set_valign: gtk::Align::Center,
+                                    },
+                                },
+
+                                adw::ActionRow {
+                                    set_title: "Rescan for games",
+                                    set_subtitle: "Detect newly installed games",
+                                    set_activatable: true,
+                                    connect_activated => SettingsMsg::RescanGames,
+
+                                    add_suffix = &gtk::Image::from_icon_name("view-refresh-symbolic") {
                                         set_valign: gtk::Align::Center,
                                     },
                                 },
@@ -494,6 +508,10 @@ impl Component for SettingsDialog {
             }
             SettingsMsg::ManageGames => {
                 let _ = sender.output(SettingsDialogOutput::ManageGames);
+                root.close();
+            }
+            SettingsMsg::RescanGames => {
+                let _ = sender.output(SettingsDialogOutput::RescanGames);
                 root.close();
             }
             SettingsMsg::DownloadsDirChosen(path) => {
