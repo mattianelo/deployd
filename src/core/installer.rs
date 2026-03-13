@@ -929,6 +929,7 @@ fn is_known_content_dir(name_lower: &str) -> bool {
             | "asi"
             | "video"
             | "videos"
+            | "mcm"   // MCM (Mod Configuration Menu) — Config/ and Settings/ live inside
             // REDEngine (Cyberpunk 2077 / The Witcher 3)
             | "archive"   // archive/pc/mod/ — CP2077 & W3 mod archives
             | "mods"      // REDmod directory (CP2077) and Mods/ (W3)

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **MCM folder no longer stripped during installation** — mods that ship with `MCM/` as their sole top-level directory (e.g. MCM Settings Manager) now install correctly to `MCM/Config/` and `MCM/Settings/` instead of bypassing the MCM folder entirely.
+
 ### Improved
 
 - **Cleaner headerbar** — game selector and a remove button sit on the left, profile management lives in a compact dropdown, and "Add Mod" has moved next to the profile for better balance. "Rescan for games" is now in Settings → Games.
