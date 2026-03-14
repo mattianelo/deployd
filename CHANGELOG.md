@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+---
+
+## [0.9.5] — 2026-03-14 · Public Beta
+
 ### Fixed
 
 - **MCM folder no longer stripped during installation** — mods that ship with `MCM/` as their sole top-level directory (e.g. MCM Settings Manager) now install correctly to `MCM/Config/` and `MCM/Settings/` instead of bypassing the MCM folder entirely.
