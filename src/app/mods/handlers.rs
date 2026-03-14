@@ -499,6 +499,7 @@ impl App {
     }
 
     pub(crate) fn handle_create_empty_mod(&mut self, sender: &ComponentSender<Self>) {
+        self.overflow_menu_btn.popdown();
         let Some(tracker) = self.tracker.clone() else { return };
         let Some(game) = self.selected_game().cloned() else { return };
         let game_id = game.id.clone();

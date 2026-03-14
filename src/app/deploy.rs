@@ -102,6 +102,7 @@ impl App {
     }
 
     pub(crate) fn handle_purge_clicked(&mut self, root: &adw::Window, sender: &ComponentSender<Self>) {
+        self.overflow_menu_btn.popdown();
         let current_id = self.profiles.get(self.active_profile_idx).map(|p| p.id.clone());
         let mismatch = self
             .last_deployed_profile_id

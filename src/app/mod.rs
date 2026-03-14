@@ -137,6 +137,8 @@ pub struct App {
     /// drop automatically once the user cleans a plugin and re-sorts.
     #[cfg(feature = "loot")]
     pub(crate) dirty_plugins: HashMap<String, PluginDirtyInfo>,
+    /// MenuButton that opens the overflow actions popover (Settings, Purge, etc.).
+    pub(crate) overflow_menu_btn: gtk::MenuButton,
     /// MenuButton that opens the profile management popover.
     pub(crate) profile_menu_btn: gtk::MenuButton,
     /// Button that shows/switches the active profile's save mode.
@@ -336,7 +338,8 @@ impl Component for App {
                     },
 
                     // Overflow menu — secondary/infrequent actions
-                    pack_end = &gtk::MenuButton {
+                    #[local_ref]
+                    pack_end = overflow_menu_btn -> gtk::MenuButton {
                         set_icon_name: "view-more-symbolic",
                         set_tooltip_text: Some("More actions"),
                         add_css_class: "flat",
@@ -389,6 +392,16 @@ impl Component for App {
                                 },
 
                                 gtk::Button {
+                                    set_icon_name: "view-refresh-symbolic",
+                                    set_label: "Reset Vanilla Baseline",
+                                    set_tooltip_text: Some("Re-snapshot the current game folder as the new vanilla state — use after a clean game reinstall"),
+                                    add_css_class: "flat",
+                                    #[watch]
+                                    set_sensitive: !model.is_busy() && model.has_games(),
+                                    connect_clicked => AppMsg::ResetVanillaBaseline,
+                                },
+
+                                gtk::Button {
                                     set_icon_name: "emblem-system-symbolic",
                                     set_label: "Settings",
                                     add_css_class: "flat",
@@ -396,17 +409,6 @@ impl Component for App {
                                 },
                             },
                         },
-                    },
-
-                    pack_end = &gtk::Button {
-                        set_icon_name: "view-refresh-symbolic",
-                        set_tooltip_text: Some("Reset vanilla baseline — use after a clean game reinstall to clear false-positive external detections"),
-                        #[watch]
-                        set_visible: model.external_changes_count > 0,
-                        #[watch]
-                        set_sensitive: !model.is_busy(),
-                        connect_clicked => AppMsg::ResetVanillaBaseline,
-                        add_css_class: "flat",
                     },
 
                     pack_end = &gtk::Button {
@@ -515,6 +517,7 @@ impl Component for App {
                         add_top_bar = &adw::HeaderBar {
                             set_centering_policy: adw::CenteringPolicy::Loose,
                             set_show_back_button: false,
+                            set_decoration_layout: Some(""),
 
                             #[wrap(Some)]
                             set_title_widget = &adw::WindowTitle {
@@ -782,6 +785,7 @@ impl Component for App {
         let tool_buttons_box = &model.tool_buttons_box;
         let mod_scroll = &model.mod_scroll;
         let downloads_scroll = &model.downloads_scroll;
+        let overflow_menu_btn = &model.overflow_menu_btn;
         let profile_menu_btn = &model.profile_menu_btn;
         let save_mode_btn = &model.save_mode_btn;
         let sync_saves_btn = &model.sync_saves_btn;

@@ -8,7 +8,9 @@
 
 ### Improved
 
-- **Headerbar overflow menu** — Purge, Create Empty Mod, Check for Updates, Manage Tools, and Settings now live in a single "⋯" button, leaving only Deploy, Downloads, and Search visible at all times. The headerbar is much less crowded.
+- **Headerbar overflow menu** — Purge, Create Empty Mod, Check for Updates, Manage Tools, Settings, and Reset Vanilla Baseline now live in a single "⋯" button, leaving only Deploy, Downloads, and Search visible at all times. The headerbar is much less crowded.
+- **Overflow menu closes on selection** — picking any action from the overflow menu now dismisses the popover immediately.
+- **Reset Vanilla Baseline always accessible** — moved from a conditional badge into the overflow menu, so it's always one click away. Still asks for confirmation before proceeding.
 - **Downloads panel header** — the downloads sidebar now uses a proper header bar with title, matching the look of modern GNOME panels. The sort dropdown sits on the left and the scan/close buttons on the right.
 - **Downloads button reflects panel state** — the Downloads toggle in the headerbar now lights up when the panel is open, consistent with the Search toggle.
 - **All / None buttons grouped** — the All and None buttons in the Mod Order and Plugin Order panels now appear as a connected pill group, making them easier to recognise as related controls.

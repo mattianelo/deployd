@@ -7,6 +7,7 @@ use super::super::App;
 
 impl App {
     pub(crate) fn handle_check_updates(&mut self, sender: &ComponentSender<Self>) {
+        self.overflow_menu_btn.popdown();
         let Some(tracker) = self.tracker.clone() else {
             return;
         };

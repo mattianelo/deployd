@@ -68,6 +68,7 @@ impl App {
         root: &adw::Window,
         sender: &ComponentSender<Self>,
     ) {
+        self.overflow_menu_btn.popdown();
         let Some(game) = self.selected_game() else { return };
         let game_id = game.id.clone();
         let game_path = game.path.clone();

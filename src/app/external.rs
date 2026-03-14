@@ -55,6 +55,7 @@ impl App {
         root: &adw::Window,
         sender: &ComponentSender<Self>,
     ) {
+        self.overflow_menu_btn.popdown();
         let dialog = gtk::AlertDialog::builder()
             .message("Reset vanilla baseline?")
             .detail("This re-snapshots the current game folder as the new vanilla state. Any files added since the last snapshot will no longer be reported as external changes. Use this after a clean game reinstall.")

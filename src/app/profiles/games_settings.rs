@@ -16,6 +16,7 @@ impl App {
         root: &adw::Window,
         sender: &ComponentSender<Self>,
     ) {
+        self.overflow_menu_btn.popdown();
         let Some(tracker) = self.tracker.clone() else {
             self.toaster.toast("Database not ready yet");
             return;
