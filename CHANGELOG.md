@@ -8,6 +8,10 @@
 
 ### Improved
 
+- **Headerbar overflow menu** — Purge, Create Empty Mod, Check for Updates, Manage Tools, and Settings now live in a single "⋯" button, leaving only Deploy, Downloads, and Search visible at all times. The headerbar is much less crowded.
+- **Downloads panel header** — the downloads sidebar now uses a proper header bar with title, matching the look of modern GNOME panels. The sort dropdown sits on the left and the scan/close buttons on the right.
+- **Downloads button reflects panel state** — the Downloads toggle in the headerbar now lights up when the panel is open, consistent with the Search toggle.
+- **All / None buttons grouped** — the All and None buttons in the Mod Order and Plugin Order panels now appear as a connected pill group, making them easier to recognise as related controls.
 - **Cleaner headerbar** — game selector and a remove button sit on the left, profile management lives in a compact dropdown, and "Add Mod" has moved next to the profile for better balance. "Rescan for games" is now in Settings → Games.
 - **Tools overflow menu** — when more than three external tools are configured, the extra ones are collected into a "more tools" button so the headerbar stays tidy regardless of how many tools you add.
 - **Downloads panel now has its own close button** — you can dismiss the downloads panel directly from inside the panel, without going back to the toolbar.

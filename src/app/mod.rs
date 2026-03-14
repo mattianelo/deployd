@@ -335,20 +335,67 @@ impl Component for App {
                         connect_clicked => AppMsg::DeployClicked,
                     },
 
-                    pack_end = &gtk::Button {
-                        set_icon_name: "edit-clear-all-symbolic",
-                        set_tooltip_text: Some("Purge deployed files from game folder"),
-                        #[watch]
-                        set_sensitive: !model.is_busy() && model.has_games(),
-                        connect_clicked => AppMsg::PurgeClicked,
-                    },
+                    // Overflow menu — secondary/infrequent actions
+                    pack_end = &gtk::MenuButton {
+                        set_icon_name: "view-more-symbolic",
+                        set_tooltip_text: Some("More actions"),
+                        add_css_class: "flat",
+                        #[wrap(Some)]
+                        set_popover = &gtk::Popover {
+                            #[wrap(Some)]
+                            set_child = &gtk::Box {
+                                set_orientation: gtk::Orientation::Vertical,
+                                set_spacing: 2,
+                                set_margin_all: 4,
 
-                    pack_end = &gtk::Button {
-                        set_icon_name: "folder-new-symbolic",
-                        set_tooltip_text: Some("Create Empty Mod — opens cache folder in file manager"),
-                        #[watch]
-                        set_sensitive: !model.is_busy() && model.has_games(),
-                        connect_clicked => AppMsg::CreateEmptyMod,
+                                gtk::Button {
+                                    set_icon_name: "edit-clear-all-symbolic",
+                                    set_label: "Purge",
+                                    set_tooltip_text: Some("Purge deployed files from game folder"),
+                                    add_css_class: "flat",
+                                    #[watch]
+                                    set_sensitive: !model.is_busy() && model.has_games(),
+                                    connect_clicked => AppMsg::PurgeClicked,
+                                },
+
+                                gtk::Button {
+                                    set_icon_name: "folder-new-symbolic",
+                                    set_label: "Create Empty Mod",
+                                    set_tooltip_text: Some("Create Empty Mod — opens cache folder in file manager"),
+                                    add_css_class: "flat",
+                                    #[watch]
+                                    set_sensitive: !model.is_busy() && model.has_games(),
+                                    connect_clicked => AppMsg::CreateEmptyMod,
+                                },
+
+                                gtk::Button {
+                                    set_icon_name: "software-update-available-symbolic",
+                                    set_label: "Check for Updates",
+                                    set_tooltip_text: Some("Check for updates on Nexus"),
+                                    add_css_class: "flat",
+                                    #[watch]
+                                    set_sensitive: !model.is_busy() && model.has_games(),
+                                    connect_clicked => AppMsg::CheckUpdatesClicked,
+                                },
+
+                                gtk::Button {
+                                    set_icon_name: "preferences-other-symbolic",
+                                    set_label: "Manage Tools",
+                                    set_tooltip_text: Some("Manage Tools"),
+                                    add_css_class: "flat",
+                                    #[watch]
+                                    set_sensitive: model.has_games(),
+                                    connect_clicked => AppMsg::ManageToolsClicked,
+                                },
+
+                                gtk::Button {
+                                    set_icon_name: "emblem-system-symbolic",
+                                    set_label: "Settings",
+                                    add_css_class: "flat",
+                                    connect_clicked => AppMsg::SettingsClicked,
+                                },
+                            },
+                        },
                     },
 
                     pack_end = &gtk::Button {
@@ -372,13 +419,7 @@ impl Component for App {
                         add_css_class: "flat",
                     },
 
-                    pack_end = &gtk::Button {
-                        set_icon_name: "emblem-system-symbolic",
-                        set_tooltip_text: Some("Settings"),
-                        connect_clicked => AppMsg::SettingsClicked,
-                    },
-
-                    pack_end = &gtk::Button {
+                    pack_end = &gtk::ToggleButton {
                         #[watch]
                         set_icon_name: if model.global_active_downloads > 0 {
                             "content-loading-symbolic"
@@ -386,23 +427,11 @@ impl Component for App {
                             "folder-download-symbolic"
                         },
                         set_tooltip_text: Some("Downloads"),
-                        connect_clicked => AppMsg::ToggleDownloads,
-                    },
-
-                    pack_end = &gtk::Button {
-                        set_icon_name: "software-update-available-symbolic",
-                        set_tooltip_text: Some("Check for updates on Nexus"),
                         #[watch]
-                        set_sensitive: !model.is_busy() && model.has_games(),
-                        connect_clicked => AppMsg::CheckUpdatesClicked,
-                    },
-
-                    pack_end = &gtk::Button {
-                        set_icon_name: "preferences-other-symbolic",
-                        set_tooltip_text: Some("Manage Tools"),
-                        #[watch]
-                        set_sensitive: model.has_games(),
-                        connect_clicked => AppMsg::ManageToolsClicked,
+                        set_active: model.downloads_visible,
+                        connect_toggled[sender] => move |btn| {
+                            sender.input(AppMsg::SetDownloadsVisible(btn.is_active()));
+                        },
                     },
 
                     pack_end = &gtk::ToggleButton {
@@ -480,23 +509,19 @@ impl Component for App {
                     set_min_sidebar_width: 300.0,
 
                     #[wrap(Some)]
-                    set_sidebar = &gtk::Box {
-                        set_orientation: gtk::Orientation::Vertical,
+                    set_sidebar = &adw::ToolbarView {
                         set_width_request: 300,
 
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Horizontal,
-                            set_margin_all: 8,
-                            set_spacing: 8,
+                        add_top_bar = &adw::HeaderBar {
+                            set_centering_policy: adw::CenteringPolicy::Loose,
+                            set_show_back_button: false,
 
-                            gtk::Label {
-                                set_label: "Downloads",
-                                add_css_class: "heading",
-                                set_hexpand: true,
-                                set_halign: gtk::Align::Start,
+                            #[wrap(Some)]
+                            set_title_widget = &adw::WindowTitle {
+                                set_title: "Downloads",
                             },
 
-                            gtk::DropDown {
+                            pack_start = &gtk::DropDown {
                                 set_model: Some(&gtk::StringList::new(&["Default", "Name", "Status"])),
                                 set_valign: gtk::Align::Center,
                                 set_tooltip_text: Some("Sort downloads"),
@@ -507,43 +532,47 @@ impl Component for App {
                                 },
                             },
 
-                            gtk::Button {
+                            pack_end = &gtk::Button {
+                                set_icon_name: "go-next-rtl-symbolic",
+                                set_tooltip_text: Some("Hide downloads panel"),
+                                add_css_class: "flat",
+                                connect_clicked[sender] => move |_| {
+                                    sender.input(AppMsg::SetDownloadsVisible(false));
+                                },
+                            },
+
+                            pack_end = &gtk::Button {
                                 set_icon_name: "folder-open-symbolic",
                                 set_tooltip_text: Some("Scan downloads folder"),
                                 add_css_class: "flat",
                                 connect_clicked => AppMsg::ScanDownloadsFolder,
                             },
-
-                            gtk::Button {
-                                set_icon_name: "go-next-rtl-symbolic",
-                                set_tooltip_text: Some("Hide downloads panel"),
-                                add_css_class: "flat",
-                                connect_clicked => AppMsg::ToggleDownloads,
-                            },
-
                         },
 
-                        gtk::Separator {},
-
-                        #[local_ref]
-                        downloads_scroll -> gtk::ScrolledWindow {
-                            set_vexpand: true,
-                            set_hscrollbar_policy: gtk::PolicyType::Automatic,
+                        #[wrap(Some)]
+                        set_content = &gtk::Box {
+                            set_orientation: gtk::Orientation::Vertical,
 
                             #[local_ref]
-                            download_list -> gtk::ListBox {
-                                set_selection_mode: gtk::SelectionMode::None,
-                                add_css_class: "boxed-list",
-                                set_margin_all: 8,
-                            }
-                        },
+                            downloads_scroll -> gtk::ScrolledWindow {
+                                set_vexpand: true,
+                                set_hscrollbar_policy: gtk::PolicyType::Automatic,
 
-                        adw::StatusPage {
-                            #[watch]
-                            set_visible: model.downloads.is_empty(),
-                            set_icon_name: Some("folder-download-symbolic"),
-                            set_title: "No Downloads",
-                            set_description: Some("Click Scan or download from Nexus Mods"),
+                                #[local_ref]
+                                download_list -> gtk::ListBox {
+                                    set_selection_mode: gtk::SelectionMode::None,
+                                    add_css_class: "boxed-list",
+                                    set_margin_all: 8,
+                                }
+                            },
+
+                            adw::StatusPage {
+                                #[watch]
+                                set_visible: model.downloads.is_empty(),
+                                set_icon_name: Some("folder-download-symbolic"),
+                                set_title: "No Downloads",
+                                set_description: Some("Click Scan or download from Nexus Mods"),
+                            },
                         },
                     },
 
@@ -580,18 +609,20 @@ impl Component for App {
                                     set_halign: gtk::Align::Start,
                                 },
 
-                                gtk::Button {
-                                    set_label: "All",
-                                    set_tooltip_text: Some("Enable all mods"),
-                                    add_css_class: "flat",
-                                    connect_clicked => AppMsg::EnableAllMods,
-                                },
+                                gtk::Box {
+                                    add_css_class: "linked",
 
-                                gtk::Button {
-                                    set_label: "None",
-                                    set_tooltip_text: Some("Disable all mods"),
-                                    add_css_class: "flat",
-                                    connect_clicked => AppMsg::DisableAllMods,
+                                    gtk::Button {
+                                        set_label: "All",
+                                        set_tooltip_text: Some("Enable all mods"),
+                                        connect_clicked => AppMsg::EnableAllMods,
+                                    },
+
+                                    gtk::Button {
+                                        set_label: "None",
+                                        set_tooltip_text: Some("Disable all mods"),
+                                        connect_clicked => AppMsg::DisableAllMods,
+                                    },
                                 },
 
                                 gtk::Button {
@@ -653,20 +684,21 @@ impl Component for App {
                                     set_margin_start: 8,
                                 },
 
-                                gtk::Button {
-                                    set_label: "All",
-                                    set_tooltip_text: Some("Enable all plugins"),
-                                    add_css_class: "flat",
+                                gtk::Box {
+                                    add_css_class: "linked",
                                     set_valign: gtk::Align::Center,
-                                    connect_clicked => AppMsg::EnableAllPlugins,
-                                },
 
-                                gtk::Button {
-                                    set_label: "None",
-                                    set_tooltip_text: Some("Disable all plugins"),
-                                    add_css_class: "flat",
-                                    set_valign: gtk::Align::Center,
-                                    connect_clicked => AppMsg::DisableAllPlugins,
+                                    gtk::Button {
+                                        set_label: "All",
+                                        set_tooltip_text: Some("Enable all plugins"),
+                                        connect_clicked => AppMsg::EnableAllPlugins,
+                                    },
+
+                                    gtk::Button {
+                                        set_label: "None",
+                                        set_tooltip_text: Some("Disable all plugins"),
+                                        connect_clicked => AppMsg::DisableAllPlugins,
+                                    },
                                 },
 
                                 gtk::ToggleButton {
@@ -848,6 +880,7 @@ impl Component for App {
             AppMsg::NxmLinkReceived(link) => self.handle_nxm_link_received(link, &sender),
             AppMsg::CheckUpdatesClicked => self.handle_check_updates(&sender),
             AppMsg::ToggleDownloads => self.handle_toggle_downloads(),
+            AppMsg::SetDownloadsVisible(v) => self.handle_set_downloads_visible(v),
             AppMsg::InstallDownload(idx) => self.handle_install_download(idx, &sender),
             AppMsg::ClearDownloadMetadata(idx) => self.handle_clear_download_metadata(idx, &sender),
             AppMsg::RenameDownload(idx) => self.handle_rename_download(idx, root, &sender),

@@ -98,6 +98,7 @@ pub enum AppMsg {
     NxmLinkReceived(String),
     CheckUpdatesClicked,
     ToggleDownloads,
+    SetDownloadsVisible(bool),
     InstallDownload(DynamicIndex),
     ClearDownloadMetadata(DynamicIndex),
     RenameDownload(DynamicIndex),

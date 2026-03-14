@@ -16,6 +16,10 @@ impl App {
         self.downloads_visible = !self.downloads_visible;
     }
 
+    pub(crate) fn handle_set_downloads_visible(&mut self, visible: bool) {
+        self.downloads_visible = visible;
+    }
+
     pub(crate) fn handle_download_sort_changed(
         &mut self,
         idx: u32,
