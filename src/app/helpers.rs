@@ -190,6 +190,16 @@ impl App {
     }
 
 
+    /// Label for the notifications headerbar toggle button badge.
+    /// Returns the count as a string when there are pending notifications, empty otherwise.
+    pub(crate) fn notifications_badge(&self) -> String {
+        if self.external_changes_count > 0 {
+            self.external_changes_count.to_string()
+        } else {
+            String::new()
+        }
+    }
+
     pub(crate) fn rate_limit_label(&self) -> String {
         match &self.rate_limit_info {
             Some(rl) => format!(

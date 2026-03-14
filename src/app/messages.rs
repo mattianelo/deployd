@@ -99,6 +99,10 @@ pub enum AppMsg {
     CheckUpdatesClicked,
     ToggleDownloads,
     SetDownloadsVisible(bool),
+    /// Toggle the notifications panel sidebar.
+    ToggleNotifications,
+    /// Set notifications panel visibility explicitly.
+    SetNotificationsVisible(bool),
     InstallDownload(DynamicIndex),
     ClearDownloadMetadata(DynamicIndex),
     RenameDownload(DynamicIndex),

@@ -6,6 +6,10 @@
 
 - **MCM folder no longer stripped during installation** — mods that ship with `MCM/` as their sole top-level directory (e.g. MCM Settings Manager) now install correctly to `MCM/Config/` and `MCM/Settings/` instead of bypassing the MCM folder entirely.
 
+### Added
+
+- **Notifications panel** — external changes and other alerts are now collected in a dedicated sidebar panel (bell icon in the headerbar) instead of a bare count button. The panel shows each notification with a description and a "Review" action, and displays an "All Caught Up" state when there is nothing pending.
+
 ### Improved
 
 - **Headerbar overflow menu** — Purge, Create Empty Mod, Check for Updates, Manage Tools, Settings, and Reset Vanilla Baseline now live in a single "⋯" button, leaving only Deploy, Downloads, and Search visible at all times. The headerbar is much less crowded.

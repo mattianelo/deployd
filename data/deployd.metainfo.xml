@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Copyright 2025 Mattianelo -->
 <component type="desktop-application">
-  <id>io.mattianelo.Deployd</id>
+  <id>deployd</id>
 
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-only</project_license>
@@ -9,7 +9,7 @@
   <name>Deployd</name>
   <summary>Linux-native mod manager for Bethesda and REDEngine games</summary>
 
-  <developer id="io.mattianelo">
+  <developer id="mattianelo">
     <name>Mattianelo</name>
   </developer>
 
@@ -20,7 +20,7 @@
       handles Nexus Mods downloads via SSO login and NXM links, and deploys mods
       as hardlinks for safe, non-destructive mod management.
     </p>
-    <p>Currently in public beta (v0.9.3).</p>
+    <p>Currently in public beta (v0.9.4).</p>
     <ul>
       <li>Supports Skyrim SE, Fallout 4, Fallout: New Vegas, Starfield, The Witcher 3, and Cyberpunk 2077</li>
       <li>Game detection from Steam and Heroic Launcher (GOG/Epic)</li>
@@ -35,24 +35,13 @@
     </ul>
   </description>
 
-  <launchable type="desktop-id">io.mattianelo.Deployd.desktop</launchable>
+  <launchable type="desktop-id">deployd.desktop</launchable>
 
   <url type="homepage">https://www.nexusmods.com/site/mods/174218</url>
   <url type="bugtracker">https://gitlab.com/mattianelo/deployd/-/issues</url>
   <url type="contact">https://gitlab.com/mattianelo/deployd/-/issues</url>
   <url type="vcs-browser">https://gitlab.com/mattianelo/deployd</url>
   <url type="donation">https://ko-fi.com/mattianelo</url>
-
-  <screenshots>
-    <screenshot type="default">
-      <image>https://gitlab.com/mattianelo/deployd/-/raw/v0.9.3/data/screenshots/main-window.png</image>
-      <caption>Main window showing mod list and load order</caption>
-    </screenshot>
-    <screenshot>
-      <image>https://gitlab.com/mattianelo/deployd/-/raw/v0.9.3/data/screenshots/settings.png</image>
-      <caption>Settings dialog with Nexus Mods integration</caption>
-    </screenshot>
-  </screenshots>
 
   <categories>
     <category>Game</category>
@@ -75,6 +64,12 @@
   </keywords>
 
   <releases>
+    <release version="0.9.4" date="2026-03-12" type="development">
+      <description>
+        <p>Adds a notifications panel sidebar for external file changes and other alerts.
+        Improves the headerbar layout and downloads panel design.</p>
+      </description>
+    </release>
     <release version="0.9.3" date="2026-03-10" type="development">
       <description>
         <p>Fixes a crash when switching the downloads sort order while a download is in progress.

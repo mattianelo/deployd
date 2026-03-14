@@ -156,6 +156,7 @@ pub(super) fn build_model(
         downloads,
         all_downloads: Vec::new(),
         downloads_visible: false,
+        notifications_visible: false,
         active_download_id: None,
         active_download_count: 0,
         global_active_downloads: 0,

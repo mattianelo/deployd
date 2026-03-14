@@ -1,6 +1,7 @@
 pub mod deploy;
 pub mod downloads;
 pub mod external;
+pub mod notifications;
 pub mod free_fns;
 pub mod helpers;
 pub mod init;
@@ -18,6 +19,7 @@ use self::types::SearchScope;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
+use adw::prelude::*;
 use gtk::prelude::*;
 use gtk::glib;
 use relm4::abstractions::Toaster;
@@ -102,6 +104,8 @@ pub struct App {
     pub(crate) all_downloads: Vec<DownloadEntry>,
     /// Whether the downloads sidebar is visible.
     pub(crate) downloads_visible: bool,
+    /// Whether the notifications panel sidebar is visible.
+    pub(crate) notifications_visible: bool,
     /// ID of the currently active download (for status updates).
     pub(crate) active_download_id: Option<String>,
     /// Cached count of active downloads for current game (for sidebar view).
@@ -411,14 +415,21 @@ impl Component for App {
                         },
                     },
 
-                    pack_end = &gtk::Button {
+                    pack_end = &gtk::ToggleButton {
                         #[watch]
-                        set_label: &format!("{} external", model.external_changes_count),
-                        set_tooltip_text: Some("External files detected — click to create a managed mod from them"),
+                        set_label: &model.notifications_badge(),
                         #[watch]
-                        set_visible: model.external_changes_count > 0,
-                        connect_clicked => AppMsg::AbsorbExternalFiles,
-                        add_css_class: "flat",
+                        set_icon_name: if model.external_changes_count > 0 {
+                            "preferences-system-notifications-symbolic"
+                        } else {
+                            "emblem-ok-symbolic"
+                        },
+                        set_tooltip_text: Some("Notifications"),
+                        #[watch]
+                        set_active: model.notifications_visible,
+                        connect_toggled[sender] => move |btn| {
+                            sender.input(AppMsg::SetNotificationsVisible(btn.is_active()));
+                        },
                     },
 
                     pack_end = &gtk::ToggleButton {
@@ -503,6 +514,93 @@ impl Component for App {
                 },
 
                 adw::OverlaySplitView {
+                    set_sidebar_position: gtk::PackType::Start,
+                    set_max_sidebar_width: 360.0,
+                    set_min_sidebar_width: 280.0,
+                    set_vexpand: true,
+                    #[watch]
+                    set_show_sidebar: model.notifications_visible,
+
+                    #[wrap(Some)]
+                    set_sidebar = &adw::ToolbarView {
+                        set_width_request: 280,
+
+                        add_top_bar = &adw::HeaderBar {
+                            set_centering_policy: adw::CenteringPolicy::Loose,
+                            set_show_back_button: false,
+                            set_decoration_layout: Some(""),
+
+                            #[wrap(Some)]
+                            set_title_widget = &adw::WindowTitle {
+                                set_title: "Notifications",
+                            },
+
+                            pack_end = &gtk::Button {
+                                set_icon_name: "go-previous-symbolic",
+                                set_tooltip_text: Some("Hide notifications panel"),
+                                add_css_class: "flat",
+                                connect_clicked[sender] => move |_| {
+                                    sender.input(AppMsg::SetNotificationsVisible(false));
+                                },
+                            },
+                        },
+
+                        #[wrap(Some)]
+                        set_content = &gtk::Box {
+                            set_orientation: gtk::Orientation::Vertical,
+
+                            adw::StatusPage {
+                                #[watch]
+                                set_visible: model.external_changes_count == 0,
+                                set_icon_name: Some("emblem-ok-symbolic"),
+                                set_title: "All Caught Up",
+                                set_vexpand: true,
+                            },
+
+                            gtk::ScrolledWindow {
+                                #[watch]
+                                set_visible: model.external_changes_count > 0,
+                                set_vexpand: true,
+                                set_hscrollbar_policy: gtk::PolicyType::Never,
+
+                                gtk::ListBox {
+                                    set_selection_mode: gtk::SelectionMode::None,
+                                    add_css_class: "boxed-list",
+                                    set_margin_all: 8,
+
+                                    adw::ActionRow {
+                                        #[watch]
+                                        set_visible: model.external_changes_count > 0,
+                                        set_title: "External Changes",
+                                        #[watch]
+                                        set_subtitle: &format!(
+                                            "{} file{} detected outside mod manager",
+                                            model.external_changes_count,
+                                            if model.external_changes_count == 1 { "" } else { "s" }
+                                        ),
+
+                                        add_prefix = &gtk::Image {
+                                            set_icon_name: Some("dialog-warning-symbolic"),
+                                            set_valign: gtk::Align::Center,
+                                        },
+
+                                        add_suffix = &gtk::Button {
+                                            set_label: "Review",
+                                            set_valign: gtk::Align::Center,
+                                            add_css_class: "suggested-action",
+                                            add_css_class: "pill",
+                                            connect_clicked[sender] => move |_| {
+                                                sender.input(AppMsg::AbsorbExternalFiles);
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+
+                    #[wrap(Some)]
+                    set_content = &adw::OverlaySplitView {
                     set_vexpand: true,
                     #[watch]
                     set_show_sidebar: model.downloads_visible,
@@ -747,6 +845,7 @@ impl Component for App {
                     }
                     }
                     }
+                    },
                 },
 
                 // Rate limit status bar
@@ -885,6 +984,8 @@ impl Component for App {
             AppMsg::CheckUpdatesClicked => self.handle_check_updates(&sender),
             AppMsg::ToggleDownloads => self.handle_toggle_downloads(),
             AppMsg::SetDownloadsVisible(v) => self.handle_set_downloads_visible(v),
+            AppMsg::ToggleNotifications => self.handle_toggle_notifications(),
+            AppMsg::SetNotificationsVisible(v) => self.handle_set_notifications_visible(v),
             AppMsg::InstallDownload(idx) => self.handle_install_download(idx, &sender),
             AppMsg::ClearDownloadMetadata(idx) => self.handle_clear_download_metadata(idx, &sender),
             AppMsg::RenameDownload(idx) => self.handle_rename_download(idx, root, &sender),
