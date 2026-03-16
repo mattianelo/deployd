@@ -78,6 +78,8 @@ pub enum AppMsg {
     ToolWorkingDirChanged(String, String),
     /// User confirmed merging pending files into an existing mod.
     PreInstallMerge(String),
+    /// User chose to replace an existing mod (name-conflict dialog).
+    PreInstallReplace(String, i32),
     /// User chose to create a new mod despite the name conflict.
     PreInstallCreateNew,
     InstallProgress(f64, String),
@@ -104,6 +106,8 @@ pub enum AppMsg {
     /// Set notifications panel visibility explicitly.
     SetNotificationsVisible(bool),
     InstallDownload(DynamicIndex),
+    /// Reinstall an already-installed download, replacing the existing mod.
+    ReinstallDownload(DynamicIndex),
     ClearDownloadMetadata(DynamicIndex),
     RenameDownload(DynamicIndex),
     /// (download_id, new_name) — confirmed from the rename dialog

@@ -146,20 +146,20 @@ impl App {
             return;
         }
 
-        let conflict_id = {
+        let conflict = {
             let mod_name = self
                 .pending_install
                 .as_ref()
                 .map(|p| p.mod_name.clone())
                 .unwrap_or_default();
             if self.pending_replace_mod_id.is_none() {
-                self.find_mod_id_by_name(&mod_name)
+                self.find_mod_id_and_priority_by_name(&mod_name)
             } else {
                 None
             }
         };
 
-        if let Some(existing_id) = conflict_id {
+        if let Some((existing_id, existing_priority)) = conflict {
             let mod_name = self
                 .pending_install
                 .as_ref()
@@ -168,27 +168,36 @@ impl App {
             let dialog = gtk::AlertDialog::builder()
                 .message("Mod name already exists")
                 .detail(format!(
-                    "'{}' already exists. Merge the new files into it, or create a separate mod?",
+                    "'{}' already exists. Merge files into it, replace it, or create a separate mod?",
                     mod_name
                 ))
-                .buttons(["Create New", "Merge"])
+                .buttons(["Create New", "Merge", "Replace"])
                 .cancel_button(0)
                 .default_button(1)
                 .modal(true)
                 .build();
             let input_sender = sender.input_sender().clone();
             dialog.choose(Some(root), None::<&gio::Cancellable>, move |result| {
-                let msg = if result == Ok(1) {
-                    AppMsg::PreInstallMerge(existing_id)
-                } else {
-                    AppMsg::PreInstallCreateNew
+                let msg = match result {
+                    Ok(1) => AppMsg::PreInstallMerge(existing_id),
+                    Ok(2) => AppMsg::PreInstallReplace(existing_id, existing_priority),
+                    _ => AppMsg::PreInstallCreateNew,
                 };
                 let _ = input_sender.send(msg);
             });
             return;
         }
 
-        let pending = self.pending_install.take().unwrap();
+        self.proceed_with_install(sender);
+    }
+
+    /// Shared install path: takes `pending_install` and runs the actual add-mod async task,
+    /// honoring `pending_replace_mod_id` if set.
+    fn proceed_with_install(&mut self, sender: &ComponentSender<Self>) {
+        let pending = match self.pending_install.take() {
+            Some(p) => p,
+            None => return,
+        };
         let Some(file_list) = pending.file_list else {
             return;
         };
@@ -272,6 +281,16 @@ impl App {
         });
     }
 
+    pub(crate) fn handle_pre_install_replace(
+        &mut self,
+        existing_id: String,
+        existing_priority: i32,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.pending_replace_mod_id = Some((existing_id, existing_priority));
+        self.proceed_with_install(sender);
+    }
+
     pub(crate) fn handle_open_pre_install_dialog(
         &mut self,
         root: &adw::Window,
@@ -305,6 +324,7 @@ impl App {
         self.pending_install = None;
         self.pending_nexus_ids = None;
         self.pending_replace_mod_id = None;
+        self.reinstall_mode = false;
         self.installing = false;
         self.status_msg = None;
         self.install_progress = None;
@@ -445,6 +465,7 @@ impl App {
         self.pending_install = None;
         self.pending_nexus_ids = None;
         self.pending_replace_mod_id = None;
+        self.reinstall_mode = false;
         self.installing = false;
         self.status_msg = None;
         self.install_progress = None;
@@ -527,44 +548,7 @@ impl App {
     }
 
     pub(crate) fn handle_pre_install_create_new(&mut self, sender: &ComponentSender<Self>) {
-        let Some(pending) = self.pending_install.take() else { return };
-        let Some(file_list) = pending.file_list else { return };
-        let Some(tracker) = self.tracker.clone() else { return };
-
-        self.installing = true;
-        self.status_msg = Some(format!("Installing {}…", pending.mod_name));
-
-        let input_sender = sender.input_sender().clone();
-        sender.oneshot_command(async move {
-            let result: Result<AddResult, String> = async {
-                let progress_sender = input_sender.clone();
-                let on_progress: Option<Box<dyn Fn(usize, usize) + Send>> =
-                    Some(Box::new(move |done, total| {
-                        let frac = done as f64 / total as f64;
-                        let _ = progress_sender.send(AppMsg::InstallProgress(
-                            frac,
-                            format!("Caching file {done}/{total}"),
-                        ));
-                    }));
-                let result = installer::add_mod_with_file_list(
-                    file_list,
-                    &pending.game,
-                    &pending.mod_name,
-                    &tracker,
-                    pending.nexus_ids,
-                    pending.archive_hash,
-                    pending.file_targets,
-                    pending.stripped_wrapper,
-                    on_progress,
-                )
-                .await
-                .map_err(|e| e.to_string())?;
-                drop(pending.tmp_dir);
-                Ok(result)
-            }
-            .await;
-            AppCmdMsg::ModAdded(result, false)
-        });
+        self.proceed_with_install(sender);
     }
 }
 
@@ -618,28 +602,39 @@ impl App {
                     })
                 });
                 if let Some((old_mod_id, old_mod_name, old_priority)) = existing {
-                    let dialog = gtk::AlertDialog::builder()
-                        .message("Mod Already Installed")
-                        .detail(format!(
-                            "\"{old_mod_name}\" is already installed. Replace it or install alongside?"
-                        ))
-                        .buttons(["Cancel", "Install Alongside", "Replace"])
-                        .cancel_button(0)
-                        .default_button(1)
-                        .modal(true)
-                        .build();
-                    let input_sender = sender.input_sender().clone();
-                    dialog.choose(Some(root), None::<&gio::Cancellable>, move |result| {
-                        let _ = match result {
-                            Ok(1) => input_sender.send(AppMsg::OpenPreInstallDialog),
-                            Ok(2) => input_sender.send(AppMsg::OpenPreInstallDialogReplacing(
-                                old_mod_id,
-                                old_priority,
-                            )),
-                            _ => input_sender.send(AppMsg::PreInstallCancelled),
-                        };
-                    });
+                    if self.reinstall_mode {
+                        self.reinstall_mode = false;
+                        self.handle_open_pre_install_dialog_replacing(
+                            old_mod_id,
+                            old_priority,
+                            root,
+                            sender,
+                        );
+                    } else {
+                        let dialog = gtk::AlertDialog::builder()
+                            .message("Mod Already Installed")
+                            .detail(format!(
+                                "\"{old_mod_name}\" is already installed. Replace it or install alongside?"
+                            ))
+                            .buttons(["Cancel", "Install Alongside", "Replace"])
+                            .cancel_button(0)
+                            .default_button(1)
+                            .modal(true)
+                            .build();
+                        let input_sender = sender.input_sender().clone();
+                        dialog.choose(Some(root), None::<&gio::Cancellable>, move |result| {
+                            let _ = match result {
+                                Ok(1) => input_sender.send(AppMsg::OpenPreInstallDialog),
+                                Ok(2) => input_sender.send(AppMsg::OpenPreInstallDialogReplacing(
+                                    old_mod_id,
+                                    old_priority,
+                                )),
+                                _ => input_sender.send(AppMsg::PreInstallCancelled),
+                            };
+                        });
+                    }
                 } else {
+                    self.reinstall_mode = false;
                     self.open_pre_install_dialog(root, sender);
                 }
             }
@@ -679,32 +674,44 @@ impl App {
                     })
                 });
                 if let Some((old_mod_id, old_mod_name, old_priority)) = existing {
-                    let dialog = gtk::AlertDialog::builder()
-                        .message("Mod Already Installed")
-                        .detail(format!(
-                            "\"{old_mod_name}\" is already installed. Replace it or install alongside?"
-                        ))
-                        .buttons(["Cancel", "Install Alongside", "Replace"])
-                        .cancel_button(0)
-                        .default_button(1)
-                        .modal(true)
-                        .build();
-                    let input_sender = sender.input_sender().clone();
-                    dialog.choose(Some(root), None::<&gio::Cancellable>, move |result| {
-                        let _ = match result {
-                            Ok(1) => input_sender.send(AppMsg::OpenPreInstallDialog),
-                            Ok(2) => input_sender.send(AppMsg::OpenPreInstallDialogReplacing(
-                                old_mod_id,
-                                old_priority,
-                            )),
-                            _ => input_sender.send(AppMsg::PreInstallCancelled),
-                        };
-                    });
+                    if self.reinstall_mode {
+                        self.reinstall_mode = false;
+                        self.handle_open_pre_install_dialog_replacing(
+                            old_mod_id,
+                            old_priority,
+                            root,
+                            sender,
+                        );
+                    } else {
+                        let dialog = gtk::AlertDialog::builder()
+                            .message("Mod Already Installed")
+                            .detail(format!(
+                                "\"{old_mod_name}\" is already installed. Replace it or install alongside?"
+                            ))
+                            .buttons(["Cancel", "Install Alongside", "Replace"])
+                            .cancel_button(0)
+                            .default_button(1)
+                            .modal(true)
+                            .build();
+                        let input_sender = sender.input_sender().clone();
+                        dialog.choose(Some(root), None::<&gio::Cancellable>, move |result| {
+                            let _ = match result {
+                                Ok(1) => input_sender.send(AppMsg::OpenPreInstallDialog),
+                                Ok(2) => input_sender.send(AppMsg::OpenPreInstallDialogReplacing(
+                                    old_mod_id,
+                                    old_priority,
+                                )),
+                                _ => input_sender.send(AppMsg::PreInstallCancelled),
+                            };
+                        });
+                    }
                 } else {
+                    self.reinstall_mode = false;
                     self.open_pre_install_dialog(root, sender);
                 }
             }
             Err(e) => {
+                self.reinstall_mode = false;
                 if let Some(dl_id) = self.active_download_id.take() {
                     self.update_download_status(
                         &dl_id,

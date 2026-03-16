@@ -132,6 +132,9 @@ pub struct App {
     pub(crate) external_changes_count: usize,
     /// When set, (mod_id, old_priority) to remove after the pending install completes (replace flow).
     pub(crate) pending_replace_mod_id: Option<(String, i32)>,
+    /// When true, the next ModPrepared result should skip the "Already Installed" dialog and go
+    /// straight into the replace flow (set by the Downloads panel "Reinstall" button).
+    pub(crate) reinstall_mode: bool,
     /// ScrolledWindow wrapping the mod list — held so we can restore scroll position.
     pub(crate) mod_scroll: gtk::ScrolledWindow,
     /// ScrolledWindow wrapping the downloads list — held so we can restore scroll position.
@@ -963,6 +966,9 @@ impl Component for App {
                 self.handle_tool_working_dir_changed(name, dir, &sender)
             }
             AppMsg::PreInstallMerge(mod_id) => self.handle_pre_install_merge(mod_id, &sender),
+            AppMsg::PreInstallReplace(id, priority) => {
+                self.handle_pre_install_replace(id, priority, &sender)
+            }
             AppMsg::PreInstallCreateNew => self.handle_pre_install_create_new(&sender),
             AppMsg::InstallProgress(frac, msg) => self.handle_install_progress(frac, msg),
             AppMsg::ToolManagerClosed => self.handle_tool_manager_closed(),
@@ -987,6 +993,7 @@ impl Component for App {
             AppMsg::ToggleNotifications => self.handle_toggle_notifications(),
             AppMsg::SetNotificationsVisible(v) => self.handle_set_notifications_visible(v),
             AppMsg::InstallDownload(idx) => self.handle_install_download(idx, &sender),
+            AppMsg::ReinstallDownload(idx) => self.handle_reinstall_download(idx, &sender),
             AppMsg::ClearDownloadMetadata(idx) => self.handle_clear_download_metadata(idx, &sender),
             AppMsg::RenameDownload(idx) => self.handle_rename_download(idx, root, &sender),
             AppMsg::ConfirmDownloadRename(id, name) => {

@@ -13,6 +13,7 @@ pub struct DownloadRow {
 #[derive(Debug)]
 pub enum DownloadRowOutput {
     Install(DynamicIndex),
+    Reinstall(DynamicIndex),
     FetchMetadata(DynamicIndex),
     ClearMetadata(DynamicIndex),
     Rename(DynamicIndex),
@@ -152,6 +153,20 @@ impl FactoryComponent for DownloadRow {
                     set_visible: self.entry.is_installable(),
                     connect_clicked[sender, index] => move |_| {
                         sender.output(DownloadRowOutput::Install(index.clone())).unwrap();
+                    }
+                },
+
+                gtk::Button {
+                    set_icon_name: "view-refresh-symbolic",
+                    set_tooltip_text: Some("Reinstall (replace existing mod)"),
+                    set_valign: gtk::Align::Center,
+                    add_css_class: "flat",
+                    add_css_class: "circular",
+                    #[watch]
+                    set_visible: self.entry.status == DownloadStatus::Installed
+                        && self.entry.archive_path.is_some(),
+                    connect_clicked[sender, index] => move |_| {
+                        sender.output(DownloadRowOutput::Reinstall(index.clone())).ok();
                     }
                 },
 

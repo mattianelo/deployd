@@ -186,6 +186,15 @@ impl App {
         }
     }
 
+    pub(crate) fn handle_reinstall_download(
+        &mut self,
+        index: DynamicIndex,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.reinstall_mode = true;
+        self.handle_install_download(index, sender);
+    }
+
     pub(crate) fn handle_install_download(
         &mut self,
         index: DynamicIndex,

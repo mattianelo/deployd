@@ -160,14 +160,14 @@ impl App {
         }
     }
 
-    /// Return the mod ID of an existing mod whose name matches `name` (case-insensitive),
-    /// or `None` if no such mod exists in the current game's list.
-    pub(crate) fn find_mod_id_by_name(&self, name: &str) -> Option<String> {
+    /// Return `(mod_id, priority)` for an existing mod whose name matches `name`
+    /// (case-insensitive), or `None` if not found.
+    pub(crate) fn find_mod_id_and_priority_by_name(&self, name: &str) -> Option<(String, i32)> {
         self.mods.iter().find_map(|item| {
             if let ModListItemKind::Mod(ref m) = item.kind
                 && m.mod_entry.name.eq_ignore_ascii_case(name)
             {
-                Some(m.mod_entry.id.clone())
+                Some((m.mod_entry.id.clone(), m.mod_entry.priority))
             } else {
                 None
             }

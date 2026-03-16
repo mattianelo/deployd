@@ -60,6 +60,7 @@ pub(super) fn build_model(
             .launch_default()
             .forward(sender.input_sender(), |output| match output {
                 DownloadRowOutput::Install(index) => AppMsg::InstallDownload(index),
+                DownloadRowOutput::Reinstall(index) => AppMsg::ReinstallDownload(index),
                 DownloadRowOutput::FetchMetadata(index) => AppMsg::FetchDownloadMetadata(index),
                 DownloadRowOutput::ClearMetadata(index) => AppMsg::ClearDownloadMetadata(index),
                 DownloadRowOutput::Rename(index) => AppMsg::RenameDownload(index),
@@ -171,6 +172,7 @@ pub(super) fn build_model(
         pending_external_files: Vec::new(),
         external_changes_count: 0,
         pending_replace_mod_id: None,
+        reinstall_mode: false,
         mod_scroll,
         downloads_scroll,
         #[cfg(feature = "loot")]

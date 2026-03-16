@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- **"Replace" option in name-conflict dialog** — when installing a mod whose name already exists, you can now choose Replace in addition to Merge and Create New. Replace swaps the existing mod in-place, preserving its load-order position and plugin states.
+- **Reinstall button in Downloads panel** — installed downloads now show a refresh button. Clicking it re-extracts the archive and opens the pre-install dialog ready to replace the existing mod, skipping the "already installed" prompt.
+
 ### Fixed
 
 - **Plugin reordering no longer blocked by unrelated ESPs** — case-insensitive master lookups now correctly resolve to the earliest-loading copy of a plugin, preventing false "master must load first" errors when vanilla and managed plugins share the same filename (different case).
