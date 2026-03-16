@@ -46,18 +46,26 @@ impl App {
                             if let Some(rl) = rate_limits {
                                 let _ = input_sender.send(AppMsg::RateLimitUpdated(rl));
                             }
-                            // Find the main file with highest file_id
-                            if let Some(latest_file) = files_resp
-                                .files
-                                .iter()
-                                .filter(|f| f.is_primary)
-                                .max_by_key(|f| f.file_id)
-                            {
-                                let latest_ver =
-                                    latest_file.version.as_deref().unwrap_or("");
+                            // Compare against the specific file that was installed (by
+                            // nexus_file_id) so optional/non-primary files are not
+                            // falsely flagged when only the main file version changes.
+                            // Fall back to the latest primary file when the installed
+                            // file is no longer listed (e.g. removed from Nexus).
+                            let installed_file = m.nexus_file_id.and_then(|fid| {
+                                files_resp.files.iter().find(|f| f.file_id == fid)
+                            });
+                            let reference_file = installed_file.or_else(|| {
+                                files_resp
+                                    .files
+                                    .iter()
+                                    .filter(|f| f.is_primary)
+                                    .max_by_key(|f| f.file_id)
+                            });
+                            if let Some(ref_file) = reference_file {
+                                let latest_ver = ref_file.version.as_deref().unwrap_or("");
                                 let current_ver = m.version.as_deref().unwrap_or("");
-                                // Skip if installed version is unknown — we can't
-                                // compare and would always report a false update.
+                                // Skip if either version is unknown — we can't compare
+                                // and would always report a false update.
                                 if !latest_ver.is_empty()
                                     && !current_ver.is_empty()
                                     && latest_ver != current_ver

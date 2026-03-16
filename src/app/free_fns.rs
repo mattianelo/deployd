@@ -52,7 +52,7 @@ pub(crate) fn parse_nexus_mod_id(filename: &str) -> Option<i64> {
 /// Check whether a proposed plugin ordering violates any master-dependency constraint.
 ///
 /// `new_order` is the ordered list of `(plugin_id, filename)` after the proposed move.
-/// `masters_map` maps `plugin_id → Vec<master_filename>` (case-insensitive filenames from TES4 header).
+/// `masters_map` maps `plugin_id → Vec<master_filename>` (lowercased; loaded via `load_game_data`).
 ///
 /// Returns the filename of the first master found to load *after* its dependent, or `None` if the
 /// order is valid.
@@ -60,11 +60,14 @@ pub(crate) fn check_order_violates_masters(
     new_order: &[(String, String)],
     masters_map: &HashMap<String, Vec<String>>,
 ) -> Option<String> {
-    let pos: HashMap<String, usize> = new_order
-        .iter()
-        .enumerate()
-        .map(|(i, (_, f))| (f.to_lowercase(), i))
-        .collect();
+    // Keep the *first* (earliest-loading) occurrence of each lowercase filename.
+    // HashMap::collect() would keep the last entry for duplicate keys, which causes false
+    // violations when a vanilla plugin (position 0) and a same-named managed plugin (higher
+    // position) both appear in the list (show_vanilla_plugins = true).
+    let mut pos: HashMap<String, usize> = HashMap::new();
+    for (i, (_, f)) in new_order.iter().enumerate() {
+        pos.entry(f.to_lowercase()).or_insert(i);
+    }
 
     for (i, (plugin_id, _)) in new_order.iter().enumerate() {
         let Some(masters) = masters_map.get(plugin_id) else {
@@ -170,10 +173,15 @@ pub(crate) async fn load_game_data(
         .list_plugins(game_id)
         .await
         .map_err(|e| e.to_string())?;
-    let plugin_masters = tracker
+    let plugin_masters: HashMap<String, Vec<String>> = tracker
         .list_all_plugin_masters(game_id)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|(plugin_id, masters)| {
+            (plugin_id, masters.into_iter().map(|m| m.to_lowercase()).collect())
+        })
+        .collect();
     let overrides = tracker
         .compute_overrides(game_id)
         .await

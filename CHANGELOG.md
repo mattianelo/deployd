@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Plugin reordering no longer blocked by unrelated ESPs** — case-insensitive master lookups now correctly resolve to the earliest-loading copy of a plugin, preventing false "master must load first" errors when vanilla and managed plugins share the same filename (different case).
+- **Update check no longer flags optional files as outdated** — optional, patch, and texture files are now compared against their own specific Nexus file version rather than the main file's version, eliminating false update notifications.
+
 ---
 
 ## [0.9.5] — 2026-03-14 · Public Beta
