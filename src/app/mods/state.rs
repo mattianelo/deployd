@@ -137,6 +137,13 @@ impl App {
         let managed_lower: HashSet<String> =
             plugins.iter().map(|p| p.filename.to_lowercase()).collect();
 
+        // Map lowercase filename → on-disk filename for all plugins present in the Data dir.
+        // Used to resolve display casing for any plugin regardless of what was in the archive.
+        let on_disk_name_map: HashMap<String, String> = vanilla_plugins
+            .iter()
+            .map(|n| (n.to_lowercase(), n.clone()))
+            .collect();
+
         let mut installed = managed_lower.clone();
         installed.extend(vanilla_plugins.iter().map(|n| n.to_lowercase()));
 
@@ -180,6 +187,7 @@ impl App {
                         load_order: 9999,
                         enabled: true,
                     },
+                    display_filename: filename.clone(),
                     mod_name: "Vanilla / DLC".to_string(),
                     order_label: String::new(),
                     missing_masters: vec![],
@@ -216,8 +224,13 @@ impl App {
             #[cfg(not(feature = "loot"))]
             let dirty_info: Option<PluginDirtyInfo> = None;
 
+            let display_filename = on_disk_name_map
+                .get(&p.filename.to_lowercase())
+                .cloned()
+                .unwrap_or_else(|| p.filename.clone());
             guard.push_back(PluginRowInit {
                 plugin: p,
+                display_filename,
                 mod_name,
                 order_label: format!("#{}", i + 1),
                 missing_masters,

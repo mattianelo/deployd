@@ -252,6 +252,9 @@ impl Tracker {
         // Migration: add install_target column to mods
         migrations::migrate_install_target_column(&pool).await?;
 
+        // Migration: add notes column to mods
+        migrations::migrate_notes_column(&pool).await?;
+
         // Migration: fix version/latest_version columns populated by old code
         if let Err(e) = migrations::migrate_version_columns(&pool).await {
             eprintln!("Version column migration failed (non-fatal): {e}");

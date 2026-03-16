@@ -324,6 +324,7 @@ pub async fn add_mod_with_file_list(
         nexus_description: None,
         latest_version: None,
         install_target: mod_install_target,
+        notes: None,
     };
 
     tracker.insert_mod(&mod_entry).await?;

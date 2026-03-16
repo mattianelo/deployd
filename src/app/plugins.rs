@@ -122,6 +122,7 @@ impl App {
                 .filter_map(|&idx| {
                     guard.get(idx).map(|row| PluginRowInit {
                         plugin: row.plugin.clone(),
+                        display_filename: row.display_filename.clone(),
                         mod_name: row.mod_name.clone(),
                         order_label: row.order_label.clone(),
                         missing_masters: row.missing_masters.clone(),
@@ -254,6 +255,7 @@ impl App {
                             load_order: 9999,
                             enabled: true,
                         },
+                        display_filename: filename.clone(),
                         mod_name: "Vanilla / DLC".to_string(),
                         order_label: String::new(),
                         missing_masters: vec![],

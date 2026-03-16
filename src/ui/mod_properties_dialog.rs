@@ -20,6 +20,7 @@ pub struct ModPropertiesInit {
 pub struct ModPropertiesDialog {
     mod_id: String,
     name: String,
+    notes: String,
     install_target: InstallTarget,
     version: Option<String>,
     author: Option<String>,
@@ -44,6 +45,7 @@ pub struct ModPropertiesDialog {
 #[derive(Debug)]
 pub enum ModPropertiesMsg {
     NameChanged(String),
+    NotesChanged(String),
     SetTarget(InstallTarget),
     SetFileTarget(usize, InstallTarget),
     SetAllFileTargets(InstallTarget),
@@ -60,6 +62,7 @@ pub enum ModPropertiesMsg {
 pub enum ModPropertiesOutput {
     Applied {
         name: String,
+        notes: String,
         install_target: InstallTarget,
         /// Maps current game_rel_lowercase → desired InstallTarget for every file.
         file_targets: HashMap<String, InstallTarget>,
@@ -133,6 +136,34 @@ impl SimpleComponent for ModPropertiesDialog {
                             set_wrap: true,
                             add_css_class: "dim-label",
                             add_css_class: "caption",
+                        },
+
+                        // Notes
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Vertical,
+                            set_spacing: 4,
+
+                            gtk::Label {
+                                set_label: "Notes",
+                                set_halign: gtk::Align::Start,
+                                add_css_class: "heading",
+                            },
+
+                            gtk::ScrolledWindow {
+                                set_min_content_height: 80,
+                                set_max_content_height: 200,
+                                set_hscrollbar_policy: gtk::PolicyType::Never,
+                                add_css_class: "card",
+
+                                #[name = "notes_view"]
+                                gtk::TextView {
+                                    set_wrap_mode: gtk::WrapMode::WordChar,
+                                    set_top_margin: 6,
+                                    set_bottom_margin: 6,
+                                    set_left_margin: 6,
+                                    set_right_margin: 6,
+                                },
+                            },
                         },
 
                         // Global install target — Bethesda only (REDEngine has no Data/Root split)
@@ -327,6 +358,7 @@ impl SimpleComponent for ModPropertiesDialog {
         let mut model = ModPropertiesDialog {
             mod_id: mod_entry.id,
             name: mod_entry.name,
+            notes: mod_entry.notes.unwrap_or_default(),
             install_target: mod_entry.install_target,
             version: mod_entry.version,
             author: mod_entry.author,
@@ -356,6 +388,18 @@ impl SimpleComponent for ModPropertiesDialog {
             });
         }
 
+        {
+            let buffer = widgets.notes_view.buffer();
+            buffer.set_text(&model.notes);
+            let input_sender = sender.input_sender().clone();
+            buffer.connect_changed(move |buf| {
+                let text = buf
+                    .text(&buf.start_iter(), &buf.end_iter(), false)
+                    .to_string();
+                let _ = input_sender.send(ModPropertiesMsg::NotesChanged(text));
+            });
+        }
+
         root.present();
 
         ComponentParts { model, widgets }
@@ -365,6 +409,9 @@ impl SimpleComponent for ModPropertiesDialog {
         match msg {
             ModPropertiesMsg::NameChanged(name) => {
                 self.name = name;
+            }
+            ModPropertiesMsg::NotesChanged(notes) => {
+                self.notes = notes;
             }
             ModPropertiesMsg::SetTarget(target) => {
                 // Global toggle: also bulk-update all per-file targets so they stay
@@ -526,6 +573,7 @@ impl SimpleComponent for ModPropertiesDialog {
                     .collect();
                 let _ = sender.output(ModPropertiesOutput::Applied {
                     name: self.name.clone(),
+                    notes: self.notes.clone(),
                     install_target: self.install_target.clone(),
                     file_targets,
                 });

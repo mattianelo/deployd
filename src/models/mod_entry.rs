@@ -45,4 +45,5 @@ pub struct ModEntry {
     pub nexus_description: Option<String>,
     pub latest_version: Option<String>,
     pub install_target: InstallTarget,
+    pub notes: Option<String>,
 }

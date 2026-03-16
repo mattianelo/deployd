@@ -45,12 +45,14 @@ impl App {
                 .forward(sender.input_sender(), move |output| match output {
                     ModPropertiesOutput::Applied {
                         name,
+                        notes,
                         install_target,
                         file_targets,
                     } => AppMsg::ModPropertiesApplied {
                         mod_id: mod_id_for_output.clone(),
                         mod_idx: idx,
                         name,
+                        notes,
                         install_target,
                         file_targets,
                     },
@@ -76,6 +78,7 @@ impl App {
         mod_id: String,
         mod_idx: usize,
         name: String,
+        notes: String,
         install_target: InstallTarget,
         file_targets: HashMap<String, InstallTarget>,
     ) {
@@ -89,14 +92,17 @@ impl App {
             {
                 row.mod_entry.name = name.clone();
                 row.mod_entry.install_target = install_target.clone();
+                row.mod_entry.notes = if notes.is_empty() { None } else { Some(notes.clone()) };
             }
         }
 
         let mod_id_clone = mod_id.clone();
         let name_clone = name.clone();
+        let notes_clone = notes.clone();
         let install_target_clone = install_target.clone();
         tokio::spawn(async move {
             let _ = tracker.update_mod_name(&mod_id_clone, &name_clone).await;
+            let _ = tracker.update_mod_notes(&mod_id_clone, &notes_clone).await;
             let _ = tracker
                 .update_file_targets(&mod_id_clone, &file_targets)
                 .await;

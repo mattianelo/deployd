@@ -145,6 +145,22 @@ pub(super) async fn migrate_install_target_column(pool: &SqlitePool) -> Result<(
     Ok(())
 }
 
+/// Add notes column to mods table if it doesn't exist yet.
+pub(super) async fn migrate_notes_column(pool: &SqlitePool) -> Result<()> {
+    let columns: Vec<(String,)> = sqlx::query_as("PRAGMA table_info(mods)")
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(|row: (i32, String, String, i32, Option<String>, i32)| (row.1,))
+        .collect();
+    if !columns.iter().any(|(n,)| n == "notes") {
+        sqlx::query("ALTER TABLE mods ADD COLUMN notes TEXT")
+            .execute(pool)
+            .await?;
+    }
+    Ok(())
+}
+
 /// Add file_size and mtime_secs columns to vanilla_files if missing.
 ///
 /// Rows created before this migration have NULL size/mtime and cannot be used

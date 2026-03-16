@@ -7,6 +7,10 @@ use crate::models::plugin::{Plugin, PluginDirtyInfo};
 /// Init data for a plugin row.
 pub struct PluginRowInit {
     pub plugin: Plugin,
+    /// Display name shown in the panel. May differ from `plugin.filename` in casing
+    /// when the on-disk file has different casing than what was stored in the archive.
+    /// All internal operations (plugins.txt, DB, ordering) still use `plugin.filename`.
+    pub display_filename: String,
     pub mod_name: String,
     pub order_label: String,
     pub missing_masters: Vec<String>,
@@ -24,6 +28,7 @@ pub struct PluginRowInit {
 #[derive(Debug)]
 pub struct PluginRow {
     pub plugin: Plugin,
+    pub display_filename: String,
     pub mod_name: String,
     pub order_label: String,
     pub missing_masters: Vec<String>,
@@ -83,7 +88,7 @@ impl FactoryComponent for PluginRow {
 
                 gtk::Label {
                     #[watch]
-                    set_label: &self.plugin.filename,
+                    set_label: &self.display_filename,
                     set_hexpand: true,
                     set_halign: gtk::Align::Start,
                     set_ellipsize: gtk::pango::EllipsizeMode::End,
@@ -137,6 +142,7 @@ impl FactoryComponent for PluginRow {
     fn init_model(init: Self::Init, _index: &DynamicIndex, _sender: FactorySender<Self>) -> Self {
         Self {
             plugin: init.plugin,
+            display_filename: init.display_filename,
             mod_name: init.mod_name,
             order_label: init.order_label,
             missing_masters: init.missing_masters,

@@ -530,6 +530,7 @@ impl App {
                     nexus_description: None,
                     latest_version: None,
                     install_target: crate::models::mod_entry::InstallTarget::Data,
+                    notes: None,
                 };
                 tracker
                     .insert_mod(&entry)

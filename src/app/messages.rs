@@ -139,6 +139,7 @@ pub enum AppMsg {
         mod_id: String,
         mod_idx: usize,
         name: String,
+        notes: String,
         install_target: InstallTarget,
         /// Per-file targets: current game_rel_lowercase → desired InstallTarget.
         file_targets: HashMap<String, InstallTarget>,

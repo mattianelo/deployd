@@ -59,11 +59,12 @@ impl Tracker {
                 Option<String>,
                 Option<String>,
                 Option<String>,
+                Option<String>,
             ),
         >(
             "SELECT id, game_id, name, archive_hash, installed_at, enabled, priority,
                     nexus_mod_id, nexus_file_id, nexus_domain, version, author,
-                    nexus_description, latest_version, install_target
+                    nexus_description, latest_version, install_target, notes
              FROM mods WHERE game_id = ? ORDER BY priority ASC",
         )
         .bind(game_id)
@@ -90,6 +91,7 @@ impl Tracker {
                     nexus_description,
                     latest_version,
                     install_target,
+                    notes,
                 )| {
                     ModEntry {
                         id,
@@ -107,6 +109,7 @@ impl Tracker {
                         nexus_description,
                         latest_version,
                         install_target: InstallTarget::from(install_target.as_deref()),
+                        notes,
                     }
                 },
             )
@@ -171,6 +174,18 @@ impl Tracker {
             .execute(&self.pool)
             .await
             .context("Failed to set all mods enabled")?;
+        Ok(())
+    }
+
+    /// Update a mod's user notes. Stores NULL when the string is empty.
+    pub async fn update_mod_notes(&self, mod_id: &str, notes: &str) -> Result<()> {
+        let value: Option<&str> = if notes.is_empty() { None } else { Some(notes) };
+        sqlx::query("UPDATE mods SET notes = ? WHERE id = ?")
+            .bind(value)
+            .bind(mod_id)
+            .execute(&self.pool)
+            .await
+            .context("Failed to update mod notes")?;
         Ok(())
     }
 

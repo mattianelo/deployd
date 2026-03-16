@@ -298,6 +298,21 @@ impl FactoryComponent for ModListItem {
                         add_css_class: "warning",
                     },
 
+                    gtk::Image {
+                        set_icon_name: Some("emblem-documents-symbolic"),
+                        #[watch]
+                        set_tooltip_text: Some(&if let ModListItemKind::Mod(r) = &self.kind {
+                            r.mod_entry.notes.as_deref().unwrap_or("").to_string()
+                        } else {
+                            String::new()
+                        }),
+                        #[watch]
+                        set_visible: matches!(
+                            &self.kind,
+                            ModListItemKind::Mod(r) if r.mod_entry.notes.as_ref().is_some_and(|n| !n.is_empty())
+                        ),
+                    },
+
                     gtk::Button {
                         set_icon_name: "user-trash-symbolic",
                         set_tooltip_text: Some("Remove mod"),
