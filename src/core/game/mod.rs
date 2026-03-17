@@ -5,7 +5,9 @@ mod metadata;
 mod tools;
 mod wine;
 
-use crate::models::game::GameEngine;
+use std::path::PathBuf;
+
+use crate::models::game::{Game, GameEngine};
 use self::known_games::{GameStore, KNOWN_GAMES};
 
 pub use detection::detect_games;
@@ -24,6 +26,22 @@ pub struct KnownGameOption {
     pub data_subdir: &'static str,
     pub engine: &'static GameEngine,
     pub experimental: bool,
+}
+
+/// Return the directory where mods should be deployed for a game.
+///
+/// For Eclipse engine games (Dragon Age: Origins), mods live inside the Wine prefix
+/// user directory rather than the game installation folder. Falls back to
+/// `game.data_dir()` when the Wine prefix cannot be detected.
+pub fn deploy_dir(game: &Game) -> PathBuf {
+    if game.engine == GameEngine::Eclipse {
+        if let Some(known) = KNOWN_GAMES.iter().find(|k| k.deployd_id == game.id) {
+            if let Some(user_dir) = wine::find_wine_user_dir(known, game) {
+                return user_dir.join(&game.data_subdir);
+            }
+        }
+    }
+    game.data_dir()
 }
 
 /// Return all supported game types for the "Add Custom Game" dropdown.

@@ -88,6 +88,9 @@ pub enum AppMsg {
     SettingsClosed,
     /// Open the "Manage Games" setup dialog.
     ManageGamesClicked,
+    /// Manage Games dialog was closed without confirming. Hides any games that
+    /// auto-triggered the dialog so they do not re-prompt on the next startup.
+    ManageGamesClosed,
     /// Games confirmed from the setup dialog; apply and persist the configuration.
     /// Second argument is the list of game IDs the user unchecked (to be hidden).
     GamesConfigured(Vec<GameConfig>, Vec<String>),
@@ -304,4 +307,6 @@ pub enum AppCmdMsg {
     SavesSynced(Result<save_manager::SaveSyncResult, String>),
     /// Result of the self-update AppImage download + replace.
     AppUpdateResult(Result<(), String>),
+    /// All games have been persisted to DB after Manage Games; safe to select the first game now.
+    GamesPersisted,
 }

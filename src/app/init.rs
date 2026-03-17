@@ -188,6 +188,7 @@ pub(super) fn build_model(
         update_banner: adw::Banner::new(""),
         update_url: None,
         running_as_appimage: std::env::var("APPIMAGE").is_ok(),
+        pending_new_game_ids: vec![],
     };
 
     // Profile rename popover

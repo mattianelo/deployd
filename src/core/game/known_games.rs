@@ -224,15 +224,16 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         experimental: false,
     },
     // ── Dragon Age: Origins (experimental) ───────────────────────────────────
-    // data_subdir points directly to the override folder so loose-file mods
-    // deploy correctly. For .dazip archives (zip with a package/ subfolder),
-    // rules_for_game strips the "package/" prefix so the inner files land here too.
+    // data_subdir is relative to the Wine user dir (not the game root), because
+    // deploy_dir() for Eclipse games resolves <wine_user>/<data_subdir>.
+    // For .dazip archives (zip with a package/ subfolder), rules_for_game strips
+    // the "package/" prefix so the inner files land directly in override/.
     KnownGame {
         store: GameStore::Gog,
         heroic_app_name: "1949616134",
         deployd_id: "dragonage",
         title: "Dragon Age: Origins - Ultimate Edition",
-        data_subdir: "packages/core/override",
+        data_subdir: "Documents/BioWare/Dragon Age/packages/core/override",
         appdata_folders: &[],
         custom_ini_name: "",
         bethesda_reg_key: "",
@@ -246,7 +247,7 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         heroic_app_name: "47810",
         deployd_id: "dragonage-steam",
         title: "Dragon Age: Origins",
-        data_subdir: "packages/core/override",
+        data_subdir: "Documents/BioWare/Dragon Age/packages/core/override",
         appdata_folders: &[],
         custom_ini_name: "",
         bethesda_reg_key: "",

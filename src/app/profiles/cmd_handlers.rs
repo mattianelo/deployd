@@ -63,7 +63,21 @@ impl App {
                     }
                 }
 
-                if data.persisted_games.is_empty() && data.hidden_game_ids.is_empty() {
+                let persisted_ids: std::collections::HashSet<&str> =
+                    data.persisted_games.iter().map(|p| p.id.as_str()).collect();
+                let hidden_set: std::collections::HashSet<&str> =
+                    data.hidden_game_ids.iter().map(String::as_str).collect();
+                let new_ids: Vec<String> = self
+                    .games
+                    .iter()
+                    .filter(|g| {
+                        !persisted_ids.contains(g.id.as_str())
+                            && !hidden_set.contains(g.id.as_str())
+                    })
+                    .map(|g| g.id.clone())
+                    .collect();
+                if !new_ids.is_empty() {
+                    self.pending_new_game_ids = new_ids;
                     sender.input(AppMsg::ManageGamesClicked);
                 }
                 self.collapsed_groups = data

@@ -60,6 +60,10 @@ impl App {
         root: &adw::Window,
         sender: &ComponentSender<Self>,
     ) {
+        // User explicitly opened the dialog — clear any auto-trigger tracking
+        // so that closing without confirming does not hide existing games.
+        self.pending_new_game_ids.clear();
+
         let detected: Vec<crate::models::game::Game> = self.games.clone();
 
         self.game_setup_dialog = Some(
@@ -70,7 +74,7 @@ impl App {
                     GameSetupOutput::Confirmed { enabled, hidden_ids } => {
                         AppMsg::GamesConfigured(enabled, hidden_ids)
                     }
-                    GameSetupOutput::Closed => AppMsg::Noop,
+                    GameSetupOutput::Closed => AppMsg::ManageGamesClosed,
                 }),
         );
     }
@@ -103,6 +107,7 @@ impl App {
         if let Some(tracker) = self.tracker.clone() {
             let configs_for_db = configs.clone();
             let hidden_for_db = hidden_ids;
+            let first_game_id = self.games.first().map(|g| g.id.clone());
             sender.oneshot_command(async move {
                 for cfg in &configs_for_db {
                     let engine_str = match cfg.game.engine {
@@ -125,21 +130,37 @@ impl App {
                 for id in &hidden_for_db {
                     let _ = tracker.hide_game(id).await;
                 }
-                AppCmdMsg::PrioritySaved(Ok(()))
+                if let Some(id) = first_game_id {
+                    let _ = tracker.set_setting("last_game_id", &id).await;
+                }
+                AppCmdMsg::GamesPersisted
             });
         }
 
+        self.pending_new_game_ids.clear();
         self.selected_game_idx = 0;
         self.game_dropdown.set_selected(0);
-        if let Some(game) = self.games.first() {
-            let game_id = game.id.clone();
-            if let Some(tracker) = self.tracker.clone() {
-                sender.oneshot_command(async move {
-                    let _ = tracker.set_setting("last_game_id", &game_id).await;
-                    AppCmdMsg::PrioritySaved(Ok(()))
-                });
+    }
+
+    pub(crate) fn handle_manage_games_closed(&mut self, sender: &ComponentSender<Self>) {
+        let ids = std::mem::take(&mut self.pending_new_game_ids);
+        if ids.is_empty() {
+            return;
+        }
+        // Remove the new (unconfirmed) games from the in-memory list and the dropdown.
+        for id in &ids {
+            if let Some(idx) = self.games.iter().position(|g| &g.id == id) {
+                self.games.remove(idx);
+                self.game_model.remove(idx as u32);
             }
-            sender.input(AppMsg::GameSelected(0));
+        }
+        if let Some(tracker) = self.tracker.clone() {
+            sender.oneshot_command(async move {
+                for id in &ids {
+                    let _ = tracker.hide_game(id).await;
+                }
+                AppCmdMsg::PrioritySaved(Ok(()))
+            });
         }
     }
 

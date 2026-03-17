@@ -12,6 +12,9 @@
 
 ### Fixed
 
+- **Dragon Age: Origins mod deploy path corrected** — mods are now deployed to the Wine prefix user directory (`steamuser/Documents/BioWare/Dragon Age/packages/core/override`) instead of inside the game's installation folder.
+- **No more spurious "profile could not be created" error** — switching to a newly confirmed game no longer shows a profile error because the game is now guaranteed to be saved to the database before the profile is created.
+- **Newly detected games prompt before being managed** — if Deployd detects a game that has not been confirmed yet (e.g. after installing a new game), the Manage Games dialog now opens automatically so you can review and approve it before it appears in the list.
 - **Plugin reordering no longer blocked by unrelated ESPs** — case-insensitive master lookups now correctly resolve to the earliest-loading copy of a plugin, preventing false "master must load first" errors when vanilla and managed plugins share the same filename (different case).
 - **Update check no longer flags optional files as outdated** — optional, patch, and texture files are now compared against their own specific Nexus file version rather than the main file's version, eliminating false update notifications.
 

@@ -168,6 +168,10 @@ pub struct App {
     /// True when the app is running as an AppImage (APPIMAGE env var is set).
     /// Controls whether the banner button triggers a self-update or opens the browser.
     pub(crate) running_as_appimage: bool,
+    /// IDs of newly-detected games that auto-triggered the Manage Games dialog.
+    /// If the dialog is dismissed without confirming, these are hidden so they
+    /// do not keep re-triggering the prompt on every startup.
+    pub(crate) pending_new_game_ids: Vec<String>,
 }
 
 #[relm4::component(pub)]
@@ -975,6 +979,7 @@ impl Component for App {
             AppMsg::SettingsClicked => self.handle_settings_clicked(root, &sender),
             AppMsg::SettingsClosed => self.handle_settings_closed(&sender),
             AppMsg::ManageGamesClicked => self.handle_manage_games_clicked(root, &sender),
+            AppMsg::ManageGamesClosed => self.handle_manage_games_closed(&sender),
             AppMsg::GamesConfigured(configs, hidden_ids) => {
                 self.handle_games_configured(configs, hidden_ids, &sender)
             }
@@ -1180,6 +1185,7 @@ impl Component for App {
             AppCmdMsg::SavesSynced(result) => self.handle_cmd_saves_synced(result),
             AppCmdMsg::LastDeployedProfileLoaded(id) => self.last_deployed_profile_id = id,
             AppCmdMsg::AppUpdateResult(result) => self.handle_cmd_app_update_result(result),
+            AppCmdMsg::GamesPersisted => sender.input(AppMsg::GameSelected(0)),
         }
     }
 }

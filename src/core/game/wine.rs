@@ -8,7 +8,7 @@ use super::detection::heroic_game_config_paths;
 ///
 /// If `game.wine_prefix` is set, that prefix is used directly instead of auto-detection.
 /// Prefers existing user dirs, falls back to "steamuser" if none exist yet.
-pub(super) fn find_wine_user_dir(known: &KnownGame, game: &Game) -> Option<PathBuf> {
+pub(crate) fn find_wine_user_dir(known: &KnownGame, game: &Game) -> Option<PathBuf> {
     let prefix = game
         .wine_prefix
         .clone()

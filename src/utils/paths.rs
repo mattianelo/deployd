@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, anyhow};
 
+use crate::core::game;
 use crate::models::game::Game;
 
 /// Lowercase all path components and normalize backslashes to forward slashes.
@@ -43,9 +44,12 @@ pub fn named_mods_dir() -> Result<PathBuf> {
     Ok(cache_root()?.join("named_mods"))
 }
 
-/// The target deployment directory: game.path / game.data_subdir
+/// The target deployment directory for a game.
+///
+/// For Eclipse engine games this resolves to the Wine prefix user directory
+/// rather than the game installation folder. See `game::deploy_dir`.
 pub fn game_data_dir(game: &Game) -> PathBuf {
-    game.data_dir()
+    game::deploy_dir(game)
 }
 
 /// Default downloads directory (~/Downloads or fallback to $HOME/Downloads).

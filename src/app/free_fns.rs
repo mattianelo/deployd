@@ -215,7 +215,7 @@ pub(crate) async fn load_game_data(
     // Scan the game's Data directory for ALL plugin files (vanilla, DLC, CC, mod-managed).
     // Original casing is preserved for display; lowercasing is done at the point of comparison.
     let vanilla_plugins: HashSet<String> = {
-        let data_dir = game.data_dir();
+        let data_dir = game::deploy_dir(game);
         match std::fs::read_dir(&data_dir) {
             Ok(entries) => entries
                 .flatten()
