@@ -68,6 +68,10 @@ pub fn parse_fomod_config(config_path: &Path) -> Result<FomodUiConfig> {
                                                                 .collect()
                                                         })
                                                         .unwrap_or_default(),
+                                                    image_path: p
+                                                        .image
+                                                        .as_ref()
+                                                        .map(|img| img.path.clone()),
                                                 })
                                                 .collect()
                                         })

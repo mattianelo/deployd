@@ -1,12 +1,20 @@
 use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
 use adw::prelude::*;
+use gtk::gdk;
 use gtk::prelude::*;
 use relm4::prelude::*;
+use walkdir::WalkDir;
 
 use crate::utils::fomod_resolver::{
     FomodGroupType, FomodSelections, FomodUiConfig, FomodUiGroup, FomodUiPlugin,
 };
+
+pub struct FomodDialogInit {
+    pub config: FomodUiConfig,
+    pub extracted_root: PathBuf,
+}
 
 /// Build default selections for a FOMOD config without user input.
 pub fn default_fomod_selections(config: &FomodUiConfig) -> FomodSelections {
@@ -18,11 +26,16 @@ pub fn default_fomod_selections(config: &FomodUiConfig) -> FomodSelections {
 
 pub struct FomodDialog {
     config: FomodUiConfig,
+    extracted_root: PathBuf,
     current_step: usize,
     /// selections[step_idx][group_idx] = set of selected plugin indices
     selections: Vec<Vec<HashSet<usize>>>,
     /// Container for dynamic step content
     content_box: gtk::Box,
+    /// Right-side panel that wraps the preview picture; hidden when no images
+    image_panel: gtk::Box,
+    /// Preview image for the currently selected plugin
+    preview_picture: gtk::Picture,
 }
 
 #[derive(Debug)]
@@ -181,7 +194,75 @@ impl FomodDialog {
             let group_widget = build_group_widget(group, group_idx, &selected, sender);
             self.content_box.append(&group_widget);
         }
+
+        self.update_preview();
     }
+
+    /// Update the image preview based on the first selected plugin with an image in the current step.
+    fn update_preview(&self) {
+        let Some(step) = self.config.steps.get(self.current_step) else {
+            self.preview_picture.set_paintable(gdk::Paintable::NONE);
+            self.image_panel.set_visible(false);
+            return;
+        };
+        let Some(step_sel) = self.selections.get(self.current_step) else {
+            self.preview_picture.set_paintable(gdk::Paintable::NONE);
+            self.image_panel.set_visible(false);
+            return;
+        };
+
+        for (group_idx, group) in step.groups.iter().enumerate() {
+            let Some(group_sel) = step_sel.get(group_idx) else {
+                continue;
+            };
+            let mut indices: Vec<usize> = group_sel.iter().copied().collect();
+            indices.sort_unstable();
+            for plugin_idx in indices {
+                if let Some(plugin) = group.plugins.get(plugin_idx) {
+                    if let Some(ref img_path) = plugin.image_path {
+                        if let Some(abs_path) =
+                            resolve_image_path(&self.extracted_root, img_path)
+                        {
+                            self.preview_picture.set_filename(Some(abs_path));
+                            self.image_panel.set_visible(true);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
+        self.preview_picture.set_paintable(gdk::Paintable::NONE);
+        self.image_panel.set_visible(false);
+    }
+}
+
+/// Resolve a FOMOD image path (may use Windows backslashes, may have case differences)
+/// to an absolute filesystem path within the extracted archive root.
+fn resolve_image_path(extracted_root: &Path, image_path: &str) -> Option<PathBuf> {
+    let normalized = image_path.replace('\\', "/").to_lowercase();
+
+    // Fast path: direct case-sensitive join
+    let candidate = extracted_root.join(&normalized);
+    if candidate.exists() {
+        return Some(candidate);
+    }
+
+    // Case-insensitive scan
+    for entry in WalkDir::new(extracted_root).max_depth(6) {
+        let Ok(entry) = entry else { continue };
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        if let Ok(rel) = entry.path().strip_prefix(extracted_root) {
+            let rel_lower = rel.to_string_lossy().to_lowercase().replace('\\', "/");
+            if rel_lower == normalized {
+                return Some(entry.path().to_path_buf());
+            }
+        }
+    }
+
+    None
 }
 
 fn compute_default_selections(config: &FomodUiConfig) -> Vec<Vec<HashSet<usize>>> {
@@ -363,14 +444,14 @@ fn build_group_widget(
 
 #[relm4::component(pub)]
 impl SimpleComponent for FomodDialog {
-    type Init = FomodUiConfig;
+    type Init = FomodDialogInit;
     type Input = FomodDialogMsg;
     type Output = FomodDialogOutput;
 
     view! {
         adw::Window {
             set_title: Some("FOMOD Installer"),
-            set_default_size: (520, 420),
+            set_default_size: (780, 480),
             set_modal: true,
 
             gtk::Box {
@@ -386,18 +467,44 @@ impl SimpleComponent for FomodDialog {
                     },
                 },
 
-                gtk::ScrolledWindow {
+                // Main content: options on the left, image preview on the right
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Horizontal,
                     set_vexpand: true,
-                    set_hscrollbar_policy: gtk::PolicyType::Never,
-                    set_margin_start: 16,
-                    set_margin_end: 16,
-                    set_margin_top: 8,
-                    set_margin_bottom: 8,
+
+                    gtk::ScrolledWindow {
+                        set_hexpand: true,
+                        set_vexpand: true,
+                        set_hscrollbar_policy: gtk::PolicyType::Never,
+                        set_margin_start: 16,
+                        set_margin_end: 16,
+                        set_margin_top: 8,
+                        set_margin_bottom: 8,
+
+                        #[local_ref]
+                        content_box -> gtk::Box {
+                            set_orientation: gtk::Orientation::Vertical,
+                            set_spacing: 8,
+                        },
+                    },
 
                     #[local_ref]
-                    content_box -> gtk::Box {
+                    image_panel -> gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 8,
+                        set_size_request: (260, -1),
+                        set_visible: false,
+
+                        gtk::Separator {
+                            set_orientation: gtk::Orientation::Vertical,
+                        },
+
+                        #[local_ref]
+                        preview_picture -> gtk::Picture {
+                            set_can_shrink: true,
+                            set_content_fit: gtk::ContentFit::Contain,
+                            set_vexpand: true,
+                            set_margin_all: 8,
+                        },
                     },
                 },
 
@@ -453,18 +560,28 @@ impl SimpleComponent for FomodDialog {
     }
 
     fn init(
-        config: Self::Init,
+        init: Self::Init,
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
+        let FomodDialogInit {
+            config,
+            extracted_root,
+        } = init;
+
         let selections = compute_default_selections(&config);
         let content_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        let image_panel = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        let preview_picture = gtk::Picture::new();
 
         let mut model = FomodDialog {
             config,
+            extracted_root,
             current_step: 0,
             selections,
             content_box: content_box.clone(),
+            image_panel: image_panel.clone(),
+            preview_picture: preview_picture.clone(),
         };
 
         // Find first visible step
@@ -473,10 +590,13 @@ impl SimpleComponent for FomodDialog {
             .unwrap_or(0);
         model.current_step = first_step;
 
-        // Build initial step content before view_output!() moves model
         model.rebuild_content(&sender);
 
         let widgets = view_output!();
+
+        // Update preview after view_output!() so the view macro's initial
+        // set_visible: false on image_panel doesn't clobber our state.
+        model.update_preview();
 
         root.present();
 
@@ -519,6 +639,7 @@ impl SimpleComponent for FomodDialog {
                         group_sel.remove(&plugin_idx);
                     }
                 }
+                self.update_preview();
             }
             FomodDialogMsg::SelectRadio(group_idx, plugin_idx) => {
                 if let Some(step_sel) = self.selections.get_mut(self.current_step)
@@ -527,6 +648,7 @@ impl SimpleComponent for FomodDialog {
                     group_sel.clear();
                     group_sel.insert(plugin_idx);
                 }
+                self.update_preview();
             }
             FomodDialogMsg::Confirm => {
                 let flags = self.all_flags();

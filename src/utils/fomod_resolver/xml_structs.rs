@@ -101,7 +101,14 @@ pub(super) struct XmlPlugin {
 
     #[serde(rename = "conditionFlags")]
     pub(super) condition_flags: Option<XmlConditionFlags>,
-    // image → silently ignored.
+
+    pub(super) image: Option<XmlImage>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct XmlImage {
+    #[serde(rename = "@path")]
+    pub(super) path: String,
 }
 
 #[derive(Debug, Deserialize)]

@@ -6,7 +6,7 @@ use gtk::gio;
 use relm4::prelude::*;
 
 use crate::core::installer::{self, AddResult, PrepareResult};
-use crate::ui::fomod_dialog::{default_fomod_selections, FomodDialog, FomodDialogOutput};
+use crate::ui::fomod_dialog::{default_fomod_selections, FomodDialog, FomodDialogInit, FomodDialogOutput};
 use crate::utils::{fomod_resolver, paths};
 use crate::dlog;
 
@@ -128,10 +128,14 @@ impl App {
 
         if let Some(config) = pending.fomod_config.take() {
             if fomod_resolver::needs_user_input(&config) {
+                let extracted_root = pending.tmp_dir.path().to_path_buf();
                 self.fomod_dialog = Some(
                     FomodDialog::builder()
                         .transient_for(root)
-                        .launch(config)
+                        .launch(FomodDialogInit {
+                            config,
+                            extracted_root,
+                        })
                         .forward(sender.input_sender(), |output| match output {
                             FomodDialogOutput::Confirmed(sel) => AppMsg::FomodConfirmed(sel),
                             FomodDialogOutput::Cancelled => AppMsg::FomodCancelled,

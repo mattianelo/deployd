@@ -79,6 +79,8 @@ pub struct FomodUiPlugin {
     pub type_hint: String,
     /// Condition flags set when this plugin is selected: (name, value).
     pub condition_flags: Vec<(String, String)>,
+    /// Optional image path (relative to archive root, may use Windows backslashes).
+    pub image_path: Option<String>,
 }
 
 /// User selections from the FOMOD wizard.
