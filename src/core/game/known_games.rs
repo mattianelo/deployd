@@ -38,6 +38,9 @@ pub(super) struct KnownGame {
     /// (e.g. `"Saved Games/CD Projekt Red/Cyberpunk 2077"`).
     /// `None` for Bethesda games (saves are not managed by Deployd).
     pub(super) save_game_subpath: Option<&'static str>,
+    /// Marks games whose support is still being validated. Shown as
+    /// "(Experimental)" in the game-type dropdown to set user expectations.
+    pub(super) experimental: bool,
 }
 
 pub(super) const KNOWN_GAMES: &[KnownGame] = &[
@@ -54,6 +57,7 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         nexus_domain: "skyrimspecialedition",
         engine: GameEngine::Bethesda,
         save_game_subpath: Some("Documents/My Games/Skyrim Special Edition/Saves"),
+        experimental: false,
     },
     KnownGame {
         store: GameStore::Gog,
@@ -67,6 +71,7 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         nexus_domain: "fallout4",
         engine: GameEngine::Bethesda,
         save_game_subpath: Some("Documents/My Games/Fallout4/Saves"),
+        experimental: false,
     },
     KnownGame {
         store: GameStore::Gog,
@@ -80,6 +85,7 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         nexus_domain: "newvegas",
         engine: GameEngine::Bethesda,
         save_game_subpath: Some("Documents/My Games/FalloutNV/Saves"),
+        experimental: false,
     },
     // ── Steam editions ────────────────────────────────────────────────────────
     // heroic_app_name holds the Steam App ID, which Heroic also uses as the
@@ -97,6 +103,7 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         nexus_domain: "skyrimspecialedition",
         engine: GameEngine::Bethesda,
         save_game_subpath: Some("Documents/My Games/Skyrim Special Edition/Saves"),
+        experimental: false,
     },
     KnownGame {
         store: GameStore::Steam,
@@ -110,6 +117,7 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         nexus_domain: "fallout4",
         engine: GameEngine::Bethesda,
         save_game_subpath: Some("Documents/My Games/Fallout4/Saves"),
+        experimental: false,
     },
     KnownGame {
         store: GameStore::Steam,
@@ -123,6 +131,7 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         nexus_domain: "newvegas",
         engine: GameEngine::Bethesda,
         save_game_subpath: Some("Documents/My Games/FalloutNV/Saves"),
+        experimental: false,
     },
     KnownGame {
         store: GameStore::Steam,
@@ -136,6 +145,7 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         nexus_domain: "starfield",
         engine: GameEngine::Bethesda,
         save_game_subpath: Some("Documents/My Games/Starfield/Saves"),
+        experimental: false,
     },
     // ── REDEngine games ───────────────────────────────────────────────────────
     // data_subdir = "." → game.data_dir() resolves to the game root itself.
@@ -155,6 +165,7 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         nexus_domain: "witcher3",
         engine: GameEngine::REDEngine,
         save_game_subpath: Some("Documents/The Witcher 3/gamesaves"),
+        experimental: false,
     },
     KnownGame {
         store: GameStore::Gog,
@@ -168,6 +179,7 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         nexus_domain: "witcher3",
         engine: GameEngine::REDEngine,
         save_game_subpath: Some("Documents/The Witcher 3/gamesaves"),
+        experimental: false,
     },
     KnownGame {
         store: GameStore::Steam,
@@ -181,6 +193,7 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         nexus_domain: "witcher3",
         engine: GameEngine::REDEngine,
         save_game_subpath: Some("Documents/The Witcher 3/gamesaves"),
+        experimental: false,
     },
     KnownGame {
         store: GameStore::Gog,
@@ -194,6 +207,7 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         nexus_domain: "cyberpunk2077",
         engine: GameEngine::REDEngine,
         save_game_subpath: Some("Saved Games/CD Projekt Red/Cyberpunk 2077"),
+        experimental: false,
     },
     KnownGame {
         store: GameStore::Steam,
@@ -207,6 +221,39 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         nexus_domain: "cyberpunk2077",
         engine: GameEngine::REDEngine,
         save_game_subpath: Some("Saved Games/CD Projekt Red/Cyberpunk 2077"),
+        experimental: false,
+    },
+    // ── Dragon Age: Origins (experimental) ───────────────────────────────────
+    // data_subdir points directly to the override folder so loose-file mods
+    // deploy correctly. For .dazip archives (zip with a package/ subfolder),
+    // rules_for_game strips the "package/" prefix so the inner files land here too.
+    KnownGame {
+        store: GameStore::Gog,
+        heroic_app_name: "1949616134",
+        deployd_id: "dragonage",
+        title: "Dragon Age: Origins - Ultimate Edition",
+        data_subdir: "packages/core/override",
+        appdata_folders: &[],
+        custom_ini_name: "",
+        bethesda_reg_key: "",
+        nexus_domain: "dragonage",
+        engine: GameEngine::Eclipse,
+        save_game_subpath: Some("Documents/BioWare/Dragon Age/Characters"),
+        experimental: true,
+    },
+    KnownGame {
+        store: GameStore::Steam,
+        heroic_app_name: "47810",
+        deployd_id: "dragonage-steam",
+        title: "Dragon Age: Origins",
+        data_subdir: "packages/core/override",
+        appdata_folders: &[],
+        custom_ini_name: "",
+        bethesda_reg_key: "",
+        nexus_domain: "dragonage",
+        engine: GameEngine::Eclipse,
+        save_game_subpath: Some("Documents/BioWare/Dragon Age/Characters"),
+        experimental: true,
     },
 ];
 

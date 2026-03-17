@@ -365,7 +365,13 @@ impl Component for GameSetupDialog {
                                             let opts = game::known_game_options();
                                             let labels: Vec<String> = opts
                                                 .iter()
-                                                .map(|o| format!("{} ({})", o.title, o.store))
+                                                .map(|o| {
+                                                    if o.experimental {
+                                                        format!("{} ({}) (Experimental)", o.title, o.store)
+                                                    } else {
+                                                        format!("{} ({})", o.title, o.store)
+                                                    }
+                                                })
                                                 .collect();
                                             let strs: Vec<&str> =
                                                 labels.iter().map(String::as_str).collect();
@@ -470,6 +476,8 @@ impl Component for GameSetupDialog {
         for pg in persisted_custom {
             let engine = if pg.engine == "redengine" {
                 GameEngine::REDEngine
+            } else if pg.engine == "eclipse" {
+                GameEngine::Eclipse
             } else {
                 GameEngine::Bethesda
             };
@@ -691,6 +699,7 @@ impl Component for GameSetupDialog {
                 };
                 let engine = match opt.engine {
                     GameEngine::REDEngine => GameEngine::REDEngine,
+                    GameEngine::Eclipse => GameEngine::Eclipse,
                     GameEngine::Bethesda => GameEngine::Bethesda,
                 };
                 let game = Game {

@@ -4,6 +4,7 @@
 
 ### Added
 
+- **Experimental Dragon Age: Origins support** — Dragon Age: Origins (Steam and GOG) can now be added and managed. Override mods and `.dazip` archives are both supported; the game type is marked "(Experimental)" in the dropdown to reflect early-stage support.
 - **FOMOD image previews** — the FOMOD installer now displays each option's image above the selection list. The preview updates as you change your selection.
 - **Mod notes** — mods can now have personal notes written in the Properties dialog. Any mod with notes shows a small icon in the list; hovering it previews the note.
 - **"Replace" option in name-conflict dialog** — when installing a mod whose name already exists, you can now choose Replace in addition to Merge and Create New. Replace swaps the existing mod in-place, preserving its load-order position and plugin states.

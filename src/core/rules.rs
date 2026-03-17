@@ -50,6 +50,11 @@ pub fn rules_for_game(game_id: &str) -> Vec<Rule> {
         | "falloutnv" | "falloutnv-steam" | "starfield" => {
             vec![Rule::prefix(r"(?i)^data/", "")]
         }
+        // .dazip archives (Dragon Age: Origins) contain a package/ subfolder.
+        // Strip it so the inner files land directly in packages/core/override/.
+        "dragonage" | "dragonage-steam" => {
+            vec![Rule::prefix(r"(?i)^package/", "")]
+        }
         _ => vec![],
     }
 }

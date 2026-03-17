@@ -107,6 +107,7 @@ impl App {
                 for cfg in &configs_for_db {
                     let engine_str = match cfg.game.engine {
                         GameEngine::REDEngine => "redengine",
+                        GameEngine::Eclipse => "eclipse",
                         GameEngine::Bethesda => "bethesda",
                     };
                     let _ = tracker

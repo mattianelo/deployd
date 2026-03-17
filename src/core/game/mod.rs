@@ -23,6 +23,7 @@ pub struct KnownGameOption {
     pub store: &'static str,
     pub data_subdir: &'static str,
     pub engine: &'static GameEngine,
+    pub experimental: bool,
 }
 
 /// Return all supported game types for the "Add Custom Game" dropdown.
@@ -38,6 +39,7 @@ pub fn known_game_options() -> Vec<KnownGameOption> {
             },
             data_subdir: k.data_subdir,
             engine: &k.engine,
+            experimental: k.experimental,
         })
         .collect()
 }

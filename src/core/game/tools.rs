@@ -68,6 +68,16 @@ pub(super) const TOOL_PRESETS: &[ToolPreset] = &[
         default_args: "",
         engine: GameEngine::Bethesda,
     },
+    // ── Eclipse (Dragon Age) tools ───────────────────────────────────────────
+    ToolPreset {
+        // CharGenMorph Compiler compiles character morph files for Dragon Age: Origins.
+        name: "CharGenMorph Compiler",
+        rel_exe_paths: &[],
+        known_exe_names: &["CharGenMorphCmplr.exe"],
+        icon_name: "avatar-default-symbolic",
+        default_args: "",
+        engine: GameEngine::Eclipse,
+    },
     // ── REDEngine tools ──────────────────────────────────────────────────────
     ToolPreset {
         // Script Merger merges conflicting script mods for The Witcher 3.
