@@ -60,10 +60,6 @@ impl App {
         root: &adw::Window,
         sender: &ComponentSender<Self>,
     ) {
-        // User explicitly opened the dialog — clear any auto-trigger tracking
-        // so that closing without confirming does not hide existing games.
-        self.pending_new_game_ids.clear();
-
         let detected: Vec<crate::models::game::Game> = self.games.clone();
 
         self.game_setup_dialog = Some(

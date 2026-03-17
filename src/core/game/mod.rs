@@ -1,4 +1,5 @@
 mod detection;
+pub(crate) mod eclipse;
 mod ini;
 mod known_games;
 mod metadata;
@@ -14,6 +15,7 @@ pub use detection::detect_games;
 pub use ini::{custom_ini_paths, ensure_ini_symlinks, missing_bethesda_reg_key, plugins_txt_paths};
 pub use metadata::{all_nexus_domains, detect_save_dir, game_id_for_nexus_domain, has_save_management, nexus_domain};
 pub use tools::{archive_mod_dir, detect_tool_path, tool_presets_for};
+pub use eclipse::write_addins_xml;
 pub use wine::{detect_wine_config, WineConfig};
 pub(crate) use wine::linux_path_to_wine_path;
 

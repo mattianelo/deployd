@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use gtk::prelude::*;
@@ -127,6 +127,14 @@ impl App {
         pending.file_targets = file_targets;
 
         if let Some(config) = pending.fomod_config.take() {
+            let active_plugin_files: HashSet<String> = {
+                let guard = self.plugins.guard();
+                (0..guard.len())
+                    .filter_map(|i| guard.get(i))
+                    .map(|row| row.plugin.filename.to_lowercase())
+                    .collect()
+            };
+
             if fomod_resolver::needs_user_input(&config) {
                 let extracted_root = pending.tmp_dir.path().to_path_buf();
                 self.fomod_dialog = Some(
@@ -135,6 +143,7 @@ impl App {
                         .launch(FomodDialogInit {
                             config,
                             extracted_root,
+                            active_plugin_files,
                         })
                         .forward(sender.input_sender(), |output| match output {
                             FomodDialogOutput::Confirmed(sel) => AppMsg::FomodConfirmed(sel),
@@ -146,7 +155,7 @@ impl App {
             // No user choices needed — auto-install with defaults
             sender
                 .input_sender()
-                .emit(AppMsg::FomodConfirmed(default_fomod_selections(&config)));
+                .emit(AppMsg::FomodConfirmed(default_fomod_selections(&config, &active_plugin_files)));
             return;
         }
 

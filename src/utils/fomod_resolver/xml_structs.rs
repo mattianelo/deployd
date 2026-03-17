@@ -121,7 +121,28 @@ pub(super) struct XmlDescription {
 pub(super) struct XmlTypeDescriptor {
     #[serde(rename = "type")]
     pub(super) typ: Option<XmlPluginType>,
-    // dependencyType → silently ignored.
+    #[serde(rename = "dependencyType")]
+    pub(super) dependency_type: Option<XmlDependencyType>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct XmlDependencyType {
+    #[serde(rename = "defaultType")]
+    pub(super) default_type: Option<XmlPluginType>,
+    pub(super) patterns: Option<XmlDepTypePatterns>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct XmlDepTypePatterns {
+    #[serde(rename = "pattern", default)]
+    pub(super) pattern: Vec<XmlDepTypePattern>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct XmlDepTypePattern {
+    pub(super) dependencies: Option<XmlDependencies>,
+    #[serde(rename = "type")]
+    pub(super) typ: Option<XmlPluginType>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -189,7 +210,6 @@ pub(super) struct XmlFlagDependency {
     pub(super) value: String,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub(super) struct XmlFileDependency {
     #[serde(rename = "@file")]

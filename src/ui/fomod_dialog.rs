@@ -14,12 +14,14 @@ use crate::utils::fomod_resolver::{
 pub struct FomodDialogInit {
     pub config: FomodUiConfig,
     pub extracted_root: PathBuf,
+    /// Lowercased filenames of all active plugins in the current game's modlist.
+    pub active_plugin_files: HashSet<String>,
 }
 
 /// Build default selections for a FOMOD config without user input.
-pub fn default_fomod_selections(config: &FomodUiConfig) -> FomodSelections {
+pub fn default_fomod_selections(config: &FomodUiConfig, active_files: &HashSet<String>) -> FomodSelections {
     FomodSelections {
-        selections: compute_default_selections(config),
+        selections: compute_default_selections(config, active_files),
         flags: std::collections::HashMap::new(),
     }
 }
@@ -265,43 +267,39 @@ fn resolve_image_path(extracted_root: &Path, image_path: &str) -> Option<PathBuf
     None
 }
 
-fn compute_default_selections(config: &FomodUiConfig) -> Vec<Vec<HashSet<usize>>> {
+fn compute_default_selections(config: &FomodUiConfig, files: &HashSet<String>) -> Vec<Vec<HashSet<usize>>> {
     config
         .steps
         .iter()
         .map(|step| {
             step.groups
                 .iter()
-                .map(default_selection_for_group)
+                .map(|g| default_selection_for_group(g, files))
                 .collect()
         })
         .collect()
 }
 
-fn default_selection_for_group(group: &FomodUiGroup) -> HashSet<usize> {
+fn default_selection_for_group(group: &FomodUiGroup, files: &HashSet<String>) -> HashSet<usize> {
     let plugins = &group.plugins;
     match group.group_type {
         FomodGroupType::SelectAll => (0..plugins.len()).collect(),
         FomodGroupType::SelectExactlyOne | FomodGroupType::SelectAtLeastOne => {
-            let rec = find_recommended_indices(plugins);
+            let rec = find_recommended_indices(plugins, files);
             if rec.is_empty() {
-                // Fall back to first plugin
                 if plugins.is_empty() {
                     HashSet::new()
                 } else {
                     HashSet::from([0])
                 }
+            } else if group.group_type == FomodGroupType::SelectExactlyOne {
+                HashSet::from([rec[0]])
             } else {
-                // For SelectExactlyOne, only take the first recommended
-                if group.group_type == FomodGroupType::SelectExactlyOne {
-                    HashSet::from([rec[0]])
-                } else {
-                    rec.into_iter().collect()
-                }
+                rec.into_iter().collect()
             }
         }
         FomodGroupType::SelectAtMostOne | FomodGroupType::SelectAny => {
-            let rec = find_recommended_indices(plugins);
+            let rec = find_recommended_indices(plugins, files);
             if group.group_type == FomodGroupType::SelectAtMostOne && rec.len() > 1 {
                 HashSet::from([rec[0]])
             } else {
@@ -311,11 +309,26 @@ fn default_selection_for_group(group: &FomodUiGroup) -> HashSet<usize> {
     }
 }
 
-fn find_recommended_indices(plugins: &[FomodUiPlugin]) -> Vec<usize> {
+fn effective_type_hint<'a>(plugin: &'a FomodUiPlugin, files: &HashSet<String>) -> &'a str {
+    for (deps, type_name) in &plugin.dep_type_patterns {
+        if deps.evaluate_with_files(&std::collections::HashMap::new(), files) {
+            return type_name.as_str();
+        }
+    }
+    if !plugin.dep_type_default.is_empty() {
+        return plugin.dep_type_default.as_str();
+    }
+    plugin.type_hint.as_str()
+}
+
+fn find_recommended_indices(plugins: &[FomodUiPlugin], files: &HashSet<String>) -> Vec<usize> {
     plugins
         .iter()
         .enumerate()
-        .filter(|(_, p)| p.type_hint == "Recommended" || p.type_hint == "Required")
+        .filter(|(_, p)| {
+            let hint = effective_type_hint(p, files);
+            hint == "Recommended" || hint == "Required"
+        })
         .map(|(i, _)| i)
         .collect()
 }
@@ -567,9 +580,10 @@ impl SimpleComponent for FomodDialog {
         let FomodDialogInit {
             config,
             extracted_root,
+            active_plugin_files,
         } = init;
 
-        let selections = compute_default_selections(&config);
+        let selections = compute_default_selections(&config, &active_plugin_files);
         let content_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
         let image_panel = gtk::Box::new(gtk::Orientation::Vertical, 0);
         let preview_picture = gtk::Picture::new();

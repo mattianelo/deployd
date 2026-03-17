@@ -53,6 +53,36 @@ pub fn parse_fomod_config(config_path: &Path) -> Result<FomodUiConfig> {
                                                         .and_then(|td| td.typ.as_ref())
                                                         .map(|t| t.name.clone())
                                                         .unwrap_or_default(),
+                                                    dep_type_default: p
+                                                        .type_descriptor
+                                                        .as_ref()
+                                                        .and_then(|td| td.dependency_type.as_ref())
+                                                        .and_then(|dt| dt.default_type.as_ref())
+                                                        .map(|t| t.name.clone())
+                                                        .unwrap_or_default(),
+                                                    dep_type_patterns: p
+                                                        .type_descriptor
+                                                        .as_ref()
+                                                        .and_then(|td| td.dependency_type.as_ref())
+                                                        .and_then(|dt| dt.patterns.as_ref())
+                                                        .map(|ps| {
+                                                            ps.pattern
+                                                                .iter()
+                                                                .filter_map(|pat| {
+                                                                    let type_name = pat.typ.as_ref()?.name.clone();
+                                                                    let deps = pat.dependencies.as_ref()
+                                                                        .map(convert_deps_to_ui)
+                                                                        .unwrap_or_else(|| FomodUiDependencies {
+                                                                            operator: "And".to_string(),
+                                                                            flag_deps: vec![],
+                                                                            file_deps: vec![],
+                                                                            nested: vec![],
+                                                                        });
+                                                                    Some((deps, type_name))
+                                                                })
+                                                                .collect()
+                                                        })
+                                                        .unwrap_or_default(),
                                                     condition_flags: p
                                                         .condition_flags
                                                         .as_ref()
@@ -114,6 +144,11 @@ pub(super) fn convert_deps_to_ui(deps: &XmlDependencies) -> FomodUiDependencies 
             .flag_dependencies
             .iter()
             .map(|f| (f.flag.clone(), f.value.clone()))
+            .collect(),
+        file_deps: deps
+            .file_dependencies
+            .iter()
+            .map(|f| (f.file.to_lowercase().replace('\\', "/"), f.state.clone()))
             .collect(),
         nested: deps.nested.iter().map(convert_deps_to_ui).collect(),
     }

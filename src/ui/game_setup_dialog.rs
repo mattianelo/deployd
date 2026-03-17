@@ -23,6 +23,8 @@ pub struct GameSetupDialog {
     entries: Vec<GameEntry>,
     /// Page switcher — "list" vs "add".
     stack: gtk::Stack,
+    /// Whether the "add custom game" page is currently shown.
+    add_page_visible: bool,
     /// ListBox for auto-detected game rows.
     detected_list: gtk::ListBox,
     /// ListBox for custom game rows.
@@ -264,7 +266,7 @@ impl Component for GameSetupDialog {
                         set_label: "Back",
                         add_css_class: "flat",
                         #[watch]
-                        set_visible: model.stack.visible_child_name().as_deref() == Some("add"),
+                        set_visible: model.add_page_visible,
                         connect_clicked => GameSetupMsg::BackClicked,
                     },
 
@@ -272,7 +274,7 @@ impl Component for GameSetupDialog {
                         set_label: "OK",
                         add_css_class: "suggested-action",
                         #[watch]
-                        set_visible: model.stack.visible_child_name().as_deref() == Some("list"),
+                        set_visible: !model.add_page_visible,
                         connect_clicked => GameSetupMsg::Confirm,
                     },
                 },
@@ -506,6 +508,7 @@ impl Component for GameSetupDialog {
         let model = GameSetupDialog {
             entries,
             stack,
+            add_page_visible: false,
             detected_list,
             custom_list,
             custom_section,
@@ -633,10 +636,12 @@ impl Component for GameSetupDialog {
                 self.new_prefix_entry.set_text("");
                 self.update_add_btn();
                 self.stack.set_visible_child_name("add");
+                self.add_page_visible = true;
             }
 
             GameSetupMsg::BackClicked => {
                 self.stack.set_visible_child_name("list");
+                self.add_page_visible = false;
             }
 
             GameSetupMsg::GameTypeSelected(idx) => {
@@ -720,6 +725,7 @@ impl Component for GameSetupDialog {
                 self.update_add_btn();
                 self.rebuild_custom(&sender);
                 self.stack.set_visible_child_name("list");
+                self.add_page_visible = false;
             }
 
             GameSetupMsg::Confirm => {

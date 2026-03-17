@@ -62,10 +62,10 @@ pub fn extract_archive(
     let cb: Option<&(dyn Fn(usize, usize) + Send)> = on_progress.as_deref();
 
     match ext.as_str() {
-        "zip" => extract_zip(archive_path, cb),
+        "zip" | "dazip" => extract_zip(archive_path, cb),
         "7z" => extract_7z(archive_path, cb),
         "rar" => extract_rar(archive_path),
-        other => bail!("Unsupported archive format: .{other}. Supported: .zip, .7z, .rar"),
+        other => bail!("Unsupported archive format: .{other}. Supported: .zip, .7z, .rar, .dazip"),
     }
 }
 
@@ -125,6 +125,96 @@ fn extract_zip(
     }
 
     result
+}
+
+/// Extract a ZIP archive into an existing directory (no TempDir created).
+/// Used for in-place expansion of nested archives (e.g. `.dazip` files found inside a mod).
+pub fn extract_zip_to(archive_path: &Path, dest: &Path) -> Result<()> {
+    let mut data = fs::read(archive_path)
+        .with_context(|| format!("Cannot read archive: {}", archive_path.display()))?;
+
+    let mut archive = match zip::ZipArchive::new(io::Cursor::new(data.clone())) {
+        Ok(a) => a,
+        Err(zip_err) => {
+            let err_msg = zip_err.to_string();
+            let is_unicode_field_err = err_msg.contains("CRC32 checksum")
+                || err_msg.contains("Unicode extra field")
+                || (err_msg.contains("Invalid UTF-8") && !err_msg.contains("symlink"));
+            if !is_unicode_field_err {
+                return Err(zip_err)
+                    .with_context(|| format!("Invalid ZIP: {}", archive_path.display()));
+            }
+            if !strip_zip_unicode_extra_fields(&mut data) {
+                return Err(zip_err).with_context(|| {
+                    format!(
+                        "Invalid ZIP (malformed Unicode extra field, no patch applied): {}",
+                        archive_path.display()
+                    )
+                });
+            }
+            zip::ZipArchive::new(io::Cursor::new(data)).with_context(|| {
+                format!(
+                    "Invalid ZIP (still invalid after stripping Unicode extra fields): {}",
+                    archive_path.display()
+                )
+            })?
+        }
+    };
+
+    let total = archive.len();
+    for i in 0..total {
+        let mut entry = archive
+            .by_index(i)
+            .with_context(|| format!("Failed to read ZIP entry #{i}"))?;
+        let entry_path = entry.mangled_name();
+        if entry_path.as_os_str().is_empty() {
+            continue;
+        }
+        let out_path = dest.join(&entry_path);
+        if entry.is_dir() {
+            let _ = fs::create_dir_all(&out_path);
+        } else {
+            if matches!(entry.compression(), zip::CompressionMethod::Lzma) {
+                return Err(anyhow::anyhow!(
+                    "ZIP entry '{}' uses LZMA compression (unsupported) in '{}'",
+                    entry.name(),
+                    archive_path.display()
+                ));
+            }
+            if let Some(parent) = out_path.parent() {
+                if let Err(e) = fs::create_dir_all(parent) {
+                    dlog!(
+                        "[deployd] extract_zip_to: skipping '{}' — cannot create parent: {e}",
+                        entry.name()
+                    );
+                    continue;
+                }
+            }
+            match fs::File::create(&out_path) {
+                Ok(outfile) => {
+                    let mut writer = io::BufWriter::with_capacity(131_072, outfile);
+                    io::copy(&mut entry, &mut writer).with_context(|| {
+                        format!("Failed to write file: {}", out_path.display())
+                    })?;
+                    writer.flush().with_context(|| {
+                        format!("Failed to flush file: {}", out_path.display())
+                    })?;
+                }
+                Err(e) if e.raw_os_error() == Some(21) => {
+                    dlog!(
+                        "[deployd] extract_zip_to: skipping '{}' (EISDIR)",
+                        entry.name()
+                    );
+                }
+                Err(e) => {
+                    return Err(e).with_context(|| {
+                        format!("Failed to create file: {}", out_path.display())
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Native ZIP extraction: handles the Info-ZIP Unicode Path extra-field patch,

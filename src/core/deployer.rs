@@ -240,6 +240,12 @@ pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
     tracker.record_deployed_files(&newly_linked).await?;
 
     // 10. Write Plugins.txt and ArchiveInvalidation INI — Bethesda games only.
+    // 11. Write Addins.xml — Eclipse (Dragon Age: Origins) only.
+    if game.engine == GameEngine::Eclipse {
+        if let Err(e) = game::write_addins_xml(&game::deploy_dir(game)) {
+            eprintln!("[deployd] WARNING: Addins.xml update failed: {e}");
+        }
+    }
     if game.engine == GameEngine::Bethesda {
         let plugins = tracker.list_plugins(&game.id).await?;
         let plugins_paths = game::plugins_txt_paths(game);

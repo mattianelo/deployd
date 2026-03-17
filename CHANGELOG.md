@@ -12,11 +12,20 @@
 
 ### Fixed
 
+- **DAZIP mods now appear in the Dragon Age: Origins in-game modlist** — deployd now writes to `Settings/AddIns.xml` (matching the game's exact filename). Previously it wrote `Addins.xml` (different case), which is a separate file on Linux and never read by the game. `<AddInItem>` elements are now correctly captured from manifests, and pre-existing game entries (campaigns, DLCs) are preserved on every deploy.
+- **DAZIP mods now install to the correct location** — `.dazip` archives that use the standard `Contents/addins/` and `Contents/packages/` layout are now extracted correctly. The add-in UID is also properly read from `Manifest.xml` (capital M) and `<AddInItem>` elements.
+- **Manage Games dialog no longer opens on every launch** — the dialog now only auto-opens when a genuinely new, unconfirmed game is detected. Dismissing it hides that game so it does not re-prompt next time.
+- **Manage Games OK button now visible** — the OK button in the Manage Games dialog is now reliably shown when the game list page is active, including on first open.
+- **DAZIP mods now install correctly** — `.dazip` archives (Dragon Age: Origins) are now installed to `AddIns/<UID>/` (matching DAUpdater behaviour) and automatically registered in `Settings/Addins.xml` so the game loads them. Loose override files continue to go to `packages/core/override/`. Previously, DAZIP contents were incorrectly dumped flat into `override/` without any registration.
 - **Dragon Age: Origins mod deploy path corrected** — mods are now deployed to the Wine prefix user directory (`steamuser/Documents/BioWare/Dragon Age/packages/core/override`) instead of inside the game's installation folder.
 - **No more spurious "profile could not be created" error** — switching to a newly confirmed game no longer shows a profile error because the game is now guaranteed to be saved to the database before the profile is created.
 - **Newly detected games prompt before being managed** — if Deployd detects a game that has not been confirmed yet (e.g. after installing a new game), the Manage Games dialog now opens automatically so you can review and approve it before it appears in the list.
 - **Plugin reordering no longer blocked by unrelated ESPs** — case-insensitive master lookups now correctly resolve to the earliest-loading copy of a plugin, preventing false "master must load first" errors when vanilla and managed plugins share the same filename (different case).
 - **Update check no longer flags optional files as outdated** — optional, patch, and texture files are now compared against their own specific Nexus file version rather than the main file's version, eliminating false update notifications.
+
+### Improved
+
+- **FOMOD auto-selection respects your modlist** — when the FOMOD installer determines default selections, it now evaluates `<dependencyType>` conditions against your active plugin list. Options that require a DLC or another mod (e.g. a patch for Dawnguard) are automatically marked Recommended when that plugin is present, and Optional when it is not.
 
 ---
 

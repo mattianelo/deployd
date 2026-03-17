@@ -28,20 +28,36 @@ pub struct FomodUiStep {
 pub struct FomodUiDependencies {
     pub operator: String,
     pub flag_deps: Vec<(String, String)>,
+    /// File dependencies: (lowercased file path, required state e.g. "Active"/"Missing").
+    pub file_deps: Vec<(String, String)>,
     pub nested: Vec<FomodUiDependencies>,
 }
 
 impl FomodUiDependencies {
-    /// Evaluate this dependency tree against accumulated condition flags.
+    /// Evaluate against condition flags only (no file context).
     pub fn evaluate(&self, flags: &HashMap<String, String>) -> bool {
+        self.evaluate_with_files(flags, &HashSet::new())
+    }
+
+    /// Evaluate against condition flags and a set of known active file names (lowercased).
+    pub fn evaluate_with_files(&self, flags: &HashMap<String, String>, files: &HashSet<String>) -> bool {
         let is_and = self.operator.eq_ignore_ascii_case("and");
         let mut results: Vec<bool> = Vec::new();
 
         for (name, value) in &self.flag_deps {
             results.push(flags.get(name).is_some_and(|v| v == value));
         }
+        for (file, state) in &self.file_deps {
+            let present = files.contains(file.as_str());
+            let satisfied = match state.as_str() {
+                "Active" => present,
+                "Missing" => !present,
+                _ => present,
+            };
+            results.push(satisfied);
+        }
         for nested in &self.nested {
-            results.push(nested.evaluate(flags));
+            results.push(nested.evaluate_with_files(flags, files));
         }
 
         if results.is_empty() {
@@ -81,6 +97,10 @@ pub struct FomodUiPlugin {
     pub condition_flags: Vec<(String, String)>,
     /// Optional image path (relative to archive root, may use Windows backslashes).
     pub image_path: Option<String>,
+    /// Fallback type from `<dependencyType><defaultType>` (empty when absent).
+    pub dep_type_default: String,
+    /// Conditional type patterns: (deps, type_name). First match wins.
+    pub dep_type_patterns: Vec<(FomodUiDependencies, String)>,
 }
 
 /// User selections from the FOMOD wizard.
