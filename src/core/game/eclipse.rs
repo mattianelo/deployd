@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use quick_xml::events::Event;
@@ -12,13 +12,13 @@ use quick_xml::Reader;
 /// from `Documents/BioWare/Dragon Age`), landing in `Documents/`.
 pub const DOCS_PREFIX: &str = "~docs~/";
 
-/// Route a file's relative path for Eclipse (Dragon Age: Origins) deployment.
+/// Route a single file's relative path for Eclipse (Dragon Age: Origins) deployment.
 ///
 /// DAZIP-expanded files already carry `AddIns/<UID>/` and are left unchanged.
-/// Windows tool executables (`.exe`, `.dll`, `.bat`) are routed to the Wine
-/// user's Documents folder via the `~docs~/` prefix so they sit outside the
-/// game's data tree (tools must not land in `packages/core/override/`).
 /// All other loose files go to `packages/core/override/`.
+///
+/// Tool mods (archives containing executables) are handled at the batch level
+/// by `route_tool_paths` — this function is only called for non-tool mods.
 pub fn route_path(rel: &str) -> String {
     let lower = rel.to_lowercase();
     if lower.starts_with("addins/")
@@ -26,8 +26,6 @@ pub fn route_path(rel: &str) -> String {
         || lower.starts_with("settings/")
     {
         rel.to_string()
-    } else if is_tool_file(&lower) {
-        format!("{DOCS_PREFIX}{rel}")
     } else {
         format!("packages/core/override/{rel}")
     }
@@ -40,6 +38,41 @@ fn is_tool_file(lower_path: &str) -> bool {
             .and_then(|e| e.to_str()),
         Some("exe" | "dll" | "bat")
     )
+}
+
+/// Returns `true` if the file list looks like an external tool archive (contains
+/// at least one executable). Used to decide whether to apply tool routing for
+/// the entire mod rather than per-file routing.
+pub fn is_tool_mod(file_list: &[(PathBuf, PathBuf)]) -> bool {
+    file_list
+        .iter()
+        .any(|(_, dest)| is_tool_file(&dest.to_string_lossy().to_lowercase()))
+}
+
+/// Route all files in a tool mod to `~docs~/<mod_name>/` so the tool and its
+/// companion files land together in the Wine user's Documents folder rather than
+/// being split between Documents root and `packages/core/override/`.
+pub fn route_tool_paths(
+    file_list: Vec<(PathBuf, PathBuf)>,
+    mod_name: &str,
+) -> Vec<(PathBuf, PathBuf)> {
+    let subfolder = sanitize_tool_name(mod_name);
+    file_list
+        .into_iter()
+        .map(|(src, dest)| {
+            let filename = dest
+                .file_name()
+                .unwrap_or(dest.as_os_str())
+                .to_string_lossy();
+            let routed = format!("{DOCS_PREFIX}{subfolder}/{filename}");
+            (src, PathBuf::from(routed))
+        })
+        .collect()
+}
+
+fn sanitize_tool_name(name: &str) -> String {
+    name.trim()
+        .replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_")
 }
 
 /// Update `Settings/AddIns.xml` with entries for every installed DAZIP mod found

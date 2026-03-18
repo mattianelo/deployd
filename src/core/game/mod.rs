@@ -30,6 +30,19 @@ pub struct KnownGameOption {
     pub experimental: bool,
 }
 
+/// Return the root directory where tool presets should be searched for a game.
+///
+/// For Eclipse games the interesting directory is the Wine user's `Documents/` folder
+/// (two levels above `deploy_dir`). For all other engines it is the same as `deploy_dir`.
+pub fn tool_search_dir(game: &Game) -> Option<PathBuf> {
+    let dd = deploy_dir(game);
+    if game.engine == GameEngine::Eclipse {
+        dd.parent().and_then(|p| p.parent()).map(|p| p.to_path_buf())
+    } else {
+        Some(dd)
+    }
+}
+
 /// Return the directory where mods should be deployed for a game.
 ///
 /// For Eclipse engine games (Dragon Age: Origins), mods live inside the Wine prefix

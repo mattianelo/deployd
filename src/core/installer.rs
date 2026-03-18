@@ -127,9 +127,10 @@ pub async fn add_mod_with_file_list(
     };
 
     // Route Eclipse (Dragon Age) files: DAZIP-expanded files already carry an
-    // AddIns/<uid>/ prefix; everything else goes to packages/core/override/.
+    // AddIns/<uid>/ prefix; tool mods go to Documents/<mod_name>/; everything
+    // else goes to packages/core/override/.
     let file_list = if game.engine == GameEngine::Eclipse {
-        route_eclipse_paths(file_list)
+        route_eclipse_paths(file_list, mod_name)
     } else {
         file_list
     };
@@ -1200,16 +1201,24 @@ fn parse_dazip_uid(data: &[u8]) -> Option<String> {
 
 /// Route file paths for Eclipse (Dragon Age: Origins) mods.
 ///
-/// DAZIP-expanded files already carry `AddIns/<uid>/` as their prefix and are
-/// left as-is. Any other file (loose override) is routed into
-/// `packages/core/override/` so the game's override scanner picks it up.
-fn route_eclipse_paths(file_list: Vec<(PathBuf, PathBuf)>) -> Vec<(PathBuf, PathBuf)> {
+/// If the archive contains any executable, the entire mod is treated as an
+/// external tool and every file goes to `~docs~/<mod_name>/`. Otherwise,
+/// DAZIP-expanded files keep their `AddIns/<uid>/` prefix and loose files go
+/// to `packages/core/override/`.
+fn route_eclipse_paths(
+    file_list: Vec<(PathBuf, PathBuf)>,
+    mod_name: &str,
+) -> Vec<(PathBuf, PathBuf)> {
     use crate::core::game::eclipse;
-    file_list
-        .into_iter()
-        .map(|(src, dest)| {
-            let routed = eclipse::route_path(&dest.to_string_lossy());
-            (src, PathBuf::from(routed))
-        })
-        .collect()
+    if eclipse::is_tool_mod(&file_list) {
+        eclipse::route_tool_paths(file_list, mod_name)
+    } else {
+        file_list
+            .into_iter()
+            .map(|(src, dest)| {
+                let routed = eclipse::route_path(&dest.to_string_lossy());
+                (src, PathBuf::from(routed))
+            })
+            .collect()
+    }
 }

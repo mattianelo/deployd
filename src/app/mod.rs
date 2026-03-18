@@ -1113,7 +1113,7 @@ impl Component for App {
             }
             AppMsg::SelfUpdateDownload => self.handle_self_update_download(&sender),
             AppMsg::DaoExperimentalChanged(enabled) => {
-                self.handle_dao_experimental_changed(enabled)
+                self.handle_dao_experimental_changed(enabled, &sender)
             }
         }
     }

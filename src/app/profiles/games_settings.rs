@@ -163,7 +163,11 @@ impl App {
         }
     }
 
-    pub(crate) fn handle_dao_experimental_changed(&mut self, enabled: bool) {
+    pub(crate) fn handle_dao_experimental_changed(
+        &mut self,
+        enabled: bool,
+        sender: &ComponentSender<Self>,
+    ) {
         self.dao_experimental_enabled = enabled;
         if !enabled {
             const DAO_IDS: &[&str] = &["dragonage", "dragonage-steam"];
@@ -176,8 +180,7 @@ impl App {
                 self.game_model.append(&g.title);
             }
         } else {
-            self.toaster
-                .toast("Rescan for games to detect Dragon Age: Origins");
+            sender.input(AppMsg::RescanGames);
         }
     }
 
