@@ -1,6 +1,6 @@
 # Deployd
 
-![Version](https://img.shields.io/badge/version-0.9.4-blue)
+![Version](https://img.shields.io/badge/version-0.9.6-blue)
 ![Status](https://img.shields.io/badge/status-beta-orange)
 ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey?logo=linux)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
@@ -8,7 +8,7 @@
 A Linux-native mod manager for Bethesda and REDEngine games, built with GTK4 and Rust.
 Works with both **Steam** and **Heroic Launcher** out of the box.
 
-> **Public Beta — v0.9.4.** If you find bugs, please [open an issue](https://gitlab.com/mattianelo/deployd/-/issues).
+> **Public Beta — v0.9.6.** If you find bugs, please [open an issue](https://gitlab.com/mattianelo/deployd/-/issues).
 
 ---
 
@@ -18,6 +18,7 @@ Works with both **Steam** and **Heroic Launcher** out of the box.
 |--------|-------|
 | Bethesda | Skyrim Special Edition · Fallout 4 · Fallout: New Vegas · Starfield |
 | REDEngine | The Witcher 3 · Cyberpunk 2077 |
+| Eclipse | Dragon Age: Origins *(Experimental)* |
 
 ---
 
@@ -25,13 +26,16 @@ Works with both **Steam** and **Heroic Launcher** out of the box.
 
 - **Game Detection** — Auto-detects your library from Steam and Heroic Launcher (GOG/Epic)
 - **Nexus Mods Integration** — SSO login, NXM deep links, and one-click update checking
-- **FOMOD Installer** — Full wizard with conditional steps, visibility rules, and required files
+- **FOMOD Installer** — Full wizard with conditional steps, image previews, and DLC-aware auto-selection
 - **Mod Profiles** — Per-game profiles to switch between configurations instantly
 - **Plugin Load Order** — Drag-and-drop `.esp`/`.esm`/`.esl` management written to `plugins.txt`
 - **Conflict Detection** — Per-file visibility into which mods override each other
 - **Priority-Based Deployment** — Hardlink deployment; lower in the list wins conflicts
 - **Tool Launcher** — Run xEdit, LOOT, BodySlide and more through Wine/Proton
 - **Save Management** — Browse game saves associated with the active profile
+- **Mod Notes** — Attach personal notes to any mod; preview on hover from the list
+- **Notifications Panel** — External changes and alerts collected in a sidebar, with "All Caught Up" state
+- **Dragon Age: Origins (Experimental)** — Override mods and `.dazip` archives supported; enable in Settings → Games
 
 ---
 
@@ -62,7 +66,7 @@ Deployd reads your game library automatically from **Steam** and **Heroic Launch
 - For Steam: games are detected from the default Steam library
 - For Heroic: make sure the game has been launched at least once so Heroic has written its config
 
-Supported titles: **Skyrim SE**, **Fallout 4**, **Fallout: New Vegas**, **Starfield**, **The Witcher 3**, **Cyberpunk 2077**
+Supported titles: **Skyrim SE**, **Fallout 4**, **Fallout: New Vegas**, **Starfield**, **The Witcher 3**, **Cyberpunk 2077**, **Dragon Age: Origins** *(Experimental)*
 
 Use the game selector in the top bar to switch between detected games.
 
@@ -81,6 +85,8 @@ Open **Settings** (gear icon) and log in under **Nexus Mods**:
 - **Local archive** — Drag-and-drop a `.zip`, `.7z`, or `.rar` onto the mod list, or use the **+** button
 - **From Nexus Mods** — Click **Mod Manager Download**; the file downloads into Deployd automatically
 - **FOMOD mods** — A wizard opens automatically if the archive includes a FOMOD installer
+- **Reinstall** — Use the refresh button in the Downloads panel to re-extract and replace an existing mod
+- **Replace** — When a name conflict occurs during install, choose Replace to swap the mod in-place (preserving load order position)
 
 ### 4. Deployment
 

@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use adw::prelude::*;
+use gtk::glib;
 use gtk::prelude::*;
 use relm4::prelude::*;
 
@@ -76,216 +77,155 @@ impl Component for SettingsDialog {
     type CommandOutput = SettingsCmdMsg;
 
     view! {
-        adw::Window {
+        adw::PreferencesWindow {
             set_title: Some("Settings"),
-            set_default_size: (450, -1),
-            set_modal: true,
+            set_search_enabled: false,
 
-            gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
+            add = &adw::PreferencesPage {
 
-                adw::HeaderBar {
-                    #[wrap(Some)]
-                    set_title_widget = &adw::WindowTitle {
-                        set_title: "Settings",
-                        set_subtitle: "Nexus Mods API",
+                // Nexus Mods section
+                add = &adw::PreferencesGroup {
+                    set_title: "Nexus Mods",
+
+                    // Login / logout row
+                    add = &gtk::Box {
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 8,
+                        set_margin_top: 8,
+                        set_margin_bottom: 4,
+
+                        #[local_ref]
+                        login_button -> gtk::Button {
+                            set_label: "Login with Nexus",
+                            add_css_class: "suggested-action",
+                            set_hexpand: true,
+                            #[watch]
+                            set_sensitive: !model.has_key && !model.sso_in_progress,
+                            connect_clicked => SettingsMsg::NexusLogin,
+                        },
+
+                        #[local_ref]
+                        logout_button -> gtk::Button {
+                            set_label: "Log Out",
+                            add_css_class: "destructive-action",
+                            set_hexpand: true,
+                            #[watch]
+                            set_visible: model.has_key,
+                            connect_clicked => SettingsMsg::Logout,
+                        },
+                    },
+
+                    // Manual API key entry (hidden when using SSO; suffix added imperatively)
+                    #[name = "api_key_row"]
+                    add = &adw::ActionRow {
+                        set_title: "API Key",
+                        #[watch]
+                        set_visible: model.login_source != Some(LoginSource::Sso),
+                    },
+
+                    add = &gtk::Box {
+                        set_spacing: 8,
+                        set_margin_bottom: 4,
+                        #[watch]
+                        set_visible: model.login_source != Some(LoginSource::Sso),
+
+                        #[local_ref]
+                        test_button -> gtk::Button {
+                            set_label: "Test",
+                            add_css_class: "flat",
+                            connect_clicked => SettingsMsg::TestKey,
+                        },
+
+                        #[local_ref]
+                        save_button -> gtk::Button {
+                            set_label: "Save",
+                            add_css_class: "suggested-action",
+                            connect_clicked => SettingsMsg::Save,
+                        },
+                    },
+
+                    add = &gtk::Box {
+                        set_margin_bottom: 8,
+
+                        #[local_ref]
+                        status_label -> gtk::Label {
+                            set_halign: gtk::Align::Start,
+                            set_wrap: true,
+                            set_visible: false,
+                        },
                     },
                 },
 
-                gtk::ScrolledWindow {
-                    set_vexpand: true,
-                    set_hscrollbar_policy: gtk::PolicyType::Never,
-                    set_propagate_natural_height: true,
+                // Downloads section
+                add = &adw::PreferencesGroup {
+                    set_title: "Downloads",
 
-                    adw::Clamp {
-                        set_maximum_size: 500,
-                        set_margin_all: 12,
+                    add = &adw::ActionRow {
+                        set_title: "Downloads Folder",
+                        #[watch]
+                        set_subtitle: &model.downloads_dir,
+                        set_subtitle_lines: 1,
 
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
-                            set_spacing: 12,
-
-                            gtk::Label {
-                                set_label: "Nexus Mods",
-                                set_halign: gtk::Align::Start,
-                                add_css_class: "heading",
-                            },
-
-                            #[local_ref]
-                            login_button -> gtk::Button {
-                                set_label: "Login with Nexus",
-                                add_css_class: "suggested-action",
-                                // Disabled when already logged in by either method
-                                #[watch]
-                                set_sensitive: !model.has_key && !model.sso_in_progress,
-                                connect_clicked => SettingsMsg::NexusLogin,
-                            },
-
-                            #[local_ref]
-                            logout_button -> gtk::Button {
-                                set_label: "Log Out",
-                                add_css_class: "destructive-action",
-                                #[watch]
-                                set_visible: model.has_key,
-                                connect_clicked => SettingsMsg::Logout,
-                            },
-
-                            gtk::Label {
-                                set_label: "— or enter API key manually —",
-                                set_halign: gtk::Align::Center,
-                                add_css_class: "dim-label",
-                                add_css_class: "caption",
-                                // Hidden when logged in via SSO — key is managed automatically
-                                #[watch]
-                                set_visible: model.login_source != Some(LoginSource::Sso),
-                            },
-
-                            gtk::Label {
-                                set_label: "Get your key from nexusmods.com → Settings → API.",
-                                set_halign: gtk::Align::Start,
-                                add_css_class: "dim-label",
-                                set_wrap: true,
-                                #[watch]
-                                set_visible: model.login_source != Some(LoginSource::Sso),
-                            },
-
-                            gtk::ListBox {
-                                set_selection_mode: gtk::SelectionMode::None,
-                                add_css_class: "boxed-list",
-                                #[watch]
-                                set_visible: model.login_source != Some(LoginSource::Sso),
-
-                                adw::ActionRow {
-                                    set_title: "API Key",
-                                    add_suffix: api_key_entry,
-                                    set_activatable_widget: Some(api_key_entry),
-                                },
-                            },
-
-                            gtk::Box {
-                                set_spacing: 8,
-                                #[watch]
-                                set_visible: model.login_source != Some(LoginSource::Sso),
-
-                                #[local_ref]
-                                test_button -> gtk::Button {
-                                    set_label: "Test",
-                                    add_css_class: "flat",
-                                    connect_clicked => SettingsMsg::TestKey,
-                                },
-
-                                #[local_ref]
-                                save_button -> gtk::Button {
-                                    set_label: "Save",
-                                    add_css_class: "suggested-action",
-                                    connect_clicked => SettingsMsg::Save,
-                                },
-                            },
-
-                            #[local_ref]
-                            status_label -> gtk::Label {
-                                set_halign: gtk::Align::Start,
-                                set_wrap: true,
-                                set_visible: false,
-                            },
-
-                            gtk::Separator {},
-
-                            gtk::Label {
-                                set_label: "Downloads",
-                                set_halign: gtk::Align::Start,
-                                add_css_class: "heading",
-                            },
-
-                            gtk::ListBox {
-                                set_selection_mode: gtk::SelectionMode::None,
-                                add_css_class: "boxed-list",
-
-                                adw::ActionRow {
-                                    set_title: "Downloads Folder",
-                                    #[watch]
-                                    set_subtitle: &model.downloads_dir,
-                                    set_subtitle_lines: 1,
-
-                                    add_suffix = &gtk::Button {
-                                        set_icon_name: "folder-open-symbolic",
-                                        set_tooltip_text: Some("Browse"),
-                                        set_valign: gtk::Align::Center,
-                                        add_css_class: "flat",
-                                        connect_clicked => SettingsMsg::BrowseDownloadsDir,
-                                    },
-                                },
-                            },
-
-                            gtk::Separator {},
-
-                            gtk::Label {
-                                set_label: "Games",
-                                set_halign: gtk::Align::Start,
-                                add_css_class: "heading",
-                            },
-
-                            gtk::ListBox {
-                                set_selection_mode: gtk::SelectionMode::None,
-                                add_css_class: "boxed-list",
-
-                                adw::ActionRow {
-                                    set_title: "Manage Games",
-                                    set_subtitle: "Configure directories and Wine prefix per game",
-                                    set_activatable: true,
-                                    connect_activated => SettingsMsg::ManageGames,
-
-                                    add_suffix = &gtk::Image::from_icon_name("go-next-symbolic") {
-                                        set_valign: gtk::Align::Center,
-                                    },
-                                },
-
-                                adw::ActionRow {
-                                    set_title: "Rescan for games",
-                                    set_subtitle: "Detect newly installed games",
-                                    set_activatable: true,
-                                    connect_activated => SettingsMsg::RescanGames,
-
-                                    add_suffix = &gtk::Image::from_icon_name("view-refresh-symbolic") {
-                                        set_valign: gtk::Align::Center,
-                                    },
-                                },
-
-                                adw::SwitchRow {
-                                    set_title: "Dragon Age: Origins (Experimental)",
-                                    set_subtitle: "Enable auto-detection and setup for Dragon Age: Origins",
-                                    #[watch]
-                                    set_active: model.dao_experimental_enabled,
-                                    connect_active_notify[sender] => move |row| {
-                                        sender.input(SettingsMsg::DaoExperimentalToggled(row.is_active()));
-                                    },
-                                },
-                            },
-
-                            gtk::Separator {},
-
-                            gtk::Label {
-                                set_label: "About",
-                                set_halign: gtk::Align::Start,
-                                add_css_class: "heading",
-                            },
-
-                            gtk::ListBox {
-                                set_selection_mode: gtk::SelectionMode::None,
-                                add_css_class: "boxed-list",
-
-                                adw::ActionRow {
-                                    set_title: "Deployd",
-                                    set_subtitle: concat!("Version ", env!("CARGO_PKG_VERSION"), " Beta"),
-                                },
-
-                                #[name = "about_kofi_row"]
-                                adw::ActionRow {
-                                    set_title: "Support Development",
-                                    set_subtitle: "ko-fi.com/mattianelo",
-                                },
-                            },
+                        add_suffix = &gtk::Button {
+                            set_icon_name: "folder-open-symbolic",
+                            set_tooltip_text: Some("Browse"),
+                            set_valign: gtk::Align::Center,
+                            add_css_class: "flat",
+                            connect_clicked => SettingsMsg::BrowseDownloadsDir,
                         },
+                    },
+                },
+
+                // Games section
+                add = &adw::PreferencesGroup {
+                    set_title: "Games",
+
+                    add = &adw::ActionRow {
+                        set_title: "Manage Games",
+                        set_subtitle: "Configure directories and Wine prefix per game",
+                        set_activatable: true,
+                        connect_activated => SettingsMsg::ManageGames,
+
+                        add_suffix = &gtk::Image::from_icon_name("go-next-symbolic") {
+                            set_valign: gtk::Align::Center,
+                        },
+                    },
+
+                    add = &adw::ActionRow {
+                        set_title: "Rescan for games",
+                        set_subtitle: "Detect newly installed games",
+                        set_activatable: true,
+                        connect_activated => SettingsMsg::RescanGames,
+
+                        add_suffix = &gtk::Image::from_icon_name("view-refresh-symbolic") {
+                            set_valign: gtk::Align::Center,
+                        },
+                    },
+
+                    add = &adw::SwitchRow {
+                        set_title: "Dragon Age: Origins (Experimental)",
+                        set_subtitle: "Enable auto-detection and setup for Dragon Age: Origins",
+                        #[watch]
+                        set_active: model.dao_experimental_enabled,
+                        connect_active_notify[sender] => move |row| {
+                            sender.input(SettingsMsg::DaoExperimentalToggled(row.is_active()));
+                        },
+                    },
+                },
+
+                // About section
+                add = &adw::PreferencesGroup {
+                    set_title: "About",
+
+                    add = &adw::ActionRow {
+                        set_title: "Deployd",
+                        set_subtitle: concat!("Version ", env!("CARGO_PKG_VERSION"), " Beta"),
+                    },
+
+                    #[name = "about_kofi_row"]
+                    add = &adw::ActionRow {
+                        set_title: "Support Development",
+                        set_subtitle: "ko-fi.com/mattianelo",
                     },
                 },
             },
@@ -331,13 +271,16 @@ impl Component for SettingsDialog {
             dao_experimental_enabled: false,
         };
 
-        let api_key_entry = &model.api_key_entry;
         let status_label = &model.status_label;
         let test_button = &model.test_button;
         let save_button = &model.save_button;
         let login_button = &model.login_button;
         let logout_button = &model.logout_button;
         let widgets = view_output!();
+
+        // API key entry suffix (can't be set in view! macro for adw::ActionRow)
+        widgets.api_key_row.add_suffix(&model.api_key_entry);
+        widgets.api_key_row.set_activatable_widget(Some(&model.api_key_entry));
 
         // Ko-fi support row suffix
         let kofi_image = gtk::Image::from_resource("/io/mattianelo/Deployd/kofi-logo.svg");
@@ -625,7 +568,6 @@ impl Component for SettingsDialog {
                     Ok(_api_key) => {
                         self.has_key = true;
                         self.login_source = Some(LoginSource::Sso);
-                        // Don't populate the entry — SSO key is managed automatically
                         self.status_label
                             .set_label("Logged in via Nexus SSO — key saved.");
                         self.status_label.remove_css_class("error");

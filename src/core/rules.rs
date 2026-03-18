@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use regex::Regex;
 
 #[derive(Debug, Clone)]
@@ -7,13 +9,6 @@ pub enum Rule {
 }
 
 impl Rule {
-    pub fn prefix(pattern: &str, replacement: &str) -> Self {
-        Rule::Prefix {
-            pattern: Regex::new(pattern).expect("invalid rule regex"),
-            replacement: replacement.to_string(),
-        }
-    }
-
     /// Apply this rule to a relative path.
     /// Returns `Some(mapped_path)` if the rule matched, `None` otherwise.
     pub fn apply(&self, rel_path: &str) -> Option<String> {
@@ -42,13 +37,23 @@ pub fn apply_rules(rules: &[Rule], rel_path: &str) -> String {
     rel_path.to_string()
 }
 
+// Compiled once; Regex::clone() is O(1) (internally Arc-wrapped).
+static DATA_PREFIX_RE: OnceLock<Regex> = OnceLock::new();
+
+fn data_prefix_re() -> &'static Regex {
+    DATA_PREFIX_RE.get_or_init(|| Regex::new(r"(?i)^data/").expect("invalid data prefix regex"))
+}
+
 pub fn rules_for_game(game_id: &str) -> Vec<Rule> {
     match game_id {
         // Strip redundant Data/ prefix. Everything else stays as-is since
         // we deploy relative to the game's Data directory already.
         "skyrimse" | "skyrimse-steam" | "skyrimvr" | "fallout4" | "fallout4-steam"
         | "falloutnv" | "falloutnv-steam" | "starfield" => {
-            vec![Rule::prefix(r"(?i)^data/", "")]
+            vec![Rule::Prefix {
+                pattern: data_prefix_re().clone(),
+                replacement: String::new(),
+            }]
         }
         _ => vec![],
     }

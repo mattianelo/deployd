@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
-use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePoolOptions};
+use std::str::FromStr;
 
 pub mod downloads;
 pub mod files;
@@ -50,9 +51,13 @@ pub struct OverrideInfo {
 impl Tracker {
     /// Open (or create) the SQLite database and ensure tables exist.
     pub async fn open(db_url: &str) -> Result<Self> {
+        let opts = SqliteConnectOptions::from_str(db_url)?
+            .journal_mode(SqliteJournalMode::Wal)
+            .busy_timeout(std::time::Duration::from_secs(5));
+
         let pool = SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect(db_url)
+            .max_connections(4)
+            .connect_with(opts)
             .await
             .context("Failed to open SQLite database")?;
 

@@ -2,11 +2,106 @@ use std::path::PathBuf;
 
 use adw::prelude::*;
 use gtk::prelude::*;
+use relm4::factory::FactoryVecDeque;
 use relm4::prelude::*;
 
 use crate::core::game;
 use crate::models::game::GameEngine;
 use crate::models::tool::Tool;
+
+// ---------------------------------------------------------------------------
+// ToolRow — factory component for the "Configured Tools" list
+// ---------------------------------------------------------------------------
+
+pub struct ToolRow {
+    pub tool_id: String,
+    pub name: String,
+    pub exe_path: String,
+    pub working_dir: String,
+    pub icon_name: String,
+}
+
+impl ToolRow {
+    fn wdir_tooltip(&self) -> String {
+        if self.working_dir.is_empty() {
+            let parent = PathBuf::from(&self.exe_path)
+                .parent()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default();
+            format!("Working dir: {parent} (exe folder)\nClick to change")
+        } else {
+            format!("Working dir: {}\nClick to change", self.working_dir)
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum ToolRowMsg {
+    UpdateWorkingDir(String),
+}
+
+#[derive(Debug)]
+pub enum ToolRowOutput {
+    Remove(DynamicIndex),
+    ChangeWorkingDir(DynamicIndex),
+}
+
+#[relm4::factory(pub)]
+impl FactoryComponent for ToolRow {
+    type Init = Tool;
+    type Input = ToolRowMsg;
+    type Output = ToolRowOutput;
+    type CommandOutput = ();
+    type ParentWidget = gtk::ListBox;
+
+    view! {
+        adw::ActionRow {
+            set_title: &self.name,
+            set_subtitle: &self.exe_path,
+            add_prefix = &gtk::Image::from_icon_name(&self.icon_name) {},
+
+            add_suffix = &gtk::Button::from_icon_name("folder-symbolic") {
+                set_valign: gtk::Align::Center,
+                add_css_class: "flat",
+                #[watch] set_tooltip_text: Some(&self.wdir_tooltip()),
+                connect_clicked[sender, index] => move |_| {
+                    sender.output(ToolRowOutput::ChangeWorkingDir(index.clone())).unwrap();
+                },
+            },
+
+            add_suffix = &gtk::Button::from_icon_name("user-trash-symbolic") {
+                set_valign: gtk::Align::Center,
+                add_css_class: "flat",
+                set_tooltip_text: Some("Remove tool"),
+                connect_clicked[sender, index] => move |_| {
+                    sender.output(ToolRowOutput::Remove(index.clone())).unwrap();
+                },
+            },
+        }
+    }
+
+    fn init_model(tool: Tool, _index: &DynamicIndex, _sender: FactorySender<Self>) -> Self {
+        ToolRow {
+            tool_id: tool.id,
+            name: tool.name,
+            exe_path: tool.exe_path,
+            working_dir: tool.working_dir,
+            icon_name: tool.icon_name,
+        }
+    }
+
+    fn update(&mut self, msg: Self::Input, _sender: FactorySender<Self>) {
+        match msg {
+            ToolRowMsg::UpdateWorkingDir(dir) => {
+                self.working_dir = dir;
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ToolManager — dialog component
+// ---------------------------------------------------------------------------
 
 pub struct ToolManager {
     game_id: String,
@@ -14,8 +109,7 @@ pub struct ToolManager {
     wine_prefix: Option<PathBuf>,
     deploy_dir: Option<PathBuf>,
     game_engine: GameEngine,
-    tools: Vec<Tool>,
-    list_box: gtk::ListBox,
+    tools: FactoryVecDeque<ToolRow>,
     preset_box: gtk::ListBox,
 }
 
@@ -45,65 +139,6 @@ pub enum ToolManagerOutput {
 }
 
 impl ToolManager {
-    fn rebuild_list(&self, sender: &ComponentSender<Self>) {
-        while let Some(child) = self.list_box.first_child() {
-            self.list_box.remove(&child);
-        }
-
-        for (i, tool) in self.tools.iter().enumerate() {
-            let row = adw::ActionRow::new();
-            row.set_title(&tool.name);
-            row.set_subtitle(&tool.exe_path);
-            row.add_prefix(&gtk::Image::from_icon_name(&tool.icon_name));
-
-            // Folder button to change working directory.
-            let folder_btn = gtk::Button::from_icon_name("folder-symbolic");
-            folder_btn.set_valign(gtk::Align::Center);
-            folder_btn.add_css_class("flat");
-            let wdir_label = if tool.working_dir.is_empty() {
-                format!(
-                    "Working dir: {} (exe folder)\nClick to change",
-                    PathBuf::from(&tool.exe_path)
-                        .parent()
-                        .map(|p| p.display().to_string())
-                        .unwrap_or_default()
-                )
-            } else {
-                format!("Working dir: {}\nClick to change", tool.working_dir)
-            };
-            folder_btn.set_tooltip_text(Some(&wdir_label));
-
-            let input_sender = sender.input_sender().clone();
-            folder_btn.connect_clicked(move |_| {
-                input_sender
-                    .send(ToolManagerMsg::ChangeWorkingDir(i))
-                    .unwrap();
-            });
-
-            let delete_btn = gtk::Button::from_icon_name("user-trash-symbolic");
-            delete_btn.set_valign(gtk::Align::Center);
-            delete_btn.add_css_class("flat");
-            delete_btn.set_tooltip_text(Some("Remove tool"));
-
-            let input_sender = sender.input_sender().clone();
-            delete_btn.connect_clicked(move |_| {
-                input_sender.send(ToolManagerMsg::Remove(i)).unwrap();
-            });
-
-            row.add_suffix(&folder_btn);
-            row.add_suffix(&delete_btn);
-            self.list_box.append(&row);
-        }
-
-        if self.tools.is_empty() {
-            let placeholder = gtk::Label::new(Some("No tools configured yet."));
-            placeholder.add_css_class("dim-label");
-            placeholder.set_margin_top(16);
-            placeholder.set_margin_bottom(16);
-            self.list_box.append(&placeholder);
-        }
-    }
-
     fn rebuild_presets(&self, sender: &ComponentSender<Self>) {
         while let Some(child) = self.preset_box.first_child() {
             self.preset_box.remove(&child);
@@ -154,14 +189,11 @@ impl ToolManager {
     }
 
     fn add_tool(&mut self, tool: Tool, sender: &ComponentSender<Self>) {
-        self.tools.push(tool.clone());
-        self.rebuild_list(sender);
+        let _ = sender.output(ToolManagerOutput::ToolAdded(tool.clone()));
+        self.tools.guard().push_back(tool);
         self.rebuild_presets(sender);
-        let _ = sender.output(ToolManagerOutput::ToolAdded(tool));
     }
 
-    /// Derive a sensible default working directory from an exe path:
-    /// the directory that contains the exe.
     fn default_working_dir(exe_path: &std::path::Path) -> String {
         exe_path
             .parent()
@@ -226,9 +258,10 @@ impl Component for ToolManager {
                         },
 
                         #[local_ref]
-                        list_box -> gtk::ListBox {
+                        tool_list -> gtk::ListBox {
                             set_selection_mode: gtk::SelectionMode::None,
                             add_css_class: "boxed-list",
+                            set_show_separators: true,
                         },
 
                         // Custom tool button
@@ -262,8 +295,24 @@ impl Component for ToolManager {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let (game_id, tools, game_path, wine_prefix, game_engine, deploy_dir) = init;
-        let list_box = gtk::ListBox::new();
+        let (game_id, init_tools, game_path, wine_prefix, game_engine, deploy_dir) = init;
+
+        let mut tools = FactoryVecDeque::<ToolRow>::builder()
+            .launch(gtk::ListBox::new())
+            .forward(sender.input_sender(), |output| match output {
+                ToolRowOutput::Remove(idx) => ToolManagerMsg::Remove(idx.current_index()),
+                ToolRowOutput::ChangeWorkingDir(idx) => {
+                    ToolManagerMsg::ChangeWorkingDir(idx.current_index())
+                }
+            });
+
+        {
+            let mut guard = tools.guard();
+            for tool in init_tools {
+                guard.push_back(tool);
+            }
+        }
+
         let preset_box = gtk::ListBox::new();
 
         let model = ToolManager {
@@ -273,15 +322,13 @@ impl Component for ToolManager {
             deploy_dir,
             game_engine,
             tools,
-            list_box,
             preset_box,
         };
 
-        let list_box = &model.list_box;
+        let tool_list = model.tools.widget();
         let preset_box = &model.preset_box;
         let widgets = view_output!();
 
-        model.rebuild_list(&sender);
         model.rebuild_presets(&sender);
 
         root.present();
@@ -424,20 +471,20 @@ impl Component for ToolManager {
                 self.add_tool(tool, &sender);
             }
             ToolManagerMsg::ChangeWorkingDir(idx) => {
-                let Some(tool) = self.tools.get(idx) else {
+                let Some(row) = self.tools.get(idx) else {
                     return;
                 };
 
                 let dialog = gtk::FileDialog::builder()
-                    .title(format!("Working Directory for {}", tool.name))
+                    .title(format!("Working Directory for {}", row.name))
                     .modal(true)
                     .build();
 
                 // Start the picker at the current working dir (or exe parent).
-                let start_path = if !tool.working_dir.is_empty() {
-                    PathBuf::from(&tool.working_dir)
+                let start_path = if !row.working_dir.is_empty() {
+                    PathBuf::from(&row.working_dir)
                 } else {
-                    PathBuf::from(&tool.exe_path)
+                    PathBuf::from(&row.exe_path)
                         .parent()
                         .map(|p| p.to_path_buf())
                         .unwrap_or_else(|| self.game_path.clone())
@@ -456,25 +503,20 @@ impl Component for ToolManager {
                 });
             }
             ToolManagerMsg::WorkingDirChosen(idx, path) => {
-                let Some(tool) = self.tools.get_mut(idx) else {
-                    return;
-                };
-                let tool_id = tool.id.clone();
-                tool.working_dir = path.to_string_lossy().into_owned();
-                self.rebuild_list(&sender);
-                let _ = sender.output(ToolManagerOutput::ToolWorkingDirChanged(
-                    tool_id,
-                    path.to_string_lossy().into_owned(),
-                ));
+                let tool_id = self.tools.get(idx).map(|r| r.tool_id.clone());
+                let dir = path.to_string_lossy().into_owned();
+                self.tools.send(idx, ToolRowMsg::UpdateWorkingDir(dir.clone()));
+                if let Some(id) = tool_id {
+                    let _ = sender.output(ToolManagerOutput::ToolWorkingDirChanged(id, dir));
+                }
             }
             ToolManagerMsg::Remove(idx) => {
-                if idx < self.tools.len() {
-                    let tool_id = self.tools[idx].id.clone();
-                    self.tools.remove(idx);
-                    self.rebuild_list(&sender);
-                    self.rebuild_presets(&sender);
-                    let _ = sender.output(ToolManagerOutput::ToolRemoved(tool_id));
+                let tool_id = self.tools.get(idx).map(|r| r.tool_id.clone());
+                self.tools.guard().remove(idx);
+                if let Some(id) = tool_id {
+                    let _ = sender.output(ToolManagerOutput::ToolRemoved(id));
                 }
+                self.rebuild_presets(&sender);
             }
             ToolManagerMsg::Close => {
                 let _ = sender.output(ToolManagerOutput::Closed);
