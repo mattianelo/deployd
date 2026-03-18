@@ -119,14 +119,23 @@ pub fn tool_presets_for(engine: &GameEngine) -> Vec<&'static ToolPreset> {
 /// Try to auto-detect a tool's executable path.
 ///
 /// Search order:
-/// 1. Known relative path from game root (fastest)
-/// 2. Recursive search of game directory for known exe names (max depth 5)
-/// 3. Search Wine prefix directories (Program Files, AppData) if available
+/// 1. Deploy directory (e.g. Wine user data dir for Eclipse games) if provided
+/// 2. Known relative path from game root (fastest)
+/// 3. Recursive search of game directory for known exe names (max depth 5)
+/// 4. Search Wine prefix directories (Program Files, AppData) if available
 pub fn detect_tool_path(
     preset: &ToolPreset,
     game_path: &Path,
     wine_prefix: Option<&Path>,
+    deploy_dir: Option<&Path>,
 ) -> Option<PathBuf> {
+    // Search deploy dir first (tools installed via Deployd land here)
+    if let Some(dir) = deploy_dir {
+        if let Some(found) = search_dir_for_exes(dir, preset.known_exe_names, 3) {
+            return Some(found);
+        }
+    }
+
     // Try each known relative path (fast O(1) lookups before the recursive walk)
     for rel in preset.rel_exe_paths {
         let candidate = game_path.join(rel);

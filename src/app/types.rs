@@ -83,6 +83,8 @@ pub struct InitData {
     pub persisted_games: Vec<PersistedGame>,
     /// IDs of games the user has explicitly hidden (excluded from auto-detection).
     pub hidden_game_ids: Vec<String>,
+    /// Whether the user has opted in to Dragon Age: Origins experimental support.
+    pub dao_experimental_enabled: bool,
     /// Profile ID that was active during the last successful deploy for the selected game.
     pub last_deployed_profile_id: Option<String>,
 }

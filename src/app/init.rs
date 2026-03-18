@@ -189,6 +189,7 @@ pub(super) fn build_model(
         update_url: None,
         running_as_appimage: std::env::var("APPIMAGE").is_ok(),
         pending_new_game_ids: vec![],
+        dao_experimental_enabled: false,
     };
 
     // Profile rename popover
@@ -487,6 +488,13 @@ pub(super) async fn load_init_data(
 
         let persisted_games = tracker.load_persisted_games().await.unwrap_or_default();
         let hidden_game_ids = tracker.load_hidden_game_ids().await.unwrap_or_default();
+        let dao_experimental_enabled = tracker
+            .get_setting("dao_experimental_enabled")
+            .await
+            .ok()
+            .flatten()
+            .map(|v| v == "true")
+            .unwrap_or(false);
 
         let last_deployed_profile_id = if let Some(game) =
             games_for_init.get(selected_game_idx)
@@ -517,6 +525,7 @@ pub(super) async fn load_init_data(
             groups,
             persisted_games,
             hidden_game_ids,
+            dao_experimental_enabled,
             last_deployed_profile_id,
         })
     };

@@ -128,10 +128,14 @@ impl App {
 
     pub(crate) fn handle_cmd_games_rescanned(&mut self, found_games: Vec<Game>) {
         let known_ids: HashSet<String> = self.games.iter().map(|g| g.id.clone()).collect();
-        let new_games: Vec<Game> = found_games
+        let mut new_games: Vec<Game> = found_games
             .into_iter()
             .filter(|g| !known_ids.contains(&g.id))
             .collect();
+        if !self.dao_experimental_enabled {
+            const DAO_IDS: &[&str] = &["dragonage", "dragonage-steam"];
+            new_games.retain(|g| !DAO_IDS.contains(&g.id.as_str()));
+        }
         if new_games.is_empty() {
             self.toaster.toast("No new games found");
         } else {

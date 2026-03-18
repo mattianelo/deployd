@@ -63,6 +63,19 @@ impl App {
                     }
                 }
 
+                self.dao_experimental_enabled = data.dao_experimental_enabled;
+                if !data.dao_experimental_enabled {
+                    const DAO_IDS: &[&str] = &["dragonage", "dragonage-steam"];
+                    let n = self.game_model.n_items();
+                    for _ in 0..n {
+                        self.game_model.remove(0);
+                    }
+                    self.games.retain(|g| !DAO_IDS.contains(&g.id.as_str()));
+                    for g in &self.games {
+                        self.game_model.append(&g.title);
+                    }
+                }
+
                 let persisted_ids: std::collections::HashSet<&str> =
                     data.persisted_games.iter().map(|p| p.id.as_str()).collect();
                 let hidden_set: std::collections::HashSet<&str> =

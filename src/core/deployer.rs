@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use crate::core::game;
+use crate::core::game::eclipse::DOCS_PREFIX;
 use crate::core::mod_folders;
 use crate::core::tracker::Tracker;
 use crate::dlog;
@@ -134,11 +135,15 @@ pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
 
         // Directory sentinel: ensure the directory exists, record it.
         if f.game_rel_lowercase.ends_with('/') {
-            let (base, rel) = if let Some(root_rel) = f.game_rel_original.strip_prefix("../") {
-                (&game.path, root_rel.trim_end_matches('/'))
-            } else {
-                (&game_data, f.game_rel_original.trim_end_matches('/'))
-            };
+            let docs = docs_base(&game_data);
+            let (base, rel): (&PathBuf, &str) =
+                if let Some(root_rel) = f.game_rel_original.strip_prefix("../") {
+                    (&game.path, root_rel.trim_end_matches('/'))
+                } else if let Some(docs_rel) = f.game_rel_original.strip_prefix(DOCS_PREFIX) {
+                    (&docs, docs_rel.trim_end_matches('/'))
+                } else {
+                    (&game_data, f.game_rel_original.trim_end_matches('/'))
+                };
             let dir_comps: Vec<&str> = rel.split('/').filter(|s| !s.is_empty()).collect();
             let dir_path = match create_dirs_case_insensitive(
                 base,
@@ -160,6 +165,8 @@ pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
                 .to_string();
             let actual_original = if f.game_rel_original.starts_with("../") {
                 format!("../{actual_rel}/")
+            } else if f.game_rel_original.starts_with(DOCS_PREFIX) {
+                format!("{DOCS_PREFIX}{actual_rel}/")
             } else {
                 format!("{actual_rel}/")
             };
@@ -172,11 +179,15 @@ pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
             continue;
         }
 
-        let (base, rel) = if let Some(root_rel) = f.game_rel_original.strip_prefix("../") {
-            (&game.path, root_rel)
-        } else {
-            (&game_data, f.game_rel_original.as_str())
-        };
+        let docs = docs_base(&game_data);
+        let (base, rel): (&PathBuf, &str) =
+            if let Some(root_rel) = f.game_rel_original.strip_prefix("../") {
+                (&game.path, root_rel)
+            } else if let Some(docs_rel) = f.game_rel_original.strip_prefix(DOCS_PREFIX) {
+                (&docs, docs_rel)
+            } else {
+                (&game_data, f.game_rel_original.as_str())
+            };
         let deploy_target =
             ensure_dirs_case_insensitive(base, rel, &canonical_dirs, &mut dir_cache)?;
 
@@ -349,9 +360,15 @@ async fn compute_winners(
 
 /// Remove a single deployed file or directory sentinel from the game folder.
 fn remove_deployed_file(f: &ModFile, game: &Game, game_data: &PathBuf) {
-    let is_root = f.game_rel_original.starts_with("../");
     let deploy_path = resolve_deploy_path(&f.game_rel_original, &game.path, game_data);
-    let stop_at = if is_root { &game.path } else { game_data };
+    let docs = docs_base(game_data);
+    let stop_at: &PathBuf = if f.game_rel_original.starts_with("../") {
+        &game.path
+    } else if f.game_rel_original.starts_with(DOCS_PREFIX) {
+        &docs
+    } else {
+        game_data
+    };
 
     if f.game_rel_original.ends_with('/') {
         let _ = fs::remove_dir(&deploy_path);
@@ -369,14 +386,27 @@ fn remove_deployed_file(f: &ModFile, game: &Game, game_data: &PathBuf) {
 }
 
 /// Resolve the actual filesystem path for a recorded relative path.
-/// Paths starting with "../" are relative to the game root (script extenders, ENB).
-/// All other paths are relative to the game data directory.
+/// - `../` prefix → relative to the game installation directory
+/// - `~docs~/` prefix → relative to `game_data/../..` (Wine user's Documents folder)
+/// - everything else → relative to the game data directory
 fn resolve_deploy_path(game_rel: &str, game_root: &PathBuf, game_data: &PathBuf) -> PathBuf {
     if let Some(root_rel) = game_rel.strip_prefix("../") {
         game_root.join(root_rel)
+    } else if let Some(docs_rel) = game_rel.strip_prefix(DOCS_PREFIX) {
+        docs_base(game_data).join(docs_rel)
     } else {
         game_data.join(game_rel)
     }
+}
+
+/// Returns the Wine user's Documents directory, two levels above the Eclipse
+/// data dir (`Documents/BioWare/Dragon Age` → `Documents/`).
+fn docs_base(game_data: &PathBuf) -> PathBuf {
+    game_data
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| game_data.clone())
 }
 
 /// Build a map from lowercase directory component name to the best-cased version
@@ -388,6 +418,8 @@ fn build_dir_canonical_map(winners: &[ModFile]) -> HashMap<String, String> {
     let mut map: HashMap<String, String> = HashMap::new();
     for f in winners {
         let rel = if let Some(r) = f.game_rel_original.strip_prefix("../") {
+            r
+        } else if let Some(r) = f.game_rel_original.strip_prefix(DOCS_PREFIX) {
             r
         } else {
             &f.game_rel_original

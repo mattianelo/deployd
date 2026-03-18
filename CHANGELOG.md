@@ -12,6 +12,9 @@
 
 ### Fixed
 
+- **Dragon Age: Origins must now be explicitly enabled** — DAO support is off by default. Enable it under Settings → Games → "Dragon Age: Origins (Experimental)", then rescan for games. This prevents the game from appearing unexpectedly for users who haven't opted in.
+- **CharGenMorph Compiler installs and auto-detects correctly** — tool executables (`.exe`, `.dll`, `.bat`) for Dragon Age: Origins are now deployed to the Wine user's Documents folder instead of the game's override directory. After deploying the mod, Manage Tools will automatically find the executable.
+
 - **DAZIP mods now appear in the Dragon Age: Origins in-game modlist** — deployd now writes to `Settings/AddIns.xml` (matching the game's exact filename). Previously it wrote `Addins.xml` (different case), which is a separate file on Linux and never read by the game. `<AddInItem>` elements are now correctly captured from manifests, and pre-existing game entries (campaigns, DLCs) are preserved on every deploy.
 - **DAZIP mods now install to the correct location** — `.dazip` archives that use the standard `Contents/addins/` and `Contents/packages/` layout are now extracted correctly. The add-in UID is also properly read from `Manifest.xml` (capital M) and `<AddInItem>` elements.
 - **Manage Games dialog no longer opens on every launch** — the dialog now only auto-opens when a genuinely new, unconfirmed game is detected. Dismissing it hides that game so it does not re-prompt next time.

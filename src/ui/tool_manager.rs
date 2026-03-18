@@ -12,6 +12,7 @@ pub struct ToolManager {
     game_id: String,
     game_path: PathBuf,
     wine_prefix: Option<PathBuf>,
+    deploy_dir: Option<PathBuf>,
     game_engine: GameEngine,
     tools: Vec<Tool>,
     list_box: gtk::ListBox,
@@ -124,8 +125,12 @@ impl ToolManager {
             row.add_prefix(&gtk::Image::from_icon_name(preset.icon_name));
 
             // Auto-detect tool path
-            let resolved =
-                game::detect_tool_path(preset, &self.game_path, self.wine_prefix.as_deref());
+            let resolved = game::detect_tool_path(
+                preset,
+                &self.game_path,
+                self.wine_prefix.as_deref(),
+                self.deploy_dir.as_deref(),
+            );
 
             if let Some(ref path) = resolved {
                 row.set_subtitle(&format!("Found: {}", path.display()));
@@ -167,7 +172,7 @@ impl ToolManager {
 
 #[relm4::component(pub)]
 impl Component for ToolManager {
-    type Init = (String, Vec<Tool>, PathBuf, Option<PathBuf>, GameEngine);
+    type Init = (String, Vec<Tool>, PathBuf, Option<PathBuf>, GameEngine, Option<PathBuf>);
     type Input = ToolManagerMsg;
     type Output = ToolManagerOutput;
     type CommandOutput = ();
@@ -257,7 +262,7 @@ impl Component for ToolManager {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let (game_id, tools, game_path, wine_prefix, game_engine) = init;
+        let (game_id, tools, game_path, wine_prefix, game_engine, deploy_dir) = init;
         let list_box = gtk::ListBox::new();
         let preset_box = gtk::ListBox::new();
 
@@ -265,6 +270,7 @@ impl Component for ToolManager {
             game_id,
             game_path,
             wine_prefix,
+            deploy_dir,
             game_engine,
             tools,
             list_box,
@@ -342,8 +348,12 @@ impl Component for ToolManager {
                 };
 
                 // Try auto-detecting the exe path
-                let resolved =
-                    game::detect_tool_path(preset, &self.game_path, self.wine_prefix.as_deref());
+                let resolved = game::detect_tool_path(
+                    preset,
+                    &self.game_path,
+                    self.wine_prefix.as_deref(),
+                    self.deploy_dir.as_deref(),
+                );
 
                 if let Some(exe_path) = resolved {
                     let tool = Tool {

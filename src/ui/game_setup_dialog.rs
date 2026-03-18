@@ -38,6 +38,8 @@ pub struct GameSetupDialog {
     new_path_entry: gtk::Entry,
     new_prefix_entry: gtk::Entry,
     add_btn: gtk::Button,
+    /// Filtered list of known game options shown in the "Add Custom Game" dropdown.
+    known_opts: Vec<game::KnownGameOption>,
 }
 
 #[derive(Debug)]
@@ -238,7 +240,7 @@ impl GameSetupDialog {
 #[relm4::component(pub)]
 impl Component for GameSetupDialog {
     /// (auto-detected games, persisted custom games)
-    type Init = (Vec<Game>, Vec<PersistedGame>);
+    type Init = (Vec<Game>, Vec<PersistedGame>, bool);
     type Input = GameSetupMsg;
     type Output = GameSetupOutput;
     type CommandOutput = ();
@@ -361,24 +363,9 @@ impl Component for GameSetupDialog {
                                     add_css_class: "boxed-list",
                                     set_selection_mode: gtk::SelectionMode::None,
 
+                                    #[name = "game_type_combo"]
                                     adw::ComboRow {
                                         set_title: "Game",
-                                        set_model: Some(&{
-                                            let opts = game::known_game_options();
-                                            let labels: Vec<String> = opts
-                                                .iter()
-                                                .map(|o| {
-                                                    if o.experimental {
-                                                        format!("{} ({}) (Experimental)", o.title, o.store)
-                                                    } else {
-                                                        format!("{} ({})", o.title, o.store)
-                                                    }
-                                                })
-                                                .collect();
-                                            let strs: Vec<&str> =
-                                                labels.iter().map(String::as_str).collect();
-                                            gtk::StringList::new(&strs)
-                                        }),
                                         connect_selected_notify[sender] => move |row| {
                                             sender.input(GameSetupMsg::GameTypeSelected(
                                                 row.selected(),
@@ -464,7 +451,7 @@ impl Component for GameSetupDialog {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let (detected_games, persisted_custom) = init;
+        let (detected_games, persisted_custom, dao_experimental_enabled) = init;
 
         let mut entries: Vec<GameEntry> = detected_games
             .into_iter()
@@ -505,6 +492,11 @@ impl Component for GameSetupDialog {
         let new_prefix_entry = gtk::Entry::new();
         let add_btn = gtk::Button::with_label("Add Game");
 
+        let known_opts: Vec<game::KnownGameOption> = game::known_game_options()
+            .into_iter()
+            .filter(|o| !o.experimental || dao_experimental_enabled)
+            .collect();
+
         let model = GameSetupDialog {
             entries,
             stack,
@@ -518,6 +510,7 @@ impl Component for GameSetupDialog {
             new_path_entry,
             new_prefix_entry,
             add_btn,
+            known_opts,
         };
 
         let stack = &model.stack;
@@ -529,6 +522,23 @@ impl Component for GameSetupDialog {
         let add_btn = &model.add_btn;
 
         let widgets = view_output!();
+
+        // Populate the game-type combo with the filtered options list.
+        let labels: Vec<String> = model
+            .known_opts
+            .iter()
+            .map(|o| {
+                if o.experimental {
+                    format!("{} ({}) (Experimental)", o.title, o.store)
+                } else {
+                    format!("{} ({})", o.title, o.store)
+                }
+            })
+            .collect();
+        let strs: Vec<&str> = labels.iter().map(String::as_str).collect();
+        widgets
+            .game_type_combo
+            .set_model(Some(&gtk::StringList::new(&strs)));
 
         // Give the stack pages their lookup names so set_visible_child_name works.
         model.stack.page(&widgets.list_page).set_name("list");
@@ -698,8 +708,7 @@ impl Component for GameSetupDialog {
                 let Some(path) = self.new_path.take() else {
                     return;
                 };
-                let opts = game::known_game_options();
-                let Some(opt) = opts.get(self.new_game_type_idx) else {
+                let Some(opt) = self.known_opts.get(self.new_game_type_idx) else {
                     return;
                 };
                 let engine = match opt.engine {

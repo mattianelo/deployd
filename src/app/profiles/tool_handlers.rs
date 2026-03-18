@@ -73,13 +73,24 @@ impl App {
         let game_id = game.id.clone();
         let game_path = game.path.clone();
         let game_engine = game.engine.clone();
+        // For Eclipse games, tools are deployed to the Wine user's Documents
+        // folder (two levels above the Dragon Age data dir). Search there so
+        // CharGenMorph Compiler is detected after being installed as a mod.
+        let deploy_dir = {
+            let dd = game::deploy_dir(game);
+            if game.engine == crate::models::game::GameEngine::Eclipse {
+                dd.parent().and_then(|p| p.parent()).map(|p| p.to_path_buf())
+            } else {
+                Some(dd)
+            }
+        };
         let wine_prefix = game::detect_wine_config(game).map(|wc| wc.prefix);
         let tools = self.tools.clone();
 
         self.tool_manager_dialog = Some(
             ToolManager::builder()
                 .transient_for(root)
-                .launch((game_id, tools, game_path, wine_prefix, game_engine))
+                .launch((game_id, tools, game_path, wine_prefix, game_engine, deploy_dir))
                 .forward(sender.input_sender(), |output| match output {
                     ToolManagerOutput::ToolAdded(tool) => AppMsg::ToolAdded(tool),
                     ToolManagerOutput::ToolRemoved(id) => AppMsg::ToolRemoved(id),

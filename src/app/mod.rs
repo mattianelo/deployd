@@ -172,6 +172,8 @@ pub struct App {
     /// If the dialog is dismissed without confirming, these are hidden so they
     /// do not keep re-triggering the prompt on every startup.
     pub(crate) pending_new_game_ids: Vec<String>,
+    /// Whether the user has opted in to Dragon Age: Origins experimental support.
+    pub(crate) dao_experimental_enabled: bool,
 }
 
 #[relm4::component(pub)]
@@ -1110,6 +1112,9 @@ impl Component for App {
                 let _ = open::that(url);
             }
             AppMsg::SelfUpdateDownload => self.handle_self_update_download(&sender),
+            AppMsg::DaoExperimentalChanged(enabled) => {
+                self.handle_dao_experimental_changed(enabled)
+            }
         }
     }
 

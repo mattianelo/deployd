@@ -6,12 +6,19 @@ use anyhow::Result;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 
+/// Sentinel prefix for files that should be deployed to the Wine user's
+/// Documents folder rather than the Dragon Age data directory or its override.
+/// The deployer resolves this to `game_data.parent().parent()` (two levels up
+/// from `Documents/BioWare/Dragon Age`), landing in `Documents/`.
+pub const DOCS_PREFIX: &str = "~docs~/";
+
 /// Route a file's relative path for Eclipse (Dragon Age: Origins) deployment.
 ///
-/// DAZIP mods are already expanded into `AddIns/<UID>/` by the installer, so their
-/// paths start with `AddIns/` and are left unchanged. Loose override files that
-/// don't carry a recognised DA-layout prefix are routed into
-/// `packages/core/override/` where the game's override scanner will pick them up.
+/// DAZIP-expanded files already carry `AddIns/<UID>/` and are left unchanged.
+/// Windows tool executables (`.exe`, `.dll`, `.bat`) are routed to the Wine
+/// user's Documents folder via the `~docs~/` prefix so they sit outside the
+/// game's data tree (tools must not land in `packages/core/override/`).
+/// All other loose files go to `packages/core/override/`.
 pub fn route_path(rel: &str) -> String {
     let lower = rel.to_lowercase();
     if lower.starts_with("addins/")
@@ -19,9 +26,20 @@ pub fn route_path(rel: &str) -> String {
         || lower.starts_with("settings/")
     {
         rel.to_string()
+    } else if is_tool_file(&lower) {
+        format!("{DOCS_PREFIX}{rel}")
     } else {
         format!("packages/core/override/{rel}")
     }
+}
+
+fn is_tool_file(lower_path: &str) -> bool {
+    matches!(
+        std::path::Path::new(lower_path)
+            .extension()
+            .and_then(|e| e.to_str()),
+        Some("exe" | "dll" | "bat")
+    )
 }
 
 /// Update `Settings/AddIns.xml` with entries for every installed DAZIP mod found

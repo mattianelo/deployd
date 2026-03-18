@@ -30,6 +30,9 @@ impl App {
                     SettingsDialogOutput::ApiKeyChanged => AppMsg::NexusApiKeyUpdated,
                     SettingsDialogOutput::ManageGames => AppMsg::ManageGamesClicked,
                     SettingsDialogOutput::RescanGames => AppMsg::RescanGames,
+                    SettingsDialogOutput::DaoExperimentalChanged(v) => {
+                        AppMsg::DaoExperimentalChanged(v)
+                    }
                 }),
         );
     }
@@ -65,7 +68,7 @@ impl App {
         self.game_setup_dialog = Some(
             GameSetupDialog::builder()
                 .transient_for(root)
-                .launch((detected, vec![]))
+                .launch((detected, vec![], self.dao_experimental_enabled))
                 .forward(sender.input_sender(), |output| match output {
                     GameSetupOutput::Confirmed { enabled, hidden_ids } => {
                         AppMsg::GamesConfigured(enabled, hidden_ids)
@@ -157,6 +160,24 @@ impl App {
                 }
                 AppCmdMsg::PrioritySaved(Ok(()))
             });
+        }
+    }
+
+    pub(crate) fn handle_dao_experimental_changed(&mut self, enabled: bool) {
+        self.dao_experimental_enabled = enabled;
+        if !enabled {
+            const DAO_IDS: &[&str] = &["dragonage", "dragonage-steam"];
+            let n = self.game_model.n_items();
+            for _ in 0..n {
+                self.game_model.remove(0);
+            }
+            self.games.retain(|g| !DAO_IDS.contains(&g.id.as_str()));
+            for g in &self.games {
+                self.game_model.append(&g.title);
+            }
+        } else {
+            self.toaster
+                .toast("Rescan for games to detect Dragon Age: Origins");
         }
     }
 

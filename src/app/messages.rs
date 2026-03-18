@@ -207,6 +207,8 @@ pub enum AppMsg {
     ToggleProfileSaveMode,
     /// Manually sync the active profile's saves from the game save directory.
     SyncSaves,
+    /// User toggled Dragon Age: Origins experimental support in settings.
+    DaoExperimentalChanged(bool),
     /// A newer app version is available; reveal the update banner.
     AppUpdateAvailable(String, String),
     /// User clicked the update banner button — open the update page.
