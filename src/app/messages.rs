@@ -104,11 +104,7 @@ pub enum AppMsg {
     CheckUpdatesClicked,
     ToggleDownloads,
     SetDownloadsVisible(bool),
-    /// Toggle the notifications panel sidebar.
-    ToggleNotifications,
-    /// Set notifications panel visibility explicitly.
-    SetNotificationsVisible(bool),
-    InstallDownload(DynamicIndex),
+InstallDownload(DynamicIndex),
     /// Reinstall an already-installed download, replacing the existing mod.
     ReinstallDownload(DynamicIndex),
     ClearDownloadMetadata(DynamicIndex),

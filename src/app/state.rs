@@ -84,9 +84,7 @@ pub struct App {
     pub(crate) all_downloads: Vec<DownloadEntry>,
     /// Whether the downloads sidebar is visible.
     pub(crate) downloads_visible: bool,
-    /// Whether the notifications panel sidebar is visible.
-    pub(crate) notifications_visible: bool,
-    /// ID of the currently active download (for status updates).
+/// ID of the currently active download (for status updates).
     pub(crate) active_download_id: Option<String>,
     /// Cached count of active downloads for current game (for sidebar view).
     pub(crate) active_download_count: usize,

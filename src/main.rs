@@ -54,6 +54,14 @@ fn main() {
         .drop-below {
             border-bottom: 3px solid @accent_color;
         }
+        @keyframes notification-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .notification-active {
+            color: @warning_color;
+            animation: notification-pulse 1.5s ease-in-out infinite;
+        }
         ",
     );
 

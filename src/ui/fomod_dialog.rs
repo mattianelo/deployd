@@ -464,7 +464,7 @@ impl SimpleComponent for FomodDialog {
     view! {
         adw::Window {
             set_title: Some("FOMOD Installer"),
-            set_default_size: (780, 480),
+            set_default_size: (960, 560),
             set_modal: true,
 
             gtk::Box {
