@@ -195,6 +195,7 @@ fn rebuild_list(
             .hexpand(true)
             .halign(gtk::Align::Start)
             .ellipsize(gtk::pango::EllipsizeMode::End)
+            .width_chars(22)
             .build();
 
         let restore_btn = gtk::Button::builder()

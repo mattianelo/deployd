@@ -586,6 +586,7 @@ impl Component for App {
 
                                 gtk::Box {
                                     add_css_class: "linked",
+                                    set_margin_start: 8,
 
                                     // Save mod order as named snapshot
                                     gtk::MenuButton {
@@ -613,11 +614,14 @@ impl Component for App {
                                                 gtk::Button {
                                                     set_label: "Save",
                                                     add_css_class: "suggested-action",
-                                                    connect_clicked[sender, mod_snapshot_save_entry] => move |_| {
+                                                    connect_clicked[sender, mod_snapshot_save_entry] => move |btn| {
                                                         let name = mod_snapshot_save_entry.text().to_string();
                                                         if !name.is_empty() {
                                                             sender.input(AppMsg::SaveModOrderSnapshot(name));
                                                             mod_snapshot_save_entry.set_text("");
+                                                            if let Some(w) = btn.ancestor(gtk::Popover::static_type()) {
+                                                                w.downcast_ref::<gtk::Popover>().unwrap().popdown();
+                                                            }
                                                         }
                                                     },
                                                 },
@@ -635,6 +639,7 @@ impl Component for App {
                                             set_child = &gtk::ScrolledWindow {
                                                 set_min_content_height: 40,
                                                 set_max_content_height: 200,
+
                                                 set_hscrollbar_policy: gtk::PolicyType::Never,
 
                                                 #[local_ref]
@@ -726,6 +731,7 @@ impl Component for App {
                                 gtk::Box {
                                     add_css_class: "linked",
                                     set_valign: gtk::Align::Center,
+                                    set_margin_start: 8,
 
                                     // Save plugin order as named snapshot
                                     gtk::MenuButton {
@@ -753,11 +759,14 @@ impl Component for App {
                                                 gtk::Button {
                                                     set_label: "Save",
                                                     add_css_class: "suggested-action",
-                                                    connect_clicked[sender, plugin_snapshot_save_entry] => move |_| {
+                                                    connect_clicked[sender, plugin_snapshot_save_entry] => move |btn| {
                                                         let name = plugin_snapshot_save_entry.text().to_string();
                                                         if !name.is_empty() {
                                                             sender.input(AppMsg::SavePluginOrderSnapshot(name));
                                                             plugin_snapshot_save_entry.set_text("");
+                                                            if let Some(w) = btn.ancestor(gtk::Popover::static_type()) {
+                                                                w.downcast_ref::<gtk::Popover>().unwrap().popdown();
+                                                            }
                                                         }
                                                     },
                                                 },
@@ -775,6 +784,7 @@ impl Component for App {
                                             set_child = &gtk::ScrolledWindow {
                                                 set_min_content_height: 40,
                                                 set_max_content_height: 200,
+
                                                 set_hscrollbar_policy: gtk::PolicyType::Never,
 
                                                 #[local_ref]

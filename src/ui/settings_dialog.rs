@@ -80,6 +80,7 @@ impl Component for SettingsDialog {
         adw::PreferencesWindow {
             set_title: Some("Settings"),
             set_search_enabled: false,
+            set_default_size: (550, 680),
 
             add = &adw::PreferencesPage {
 
@@ -487,6 +488,9 @@ impl Component for SettingsDialog {
                 root.close();
             }
             SettingsMsg::DaoExperimentalToggled(enabled) => {
+                if enabled == self.dao_experimental_enabled {
+                    return;
+                }
                 self.dao_experimental_enabled = enabled;
                 let tracker = self.tracker.clone();
                 let val = if enabled { "true" } else { "false" };
