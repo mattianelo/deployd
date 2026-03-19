@@ -13,20 +13,14 @@ use crate::models::game::{Game, GameEngine};
 use crate::models::manifest::ModFile;
 use crate::utils::{paths, plugins_txt};
 
-/// Result of a deployment operation.
 #[derive(Debug)]
 pub struct DeployResult {
-    /// Total number of files in the final deployed state.
     pub files_total: usize,
-    /// Files actually hardlinked during this deploy (additions + updates).
     pub files_added: usize,
-    /// Files removed from the game folder during this deploy.
     pub files_removed: usize,
     pub conflicts_resolved: usize,
 }
 
-/// Purge all deployed hardlinks from the game folder without redeploying.
-/// Returns the number of files removed.
 pub async fn purge(game: &Game, tracker: &Tracker) -> Result<usize> {
     let game_data = paths::game_data_dir(game);
     bake_modified_plugins(game, tracker, &game_data).await;
@@ -45,24 +39,17 @@ pub async fn purge(game: &Game, tracker: &Tracker) -> Result<usize> {
     Ok(count)
 }
 
-/// Deploy all enabled mods for a game using delta deployment: compute the desired
-/// state, then only remove files no longer needed and add files not yet present.
-/// Files that are already correctly deployed are left untouched.
 pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
     let game_data = paths::game_data_dir(game);
 
-    // 0. Bake any externally-modified plugins back into cache so their changes
-    //    survive the re-hardlink cycle (xEdit safe-save breaks hardlinks).
     bake_modified_plugins(game, tracker, &game_data).await;
 
-    // 1. Current deployment state indexed by lowercase path.
     let deployed = tracker.get_deployed_files(&game.id).await?;
     let deployed_map: HashMap<&str, &ModFile> = deployed
         .iter()
         .map(|f| (f.game_rel_lowercase.as_str(), f))
         .collect();
 
-    // 2. Desired state: conflict-resolved winners in priority order.
     let (winners, conflicts_resolved) = compute_winners(tracker, &game.id).await?;
     let winners_map: HashMap<&str, &ModFile> = winners
         .iter()
@@ -71,19 +58,15 @@ pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
 
     eprintln!("[deployd] delta: deployed={}, winners={}", deployed.len(), winners.len());
 
-    // 3. Classify each deployed file as "keep" or "remove".
     let mut to_remove: Vec<&ModFile> = Vec::new();
     for dep in &deployed {
         match winners_map.get(dep.game_rel_lowercase.as_str()) {
-            // No longer wanted.
             None => to_remove.push(dep),
-            // Conflict winner changed — remove old, re-link new.
             Some(want) if want.cache_path != dep.cache_path => to_remove.push(dep),
             _ => {}
         }
     }
 
-    // 4. Classify each winner as "add" or "skip".
     let mut to_add: Vec<&ModFile> = Vec::new();
     for winner in &winners {
         match deployed_map.get(winner.game_rel_lowercase.as_str()) {
@@ -94,7 +77,6 @@ pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
     }
 
     eprintln!("[deployd] delta: to_remove={}, to_add={}", to_remove.len(), to_add.len());
-    // Sample first mismatch to diagnose cache_path differences
     if !to_add.is_empty() {
         let w = &to_add[0];
         if let Some(dep) = deployed_map.get(w.game_rel_lowercase.as_str()) {
@@ -106,8 +88,8 @@ pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
         }
     }
 
-    // 5. Pre-build lowercase path set from *all* previously deployed files.
-    //    Used to distinguish our stale case-variant files from vanilla game files.
+    // Pre-build lowercase path set from all previously deployed files,
+    // used to distinguish stale case-variant files from vanilla game files.
     let deployed_lower: HashSet<String> = deployed
         .iter()
         .map(|d| {
@@ -117,24 +99,18 @@ pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
         })
         .collect();
 
-    // 6. Apply removals first so that when we re-link updated files the old
-    //    hardlinks are already gone.
     for f in &to_remove {
         remove_deployed_file(f, game, &game_data);
     }
 
-    // 7. Build canonical directory casing map from all winners (unchanged + new).
     let canonical_dirs = build_dir_canonical_map(&winners);
 
-    // 8. Hardlink additions; collect only the newly-linked files for DB insertion.
-    //    Unchanged files remain in deployed_files as-is — no write needed.
     let mut newly_linked: Vec<ModFile> = Vec::new();
     let mut dir_cache: HashMap<PathBuf, HashMap<String, PathBuf>> = HashMap::new();
     for f in &to_add {
         let cache_file = PathBuf::from(&f.cache_path);
 
-        // Directory sentinel: ensure the directory exists, record it.
-        if f.game_rel_lowercase.ends_with('/') {
+            if f.game_rel_lowercase.ends_with('/') {
             let docs = docs_base(&game_data);
             let (base, rel): (&PathBuf, &str) =
                 if let Some(root_rel) = f.game_rel_original.strip_prefix("../") {
@@ -241,8 +217,6 @@ pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
         });
     }
 
-    // 9. Apply delta to the database: remove stale records, insert new ones.
-    //    Unchanged files already in deployed_files are left untouched.
     let remove_paths: Vec<&str> = to_remove
         .iter()
         .map(|f| f.game_rel_lowercase.as_str())
@@ -250,8 +224,6 @@ pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
     tracker.remove_deployed_files(&game.id, &remove_paths).await?;
     tracker.record_deployed_files(&game.id, &newly_linked).await?;
 
-    // 10. Write Plugins.txt and ArchiveInvalidation INI — Bethesda games only.
-    // 11. Write Addins.xml — Eclipse (Dragon Age: Origins) only.
     if game.engine == GameEngine::Eclipse {
         if let Err(e) = game::write_addins_xml(&game::deploy_dir(game)) {
             eprintln!("[deployd] WARNING: Addins.xml update failed: {e}");
@@ -288,12 +260,11 @@ pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
     })
 }
 
-/// Bake externally-modified plugins back into cache before any purge/deploy step.
+/// Bake externally-modified plugins back into cache before deploy.
 ///
-/// Covers the case where a tool (e.g. xEdit safe-save/rename) broke the hardlink:
-/// the on-disk file has a new inode with cleaned content while the cache still holds
-/// the dirty original. Copying disk → cache here ensures the next hardlink uses the
-/// cleaned version. In-place saves (same inode) are a no-op.
+/// Handles the case where a tool (e.g. xEdit safe-save) broke the hardlink:
+/// the on-disk file has a new inode while the cache still holds the original.
+/// In-place saves (same inode) are a no-op.
 async fn bake_modified_plugins(game: &Game, tracker: &Tracker, game_data: &PathBuf) {
     use std::os::unix::fs::MetadataExt;
     let Ok(plugin_files) = tracker.get_deployed_plugin_files(&game.id).await else {
@@ -323,8 +294,6 @@ async fn bake_modified_plugins(game: &Game, tracker: &Tracker, game_data: &PathB
     }
 }
 
-/// Resolve conflict winners from the full mod file list ordered by priority DESC.
-/// Returns the winner list and the number of conflicts resolved.
 async fn compute_winners(
     tracker: &Tracker,
     game_id: &str,
@@ -358,7 +327,6 @@ async fn compute_winners(
     Ok((winners, conflicts_resolved))
 }
 
-/// Remove a single deployed file or directory sentinel from the game folder.
 fn remove_deployed_file(f: &ModFile, game: &Game, game_data: &PathBuf) {
     let deploy_path = resolve_deploy_path(&f.game_rel_original, &game.path, game_data);
     let docs = docs_base(game_data);
@@ -385,10 +353,6 @@ fn remove_deployed_file(f: &ModFile, game: &Game, game_data: &PathBuf) {
     }
 }
 
-/// Resolve the actual filesystem path for a recorded relative path.
-/// - `../` prefix → relative to the game installation directory
-/// - `~docs~/` prefix → relative to `game_data/../..` (Wine user's Documents folder)
-/// - everything else → relative to the game data directory
 fn resolve_deploy_path(game_rel: &str, game_root: &PathBuf, game_data: &PathBuf) -> PathBuf {
     if let Some(root_rel) = game_rel.strip_prefix("../") {
         game_root.join(root_rel)
@@ -399,8 +363,6 @@ fn resolve_deploy_path(game_rel: &str, game_root: &PathBuf, game_data: &PathBuf)
     }
 }
 
-/// Returns the Wine user's Documents directory, two levels above the Eclipse
-/// data dir (`Documents/BioWare/Dragon Age` → `Documents/`).
 fn docs_base(game_data: &PathBuf) -> PathBuf {
     game_data
         .parent()
@@ -409,11 +371,8 @@ fn docs_base(game_data: &PathBuf) -> PathBuf {
         .unwrap_or_else(|| game_data.clone())
 }
 
-/// Build a map from lowercase directory component name to the best-cased version
-/// seen across all winner files.
-///
-/// When multiple mods use the same directory with different casings, the non-all-lowercase
-/// form wins, preserving readability for tools that browse the game folder.
+/// Build a lowercase→best-cased directory name map from winner paths.
+/// Non-all-lowercase form wins to preserve readability for tools browsing the game folder.
 fn build_dir_canonical_map(winners: &[ModFile]) -> HashMap<String, String> {
     let mut map: HashMap<String, String> = HashMap::new();
     for f in winners {
@@ -447,11 +406,6 @@ fn build_dir_canonical_map(winners: &[ModFile]) -> HashMap<String, String> {
     map
 }
 
-/// Create all given directory components under `base`, reusing existing directories
-/// case-insensitively. Returns the actual on-disk path of the deepest component created.
-///
-/// Shared by `ensure_dirs_case_insensitive` (for file parent dirs) and the sentinel
-/// handler (where all components are directories, not a filename).
 fn create_dirs_case_insensitive(
     base: &PathBuf,
     components: &[&str],
@@ -499,8 +453,6 @@ fn create_dirs_case_insensitive(
     Ok(current)
 }
 
-/// Create parent directories for a deploy target, reusing existing directories
-/// that match case-insensitively. Returns the resolved path with the filename appended.
 fn ensure_dirs_case_insensitive(
     base: &PathBuf,
     rel_path: &str,
@@ -518,7 +470,6 @@ fn ensure_dirs_case_insensitive(
     Ok(current)
 }
 
-/// Remove empty parent directories up to (but not including) the stop directory.
 fn remove_empty_parents(dir: &std::path::Path, stop_at: &PathBuf) {
     let mut current = dir.to_path_buf();
     while current != *stop_at {

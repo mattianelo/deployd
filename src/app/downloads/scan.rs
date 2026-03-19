@@ -23,11 +23,29 @@ impl App {
         // or manually deletes archives.
         // Installed entries are always kept even if the archive was deleted — the
         // status is meaningful and should persist until the mod is explicitly removed.
+        let removed_ids: Vec<String> = self
+            .all_downloads
+            .iter()
+            .filter(|e| {
+                !e.is_active()
+                    && e.status != DownloadStatus::Installed
+                    && !e.archive_path.as_ref().map(|p| p.exists()).unwrap_or(false)
+            })
+            .map(|e| e.id.clone())
+            .collect();
         self.all_downloads.retain(|e| {
             e.is_active()
                 || e.status == DownloadStatus::Installed
                 || e.archive_path.as_ref().map(|p| p.exists()).unwrap_or(false)
         });
+        if !removed_ids.is_empty()
+            && let Some(tracker) = self.tracker.clone()
+        {
+            sender.oneshot_command(async move {
+                let _ = tracker.delete_download_entries(&removed_ids).await;
+                AppCmdMsg::PrioritySaved(Ok(()))
+            });
+        }
 
         // Collect existing archive paths from backing store to avoid duplicates.
         // Also collect filenames for path-change dedup (same file, different folder).

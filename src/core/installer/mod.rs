@@ -23,7 +23,6 @@ use crate::models::plugin::Plugin;
 use crate::utils::{archive, fomod_resolver};
 use crate::utils::paths as utils_paths;
 
-/// Result of adding a mod (cache-only, no deployment).
 #[derive(Debug)]
 pub struct AddResult {
     pub mod_entry: ModEntry,
@@ -31,19 +30,14 @@ pub struct AddResult {
     pub plugins_found: Vec<String>,
 }
 
-/// Result of preparing a mod archive for installation.
 pub enum PrepareResult {
-    /// Normal mod — file list already resolved, ready to install.
     Normal {
         file_list: Vec<(PathBuf, PathBuf)>,
-        /// If `detect_wrapper` stripped a single wrapper directory from the archive
-        /// root, this holds that directory's original name (e.g. `"modSkipMovies"`).
-        /// Used by REDEngine path fixups so W3 mods keep their original folder name
-        /// under `Mods/` instead of being renamed to the user's display name.
+        /// Original wrapper dir name stripped by detect_wrapper (e.g. `"modSkipMovies"`).
+        /// Used by REDEngine path fixups to preserve the archive's folder name under `Mods/`.
         stripped_wrapper: Option<String>,
         tmp_dir: TempDir,
     },
-    /// FOMOD mod — needs user input before continuing.
     Fomod {
         config: fomod_resolver::FomodUiConfig,
         config_path: PathBuf,
@@ -51,14 +45,6 @@ pub enum PrepareResult {
     },
 }
 
-/// Extract archive and detect whether it's a FOMOD or normal mod.
-/// For FOMOD mods, returns the parsed config for UI display.
-/// For normal mods, returns the resolved file list ready for installation.
-///
-/// Extraction runs on a blocking thread to avoid starving the async runtime
-/// (7z/LZMA decompression is CPU-intensive).
-///
-/// `on_extract_progress` is called with `(done, total)` as files are extracted.
 pub async fn prepare_mod(
     archive_path: &Path,
     on_extract_progress: Option<Box<dyn Fn(usize, usize) + Send>>,
@@ -75,8 +61,23 @@ pub async fn prepare_mod(
     let extracted_root = tmp_dir.path();
     dlog!("[deployd] extracted to: {}", extracted_root.display());
 
-    dazip::expand_dazip_files_in_place(extracted_root)
-        .context("Failed to expand nested .dazip files")?;
+    let is_dazip = archive_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("dazip"))
+        .unwrap_or(false);
+
+    if is_dazip {
+        let stem = archive_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown");
+        dazip::process_dazip_root(extracted_root, stem)
+            .context("Failed to process dazip archive")?;
+    } else {
+        dazip::expand_dazip_files_in_place(extracted_root)
+            .context("Failed to expand nested .dazip files")?;
+    }
 
     if let Some(config_path) = fomod_resolver::detect_fomod(extracted_root) {
         dlog!("[deployd] FOMOD detected: {}", config_path.display());
@@ -103,12 +104,6 @@ pub async fn prepare_mod(
     }
 }
 
-/// Install a mod from a pre-resolved file list.
-/// Applies game rules, caches files, and records in the database.
-///
-/// `file_targets` maps dest_rel path strings to their install target.
-/// Files not present in the map are auto-detected: root-level .exe/.dll/.asi → Root,
-/// everything else → Data.
 pub async fn add_mod_with_file_list(
     file_list: Vec<(PathBuf, PathBuf)>,
     game: &Game,
@@ -117,24 +112,17 @@ pub async fn add_mod_with_file_list(
     nexus_ids: Option<(i64, i64, String)>,
     archive_hash: Option<String>,
     file_targets: HashMap<String, InstallTarget>,
-    // Wrapper directory name stripped by detect_wrapper (e.g. "modSkipMovies").
-    // Used by W3 path fixups to preserve the archive's original mod folder name.
     stripped_wrapper: Option<String>,
     on_progress: Option<Box<dyn Fn(usize, usize) + Send>>,
 ) -> Result<AddResult> {
     let mod_id = Uuid::new_v4().to_string();
 
-    // Apply REDEngine-specific path fixups before any further processing.
-    // For Bethesda games this is a no-op.
     let file_list = if game.engine == GameEngine::REDEngine {
         paths::apply_redengine_path_fixups(game, mod_name, stripped_wrapper.as_deref(), file_list)
     } else {
         file_list
     };
 
-    // Route Eclipse (Dragon Age) files: DAZIP-expanded files already carry an
-    // AddIns/<uid>/ prefix; tool mods go to Documents/<mod_name>/; everything
-    // else goes to packages/core/override/.
     let file_list = if game.engine == GameEngine::Eclipse {
         paths::route_eclipse_paths(file_list, mod_name)
     } else {
@@ -149,38 +137,24 @@ pub async fn add_mod_with_file_list(
     let total_files = file_list.len();
     let mut mod_files: Vec<ModFile> = Vec::with_capacity(total_files);
     let mut plugins_found: Vec<String> = Vec::new();
-    // (filename, cache_path) — used to extract master-file requirements
     let mut plugin_cache_files: Vec<(String, PathBuf)> = Vec::new();
     for (file_idx, (src_abs, dest_rel)) in file_list.iter().enumerate() {
-        // Apply game-specific rules
         let ruled_path = rules::apply_rules(&game_rules, &dest_rel.to_string_lossy());
-
-        // Normalize backslashes but preserve original casing
         let original_rel = ruled_path.replace('\\', "/");
-
-        // Detect if this file came from the game root (../ prefix from the external-file
-        // detector). Strip it now so paths into the cache and data-subdir stripping work
-        // correctly — the root-destination is tracked separately via explicit_root.
         let explicit_root = original_rel.starts_with("../");
         let original_rel = if explicit_root {
             original_rel[3..].to_string()
         } else {
             original_rel
         };
-
-        // Lowercase for conflict detection key
         let lowercase_rel = utils_paths::lowercase_path(Path::new(&original_rel));
-
-        // Strip data subdir prefix to avoid nesting (e.g. data/ inside Data/).
         let lowercase_rel =
             self::paths::strip_data_subdir_prefix(&lowercase_rel, &game.data_subdir);
         let original_rel =
             self::paths::strip_data_subdir_prefix_str(&original_rel, &game.data_subdir);
 
-        // Directory sentinel: src_abs is a directory (no files to deploy, but the game
-        // requires the folder to exist — e.g. JContainers' Domains/ folder).
-        // Create the directory in the cache and record it with a trailing '/' so the
-        // deployer knows to call create_dir_all rather than hardlink a file.
+        // Directory sentinel: recorded with trailing '/' so the deployer creates the dir
+        // rather than hardlinking (e.g. JContainers' Domains/ folder must exist).
         if src_abs.is_dir() {
             let cache_sentinel = cache_dir.join(&lowercase_rel);
             if let Err(e) = fs::create_dir_all(&cache_sentinel) {
@@ -207,7 +181,6 @@ pub async fn add_mod_with_file_list(
             continue;
         }
 
-        // Copy to cache (cache uses lowercase paths internally)
         let cache_file = cache_dir.join(&lowercase_rel);
         if let Some(parent) = cache_file.parent() {
             fs::create_dir_all(parent)?;
@@ -237,11 +210,6 @@ pub async fn add_mod_with_file_list(
             cb(file_idx + 1, total_files);
         }
 
-        // Determine per-file install target.
-        // explicit_root (../prefix) wins; user override in file_targets second; auto-detect last.
-        //
-        // Key is the rules-normalized path (matching what pre_install_dialog shows), not the
-        // raw archive dest_rel, so user overrides set in the dialog are looked up correctly.
         let file_key = ruled_path.replace('\\', "/");
         let deploy_to_root = if explicit_root {
             file_targets
@@ -250,16 +218,13 @@ pub async fn add_mod_with_file_list(
                 .unwrap_or(InstallTarget::Root)
                 == InstallTarget::Root
         } else if game.engine == GameEngine::Bethesda {
-            // Only Bethesda games use root-level auto-detection (SKSE loaders, ASI plugins…).
+            // Only Bethesda games auto-detect Root (SKSE loaders, ASI plugins…).
             file_targets
                 .get(file_key.as_str())
                 .cloned()
                 .unwrap_or_else(|| auto_detect_install_target(&file_key))
                 == InstallTarget::Root
         } else {
-            // For all other engines (REDEngine, and any future ones), data_subdir IS the
-            // game root — auto-detecting Root would place files outside the game directory.
-            // Explicit user overrides via file_targets are still respected.
             file_targets
                 .get(file_key.as_str())
                 .cloned()
@@ -267,7 +232,6 @@ pub async fn add_mod_with_file_list(
                 == InstallTarget::Root
         };
 
-        // Determine the recorded relative paths (lowercase key + original for deployment).
         let rel_str = lowercase_rel.to_string_lossy();
         let recorded_rel = if deploy_to_root {
             format!("../{rel_str}")
@@ -280,7 +244,6 @@ pub async fn add_mod_with_file_list(
             original_rel.clone()
         };
 
-        // Detect plugin files (preserve original casing for filenames)
         if is_plugin(&rel_str) {
             let orig_path = Path::new(&original_rel);
             if let Some(filename) = orig_path.file_name() {
@@ -298,7 +261,6 @@ pub async fn add_mod_with_file_list(
         });
     }
 
-    // Deduplicate by game_rel_lowercase — keep last occurrence (later entries win)
     {
         let mut seen = HashSet::new();
         let mut deduped = Vec::with_capacity(mod_files.len());
@@ -311,7 +273,6 @@ pub async fn add_mod_with_file_list(
         mod_files = deduped;
     }
 
-    // Record in database
     let priority = tracker.next_priority(&game.id).await?;
 
     let (nexus_mod_id, nexus_file_id, nexus_domain) = match nexus_ids {
@@ -319,7 +280,6 @@ pub async fn add_mod_with_file_list(
         None => (None, None, None),
     };
 
-    // Derive mod-level install_target for the properties dialog: Root only if every file is Root.
     let all_root =
         !file_targets.is_empty() && file_targets.values().all(|t| *t == InstallTarget::Root);
     let mod_install_target = if all_root {
@@ -350,11 +310,9 @@ pub async fn add_mod_with_file_list(
     tracker.insert_mod(&mod_entry).await?;
     tracker.record_files(&mod_files).await?;
 
-    // Record plugins and their master-file requirements
     if !plugin_cache_files.is_empty() {
         let mut load_order = tracker.next_load_order(&game.id).await?;
         let mut plugin_records = Vec::with_capacity(plugin_cache_files.len());
-        // (plugin_id, master list) pairs collected for a second-pass insert
         let mut masters_to_store: Vec<(String, Vec<String>)> =
             Vec::with_capacity(plugin_cache_files.len());
 
@@ -386,15 +344,6 @@ pub async fn add_mod_with_file_list(
     })
 }
 
-/// Merge a file list into an already-existing mod.
-///
-/// Files are cached into the existing mod's cache directory (overwriting
-/// conflicts) and their `mod_files` records are upserted so the new paths
-/// win on the next deploy.  Plugins contained in the new files are inserted
-/// only when they are not already part of the mod (preserving existing
-/// load-order and enabled state).
-///
-/// Returns the number of files merged.
 pub async fn merge_files_into_mod(
     file_list: Vec<(PathBuf, PathBuf)>,
     game: &Game,
@@ -405,8 +354,6 @@ pub async fn merge_files_into_mod(
     stripped_wrapper: Option<String>,
     on_progress: Option<Box<dyn Fn(usize, usize) + Send>>,
 ) -> Result<usize> {
-    // Apply REDEngine-specific path fixups before any further processing.
-    // For Bethesda games this is a no-op.
     let file_list = if game.engine == GameEngine::REDEngine {
         paths::apply_redengine_path_fixups(game, mod_name, stripped_wrapper.as_deref(), file_list)
     } else {
@@ -436,7 +383,6 @@ pub async fn merge_files_into_mod(
         let original_rel =
             self::paths::strip_data_subdir_prefix_str(&original_rel, &game.data_subdir);
 
-        // Directory sentinel (see add_mod_with_file_list for rationale).
         if src_abs.is_dir() {
             let cache_sentinel = cache_dir.join(&lowercase_rel);
             if let Err(e) = fs::create_dir_all(&cache_sentinel) {
@@ -496,16 +442,13 @@ pub async fn merge_files_into_mod(
                 .unwrap_or(InstallTarget::Root)
                 == InstallTarget::Root
         } else if game.engine == GameEngine::Bethesda {
-            // Only Bethesda games use root-level auto-detection (SKSE loaders, ASI plugins…).
+            // Only Bethesda games auto-detect Root (SKSE loaders, ASI plugins…).
             file_targets
                 .get(file_key.as_str())
                 .cloned()
                 .unwrap_or_else(|| auto_detect_install_target(&file_key))
                 == InstallTarget::Root
         } else {
-            // For all other engines (REDEngine, and any future ones), data_subdir IS the
-            // game root — auto-detecting Root would place files outside the game directory.
-            // Explicit user overrides via file_targets are still respected.
             file_targets
                 .get(file_key.as_str())
                 .cloned()
@@ -540,7 +483,6 @@ pub async fn merge_files_into_mod(
         });
     }
 
-    // Deduplicate: keep last occurrence per key
     {
         let mut seen = HashSet::new();
         let mut deduped = Vec::with_capacity(mod_files.len());
@@ -556,7 +498,6 @@ pub async fn merge_files_into_mod(
     let files_merged = mod_files.len();
     tracker.upsert_mod_files(&mod_files).await?;
 
-    // Insert plugins that are not already tracked under this mod.
     if !new_plugin_cache_files.is_empty() {
         let existing_plugins = tracker
             .get_plugins_for_mod(existing_mod_id)
@@ -600,10 +541,6 @@ pub async fn merge_files_into_mod(
 
     Ok(files_merged)
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 fn is_plugin(rel_path: &str) -> bool {
     let l = rel_path.to_lowercase();

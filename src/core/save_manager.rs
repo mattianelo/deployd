@@ -21,15 +21,10 @@ pub fn deployd_save_dir(game_id: &str, profile_id: &str) -> PathBuf {
         .join(profile_id)
 }
 
-/// Summary of differences detected between the live game save directory and a
-/// profile's stored snapshot.
 #[derive(Debug, Clone, Default)]
 pub struct SaveSyncResult {
-    /// Files present in the game directory but not in the stored snapshot.
     pub added: usize,
-    /// Files present in both locations but with differing size or modification time.
     pub modified: usize,
-    /// Files present in the stored snapshot but no longer in the game directory.
     pub removed: usize,
 }
 
@@ -58,16 +53,11 @@ impl SaveSyncResult {
     }
 }
 
-/// Returns the modification time of the profile's save storage directory,
-/// which is updated every time `backup_saves` runs. Returns `None` if the
-/// storage directory does not exist (saves have never been backed up for this profile).
 pub fn last_save_sync_time(game_id: &str, profile_id: &str) -> Option<std::time::SystemTime> {
     let storage = deployd_save_dir(game_id, profile_id);
     std::fs::metadata(&storage).ok()?.modified().ok()
 }
 
-/// Remove all *contents* of a directory without deleting the directory itself.
-/// Subdirectories are removed recursively.
 async fn clear_dir(dir: &Path) -> Result<()> {
     let mut entries = tokio::fs::read_dir(dir)
         .await
@@ -87,9 +77,6 @@ async fn clear_dir(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Recursively copy all files from `src` into `dst`, creating directories as needed.
-/// Existing files in `dst` are overwritten. The caller is responsible for clearing
-/// `dst` first if a clean snapshot is required.
 async fn copy_dir_all(src: &Path, dst: &Path) -> Result<()> {
     tokio::fs::create_dir_all(dst).await?;
     let mut stack = vec![(src.to_path_buf(), dst.to_path_buf())];
@@ -128,8 +115,6 @@ async fn copy_dir_all(src: &Path, dst: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Walk `root` and return a map from relative-path string to `(file_size, mtime_secs)`.
-/// Directories are not included; only regular files.
 async fn collect_save_entries(root: &Path) -> Result<HashMap<String, (u64, i64)>> {
     let mut map = HashMap::new();
     if !root.exists() {
@@ -163,8 +148,6 @@ async fn collect_save_entries(root: &Path) -> Result<HashMap<String, (u64, i64)>
     Ok(map)
 }
 
-/// Compare the game's live save directory against the stored profile snapshot.
-/// Returns a `SaveSyncResult` describing the differences without modifying anything.
 async fn scan_saves_diff(game: &Game, profile_id: &str) -> Result<SaveSyncResult> {
     let Some(save_dir) = detect_save_dir(game) else {
         return Ok(SaveSyncResult::default());
@@ -193,10 +176,6 @@ async fn scan_saves_diff(game: &Game, profile_id: &str) -> Result<SaveSyncResult
     Ok(result)
 }
 
-/// Copy the game's live save directory into Deployd's per-profile storage.
-///
-/// Clears the storage snapshot first so that saves deleted in-game are not
-/// retained. No-op if the game's save directory does not exist.
 pub async fn backup_saves(game: &Game, profile_id: &str) -> Result<()> {
     let Some(save_dir) = detect_save_dir(game) else {
         return Ok(());
@@ -206,7 +185,6 @@ pub async fn backup_saves(game: &Game, profile_id: &str) -> Result<()> {
     }
     let storage = deployd_save_dir(&game.id, profile_id);
 
-    // Wipe previous snapshot so deleted saves don't persist.
     if storage.exists() {
         clear_dir(&storage)
             .await
@@ -218,18 +196,12 @@ pub async fn backup_saves(game: &Game, profile_id: &str) -> Result<()> {
         .context("Failed to back up save files")
 }
 
-/// Replace the game's live save directory contents with this profile's snapshot.
-///
-/// Clears the game save directory first so saves from the previous profile do
-/// not bleed through. If no snapshot exists for this profile, the directory is
-/// left empty (the profile never had saves).
 pub async fn restore_saves(game: &Game, profile_id: &str) -> Result<()> {
     let Some(save_dir) = detect_save_dir(game) else {
         return Ok(());
     };
     let storage = deployd_save_dir(&game.id, profile_id);
 
-    // Clear current game saves so no files from the previous profile remain.
     if save_dir.exists() {
         clear_dir(&save_dir)
             .await
@@ -238,7 +210,6 @@ pub async fn restore_saves(game: &Game, profile_id: &str) -> Result<()> {
         tokio::fs::create_dir_all(&save_dir).await?;
     }
 
-    // Restore from snapshot (if one exists; otherwise the empty dir is correct).
     if storage.exists() {
         copy_dir_all(&storage, &save_dir)
             .await
@@ -248,27 +219,16 @@ pub async fn restore_saves(game: &Game, profile_id: &str) -> Result<()> {
     Ok(())
 }
 
-/// Called the first time a profile is switched to `ProfileSpecific` mode.
-/// Snapshots current game saves into this profile's storage without touching
-/// the game save directory (non-destructive).
 pub async fn initialize_profile_saves(game: &Game, profile_id: &str) -> Result<()> {
     backup_saves(game, profile_id).await
 }
 
-/// Scan the game's live save directory for changes against the active profile's
-/// stored snapshot, then write the updated backup. Returns the detected change
-/// counts. Call this for the "Sync Saves" button or whenever a manual sync is needed.
 pub async fn sync_profile_saves(game: &Game, profile_id: &str) -> Result<SaveSyncResult> {
     let diff = scan_saves_diff(game, profile_id).await?;
     backup_saves(game, profile_id).await?;
     Ok(diff)
 }
 
-/// Perform a save swap when switching between profiles:
-/// - Scans and backs up the old profile's saves (if `ProfileSpecific`), returning the diff.
-/// - Restores the new profile's saves (if `ProfileSpecific`), clearing the game dir first.
-///
-/// Returns `Some(SaveSyncResult)` if the old profile was backed up, `None` otherwise.
 pub async fn swap_saves(
     game: &Game,
     old_profile_id: Option<&str>,

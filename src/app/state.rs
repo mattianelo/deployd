@@ -115,6 +115,8 @@ pub struct App {
     /// When true, the next ModPrepared result should skip the "Already Installed" dialog and go
     /// straight into the replace flow (set by the Downloads panel "Reinstall" button).
     pub(crate) reinstall_mode: bool,
+    /// Scroll position to restore after the next mod list rebuild (set before a factory remove).
+    pub(crate) pending_scroll_restore: Option<f64>,
     /// ScrolledWindow wrapping the mod list — held so we can restore scroll position.
     pub(crate) mod_scroll: gtk::ScrolledWindow,
     /// ScrolledWindow wrapping the downloads list — held so we can restore scroll position.

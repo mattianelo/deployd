@@ -173,6 +173,7 @@ pub(super) fn build_model(
         external_changes_count: 0,
         pending_replace_mod_id: None,
         reinstall_mode: false,
+        pending_scroll_restore: None,
         mod_scroll,
         downloads_scroll,
         #[cfg(feature = "loot")]

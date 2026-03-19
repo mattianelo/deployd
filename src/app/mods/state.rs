@@ -53,7 +53,7 @@ impl App {
         });
 
         let vadj = self.mod_scroll.vadjustment();
-        let saved_pos = vadj.value();
+        let saved_pos = self.pending_scroll_restore.take().unwrap_or_else(|| vadj.value());
 
         let mut guard = self.mods.guard();
         guard.clear();
@@ -294,6 +294,7 @@ impl App {
         self.plugin_masters = data.plugin_masters;
         self.rebuild_tool_buttons(sender);
         self.reload_order_snapshots(sender);
+        self.apply_search_filter();
     }
 
     /// Update the `#N` priority labels for all mod rows in-place after a reorder.

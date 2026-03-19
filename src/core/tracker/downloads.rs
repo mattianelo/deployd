@@ -46,6 +46,23 @@ impl Tracker {
         Ok(())
     }
 
+    /// Delete download entries by ID from the database.
+    pub async fn delete_download_entries(&self, ids: &[String]) -> Result<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+        let sql = format!("DELETE FROM download_entries WHERE id IN ({placeholders})");
+        let mut q = sqlx::query(&sql);
+        for id in ids {
+            q = q.bind(id);
+        }
+        q.execute(&self.pool)
+            .await
+            .context("Failed to delete download entries")?;
+        Ok(())
+    }
+
     /// Load all persisted download entries.
     pub async fn load_download_entries(
         &self,

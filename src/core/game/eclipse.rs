@@ -6,19 +6,12 @@ use anyhow::Result;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 
-/// Sentinel prefix for files that should be deployed to the Wine user's
-/// Documents folder rather than the Dragon Age data directory or its override.
-/// The deployer resolves this to `game_data.parent().parent()` (two levels up
-/// from `Documents/BioWare/Dragon Age`), landing in `Documents/`.
+/// Prefix for files deployed to the Wine user's Documents folder.
+/// Resolves to `game_data.parent().parent()` (two levels up from `Documents/BioWare/Dragon Age`).
 pub const DOCS_PREFIX: &str = "~docs~/";
 
-/// Route a single file's relative path for Eclipse (Dragon Age: Origins) deployment.
-///
-/// DAZIP-expanded files already carry `AddIns/<UID>/` and are left unchanged.
-/// All other loose files go to `packages/core/override/`.
-///
-/// Tool mods (archives containing executables) are handled at the batch level
-/// by `route_tool_paths` — this function is only called for non-tool mods.
+/// Route a file path for Eclipse deployment. DAZIP-expanded paths are unchanged;
+/// loose files go to `packages/core/override/`.
 pub fn route_path(rel: &str) -> String {
     let lower = rel.to_lowercase();
     if lower.starts_with("addins/")
@@ -40,18 +33,13 @@ fn is_tool_file(lower_path: &str) -> bool {
     )
 }
 
-/// Returns `true` if the file list looks like an external tool archive (contains
-/// at least one executable). Used to decide whether to apply tool routing for
-/// the entire mod rather than per-file routing.
 pub fn is_tool_mod(file_list: &[(PathBuf, PathBuf)]) -> bool {
     file_list
         .iter()
         .any(|(_, dest)| is_tool_file(&dest.to_string_lossy().to_lowercase()))
 }
 
-/// Route all files in a tool mod to `~docs~/<mod_name>/` so the tool and its
-/// companion files land together in the Wine user's Documents folder rather than
-/// being split between Documents root and `packages/core/override/`.
+/// Route tool mod files to `~docs~/<mod_name>/` so they land together in the Documents folder.
 pub fn route_tool_paths(
     file_list: Vec<(PathBuf, PathBuf)>,
     mod_name: &str,
@@ -75,12 +63,8 @@ fn sanitize_tool_name(name: &str) -> String {
         .replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_")
 }
 
-/// Update `Settings/AddIns.xml` with entries for every installed DAZIP mod found
-/// under `AddIns/*/manifest.xml` in `da_dir`.
-///
-/// Existing file content is never replaced — missing entries are inserted before
-/// `</AddInsList>` so game-generated entries (campaigns, DLC) are always preserved.
-/// Only writes the file if something was actually added.
+/// Update `Settings/AddIns.xml` with entries for installed DAZIP mods.
+/// Missing entries are inserted; existing content (campaigns, DLC) is preserved.
 pub fn write_addins_xml(da_dir: &Path) -> Result<()> {
     let addins_dir = da_dir.join("AddIns");
     let settings_dir = da_dir.join("Settings");
@@ -89,14 +73,12 @@ pub fn write_addins_xml(da_dir: &Path) -> Result<()> {
     // Remove stale wrong-case file written by older deployd versions.
     let _ = fs::remove_file(settings_dir.join("Addins.xml"));
 
-    // Collect entries for currently installed DAZIP mods (sorted by UID).
     let managed = collect_managed_entries(&addins_dir);
     if managed.is_empty() {
         return Ok(());
     }
 
     if !addins_xml.is_file() {
-        // Game hasn't created the file yet — create a minimal one.
         fs::create_dir_all(&settings_dir)?;
         let inner: String = managed
             .values()
@@ -109,7 +91,6 @@ pub fn write_addins_xml(da_dir: &Path) -> Result<()> {
         return Ok(());
     }
 
-    // File exists: only insert entries whose UID is not already registered.
     let raw = match fs::read_to_string(&addins_xml) {
         Ok(s) => s,
         Err(e) => {
@@ -185,9 +166,6 @@ fn collect_managed_entries(addins_dir: &Path) -> BTreeMap<String, String> {
     managed
 }
 
-/// Extract the first `<AddInItem>` (standard) or `<AddIn>` (legacy) block from a
-/// manifest.xml, returning `(uid, xml_block)`.
-/// Returns `None` if no block with a UID attribute is found.
 fn extract_addin_block_with_uid(data: &[u8]) -> Option<(String, String)> {
     let src = std::str::from_utf8(data).ok()?;
     let mut reader = Reader::from_str(src);

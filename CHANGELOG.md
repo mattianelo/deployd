@@ -1,6 +1,5 @@
 # Changelog
 
-
 ## [0.9.6] — 2026-03-18 · Public Beta
 
 ### Added
@@ -19,7 +18,10 @@
 - **Purge now correctly targets the active game's files** — the deployed-files tracker now stores which game each file belongs to. Previously purging could silently do nothing if files from a different game were in the tracker (e.g., after an app update or a game switch). When nothing is tracked a clearer message is shown instead of a silent no-op.
 - **Dragon Age: Origins must now be explicitly enabled** — DAO support is off by default. Enable it under Settings → Games → "Dragon Age: Origins (Experimental)", then rescan for games. This prevents the game from appearing unexpectedly for users who haven't opted in.
 - **CharGenMorph Compiler installs and auto-detects correctly** — tool executables (`.exe`, `.dll`, `.bat`) for Dragon Age: Origins are now deployed to the Wine user's Documents folder instead of the game's override directory. After deploying the mod, Manage Tools will automatically find the executable.
-
+- **Search filter preserved after removing a mod** — deleting a mod no longer resets the search bar, active filters remain applied after the list refreshes.
+- **Downloads rescan removes deleted archives** — when rescanning the downloads folder, entries whose archive files have been deleted are now removed from the database instead of accumulating as invisible zombies.
+- **Installation progress no longer shifts the mod list** — the spinner and progress bar now occupy a fixed-height area that doesn't change size, so the mod and plugin lists stay in place during extraction and caching.
+- **DAO: standalone `.dazip` files install to the correct location** — selecting a `.dazip` file directly in the install dialog now places content in `AddIns/<UID>/` rather than `packages/core/override/`.
 - **DAZIP mods now appear in the Dragon Age: Origins in-game modlist** — deployd now writes to `Settings/AddIns.xml` (matching the game's exact filename). Previously it wrote `Addins.xml` (different case), which is a separate file on Linux and never read by the game. `<AddInItem>` elements are now correctly captured from manifests, and pre-existing game entries (campaigns, DLCs) are preserved on every deploy.
 - **DAZIP mods now install to the correct location** — `.dazip` archives that use the standard `Contents/addins/` and `Contents/packages/` layout are now extracted correctly. The add-in UID is also properly read from `Manifest.xml` (capital M) and `<AddInItem>` elements.
 - **Manage Games dialog no longer opens on every launch** — the dialog now only auto-opens when a genuinely new, unconfirmed game is detected. Dismissing it hides that game so it does not re-prompt next time.
@@ -34,6 +36,7 @@
 ### Improved
 
 - **FOMOD auto-selection respects your modlist** — when the FOMOD installer determines default selections, it now evaluates `<dependencyType>` conditions against your active plugin list. Options that require a DLC or another mod (e.g. a patch for Dawnguard) are automatically marked Recommended when that plugin is present, and Optional when it is not.
+- **Smoother transitions during mod installation** — the progress area crossfades between idle, spinner, and progress-bar states instead of snapping instantly.
 
 ---
 

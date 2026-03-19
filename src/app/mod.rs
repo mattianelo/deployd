@@ -174,14 +174,39 @@ impl Component for App {
                         },
                     },
 
-                    pack_start = &gtk::Button {
-                        set_icon_name: "list-add-symbolic",
-                        set_tooltip_text: Some("Add Mod"),
-                        #[watch]
-                        set_sensitive: !model.is_busy() && model.has_games(),
+                    pack_start = &gtk::Box {
+                        set_orientation: gtk::Orientation::Horizontal,
                         #[watch]
                         set_visible: model.has_games(),
-                        connect_clicked => AppMsg::InstallClicked,
+
+                        gtk::Button {
+                            set_icon_name: "list-add-symbolic",
+                            set_tooltip_text: Some("Add Mod"),
+                            #[watch]
+                            set_visible: !(model.is_busy() && model.install_progress.is_none()),
+                            #[watch]
+                            set_sensitive: !model.is_busy(),
+                            connect_clicked => AppMsg::InstallClicked,
+                        },
+
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Horizontal,
+                            set_spacing: 6,
+                            set_margin_start: 8,
+                            set_margin_end: 8,
+                            set_valign: gtk::Align::Center,
+                            #[watch]
+                            set_visible: model.is_busy() && model.install_progress.is_none(),
+
+                            gtk::Spinner {
+                                set_spinning: true,
+                            },
+                            gtk::Label {
+                                add_css_class: "caption",
+                                #[watch]
+                                set_label: model.status_msg.as_deref().unwrap_or("Extracting..."),
+                            },
+                        },
                     },
 
                     pack_end = &gtk::Button {
@@ -338,25 +363,7 @@ impl Component for App {
                     },
                 },
 
-                // Indeterminate spinner (extraction phase)
-                gtk::Box {
-                    #[watch]
-                    set_visible: model.is_busy() && model.install_progress.is_none(),
-                    set_orientation: gtk::Orientation::Horizontal,
-                    set_spacing: 8,
-                    set_margin_all: 8,
-                    set_halign: gtk::Align::Center,
-
-                    gtk::Spinner {
-                        set_spinning: true,
-                    },
-                    gtk::Label {
-                        #[watch]
-                        set_label: model.status_msg.as_deref().unwrap_or("Working..."),
-                    },
-                },
-
-                // Determinate progress bar (file caching phase)
+                // File-caching progress bar (shown only during the deterministic install phase).
                 gtk::ProgressBar {
                     #[watch]
                     set_visible: model.install_progress.is_some(),

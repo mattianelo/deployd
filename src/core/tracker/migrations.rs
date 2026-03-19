@@ -3,7 +3,6 @@ use sqlx::sqlite::SqlitePool;
 
 use crate::dlog;
 
-/// Add wine_prefix, engine, and custom columns to the games table if they don't exist.
 pub(super) async fn migrate_games_columns(pool: &SqlitePool) -> Result<()> {
     let columns: Vec<(String,)> = sqlx::query_as("PRAGMA table_info(games)")
         .fetch_all(pool)
@@ -28,7 +27,6 @@ pub(super) async fn migrate_games_columns(pool: &SqlitePool) -> Result<()> {
     Ok(())
 }
 
-/// Add Nexus metadata columns if they don't exist yet.
 pub(super) async fn migrate_nexus_columns(pool: &SqlitePool) -> Result<()> {
     let columns: Vec<(String,)> = sqlx::query_as("PRAGMA table_info(mods)")
         .fetch_all(pool)
@@ -78,7 +76,6 @@ pub(super) async fn migrate_version_columns(pool: &SqlitePool) -> Result<()> {
     Ok(())
 }
 
-/// Add nexus_file_name and nexus_is_primary columns to download_entries if missing.
 pub(super) async fn migrate_download_columns(pool: &SqlitePool) -> Result<()> {
     let columns: Vec<(String,)> = sqlx::query_as("PRAGMA table_info(download_entries)")
         .fetch_all(pool)
@@ -107,7 +104,6 @@ pub(super) async fn migrate_download_columns(pool: &SqlitePool) -> Result<()> {
     Ok(())
 }
 
-/// Add group_id column to mods table if it doesn't exist yet.
 pub(super) async fn migrate_group_columns(pool: &SqlitePool) -> Result<()> {
     let columns: Vec<(String,)> = sqlx::query_as("PRAGMA table_info(mods)")
         .fetch_all(pool)
@@ -126,7 +122,6 @@ pub(super) async fn migrate_group_columns(pool: &SqlitePool) -> Result<()> {
     Ok(())
 }
 
-/// Add install_target column to mods table if it doesn't exist yet.
 pub(super) async fn migrate_install_target_column(pool: &SqlitePool) -> Result<()> {
     let columns: Vec<(String,)> = sqlx::query_as("PRAGMA table_info(mods)")
         .fetch_all(pool)
@@ -145,7 +140,6 @@ pub(super) async fn migrate_install_target_column(pool: &SqlitePool) -> Result<(
     Ok(())
 }
 
-/// Add notes column to mods table if it doesn't exist yet.
 pub(super) async fn migrate_notes_column(pool: &SqlitePool) -> Result<()> {
     let columns: Vec<(String,)> = sqlx::query_as("PRAGMA table_info(mods)")
         .fetch_all(pool)
@@ -161,10 +155,7 @@ pub(super) async fn migrate_notes_column(pool: &SqlitePool) -> Result<()> {
     Ok(())
 }
 
-/// Add file_size and mtime_secs columns to vanilla_files if missing.
-///
-/// Rows created before this migration have NULL size/mtime and cannot be used
-/// for replacement detection, so they are deleted to force a fresh snapshot.
+/// Rows created before this migration have NULL size/mtime and are deleted to force a fresh snapshot.
 pub(super) async fn migrate_vanilla_files_columns(pool: &SqlitePool) -> Result<()> {
     let columns: Vec<(String,)> = sqlx::query_as("PRAGMA table_info(vanilla_files)")
         .fetch_all(pool)
@@ -184,8 +175,6 @@ pub(super) async fn migrate_vanilla_files_columns(pool: &SqlitePool) -> Result<(
         }
     }
 
-    // Remove rows that still have NULL attributes — they are from the old schema
-    // and will be re-snapshotted with proper values on next game load.
     sqlx::query("DELETE FROM vanilla_files WHERE file_size IS NULL OR mtime_secs IS NULL")
         .execute(pool)
         .await?;
@@ -193,7 +182,6 @@ pub(super) async fn migrate_vanilla_files_columns(pool: &SqlitePool) -> Result<(
     Ok(())
 }
 
-/// Backfill `plugin_masters` for plugins installed before master tracking was added.
 pub(super) async fn backfill_plugin_masters(pool: &SqlitePool) -> Result<()> {
     use std::path::Path;
 
@@ -240,8 +228,6 @@ pub(super) async fn backfill_plugin_masters(pool: &SqlitePool) -> Result<()> {
     Ok(())
 }
 
-/// One-time startup migration: mark download entries as 'installed' when their
-/// (nexus_mod_id, nexus_file_id) matches a row in the mods table.
 pub(super) async fn backfill_download_statuses(pool: &SqlitePool) -> Result<()> {
     let done: Option<String> =
         sqlx::query_scalar("SELECT value FROM settings WHERE key = 'dl_status_backfill_v1'")
@@ -280,8 +266,6 @@ pub(super) async fn backfill_download_statuses(pool: &SqlitePool) -> Result<()> 
     Ok(())
 }
 
-/// One-time startup backfill: populate `mods.archive_hash` for mods that were
-/// installed before archive hashing was introduced.
 pub(super) async fn backfill_archive_hashes(pool: &SqlitePool) -> Result<()> {
     let done: Option<String> =
         sqlx::query_scalar("SELECT value FROM settings WHERE key = 'archive_hash_backfill_v1'")
@@ -329,7 +313,6 @@ pub(super) async fn backfill_archive_hashes(pool: &SqlitePool) -> Result<()> {
         }
     }
 
-    // Mark the backfill as done even if some archives were missing.
     sqlx::query(
         "INSERT INTO settings (key, value) VALUES ('archive_hash_backfill_v1', 'true')
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -341,10 +324,6 @@ pub(super) async fn backfill_archive_hashes(pool: &SqlitePool) -> Result<()> {
     Ok(())
 }
 
-/// Add `game_id` to `deployed_files` and change the primary key to
-/// `(game_id, game_rel_lowercase)` so each game's deployed state is isolated.
-/// Backfills existing rows via a JOIN on `mods.game_id`; rows that cannot be
-/// resolved (orphaned mod_id) are dropped since they are stale cache entries.
 pub(super) async fn migrate_deployed_files_game_id(pool: &SqlitePool) -> Result<()> {
     let columns: Vec<(String,)> = sqlx::query_as("PRAGMA table_info(deployed_files)")
         .fetch_all(pool)

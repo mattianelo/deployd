@@ -9,37 +9,22 @@ pub(super) enum GameStore {
 }
 
 pub(super) struct KnownGame {
-    /// Which store this entry represents. Used to route detection to the right installed.json.
     pub(super) store: GameStore,
-    /// Heroic Launcher internal identifier for the game:
-    ///   GOG entries  → GOG numeric app name (e.g. "1711230643")
-    ///   Steam entries → Steam numeric app ID (e.g. "489830")
-    /// This is also the key used in Heroic's per-game GamesConfig/<heroic_app_name>.json.
+    /// GOG: numeric app name; Steam: app ID. Also the Heroic GamesConfig key.
     pub(super) heroic_app_name: &'static str,
     pub(super) deployd_id: &'static str,
     pub(super) title: &'static str,
     pub(super) data_subdir: &'static str,
-    /// All AppData/Local subfolder variants for Plugins.txt.
-    /// GOG editions often use a separate folder (e.g. "Skyrim Special Edition GOG");
-    /// Steam editions use the standard folder only.
-    /// Empty for non-Bethesda engines (no Plugins.txt management needed).
+    /// AppData/Local subfolder variants for Plugins.txt. Empty for non-Bethesda engines.
     pub(super) appdata_folders: &'static [&'static str],
-    /// Game-specific Custom.ini filename (e.g. "Fallout4Custom.ini").
     /// Empty for non-Bethesda engines.
     pub(super) custom_ini_name: &'static str,
-    /// Windows registry key (under HKLM\SOFTWARE) where modding tools look for the game.
-    /// Empty for non-Bethesda engines.
+    /// HKLM\SOFTWARE key where modding tools look for the game. Empty for non-Bethesda engines.
     pub(super) bethesda_reg_key: &'static str,
-    /// Nexus Mods game domain name (e.g. "skyrimspecialedition").
     pub(super) nexus_domain: &'static str,
-    /// Game engine family, used to gate engine-specific behaviour.
     pub(super) engine: GameEngine,
-    /// Path to the save directory **relative to the Wine user directory**
-    /// (e.g. `"Saved Games/CD Projekt Red/Cyberpunk 2077"`).
-    /// `None` for Bethesda games (saves are not managed by Deployd).
+    /// Save directory relative to the Wine user directory. `None` disables save management.
     pub(super) save_game_subpath: Option<&'static str>,
-    /// Marks games whose support is still being validated. Shown as
-    /// "(Experimental)" in the game-type dropdown to set user expectations.
     pub(super) experimental: bool,
 }
 
@@ -148,11 +133,6 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         experimental: false,
     },
     // ── REDEngine games ───────────────────────────────────────────────────────
-    // data_subdir = "." → game.data_dir() resolves to the game root itself.
-    // All mod files (archive/pc/mod/, r6/scripts/, Mods/, etc.) are deployed
-    // relative to the game installation root, which is correct for REDEngine.
-    // appdata_folders / custom_ini_name / bethesda_reg_key are intentionally
-    // empty; Bethesda-specific helpers already guard on these being non-empty.
     KnownGame {
         store: GameStore::Gog,
         heroic_app_name: "1207664663",
@@ -224,10 +204,7 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         experimental: false,
     },
     // ── Dragon Age: Origins (experimental) ───────────────────────────────────
-    // data_subdir is relative to the Wine user dir (not the game root), because
-    // deploy_dir() for Eclipse games resolves <wine_user>/<data_subdir>.
-    // .dazip mods install to AddIns/<UID>/ and register in Settings/Addins.xml.
-    // Loose override files go to packages/core/override/ via eclipse path routing.
+    // data_subdir is relative to the Wine user dir; deploy_dir() resolves <wine_user>/<data_subdir>.
     KnownGame {
         store: GameStore::Gog,
         heroic_app_name: "1949616134",

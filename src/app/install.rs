@@ -29,7 +29,8 @@ impl App {
         filter.add_pattern("*.zip");
         filter.add_pattern("*.7z");
         filter.add_pattern("*.rar");
-        filter.set_name(Some("Mod Archives (zip, 7z, rar)"));
+        filter.add_pattern("*.dazip");
+        filter.set_name(Some("Mod Archives (zip, 7z, rar, dazip)"));
         let filters = gio::ListStore::new::<gtk::FileFilter>();
         filters.append(&filter);
         dialog.set_filters(Some(&filters));

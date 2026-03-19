@@ -6,8 +6,8 @@ use super::wine::find_wine_user_dir;
 
 /// Detect the game's save directory inside the Wine prefix.
 ///
-/// Returns `None` for Bethesda games (saves are not managed by Deployd) or when
-/// the Wine prefix cannot be located.
+/// Returns `None` when the game has no configured save path or the Wine prefix
+/// cannot be located.
 pub fn detect_save_dir(game: &Game) -> Option<PathBuf> {
     let known = KNOWN_GAMES.iter().find(|k| k.deployd_id == game.id)?;
     let subpath = known.save_game_subpath?;

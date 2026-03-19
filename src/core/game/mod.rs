@@ -19,8 +19,6 @@ pub use eclipse::write_addins_xml;
 pub use wine::{detect_wine_config, WineConfig};
 pub(crate) use wine::linux_path_to_wine_path;
 
-/// A lightweight descriptor of a supported game type, used to populate the
-/// "Add Custom Game" dropdown in the game setup dialog.
 pub struct KnownGameOption {
     pub deployd_id: &'static str,
     pub title: &'static str,
@@ -30,10 +28,7 @@ pub struct KnownGameOption {
     pub experimental: bool,
 }
 
-/// Return the root directory where tool presets should be searched for a game.
-///
-/// For Eclipse games the interesting directory is the Wine user's `Documents/` folder
-/// (two levels above `deploy_dir`). For all other engines it is the same as `deploy_dir`.
+/// For Eclipse, returns the Wine user's `Documents/` folder (two levels above `deploy_dir`).
 pub fn tool_search_dir(game: &Game) -> Option<PathBuf> {
     let dd = deploy_dir(game);
     if game.engine == GameEngine::Eclipse {
@@ -43,11 +38,7 @@ pub fn tool_search_dir(game: &Game) -> Option<PathBuf> {
     }
 }
 
-/// Return the directory where mods should be deployed for a game.
-///
-/// For Eclipse engine games (Dragon Age: Origins), mods live inside the Wine prefix
-/// user directory rather than the game installation folder. Falls back to
-/// `game.data_dir()` when the Wine prefix cannot be detected.
+/// For Eclipse, resolves inside the Wine prefix user directory instead of the game folder.
 pub fn deploy_dir(game: &Game) -> PathBuf {
     if game.engine == GameEngine::Eclipse {
         if let Some(known) = KNOWN_GAMES.iter().find(|k| k.deployd_id == game.id) {
@@ -59,7 +50,6 @@ pub fn deploy_dir(game: &Game) -> PathBuf {
     game.data_dir()
 }
 
-/// Return all supported game types for the "Add Custom Game" dropdown.
 pub fn known_game_options() -> Vec<KnownGameOption> {
     KNOWN_GAMES
         .iter()

@@ -4,10 +4,6 @@ use crate::models::game::Game;
 use super::known_games::{KnownGame, KNOWN_GAMES};
 use super::detection::heroic_game_config_paths;
 
-/// Find the WINE user directory for a game (e.g. `<prefix>/drive_c/users/steamuser`).
-///
-/// If `game.wine_prefix` is set, that prefix is used directly instead of auto-detection.
-/// Prefers existing user dirs, falls back to "steamuser" if none exist yet.
 pub(crate) fn find_wine_user_dir(known: &KnownGame, game: &Game) -> Option<PathBuf> {
     let prefix = game
         .wine_prefix
@@ -15,7 +11,6 @@ pub(crate) fn find_wine_user_dir(known: &KnownGame, game: &Game) -> Option<PathB
         .or_else(|| detect_wine_prefix(known.heroic_app_name, &game.path))?;
     let users_dir = prefix.join("drive_c/users");
 
-    // Try known user directory names first (prefer existing ones)
     for user_dir in &["steamuser", "Public"] {
         let candidate = users_dir.join(user_dir);
         if candidate.exists() {
@@ -23,7 +18,6 @@ pub(crate) fn find_wine_user_dir(known: &KnownGame, game: &Game) -> Option<PathB
         }
     }
 
-    // Try any existing user dir
     if let Ok(entries) = std::fs::read_dir(&users_dir) {
         for entry in entries.flatten() {
             if entry.file_type().is_ok_and(|ft| ft.is_dir()) {
@@ -32,29 +26,20 @@ pub(crate) fn find_wine_user_dir(known: &KnownGame, game: &Game) -> Option<PathB
         }
     }
 
-    // Fallback: default to "steamuser" even if dir doesn't exist yet
+    // Fall back to "steamuser" even if it doesn't exist yet.
     Some(users_dir.join("steamuser"))
 }
 
-/// Wine/Proton configuration for a game, read from Heroic Launcher config.
 #[derive(Debug, Clone)]
 pub struct WineConfig {
     pub prefix: PathBuf,
     pub wine_bin: PathBuf,
-    /// Root directory of the Proton distribution (e.g. `.../GE-Proton10-29/`).
-    /// `None` when using a plain Wine build. Used to set `LD_LIBRARY_PATH` etc.
+    /// `None` when using plain Wine. Used to set `LD_LIBRARY_PATH` etc.
     pub proton_dir: Option<PathBuf>,
-    /// Whether the Wine/Proton binaries come from a Flatpak Heroic installation.
-    /// When true, tools must be launched via `flatpak run --command=... com.heroicgameslauncher.hgl`
-    /// because the binaries depend on the Flatpak runtime's libraries.
+    /// When true, tools must be launched via `flatpak run --command=... com.heroicgameslauncher.hgl`.
     pub heroic_flatpak: bool,
 }
 
-/// Detect the full Wine/Proton configuration for a game.
-///
-/// Reads config from Heroic (wine binary + prefix) and applies any user-specified
-/// prefix override on top. Falls back to probing common relative paths and
-/// searching for Proton near the prefix when Heroic config is unavailable.
 pub fn detect_wine_config(game: &Game) -> Option<WineConfig> {
     let known = KNOWN_GAMES.iter().find(|k| k.deployd_id == game.id)?;
 
@@ -64,7 +49,7 @@ pub fn detect_wine_config(game: &Game) -> Option<WineConfig> {
         {
             let config = json.get(known.heroic_app_name).unwrap_or(&json);
 
-            // User-specified prefix takes priority; fall back to Heroic's prefix (must exist).
+            // User-specified prefix takes priority over Heroic's.
             let prefix = game.wine_prefix.clone().or_else(|| {
                 config
                     .get("winePrefix")
@@ -95,7 +80,6 @@ pub fn detect_wine_config(game: &Game) -> Option<WineConfig> {
             };
 
             if let Some(prefix) = prefix {
-                // Prefer Heroic's wine binary; fall back to Proton near the prefix, then system wine.
                 let (wine_bin, proton_dir) = if let Some(bin) = heroic_bin {
                     (bin, heroic_proton_dir)
                 } else if let Some((found_bin, found_pdir)) = find_wine_near_prefix(&prefix) {
@@ -113,7 +97,6 @@ pub fn detect_wine_config(game: &Game) -> Option<WineConfig> {
         }
     }
 
-    // No Heroic config found. Use user-specified prefix with best available wine.
     if let Some(prefix) = game.wine_prefix.clone() {
         let (wine_bin, proton_dir) = if let Some((bin, pdir)) = find_wine_near_prefix(&prefix) {
             (bin, Some(pdir))
@@ -128,7 +111,6 @@ pub fn detect_wine_config(game: &Game) -> Option<WineConfig> {
         });
     }
 
-    // Fallback: probe prefix from common locations, use Proton near prefix or system wine.
     let prefix = detect_wine_prefix(known.heroic_app_name, &game.path)?;
     let (wine_bin, proton_dir) = if let Some((bin, pdir)) = find_wine_near_prefix(&prefix) {
         (bin, Some(pdir))
@@ -144,13 +126,7 @@ pub fn detect_wine_config(game: &Game) -> Option<WineConfig> {
 }
 
 /// Resolve the actual Wine binary from a Heroic `wineVersion.bin` path.
-///
-/// Proton distributions ship a Python wrapper script (`proton`) that requires
-/// Steam-specific env vars. The real Wine binary lives at `<proton_root>/files/bin/wine`.
-/// When Heroic reports type "proton" (or the binary is named "proton"), resolve to
-/// the real Wine binary. Falls back to the original path if the resolved path doesn't exist.
-///
-/// Returns `(wine_binary, proton_dir)` — `proton_dir` is `Some` when using Proton.
+/// Proton ships a wrapper script (`proton`); the real binary lives at `<proton_root>/files/bin/wine`.
 fn resolve_wine_binary(bin: PathBuf, wine_type: &str) -> (PathBuf, Option<PathBuf>) {
     let is_proton = wine_type == "proton" || bin.file_name().is_some_and(|name| name == "proton");
 
@@ -164,12 +140,6 @@ fn resolve_wine_binary(bin: PathBuf, wine_type: &str) -> (PathBuf, Option<PathBu
     (bin, None)
 }
 
-/// Search for the best Proton/Wine-GE binary in a directory of distributions.
-///
-/// Looks for subdirectories containing `files/bin/wine`, preferring GE-Proton
-/// builds over vanilla Proton, then anything else.
-///
-/// Returns `(wine_bin, proton_root)`.
 fn best_proton_in_dir(dir: &Path) -> Option<(PathBuf, PathBuf)> {
     let entries: Vec<PathBuf> = std::fs::read_dir(dir)
         .ok()?
@@ -196,18 +166,8 @@ fn best_proton_in_dir(dir: &Path) -> Option<(PathBuf, PathBuf)> {
     Some((chosen.join("files/bin/wine"), chosen.clone()))
 }
 
-/// Search for a Wine/Proton binary near a known Wine prefix path.
-///
-/// First checks whether the prefix lives inside a Steam `compatdata/` tree and
-/// scans the adjacent `common/` directory for Proton distributions. Then falls
-/// back to the canonical Wine-GE drop-in directories under `~/.local/share/Steam`
-/// and `~/.steam/steam`.
-///
-/// Returns `(wine_bin, proton_dir)`, or `None` — callers should fall back to `which_wine()`.
 fn find_wine_near_prefix(prefix: &Path) -> Option<(PathBuf, PathBuf)> {
-    // Walk ancestors looking for a "compatdata" component.
-    // A Steam prefix lives at <steamapps>/compatdata/<appid>/pfx,
-    // so the parent of "compatdata" is the steamapps directory.
+    // A Steam prefix lives at <steamapps>/compatdata/<appid>/pfx.
     let mut ancestor = prefix.to_path_buf();
     loop {
         if ancestor.file_name().is_some_and(|n| n == "compatdata") {
@@ -222,7 +182,6 @@ fn find_wine_near_prefix(prefix: &Path) -> Option<(PathBuf, PathBuf)> {
         }
     }
 
-    // Wine-GE / custom Proton drop-in directories.
     let home = dirs::home_dir()?;
     for ctd in &[
         home.join(".local/share/Steam/compatibilitytools.d"),
@@ -236,7 +195,6 @@ fn find_wine_near_prefix(prefix: &Path) -> Option<(PathBuf, PathBuf)> {
     None
 }
 
-/// Try to find the `wine` binary on PATH.
 fn which_wine() -> Option<PathBuf> {
     let output = std::process::Command::new("which")
         .arg("wine")
@@ -251,15 +209,11 @@ fn which_wine() -> Option<PathBuf> {
     None
 }
 
-/// Detect the WINE prefix for a game.
 pub(super) fn detect_wine_prefix(heroic_app_name: &str, game_path: &PathBuf) -> Option<PathBuf> {
-    // Parse Heroic game config
-    // Heroic nests config under the appName key: { "<appName>": { "winePrefix": "..." }, "version": "v0" }
     for (config_path, _is_flatpak) in heroic_game_config_paths(heroic_app_name) {
         if let Ok(content) = std::fs::read_to_string(&config_path)
             && let Ok(json) = serde_json::from_str::<serde_json::Value>(&content)
         {
-            // Try nested structure first (standard Heroic format), then flat as fallback
             let config = json.get(heroic_app_name).unwrap_or(&json);
             if let Some(prefix) = config.get("winePrefix").and_then(|v| v.as_str()) {
                 let prefix_path = PathBuf::from(prefix);
@@ -270,9 +224,7 @@ pub(super) fn detect_wine_prefix(heroic_app_name: &str, game_path: &PathBuf) -> 
         }
     }
 
-    // Probe common Proton prefix locations.
-    // The Steam layout puts the prefix at <steamapps>/compatdata/<appid>/pfx
-    // relative to the game at <steamapps>/common/<Game>/, so try that first.
+    // Steam: <steamapps>/compatdata/<appid>/pfx relative to the game at <steamapps>/common/<Game>/.
     let steam_compat = format!("../../compatdata/{heroic_app_name}/pfx");
     for relative in &[steam_compat.as_str(), "../pfx", "../../pfx", "../compatdata/pfx"] {
         let candidate = game_path.join(relative);
@@ -284,16 +236,8 @@ pub(super) fn detect_wine_prefix(heroic_app_name: &str, game_path: &PathBuf) -> 
     None
 }
 
-/// Translate a Linux absolute path to its Wine drive-letter form by reading
-/// `<prefix>/dosdevices/`.
-///
-/// Each entry is a symlink:
-///   `c:` → `../drive_c`   (always present, relative)
-///   `z:` → `/`             (always present, maps all of `/`)
-///   `x:` / `s:` / …        (Heroic/Proton may add extra mappings)
-///
-/// The **longest-prefix** match wins so a specific library mount (`x:` → `/mnt/ssd`)
-/// beats the catch-all `z:`.  Result always ends with a backslash.
+/// Translate a Linux absolute path to its Wine drive-letter form via `<prefix>/dosdevices/`.
+/// Longest-prefix match wins. Result always ends with a backslash.
 pub fn linux_path_to_wine_path(linux_path: &Path, prefix: &Path) -> Option<String> {
     let dosdevices = prefix.join("dosdevices");
     let entries = std::fs::read_dir(&dosdevices).ok()?;

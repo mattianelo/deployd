@@ -1,3 +1,4 @@
+use gtk::prelude::*;
 use relm4::factory::DynamicIndex;
 use relm4::prelude::*;
 
@@ -54,6 +55,7 @@ impl App {
 
         let Some(tracker) = self.tracker.clone() else { return };
 
+        self.pending_scroll_restore = Some(self.mod_scroll.vadjustment().value());
         self.mods.guard().remove(idx);
         self.needs_deploy = true;
         self.save_group_positions();

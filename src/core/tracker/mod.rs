@@ -25,22 +25,17 @@ impl std::fmt::Debug for Tracker {
     }
 }
 
-/// A game record loaded from the `games` table, including optional user overrides.
 #[derive(Debug, Clone)]
 pub struct PersistedGame {
     pub id: String,
     pub title: String,
     pub path: std::path::PathBuf,
     pub data_subdir: String,
-    /// "bethesda" or "redengine"
     pub engine: String,
-    /// User-specified Wine prefix; `None` means auto-detect.
     pub wine_prefix: Option<std::path::PathBuf>,
-    /// `true` if the user manually added this game (not auto-detected).
     pub custom: bool,
 }
 
-/// Per-mod override stats: counts + file paths.
 #[derive(Debug, Default)]
 pub struct OverrideInfo {
     pub overrides: usize,
@@ -50,7 +45,6 @@ pub struct OverrideInfo {
 }
 
 impl Tracker {
-    /// Open (or create) the SQLite database and ensure tables exist.
     pub async fn open(db_url: &str) -> Result<Self> {
         let opts = SqliteConnectOptions::from_str(db_url)?
             .journal_mode(SqliteJournalMode::Wal)
@@ -189,7 +183,6 @@ impl Tracker {
         .execute(&pool)
         .await?;
 
-        // Migration: add working_dir to existing databases that predate this column.
         let _ = sqlx::query("ALTER TABLE tools ADD COLUMN working_dir TEXT DEFAULT ''")
             .execute(&pool)
             .await;
@@ -266,61 +259,35 @@ impl Tracker {
         .execute(&pool)
         .await?;
 
-        // Migration: add wine_prefix, engine, custom columns to games table
         migrations::migrate_games_columns(&pool).await?;
-
-        // Migration: add Nexus metadata columns to mods table
         migrations::migrate_nexus_columns(&pool).await?;
-
-        // Migration: add file name columns to download_entries
         migrations::migrate_download_columns(&pool).await?;
-
-        // Migration: add size/mtime columns to vanilla_files for replacement detection
         migrations::migrate_vanilla_files_columns(&pool).await?;
-
-        // Migration: add group_id column to mods
         migrations::migrate_group_columns(&pool).await?;
-
-        // Migration: add install_target column to mods
         migrations::migrate_install_target_column(&pool).await?;
-
-        // Migration: add notes column to mods
         migrations::migrate_notes_column(&pool).await?;
 
-        // Migration: fix version/latest_version columns populated by old code
         if let Err(e) = migrations::migrate_version_columns(&pool).await {
             eprintln!("Version column migration failed (non-fatal): {e}");
         }
-
-        // Backfill plugin masters for mods installed before the plugin_masters table was added
         if let Err(e) = migrations::backfill_plugin_masters(&pool).await {
             eprintln!("Plugin master backfill failed (non-fatal): {e}");
         }
-
-        // One-time backfill: set download_entries.status = 'installed' for any entry
-        // whose (nexus_mod_id, nexus_file_id) matches an installed mod.
         if let Err(e) = migrations::backfill_download_statuses(&pool).await {
             eprintln!("Download status backfill failed (non-fatal): {e}");
         }
-
-        // One-time backfill: populate archive_hash for mods that were installed before
-        // the hash was recorded.
         if let Err(e) = migrations::backfill_archive_hashes(&pool).await {
             eprintln!("Archive hash backfill failed (non-fatal): {e}");
         }
-
-        // Migration: add game_id to deployed_files and update primary key
         if let Err(e) = migrations::migrate_deployed_files_game_id(&pool).await {
             eprintln!("deployed_files migration failed (non-fatal): {e}");
         }
 
-        // Migration: add save_mode column to profiles table
         let _ =
             sqlx::query("ALTER TABLE profiles ADD COLUMN save_mode TEXT NOT NULL DEFAULT 'global'")
                 .execute(&pool)
                 .await;
 
-        // Indexes on frequently-joined foreign-key columns (safe to add to existing DBs).
         for stmt in &[
             "CREATE INDEX IF NOT EXISTS idx_mods_game_id      ON mods(game_id)",
             "CREATE INDEX IF NOT EXISTS idx_mod_files_mod_id  ON mod_files(mod_id)",
