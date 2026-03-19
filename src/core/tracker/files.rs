@@ -196,26 +196,30 @@ impl Tracker {
         Ok(())
     }
 
-    /// Clear all deployed file records (used before re-deploying).
-    pub async fn clear_deployed_files(&self) -> Result<()> {
-        sqlx::query("DELETE FROM deployed_files")
+    /// Clear all deployed file records for a game.
+    pub async fn clear_deployed_files(&self, game_id: &str) -> Result<()> {
+        sqlx::query("DELETE FROM deployed_files WHERE game_id = ?")
+            .bind(game_id)
             .execute(&self.pool)
             .await
             .context("Failed to clear deployed_files")?;
         Ok(())
     }
 
-    /// Remove specific deployed file records by their lowercase path.
-    pub async fn remove_deployed_files(&self, paths: &[&str]) -> Result<()> {
+    /// Remove specific deployed file records by their lowercase path for a game.
+    pub async fn remove_deployed_files(&self, game_id: &str, paths: &[&str]) -> Result<()> {
         if paths.is_empty() {
             return Ok(());
         }
         let mut tx = self.pool.begin().await?;
         for path in paths {
-            sqlx::query("DELETE FROM deployed_files WHERE game_rel_lowercase = ?")
-                .bind(*path)
-                .execute(&mut *tx)
-                .await?;
+            sqlx::query(
+                "DELETE FROM deployed_files WHERE game_id = ? AND game_rel_lowercase = ?",
+            )
+            .bind(game_id)
+            .bind(*path)
+            .execute(&mut *tx)
+            .await?;
         }
         tx.commit()
             .await
@@ -223,13 +227,15 @@ impl Tracker {
     }
 
     /// Record the currently deployed files in a single transaction.
-    pub async fn record_deployed_files(&self, files: &[ModFile]) -> Result<()> {
+    pub async fn record_deployed_files(&self, game_id: &str, files: &[ModFile]) -> Result<()> {
         let mut tx = self.pool.begin().await?;
         for f in files {
             sqlx::query(
-                "INSERT INTO deployed_files (game_rel_lowercase, game_rel_original, mod_id, cache_path)
-                 VALUES (?, ?, ?, ?)",
+                "INSERT INTO deployed_files
+                    (game_id, game_rel_lowercase, game_rel_original, mod_id, cache_path)
+                 VALUES (?, ?, ?, ?, ?)",
             )
+            .bind(game_id)
             .bind(&f.game_rel_lowercase)
             .bind(&f.game_rel_original)
             .bind(&f.mod_id)
@@ -243,11 +249,13 @@ impl Tracker {
         Ok(())
     }
 
-    /// Get all currently deployed files.
-    pub async fn get_deployed_files(&self) -> Result<Vec<ModFile>> {
+    /// Get all currently deployed files for a game.
+    pub async fn get_deployed_files(&self, game_id: &str) -> Result<Vec<ModFile>> {
         let rows = sqlx::query_as::<_, (String, String, String, String)>(
-            "SELECT game_rel_lowercase, game_rel_original, mod_id, cache_path FROM deployed_files",
+            "SELECT game_rel_lowercase, game_rel_original, mod_id, cache_path
+             FROM deployed_files WHERE game_id = ?",
         )
+        .bind(game_id)
         .fetch_all(&self.pool)
         .await
         .context("Failed to query deployed_files")?;

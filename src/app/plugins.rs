@@ -61,6 +61,7 @@ impl App {
         }
         drop(guard);
         self.needs_deploy = true;
+        self.refresh_plugin_order_labels();
         self.save_plugin_order(sender);
     }
 
@@ -146,7 +147,22 @@ impl App {
             }
         }
         self.needs_deploy = true;
+        self.refresh_plugin_order_labels();
         self.save_plugin_order(sender);
+    }
+
+    fn refresh_plugin_order_labels(&mut self) {
+        let mut count = 0usize;
+        let mut guard = self.plugins.guard();
+        let len = guard.len();
+        for i in 0..len {
+            if let Some(row) = guard.get_mut(i) {
+                if !row.is_vanilla {
+                    count += 1;
+                    row.order_label = format!("#{count}");
+                }
+            }
+        }
     }
 
     pub(crate) fn handle_toggle_plugin_enabled(

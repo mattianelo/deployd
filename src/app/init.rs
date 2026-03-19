@@ -190,6 +190,12 @@ pub(super) fn build_model(
         running_as_appimage: std::env::var("APPIMAGE").is_ok(),
         pending_new_game_ids: vec![],
         dao_experimental_enabled: false,
+        mod_order_snapshots: Vec::new(),
+        plugin_order_snapshots: Vec::new(),
+        mod_snapshot_save_entry: gtk::Entry::new(),
+        plugin_snapshot_save_entry: gtk::Entry::new(),
+        mod_snapshots_list: gtk::ListBox::new(),
+        plugin_snapshots_list: gtk::ListBox::new(),
     };
 
     // Profile rename popover
@@ -272,6 +278,20 @@ pub(super) fn build_model(
     (model, game_ids, games_for_init, profile_rename_btn, search_bar)
 }
 
+/// Returns the insertion index for a drag-drop using half-row precision: cursor in the
+/// bottom half of a row inserts *after* it; top half inserts *before* it.
+fn half_row_index(row: &gtk::ListBoxRow, y: f64, list_len: usize) -> usize {
+    use gtk::prelude::ListBoxRowExt;
+    let alloc = row.allocation();
+    let mid = alloc.y() + alloc.height() / 2;
+    let idx = row.index() as usize;
+    if (y as i32) >= mid {
+        (idx + 1).min(list_len.saturating_sub(1))
+    } else {
+        idx
+    }
+}
+
 /// Attaches drag-and-drop `DropTarget` controllers to the mod and plugin list widgets.
 pub(super) fn wire_drag_drop(
     sender: &ComponentSender<App>,
@@ -295,7 +315,8 @@ pub(super) fn wire_drag_drop(
             .and_then(|s| s.parse::<usize>().ok())
         {
             if let Some(row) = list_box.row_at_y(y as i32) {
-                let to = gtk::prelude::ListBoxRowExt::index(&row) as usize;
+                let len = list_box.observe_children().n_items() as usize;
+                let to = half_row_index(&row, y, len);
                 if from != to {
                     mod_sender.send(AppMsg::MoveGroupTo(from, to)).unwrap();
                 }
@@ -309,7 +330,8 @@ pub(super) fn wire_drag_drop(
             return false;
         };
         if let Some(row) = list_box.row_at_y(y as i32) {
-            let to = gtk::prelude::ListBoxRowExt::index(&row) as usize;
+            let len = list_box.observe_children().n_items() as usize;
+            let to = half_row_index(&row, y, len);
             let mut selected: Vec<usize> = list_box
                 .selected_rows()
                 .iter()
@@ -360,7 +382,8 @@ pub(super) fn wire_drag_drop(
             return false;
         };
         if let Some(row) = list_box.row_at_y(y as i32) {
-            let to = gtk::prelude::ListBoxRowExt::index(&row) as usize;
+            let len = list_box.observe_children().n_items() as usize;
+            let to = half_row_index(&row, y, len);
             let mut selected: Vec<usize> = list_box
                 .selected_rows()
                 .iter()

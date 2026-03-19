@@ -340,3 +340,64 @@ pub(super) async fn backfill_archive_hashes(pool: &SqlitePool) -> Result<()> {
 
     Ok(())
 }
+
+/// Add `game_id` to `deployed_files` and change the primary key to
+/// `(game_id, game_rel_lowercase)` so each game's deployed state is isolated.
+/// Backfills existing rows via a JOIN on `mods.game_id`; rows that cannot be
+/// resolved (orphaned mod_id) are dropped since they are stale cache entries.
+pub(super) async fn migrate_deployed_files_game_id(pool: &SqlitePool) -> Result<()> {
+    let columns: Vec<(String,)> = sqlx::query_as("PRAGMA table_info(deployed_files)")
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(|row: (i32, String, String, i32, Option<String>, i32)| (row.1,))
+        .collect();
+
+    if columns.iter().any(|(n,)| n == "game_id") {
+        return Ok(());
+    }
+
+    let mut tx = pool.begin().await?;
+
+    sqlx::query(
+        "CREATE TABLE deployed_files_v2 (
+            game_id TEXT NOT NULL DEFAULT '',
+            game_rel_lowercase TEXT NOT NULL,
+            game_rel_original TEXT NOT NULL,
+            mod_id TEXT NOT NULL,
+            cache_path TEXT NOT NULL,
+            PRIMARY KEY (game_id, game_rel_lowercase)
+        )",
+    )
+    .execute(&mut *tx)
+    .await
+    .context("Failed to create deployed_files_v2")?;
+
+    sqlx::query(
+        "INSERT OR IGNORE INTO deployed_files_v2
+            (game_id, game_rel_lowercase, game_rel_original, mod_id, cache_path)
+         SELECT m.game_id, d.game_rel_lowercase, d.game_rel_original, d.mod_id, d.cache_path
+         FROM deployed_files d
+         JOIN mods m ON d.mod_id = m.id",
+    )
+    .execute(&mut *tx)
+    .await
+    .context("Failed to backfill deployed_files_v2")?;
+
+    sqlx::query("DROP TABLE deployed_files")
+        .execute(&mut *tx)
+        .await
+        .context("Failed to drop old deployed_files")?;
+
+    sqlx::query("ALTER TABLE deployed_files_v2 RENAME TO deployed_files")
+        .execute(&mut *tx)
+        .await
+        .context("Failed to rename deployed_files_v2")?;
+
+    tx.commit()
+        .await
+        .context("Failed to commit deployed_files migration")?;
+
+    dlog!("[deployd] deployed_files migrated to include game_id");
+    Ok(())
+}

@@ -1,5 +1,6 @@
 # Changelog
 
+
 ## [0.9.6] — 2026-03-18 · Public Beta
 
 ### Added
@@ -9,9 +10,13 @@
 - **Mod notes** — mods can now have personal notes written in the Properties dialog. Any mod with notes shows a small icon in the list; hovering it previews the note.
 - **"Replace" option in name-conflict dialog** — when installing a mod whose name already exists, you can now choose Replace in addition to Merge and Create New. Replace swaps the existing mod in-place, preserving its load-order position and plugin states.
 - **Reinstall button in Downloads panel** — installed downloads now show a refresh button. Clicking it re-extracts the archive and opens the pre-install dialog ready to replace the existing mod, skipping the "already installed" prompt.
+- **Save / Load order snapshots** — both the Mod Order and Plugin Order panels now have Save and Load buttons alongside All / None. Save stores the current order under a custom name; Load lets you browse and restore any saved snapshot, or delete ones you no longer need. Snapshots are per-game and independent of profiles.
 
 ### Fixed
 
+- **Drag-and-drop placement is now precise** — when dragging a mod or plugin, dropping it on the top half of a row places it *before* that row and dropping on the bottom half places it *after*, matching the visual indicator line. Previously items could land one position off from where the line suggested.
+- **Mod and plugin lists no longer flicker or reset after reordering** — moving mods or plugins via drag-and-drop now updates the priority labels (#1, #2, …) in-place without triggering a full list rebuild. Scroll position and visual state are preserved.
+- **Purge now correctly targets the active game's files** — the deployed-files tracker now stores which game each file belongs to. Previously purging could silently do nothing if files from a different game were in the tracker (e.g., after an app update or a game switch). When nothing is tracked a clearer message is shown instead of a silent no-op.
 - **Dragon Age: Origins must now be explicitly enabled** — DAO support is off by default. Enable it under Settings → Games → "Dragon Age: Origins (Experimental)", then rescan for games. This prevents the game from appearing unexpectedly for users who haven't opted in.
 - **CharGenMorph Compiler installs and auto-detects correctly** — tool executables (`.exe`, `.dll`, `.bat`) for Dragon Age: Origins are now deployed to the Wine user's Documents folder instead of the game's override directory. After deploying the mod, Manage Tools will automatically find the executable.
 

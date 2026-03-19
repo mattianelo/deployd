@@ -209,6 +209,18 @@ pub enum AppMsg {
     SyncSaves,
     /// User toggled Dragon Age: Origins experimental support in settings.
     DaoExperimentalChanged(bool),
+    /// Save the current mod order as a named snapshot.
+    SaveModOrderSnapshot(String),
+    /// Save the current plugin order as a named snapshot.
+    SavePluginOrderSnapshot(String),
+    /// Restore mod order from a saved snapshot (snapshot_id).
+    LoadModOrderSnapshot(String),
+    /// Restore plugin order from a saved snapshot (snapshot_id).
+    LoadPluginOrderSnapshot(String),
+    /// Delete a saved mod order snapshot (snapshot_id).
+    DeleteModOrderSnapshot(String),
+    /// Delete a saved plugin order snapshot (snapshot_id).
+    DeletePluginOrderSnapshot(String),
     /// A newer app version is available; reveal the update banner.
     AppUpdateAvailable(String, String),
     /// User clicked the update banner button — open the update page.
@@ -307,6 +319,21 @@ pub enum AppCmdMsg {
     SaveModeToggled(Result<(), String>),
     /// Result of a manual save sync triggered by the user.
     SavesSynced(Result<save_manager::SaveSyncResult, String>),
+    /// Snapshot lists loaded for the current game.
+    OrderSnapshotsLoaded(
+        Vec<crate::models::order_snapshot::OrderSnapshot>,
+        Vec<crate::models::order_snapshot::OrderSnapshot>,
+    ),
+    /// Mod order snapshot saved.
+    ModOrderSnapshotSaved(Result<(), String>),
+    /// Plugin order snapshot saved.
+    PluginOrderSnapshotSaved(Result<(), String>),
+    /// Mod order snapshot restored.
+    ModOrderSnapshotRestored(Result<crate::app::types::LoadedData, String>),
+    /// Plugin order snapshot restored.
+    PluginOrderSnapshotRestored(Result<crate::app::types::LoadedData, String>),
+    /// Mod or plugin order snapshot deleted; carries updated snapshot list (game_id, kind).
+    OrderSnapshotDeleted(Result<(), String>),
     /// Result of the self-update AppImage download + replace.
     AppUpdateResult(Result<(), String>),
     /// All games have been persisted to DB after Manage Games; safe to select the first game now.

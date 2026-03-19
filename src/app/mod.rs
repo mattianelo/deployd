@@ -1,5 +1,6 @@
 pub mod deploy;
 pub mod downloads;
+pub mod order_snapshots;
 pub mod external;
 pub mod notifications;
 pub mod free_fns;
@@ -583,6 +584,69 @@ impl Component for App {
                                     },
                                 },
 
+                                gtk::Box {
+                                    add_css_class: "linked",
+
+                                    // Save mod order as named snapshot
+                                    gtk::MenuButton {
+                                        set_label: "Save",
+                                        set_tooltip_text: Some("Save current mod order as a named snapshot"),
+                                        #[wrap(Some)]
+                                        set_popover = &gtk::Popover {
+                                            #[wrap(Some)]
+                                            set_child = &gtk::Box {
+                                                set_orientation: gtk::Orientation::Vertical,
+                                                set_spacing: 6,
+                                                set_margin_all: 8,
+
+                                                gtk::Label {
+                                                    set_label: "Snapshot name",
+                                                    set_halign: gtk::Align::Start,
+                                                    add_css_class: "caption",
+                                                },
+
+                                                #[local_ref]
+                                                mod_snapshot_save_entry -> gtk::Entry {
+                                                    set_placeholder_text: Some("e.g. Pre-DLC run"),
+                                                },
+
+                                                gtk::Button {
+                                                    set_label: "Save",
+                                                    add_css_class: "suggested-action",
+                                                    connect_clicked[sender, mod_snapshot_save_entry] => move |_| {
+                                                        let name = mod_snapshot_save_entry.text().to_string();
+                                                        if !name.is_empty() {
+                                                            sender.input(AppMsg::SaveModOrderSnapshot(name));
+                                                            mod_snapshot_save_entry.set_text("");
+                                                        }
+                                                    },
+                                                },
+                                            },
+                                        },
+                                    },
+
+                                    // Load mod order from saved snapshot
+                                    gtk::MenuButton {
+                                        set_label: "Load",
+                                        set_tooltip_text: Some("Restore a saved mod order snapshot"),
+                                        #[wrap(Some)]
+                                        set_popover = &gtk::Popover {
+                                            #[wrap(Some)]
+                                            set_child = &gtk::ScrolledWindow {
+                                                set_min_content_height: 40,
+                                                set_max_content_height: 200,
+                                                set_hscrollbar_policy: gtk::PolicyType::Never,
+
+                                                #[local_ref]
+                                                mod_snapshots_list -> gtk::ListBox {
+                                                    add_css_class: "boxed-list",
+                                                    set_selection_mode: gtk::SelectionMode::None,
+                                                },
+                                            },
+                                        },
+                                    },
+                                },
+
                                 gtk::Button {
                                     set_icon_name: "list-add-symbolic",
                                     set_tooltip_text: Some("New group"),
@@ -656,6 +720,70 @@ impl Component for App {
                                         set_label: "None",
                                         set_tooltip_text: Some("Disable all plugins"),
                                         connect_clicked => AppMsg::DisableAllPlugins,
+                                    },
+                                },
+
+                                gtk::Box {
+                                    add_css_class: "linked",
+                                    set_valign: gtk::Align::Center,
+
+                                    // Save plugin order as named snapshot
+                                    gtk::MenuButton {
+                                        set_label: "Save",
+                                        set_tooltip_text: Some("Save current plugin order as a named snapshot"),
+                                        #[wrap(Some)]
+                                        set_popover = &gtk::Popover {
+                                            #[wrap(Some)]
+                                            set_child = &gtk::Box {
+                                                set_orientation: gtk::Orientation::Vertical,
+                                                set_spacing: 6,
+                                                set_margin_all: 8,
+
+                                                gtk::Label {
+                                                    set_label: "Snapshot name",
+                                                    set_halign: gtk::Align::Start,
+                                                    add_css_class: "caption",
+                                                },
+
+                                                #[local_ref]
+                                                plugin_snapshot_save_entry -> gtk::Entry {
+                                                    set_placeholder_text: Some("e.g. Vanilla load order"),
+                                                },
+
+                                                gtk::Button {
+                                                    set_label: "Save",
+                                                    add_css_class: "suggested-action",
+                                                    connect_clicked[sender, plugin_snapshot_save_entry] => move |_| {
+                                                        let name = plugin_snapshot_save_entry.text().to_string();
+                                                        if !name.is_empty() {
+                                                            sender.input(AppMsg::SavePluginOrderSnapshot(name));
+                                                            plugin_snapshot_save_entry.set_text("");
+                                                        }
+                                                    },
+                                                },
+                                            },
+                                        },
+                                    },
+
+                                    // Load plugin order from saved snapshot
+                                    gtk::MenuButton {
+                                        set_label: "Load",
+                                        set_tooltip_text: Some("Restore a saved plugin order snapshot"),
+                                        #[wrap(Some)]
+                                        set_popover = &gtk::Popover {
+                                            #[wrap(Some)]
+                                            set_child = &gtk::ScrolledWindow {
+                                                set_min_content_height: 40,
+                                                set_max_content_height: 200,
+                                                set_hscrollbar_policy: gtk::PolicyType::Never,
+
+                                                #[local_ref]
+                                                plugin_snapshots_list -> gtk::ListBox {
+                                                    add_css_class: "boxed-list",
+                                                    set_selection_mode: gtk::SelectionMode::None,
+                                                },
+                                            },
+                                        },
                                     },
                                 },
 
@@ -746,6 +874,10 @@ impl Component for App {
         let save_mode_btn = &model.save_mode_btn;
         let sync_saves_btn = &model.sync_saves_btn;
         let update_banner = &model.update_banner;
+        let mod_snapshot_save_entry = &model.mod_snapshot_save_entry;
+        let plugin_snapshot_save_entry = &model.plugin_snapshot_save_entry;
+        let mod_snapshots_list = &model.mod_snapshots_list;
+        let plugin_snapshots_list = &model.plugin_snapshots_list;
 
         let widgets = view_output!();
 
@@ -963,6 +1095,24 @@ impl Component for App {
             AppMsg::DaoExperimentalChanged(enabled) => {
                 self.handle_dao_experimental_changed(enabled, &sender)
             }
+            AppMsg::SaveModOrderSnapshot(name) => {
+                self.handle_save_mod_order_snapshot(name, &sender)
+            }
+            AppMsg::SavePluginOrderSnapshot(name) => {
+                self.handle_save_plugin_order_snapshot(name, &sender)
+            }
+            AppMsg::LoadModOrderSnapshot(id) => {
+                self.handle_load_mod_order_snapshot(id, &sender)
+            }
+            AppMsg::LoadPluginOrderSnapshot(id) => {
+                self.handle_load_plugin_order_snapshot(id, &sender)
+            }
+            AppMsg::DeleteModOrderSnapshot(id) => {
+                self.handle_delete_order_snapshot(id, &sender)
+            }
+            AppMsg::DeletePluginOrderSnapshot(id) => {
+                self.handle_delete_order_snapshot(id, &sender)
+            }
         }
     }
 
@@ -984,7 +1134,7 @@ impl Component for App {
             }
             AppCmdMsg::DeployDone(result) => self.handle_cmd_deploy_done(result, &sender),
             AppCmdMsg::PurgeDone(result) => self.handle_cmd_purge_done(result),
-            AppCmdMsg::PrioritySaved(result) => self.handle_cmd_priority_saved(result, &sender),
+            AppCmdMsg::PrioritySaved(result) => self.handle_cmd_priority_saved(result),
             AppCmdMsg::PluginOrderSaved(result) => self.handle_cmd_plugin_order_saved(result),
             AppCmdMsg::ProfileSwitched(result) => {
                 self.handle_cmd_profile_switched(result, &sender)
@@ -1039,6 +1189,47 @@ impl Component for App {
             AppCmdMsg::LastDeployedProfileLoaded(id) => self.last_deployed_profile_id = id,
             AppCmdMsg::AppUpdateResult(result) => self.handle_cmd_app_update_result(result),
             AppCmdMsg::GamesPersisted => sender.input(AppMsg::GameSelected(0)),
+            AppCmdMsg::OrderSnapshotsLoaded(mod_snaps, plugin_snaps) => {
+                self.mod_order_snapshots = mod_snaps;
+                self.plugin_order_snapshots = plugin_snaps;
+                self.rebuild_snapshot_lists(&sender);
+            }
+            AppCmdMsg::ModOrderSnapshotSaved(result) => {
+                if let Err(e) = result {
+                    self.toaster.toast(&format!("Failed to save snapshot: {e}"));
+                } else {
+                    self.toaster.toast("Mod order snapshot saved");
+                    self.reload_order_snapshots(&sender);
+                }
+            }
+            AppCmdMsg::PluginOrderSnapshotSaved(result) => {
+                if let Err(e) = result {
+                    self.toaster.toast(&format!("Failed to save snapshot: {e}"));
+                } else {
+                    self.toaster.toast("Plugin order snapshot saved");
+                    self.reload_order_snapshots(&sender);
+                }
+            }
+            AppCmdMsg::ModOrderSnapshotRestored(result) => match result {
+                Ok(data) => {
+                    self.apply_loaded_data(data, &sender);
+                    self.toaster.toast("Mod order restored");
+                }
+                Err(e) => self.toaster.toast(&format!("Failed to restore snapshot: {e}")),
+            },
+            AppCmdMsg::PluginOrderSnapshotRestored(result) => match result {
+                Ok(data) => {
+                    self.apply_loaded_data(data, &sender);
+                    self.toaster.toast("Plugin order restored");
+                }
+                Err(e) => self.toaster.toast(&format!("Failed to restore snapshot: {e}")),
+            },
+            AppCmdMsg::OrderSnapshotDeleted(result) => {
+                if let Err(e) = result {
+                    self.toaster.toast(&format!("Failed to delete snapshot: {e}"));
+                }
+                self.reload_order_snapshots(&sender);
+            }
         }
     }
 }

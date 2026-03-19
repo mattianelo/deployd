@@ -8,6 +8,7 @@ pub mod games;
 pub mod groups;
 pub mod migrations;
 pub mod mods;
+pub mod order_snapshots;
 pub mod plugins;
 pub mod profiles;
 pub mod settings;
@@ -124,10 +125,12 @@ impl Tracker {
 
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS deployed_files (
-                game_rel_lowercase TEXT PRIMARY KEY,
+                game_id TEXT NOT NULL DEFAULT '',
+                game_rel_lowercase TEXT NOT NULL,
                 game_rel_original TEXT NOT NULL,
                 mod_id TEXT NOT NULL,
-                cache_path TEXT NOT NULL
+                cache_path TEXT NOT NULL,
+                PRIMARY KEY (game_id, game_rel_lowercase)
             )",
         )
         .execute(&pool)
@@ -239,6 +242,30 @@ impl Tracker {
         .execute(&pool)
         .await?;
 
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS order_snapshots (
+                id TEXT PRIMARY KEY,
+                game_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(game_id, name, kind)
+            )",
+        )
+        .execute(&pool)
+        .await?;
+
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS order_snapshot_entries (
+                snapshot_id TEXT NOT NULL REFERENCES order_snapshots(id) ON DELETE CASCADE,
+                entry_id TEXT NOT NULL,
+                position INTEGER NOT NULL,
+                PRIMARY KEY (snapshot_id, entry_id)
+            )",
+        )
+        .execute(&pool)
+        .await?;
+
         // Migration: add wine_prefix, engine, custom columns to games table
         migrations::migrate_games_columns(&pool).await?;
 
@@ -280,6 +307,11 @@ impl Tracker {
         // the hash was recorded.
         if let Err(e) = migrations::backfill_archive_hashes(&pool).await {
             eprintln!("Archive hash backfill failed (non-fatal): {e}");
+        }
+
+        // Migration: add game_id to deployed_files and update primary key
+        if let Err(e) = migrations::migrate_deployed_files_game_id(&pool).await {
+            eprintln!("deployed_files migration failed (non-fatal): {e}");
         }
 
         // Migration: add save_mode column to profiles table

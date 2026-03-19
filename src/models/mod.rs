@@ -1,4 +1,5 @@
 pub mod download;
+pub mod order_snapshot;
 pub mod game;
 pub mod group;
 pub mod manifest;

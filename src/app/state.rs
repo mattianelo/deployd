@@ -9,6 +9,7 @@ use crate::core::detector::ExternalFile;
 use crate::core::tracker::Tracker;
 use crate::models::download::DownloadEntry;
 use crate::models::game::Game;
+use crate::models::order_snapshot::OrderSnapshot;
 use crate::models::plugin::PluginDirtyInfo;
 use crate::models::profile::Profile;
 use crate::models::tool::Tool;
@@ -153,4 +154,16 @@ pub struct App {
     pub(crate) pending_new_game_ids: Vec<String>,
     /// Whether the user has opted in to Dragon Age: Origins experimental support.
     pub(crate) dao_experimental_enabled: bool,
+    /// Saved mod order snapshots for the current game.
+    pub(crate) mod_order_snapshots: Vec<OrderSnapshot>,
+    /// Saved plugin order snapshots for the current game.
+    pub(crate) plugin_order_snapshots: Vec<OrderSnapshot>,
+    /// Entry widget for the mod order snapshot name (in save popover).
+    pub(crate) mod_snapshot_save_entry: gtk::Entry,
+    /// Entry widget for the plugin order snapshot name (in save popover).
+    pub(crate) plugin_snapshot_save_entry: gtk::Entry,
+    /// ListBox holding the mod order snapshot list (in load popover).
+    pub(crate) mod_snapshots_list: gtk::ListBox,
+    /// ListBox holding the plugin order snapshot list (in load popover).
+    pub(crate) plugin_snapshots_list: gtk::ListBox,
 }

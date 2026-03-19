@@ -31,12 +31,12 @@ pub async fn purge(game: &Game, tracker: &Tracker) -> Result<usize> {
     let game_data = paths::game_data_dir(game);
     bake_modified_plugins(game, tracker, &game_data).await;
 
-    let deployed = tracker.get_deployed_files().await?;
+    let deployed = tracker.get_deployed_files(&game.id).await?;
     let count = deployed.len();
     for f in &deployed {
         remove_deployed_file(f, game, &game_data);
     }
-    tracker.clear_deployed_files().await?;
+    tracker.clear_deployed_files(&game.id).await?;
 
     if let Err(e) = mod_folders::refresh_named_mod_folders(tracker, &game.id).await {
         eprintln!("[deployd] named_mods refresh failed: {e}");
@@ -56,7 +56,7 @@ pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
     bake_modified_plugins(game, tracker, &game_data).await;
 
     // 1. Current deployment state indexed by lowercase path.
-    let deployed = tracker.get_deployed_files().await?;
+    let deployed = tracker.get_deployed_files(&game.id).await?;
     let deployed_map: HashMap<&str, &ModFile> = deployed
         .iter()
         .map(|f| (f.game_rel_lowercase.as_str(), f))
@@ -247,8 +247,8 @@ pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
         .iter()
         .map(|f| f.game_rel_lowercase.as_str())
         .collect();
-    tracker.remove_deployed_files(&remove_paths).await?;
-    tracker.record_deployed_files(&newly_linked).await?;
+    tracker.remove_deployed_files(&game.id, &remove_paths).await?;
+    tracker.record_deployed_files(&game.id, &newly_linked).await?;
 
     // 10. Write Plugins.txt and ArchiveInvalidation INI — Bethesda games only.
     // 11. Write Addins.xml — Eclipse (Dragon Age: Origins) only.

@@ -159,6 +159,7 @@ impl App {
         }
         drop(guard);
         self.needs_deploy = true;
+        self.refresh_priority_labels();
         self.save_group_positions();
         self.save_mod_priorities(sender);
     }
@@ -184,6 +185,7 @@ impl App {
             }
         }
         drop(guard);
+        self.refresh_priority_labels();
         self.save_group_positions();
         self.save_mod_priorities(sender);
     }
@@ -239,6 +241,7 @@ impl App {
             }
         }
         self.needs_deploy = true;
+        self.refresh_priority_labels();
         self.save_group_positions();
         self.save_mod_priorities(sender);
     }

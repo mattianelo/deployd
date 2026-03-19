@@ -263,6 +263,24 @@ impl App {
         self.updating_profiles = false;
     }
 
+    pub(crate) fn reload_order_snapshots(&self, sender: &ComponentSender<Self>) {
+        use crate::app::messages::AppCmdMsg;
+        use crate::models::order_snapshot::SnapshotKind;
+        let Some(tracker) = self.tracker.clone() else { return };
+        let Some(game) = self.selected_game().cloned() else { return };
+        sender.oneshot_command(async move {
+            let mod_snaps = tracker
+                .list_order_snapshots(&game.id, SnapshotKind::Mod)
+                .await
+                .unwrap_or_default();
+            let plugin_snaps = tracker
+                .list_order_snapshots(&game.id, SnapshotKind::Plugin)
+                .await
+                .unwrap_or_default();
+            AppCmdMsg::OrderSnapshotsLoaded(mod_snaps, plugin_snaps)
+        });
+    }
+
     pub(crate) fn apply_loaded_data(&mut self, data: LoadedData, sender: &ComponentSender<Self>) {
         self.populate_plugins(
             data.plugins,
@@ -275,6 +293,22 @@ impl App {
         self.tools = data.tools;
         self.plugin_masters = data.plugin_masters;
         self.rebuild_tool_buttons(sender);
+        self.reload_order_snapshots(sender);
+    }
+
+    /// Update the `#N` priority labels for all mod rows in-place after a reorder.
+    pub(crate) fn refresh_priority_labels(&mut self) {
+        let mut count = 0usize;
+        let mut guard = self.mods.guard();
+        let len = guard.len();
+        for i in 0..len {
+            if let Some(item) = guard.get_mut(i) {
+                if let crate::ui::mod_list::ModListItemKind::Mod(ref mut init) = item.kind {
+                    count += 1;
+                    init.priority_label = format!("#{count}");
+                }
+            }
+        }
     }
 
     pub(crate) fn save_group_positions(&mut self) {

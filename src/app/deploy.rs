@@ -277,8 +277,13 @@ impl App {
         match result {
             Ok(count) => {
                 self.needs_deploy = true;
-                self.toaster
-                    .toast(&format!("Purged {count} deployed files"));
+                if count == 0 {
+                    self.toaster.toast(
+                        "No deployed files tracked — the game folder may already be clean, or try redeploying first",
+                    );
+                } else {
+                    self.toaster.toast(&format!("Purged {count} deployed files"));
+                }
             }
             Err(e) => {
                 self.toaster.toast(&format!("Purge failed: {e}"));
