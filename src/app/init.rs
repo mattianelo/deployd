@@ -132,7 +132,6 @@ pub(super) fn build_model(
         needs_deploy: false,
         last_deployed_profile_id: None,
         status_msg: None,
-        install_progress: None,
         toaster: Toaster::default(),
         profiles: vec![],
         active_profile_idx: 0,

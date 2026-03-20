@@ -341,7 +341,7 @@ impl App {
         self.reinstall_mode = false;
         self.installing = false;
         self.status_msg = None;
-        self.install_progress = None;
+
         if let Some(dl_id) = self.active_download_id.take() {
             self.update_download_status(
                 &dl_id,
@@ -482,7 +482,7 @@ impl App {
         self.reinstall_mode = false;
         self.installing = false;
         self.status_msg = None;
-        self.install_progress = None;
+
         if let Some(dl_id) = self.active_download_id.take() {
             self.update_download_status(
                 &dl_id,
@@ -496,7 +496,6 @@ impl App {
         if !self.installing {
             return;
         }
-        self.install_progress = Some(fraction);
         self.status_msg = Some(msg.clone());
         if let Some(ref dl_id) = self.active_download_id.clone() {
             if let Some(entry) = self.all_downloads.iter_mut().find(|e| e.id == *dl_id) {
@@ -577,7 +576,7 @@ impl App {
     ) {
         self.installing = false;
         self.status_msg = None;
-        self.install_progress = None;
+
 
         match result {
             Ok(PrepareResultMsg::Normal {
@@ -756,7 +755,7 @@ impl App {
     ) {
         self.installing = false;
         self.status_msg = None;
-        self.install_progress = None;
+
 
         let maybe_archive_hash = match &result {
             Ok(add_result) => add_result.mod_entry.archive_hash.clone(),
@@ -876,7 +875,7 @@ impl App {
     ) {
         self.installing = false;
         self.status_msg = None;
-        self.install_progress = None;
+
 
         if let Some(dl_id) = self.active_download_id.take() {
             let (status, msg) = if result.is_ok() {

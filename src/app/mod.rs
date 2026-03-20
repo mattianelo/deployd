@@ -182,7 +182,7 @@ impl Component for App {
                             set_icon_name: "list-add-symbolic",
                             set_tooltip_text: Some("Add Mod"),
                             #[watch]
-                            set_visible: !(model.is_busy() && model.install_progress.is_none()),
+                            set_visible: !model.is_busy(),
                             #[watch]
                             set_sensitive: !model.is_busy(),
                             connect_clicked => AppMsg::InstallClicked,
@@ -195,7 +195,7 @@ impl Component for App {
                             set_margin_end: 8,
                             set_valign: gtk::Align::Center,
                             #[watch]
-                            set_visible: model.is_busy() && model.install_progress.is_none(),
+                            set_visible: model.is_busy(),
 
                             gtk::Spinner {
                                 set_spinning: true,
@@ -425,21 +425,6 @@ impl Component for App {
                     connect_button_clicked[sender] => move |_| {
                         sender.input(AppMsg::SelfUpdateDownload);
                     },
-                },
-
-                // File-caching progress bar (shown only during the deterministic install phase).
-                gtk::ProgressBar {
-                    #[watch]
-                    set_visible: model.install_progress.is_some(),
-                    #[watch]
-                    set_fraction: model.install_progress.unwrap_or(0.0),
-                    #[watch]
-                    set_text: Some(model.status_msg.as_deref().unwrap_or("Working...")),
-                    set_show_text: true,
-                    set_margin_start: 16,
-                    set_margin_end: 16,
-                    set_margin_top: 4,
-                    set_margin_bottom: 4,
                 },
 
                 adw::OverlaySplitView {

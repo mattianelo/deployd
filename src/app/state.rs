@@ -39,8 +39,6 @@ pub struct App {
     /// Profile ID that was active during the last successful deploy for the current game.
     pub(crate) last_deployed_profile_id: Option<String>,
     pub(crate) status_msg: Option<String>,
-    /// Progress fraction for file caching phase (None = indeterminate/spinner, Some = ProgressBar).
-    pub(crate) install_progress: Option<f64>,
     pub(crate) toaster: Toaster,
     pub(crate) profiles: Vec<Profile>,
     pub(crate) active_profile_idx: usize,
