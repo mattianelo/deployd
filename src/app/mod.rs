@@ -297,11 +297,12 @@ impl Component for App {
                         },
                     },
 
-                    pack_end = &gtk::MenuButton {
+                    #[local_ref]
+                    pack_end = notifications_menu_btn -> gtk::MenuButton {
                         set_tooltip_text: Some("Notifications"),
                         set_always_show_arrow: false,
                         #[watch]
-                        set_css_classes: if model.external_changes_count > 0 {
+                        set_css_classes: if model.notifications_count() > 0 {
                             &["notification-active"]
                         } else {
                             &[]
@@ -321,7 +322,7 @@ impl Component for App {
                                 #[watch]
                                 set_label: &model.notifications_badge(),
                                 #[watch]
-                                set_visible: model.external_changes_count > 0,
+                                set_visible: model.notifications_count() > 0,
                             },
                         },
                         #[wrap(Some)]
@@ -335,14 +336,14 @@ impl Component for App {
 
                                 adw::StatusPage {
                                     #[watch]
-                                    set_visible: model.external_changes_count == 0,
+                                    set_visible: model.notifications_count() == 0,
                                     set_icon_name: Some("emblem-ok-symbolic"),
                                     set_title: "All Caught Up",
                                 },
 
                                 gtk::ScrolledWindow {
                                     #[watch]
-                                    set_visible: model.external_changes_count > 0,
+                                    set_visible: model.notifications_count() > 0,
                                     set_propagate_natural_height: true,
                                     set_max_content_height: 400,
                                     set_hscrollbar_policy: gtk::PolicyType::Never,
@@ -352,6 +353,8 @@ impl Component for App {
                                         add_css_class: "boxed-list",
 
                                         adw::ActionRow {
+                                            #[watch]
+                                            set_visible: model.external_changes_count > 0,
                                             set_title: "External Changes",
                                             #[watch]
                                             set_subtitle: &format!(
@@ -370,6 +373,27 @@ impl Component for App {
                                                 add_css_class: "pill",
                                                 connect_clicked[sender] => move |_| {
                                                     sender.input(AppMsg::AbsorbExternalFiles);
+                                                },
+                                            },
+                                        },
+
+                                        adw::ActionRow {
+                                            #[watch]
+                                            set_visible: model.app_update_version.is_some(),
+                                            set_title: "App Update Available",
+                                            #[watch]
+                                            set_subtitle: model.app_update_version.as_deref().unwrap_or(""),
+                                            add_prefix = &gtk::Image {
+                                                set_icon_name: Some("software-update-available-symbolic"),
+                                                set_valign: gtk::Align::Center,
+                                            },
+                                            add_suffix = &gtk::Button {
+                                                set_label: if model.running_as_appimage { "Download" } else { "View" },
+                                                set_valign: gtk::Align::Center,
+                                                add_css_class: "suggested-action",
+                                                add_css_class: "pill",
+                                                connect_clicked[sender] => move |_| {
+                                                    sender.input(AppMsg::SelfUpdateDownload);
                                                 },
                                             },
                                         },
@@ -412,19 +436,6 @@ impl Component for App {
                 search_bar -> gtk::SearchBar {
                     #[watch]
                     set_search_mode: model.search_active,
-                },
-
-                #[local_ref]
-                update_banner -> adw::Banner {
-                    #[watch]
-                    set_button_label: Some(if model.running_as_appimage {
-                        "Download Update"
-                    } else {
-                        "View on Nexus"
-                    }),
-                    connect_button_clicked[sender] => move |_| {
-                        sender.input(AppMsg::SelfUpdateDownload);
-                    },
                 },
 
                 gtk::Box {
@@ -868,11 +879,11 @@ impl Component for App {
         let tool_buttons_box = &model.tool_buttons_box;
         let mod_scroll = &model.mod_scroll;
         let downloads_scroll = &model.downloads_scroll;
+        let notifications_menu_btn = &model.notifications_menu_btn;
         let overflow_menu_btn = &model.overflow_menu_btn;
         let profile_menu_btn = &model.profile_menu_btn;
         let save_mode_btn = &model.save_mode_btn;
         let sync_saves_btn = &model.sync_saves_btn;
-        let update_banner = &model.update_banner;
         let mod_snapshot_save_entry = &model.mod_snapshot_save_entry;
         let plugin_snapshot_save_entry = &model.plugin_snapshot_save_entry;
         let mod_snapshots_list = &model.mod_snapshots_list;
@@ -1018,7 +1029,10 @@ AppMsg::InstallDownload(idx) => self.handle_install_download(idx, &sender),
             ),
             AppMsg::ModPropertiesCancelled => self.handle_mod_properties_cancelled(),
             AppMsg::ScanExternalFiles => self.handle_scan_external_files(&sender),
-            AppMsg::AbsorbExternalFiles => self.handle_absorb_external_files(root, &sender),
+            AppMsg::AbsorbExternalFiles => {
+                self.notifications_menu_btn.popdown();
+                self.handle_absorb_external_files(root, &sender);
+            }
             AppMsg::AbsorbFilesSelected(pairs) => {
                 self.handle_absorb_files_selected(pairs, root, &sender)
             }
@@ -1076,19 +1090,20 @@ AppMsg::InstallDownload(idx) => self.handle_install_download(idx, &sender),
                 self.handle_sync_saves(&sender);
             }
             AppMsg::AppUpdateAvailable(version, url) => {
-                self.update_banner
-                    .set_title(&format!("Deployd {version} is available"));
-                self.update_banner.set_revealed(true);
-                self.update_url = Some(url);
+                self.app_update_version = Some(format!("Deployd {version} is available"));
+                self.app_update_url = Some(url);
             }
             AppMsg::OpenUpdatePage => {
                 let url = self
-                    .update_url
+                    .app_update_url
                     .as_deref()
                     .unwrap_or(crate::core::update_check::NEXUS_PAGE_URL);
                 let _ = open::that(url);
             }
-            AppMsg::SelfUpdateDownload => self.handle_self_update_download(&sender),
+            AppMsg::SelfUpdateDownload => {
+                self.notifications_menu_btn.popdown();
+                self.handle_self_update_download(&sender);
+            }
             AppMsg::DaoExperimentalChanged(enabled) => {
                 self.handle_dao_experimental_changed(enabled, &sender)
             }

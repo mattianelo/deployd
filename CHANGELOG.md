@@ -11,6 +11,11 @@
 - **Reinstall button in Downloads panel** — installed downloads now show a refresh button. Clicking it re-extracts the archive and opens the pre-install dialog ready to replace the existing mod, skipping the "already installed" prompt.
 - **Save / Load order snapshots** — both the Mod Order and Plugin Order panels now have Save and Load buttons alongside All / None. Save stores the current order under a custom name; Load lets you browse and restore any saved snapshot, or delete ones you no longer need. Snapshots are per-game and independent of profiles.
 
+### Changed
+
+- **Notification badge shows item count, not file count** — the bell badge now shows the number of distinct notification types (e.g. "1" for external changes, regardless of how many files changed). The file count is still shown in the notification row's subtitle.
+- **App update notification moved to the notification popover** — the update banner has been replaced by a row in the notification popover. The button reads "Download" when running as AppImage, or "View" otherwise.
+
 ### Fixed
 
 - **Drag-and-drop placement is now precise** — when dragging a mod or plugin, dropping it on the top half of a row places it *before* that row and dropping on the bottom half places it *after*, matching the visual indicator line. Previously items could land one position off from where the line suggested.

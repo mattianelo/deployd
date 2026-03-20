@@ -163,7 +163,7 @@ impl App {
                 // For premium-related failures, open the Nexus page as a fallback.
                 if e.contains("premium") {
                     let url = self
-                        .update_url
+                        .app_update_url
                         .as_deref()
                         .unwrap_or(crate::core::update_check::NEXUS_PAGE_URL);
                     let _ = open::that(url);

@@ -190,14 +190,16 @@ impl App {
     }
 
 
-    /// Label for the notifications headerbar toggle button badge.
-    /// Returns the count as a string when there are pending notifications, empty otherwise.
+    /// Number of distinct notification items currently in the popover.
+    pub(crate) fn notifications_count(&self) -> usize {
+        usize::from(self.external_changes_count > 0)
+            + usize::from(self.app_update_version.is_some())
+    }
+
+    /// Label for the notifications headerbar button badge.
     pub(crate) fn notifications_badge(&self) -> String {
-        if self.external_changes_count > 0 {
-            self.external_changes_count.to_string()
-        } else {
-            String::new()
-        }
+        let n = self.notifications_count();
+        if n > 0 { n.to_string() } else { String::new() }
     }
 
     pub(crate) fn rate_limit_label(&self) -> String {

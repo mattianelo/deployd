@@ -123,6 +123,8 @@ pub struct App {
     /// drop automatically once the user cleans a plugin and re-sorts.
     #[cfg(feature = "loot")]
     pub(crate) dirty_plugins: HashMap<String, PluginDirtyInfo>,
+    /// MenuButton that opens the notifications popover.
+    pub(crate) notifications_menu_btn: gtk::MenuButton,
     /// MenuButton that opens the overflow actions popover (Settings, Purge, etc.).
     pub(crate) overflow_menu_btn: gtk::MenuButton,
     /// MenuButton that opens the profile management popover.
@@ -140,12 +142,11 @@ pub struct App {
     /// Master dependency map: plugin_id → list of master filenames (from TES4 header).
     /// Used to block drag-and-drop moves that would place a plugin before its masters.
     pub(crate) plugin_masters: HashMap<String, Vec<String>>,
-    /// Persistent banner shown when a newer app version is available.
-    pub(crate) update_banner: adw::Banner,
-    /// URL to open when the user clicks the update banner button.
-    pub(crate) update_url: Option<String>,
+    /// Version string of available app update, if any.
+    pub(crate) app_update_version: Option<String>,
+    /// URL for the available app update (Nexus page or download link).
+    pub(crate) app_update_url: Option<String>,
     /// True when the app is running as an AppImage (APPIMAGE env var is set).
-    /// Controls whether the banner button triggers a self-update or opens the browser.
     pub(crate) running_as_appimage: bool,
     /// IDs of newly-detected games that auto-triggered the Manage Games dialog.
     /// If the dialog is dismissed without confirming, these are hidden so they
