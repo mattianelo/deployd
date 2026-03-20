@@ -26,6 +26,7 @@ use crate::ui::tool_manager::ToolManager;
 use super::types::{DownloadSort, PendingInstall, SearchScope};
 
 pub struct App {
+    pub(crate) initializing: bool,
     pub(crate) tracker: Option<Tracker>,
     pub(crate) games: Vec<Game>,
     pub(crate) selected_game_idx: usize,

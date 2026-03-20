@@ -54,7 +54,7 @@ impl Component for App {
                     pack_start = game_dropdown -> gtk::DropDown {
                         set_selected: 0,
                         #[watch]
-                        set_visible: model.has_games(),
+                        set_visible: model.has_games() && !model.initializing,
                         connect_selected_notify[sender] => move |dd| {
                             sender.input(AppMsg::GameSelected(dd.selected()));
                         }
@@ -65,7 +65,7 @@ impl Component for App {
                         set_tooltip_text: Some("Stop managing this game"),
                         add_css_class: "flat",
                         #[watch]
-                        set_visible: model.has_games(),
+                        set_visible: model.has_games() && !model.initializing,
                         connect_clicked[sender] => move |_| {
                             sender.input(AppMsg::RemoveCurrentGame);
                         },
@@ -75,7 +75,7 @@ impl Component for App {
                     pack_start = profile_dropdown -> gtk::DropDown {
                         set_tooltip_text: Some("Active profile"),
                         #[watch]
-                        set_visible: model.has_games(),
+                        set_visible: model.has_games() && !model.initializing,
                         connect_selected_notify[sender] => move |dd| {
                             sender.input(AppMsg::ProfileSelected(dd.selected()));
                         }
@@ -87,7 +87,7 @@ impl Component for App {
                         set_icon_name: "view-more-symbolic",
                         set_tooltip_text: Some("Profile options"),
                         #[watch]
-                        set_visible: model.has_games(),
+                        set_visible: model.has_games() && !model.initializing,
                         add_css_class: "flat",
                         #[wrap(Some)]
                         set_popover = &gtk::Popover {
@@ -176,7 +176,7 @@ impl Component for App {
                     pack_start = &gtk::Box {
                         set_orientation: gtk::Orientation::Horizontal,
                         #[watch]
-                        set_visible: model.has_games(),
+                        set_visible: model.has_games() && !model.initializing,
 
                         gtk::Button {
                             set_icon_name: "list-add-symbolic",
@@ -427,8 +427,29 @@ impl Component for App {
                     },
                 },
 
+                gtk::Box {
+                    #[watch]
+                    set_visible: model.initializing,
+                    set_vexpand: true,
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_valign: gtk::Align::Center,
+                    set_halign: gtk::Align::Center,
+                    set_spacing: 12,
+
+                    gtk::Spinner {
+                        set_spinning: true,
+                        set_size_request: (32, 32),
+                    },
+                    gtk::Label {
+                        set_label: "Loading...",
+                        add_css_class: "title-3",
+                    },
+                },
+
                 adw::OverlaySplitView {
                     set_vexpand: true,
+                    #[watch]
+                    set_visible: !model.initializing,
                     #[watch]
                     set_show_sidebar: model.downloads_visible,
                     set_sidebar_position: gtk::PackType::End,

@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.9.6] — 2026-03-18 · Public Beta
+## [0.9.6] — 2026-03-20 · Public Beta
 
 ### Added
 
@@ -37,6 +37,7 @@
 
 - **FOMOD auto-selection respects your modlist** — when the FOMOD installer determines default selections, it now evaluates `<dependencyType>` conditions against your active plugin list. Options that require a DLC or another mod (e.g. a patch for Dawnguard) are automatically marked Recommended when that plugin is present, and Optional when it is not.
 - **Smoother transitions during mod installation** — the progress area crossfades between idle, spinner, and progress-bar states instead of snapping instantly.
+- **Loading screen on startup** — the app now shows a spinner while loading game and mod data, preventing the window from appearing frozen during startup.
 
 ---
 

@@ -126,6 +126,8 @@ impl App {
                     sender.input(AppMsg::NxmLinkReceived(nxm));
                 }
 
+                self.initializing = false;
+
                 sender.input(AppMsg::ScanDownloadsFolder);
                 sender.input(AppMsg::ScanExternalFiles);
 
@@ -145,6 +147,7 @@ impl App {
                 });
             }
             Err(e) => {
+                self.initializing = false;
                 self.toaster.toast(&format!("Init failed: {e}"));
             }
         }

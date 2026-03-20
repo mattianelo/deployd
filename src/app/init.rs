@@ -122,6 +122,7 @@ pub(super) fn build_model(
     let downloads_scroll = gtk::ScrolledWindow::new();
 
     let model = App {
+        initializing: true,
         tracker: None,
         games,
         selected_game_idx: 0,
