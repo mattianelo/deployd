@@ -1,0 +1,77 @@
+#!/bin/bash
+# Runs INSIDE the deployd-build-env Docker container.
+# On CI (Docker-in-Docker) this is called directly via DEPLOYD_NO_DOCKER=1.
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+APPDIR="$REPO_ROOT/AppDir"
+APP_ID="deployd"
+OUTPUT="$REPO_ROOT/Deployd-x86_64.AppImage"
+
+cd "$REPO_ROOT"
+
+VERSION=${VERSION:-$(grep '^version' Cargo.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')}
+
+echo "==> Building Deployd $VERSION AppImage (inner)"
+
+# 1. Compile
+echo "==> Compiling (release, features: loot libarchive-fallback)"
+cargo build --release --features loot,libarchive-fallback
+
+# 2. Assemble AppDir
+echo "==> Assembling AppDir with linuxdeploy"
+rm -rf "$APPDIR"
+linuxdeploy \
+    --appdir "$APPDIR" \
+    --executable "target/release/$APP_ID" \
+    --desktop-file "data/$APP_ID.desktop" \
+    --icon-file "data/icons/hicolor/scalable/apps/$APP_ID.svg" \
+    --plugin gtk
+
+# 2b. Regenerate GDK pixbuf loaders.cache
+# linuxdeploy-plugin-gtk writes a cache pointing at the system loader path.
+# We regenerate it against the AppDir's own bundled loaders, then stamp
+# @@APPDIR@@ in place of the build-time absolute path so AppRun can expand
+# it to the real squashfs mount point at runtime.
+echo "==> Regenerating GDK pixbuf loaders.cache"
+LOADERS_DIR="$APPDIR/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders"
+CACHE_FILE="$APPDIR/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"
+
+if [ -d "$LOADERS_DIR" ]; then
+    GDK_QUERY_LOADERS=$(find /usr/lib -name "gdk-pixbuf-query-loaders" -type f 2>/dev/null | head -1)
+    if [ -z "$GDK_QUERY_LOADERS" ]; then
+        echo "    WARNING: gdk-pixbuf-query-loaders not found; install libgdk-pixbuf2.0-bin in Dockerfile"
+    else
+        GDK_PIXBUF_MODULEDIR="$LOADERS_DIR" "$GDK_QUERY_LOADERS" > "$CACHE_FILE"
+        if grep -q "svg" "$CACHE_FILE"; then
+            echo "    SVG loader: OK"
+        else
+            echo "    WARNING: SVG loader missing — install librsvg2-common in Dockerfile"
+        fi
+        sed -i "s|$APPDIR|@@APPDIR@@|g" "$CACHE_FILE"
+    fi
+else
+    echo "    WARNING: loaders directory not found, skipping"
+fi
+
+# 3. Install custom AppRun (handles NXM protocol registration)
+echo "==> Installing custom AppRun"
+cp "packaging/appimage/AppRun" "$APPDIR/AppRun"
+chmod +x "$APPDIR/AppRun"
+
+# 4. AppStream metainfo
+mkdir -p "$APPDIR/usr/share/metainfo"
+cp "data/$APP_ID.metainfo.xml" "$APPDIR/usr/share/metainfo/"
+
+# 5. Package (zstd compression)
+echo "==> Packaging -> $OUTPUT"
+rm -f "$OUTPUT"
+VERSION="$VERSION" ARCH=x86_64 appimagetool \
+    --comp zstd \
+    "$APPDIR" \
+    "$OUTPUT"
+
+echo ""
+echo "Done: $OUTPUT"
+echo "  Size: $(du -sh "$OUTPUT" | cut -f1)"

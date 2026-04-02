@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.7] — 2026-04-02
+
+### Fixed
+
+- **AppImage icons and theming now match the host desktop** — the host icon theme (e.g. Yaru-purple) and GTK theme are now applied correctly instead of falling back to bare Adwaita. Icons that previously rendered blank (window chrome, toolbar, Ko-Fi button) are now displayed properly.
+
+### Changed
+
+- **AppImage packaging overhauled** — replaced the manual `ldd`/regex-based library bundling script with a Docker-based pipeline using `linuxdeploy` and `linuxdeploy-plugin-gtk`. The build environment is fixed to Ubuntu 24.04 LTS, providing a stable glibc/ABI floor and eliminating the forward-compatibility breakage seen when building on newer host distributions.
+- **AppImage is now self-contained** — the GDK pixbuf loaders cache is regenerated during packaging to reference the AppImage's own bundled loaders (including the SVG loader), rather than the build host's system paths.
+
+---
+
 ## [0.9.6] — 2026-03-20 · Public Beta
 
 ### Added

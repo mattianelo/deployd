@@ -1,6 +1,6 @@
 # Deployd
 
-![Version](https://img.shields.io/badge/version-0.9.6-blue)
+![Version](https://img.shields.io/badge/version-0.9.7-blue)
 ![Status](https://img.shields.io/badge/status-beta-orange)
 ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey?logo=linux)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
@@ -8,7 +8,7 @@
 A Linux-native mod manager for Bethesda and REDEngine games, built with GTK4 and Rust.
 Works with both **Steam** and **Heroic Launcher** out of the box.
 
-> **Public Beta — v0.9.6.** If you find bugs, please [open an issue](https://gitlab.com/mattianelo/deployd/-/issues).
+> **Public Beta — v0.9.7.** If you find bugs, please [open an issue](https://gitlab.com/mattianelo/deployd/-/issues).
 
 ---
 

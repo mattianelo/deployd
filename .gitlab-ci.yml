@@ -1,19 +1,73 @@
-# You can override the included template(s) by including variable overrides
-# SAST customization: https://docs.gitlab.com/user/application_security/sast/#available-cicd-variables
-# Secret Detection customization: https://docs.gitlab.com/user/application_security/secret_detection/pipeline/configure/
-# Dependency Scanning customization: https://docs.gitlab.com/user/application_security/dependency_scanning/#customizing-analyzer-behavior
-# Container Scanning customization: https://docs.gitlab.com/user/application_security/container_scanning/#customizing-analyzer-behavior
-# Note that environment variables can be set in several places
-# See https://docs.gitlab.com/ci/variables/#cicd-variable-precedence
+# GitLab CI — Deployd
+#
+# Jobs:
+#   sast            — Static Application Security Testing (GitLab template)
+#   secret_detection — Secret Detection (GitLab template)
+#   build-appimage  — Build and publish the Deployd AppImage
+#
+# AppImage build uses Docker-in-Docker (dind).
+# The deployd-build-env image is built from packaging/appimage/Dockerfile
+# (ubuntu:24.04 + GTK4/libadwaita dev stack + Rust + linuxdeploy tooling).
+# The inner build script runs directly inside that image (DEPLOYD_NO_DOCKER=1).
+
 stages:
-- test
-- secret-detection
-sast:
-  stage: test
+  - test
+  - secret-detection
+  - build
+
+# ── Security scanning ────────────────────────────────────────────────────────
 include:
-- template: Security/SAST.gitlab-ci.yml
-- template: Security/Secret-Detection.gitlab-ci.yml
+  - template: Security/SAST.gitlab-ci.yml
+  - template: Security/Secret-Detection.gitlab-ci.yml
+
 variables:
   SECRET_DETECTION_ENABLED: 'true'
+
+sast:
+  stage: test
+
 secret_detection:
   stage: secret-detection
+
+# ── AppImage build ───────────────────────────────────────────────────────────
+build-appimage:
+  stage: build
+  image: docker:28
+  services:
+    - docker:28-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+    # Tell Docker to use the dind daemon's socket.
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_VERIFY: 1
+    DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
+  before_script:
+    # Build the deployd build-environment image from our Dockerfile.
+    # Layer caching is not configured here; the image is small enough that
+    # rebuilding it per pipeline is acceptable. Add registry caching if needed.
+    - docker build
+        --tag deployd-build-env
+        --file packaging/appimage/Dockerfile
+        .
+  script:
+    # Run the inner build script inside the container.
+    # DEPLOYD_NO_DOCKER=1 skips the host-side Docker wrapper entirely.
+    - |
+      docker run --rm \
+        -v "$CI_PROJECT_DIR:/workspace:z" \
+        -e VERSION="$(grep '^version' Cargo.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')" \
+        -e DEPLOYD_NO_DOCKER=1 \
+        --workdir /workspace \
+        deployd-build-env \
+        bash packaging/appimage/build-appimage-inner.sh
+  artifacts:
+    name: "Deployd-$CI_COMMIT_TAG"
+    paths:
+      - Deployd-x86_64.AppImage
+    expire_in: 90 days
+  rules:
+    # Build on version tags (e.g. v0.9.6)
+    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/'
+    # Allow manual trigger on any branch/MR
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual

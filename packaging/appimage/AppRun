@@ -1,22 +1,15 @@
 #!/bin/bash
-# AppRun for Deployd AppImage
+# AppRun for Deployd AppImage.
 # Handles system registration and GTK4 environment setup before launching.
+#
+# Note: intentionally no "set -u" — the AppImage runtime and
+# linuxdeploy-plugin-gtk hook may leave variables unset.
+set -e
 
-set -euo pipefail
-
-# $APPDIR and $APPIMAGE are set by the AppImage Type 2 runtime before AppRun
-# is executed. Use them directly; fall back to dirname of $0 only for manual
-# testing where the runtime isn't involved.
 APPDIR="${APPDIR:-$(cd "$(dirname "$0")" && pwd)}"
 APP_ID="deployd"
 MARKER_DIR="$HOME/.local/share/deployd"
 MARKER="$MARKER_DIR/.appimage-registration"
-
-# ---------------------------------------------------------------------------
-# System integration registration
-# ---------------------------------------------------------------------------
-# Re-register whenever the AppImage path changes (first run, moved, renamed).
-# $APPIMAGE is the absolute path to the AppImage file, set by the runtime.
 CURRENT_APPIMAGE="${APPIMAGE:-$0}"
 
 needs_registration() {
@@ -29,23 +22,17 @@ register_integration() {
 
     mkdir -p "$APPS_DIR" "$ICON_DIR" "$MARKER_DIR"
 
-    # Install desktop file with Exec pointing to this AppImage
     sed "s|Exec=deployd|Exec=$CURRENT_APPIMAGE|g" \
         "$APPDIR/usr/share/applications/$APP_ID.desktop" \
         > "$APPS_DIR/$APP_ID.desktop"
 
-    # Install icon
     cp "$APPDIR/usr/share/icons/hicolor/scalable/apps/$APP_ID.svg" \
         "$ICON_DIR/$APP_ID.svg"
 
-    # Refresh desktop and icon caches (failures are non-fatal)
     update-desktop-database "$APPS_DIR" 2>/dev/null || true
     gtk-update-icon-cache -f "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
-
-    # Register nxm:// protocol handler
     xdg-mime default "$APP_ID.desktop" x-scheme-handler/nxm 2>/dev/null || true
 
-    # Store marker so we only re-register when the path changes
     echo "$CURRENT_APPIMAGE" > "$MARKER"
 }
 
@@ -53,19 +40,41 @@ if needs_registration; then
     register_integration
 fi
 
-# ---------------------------------------------------------------------------
 # GTK4 / libadwaita environment setup
-# ---------------------------------------------------------------------------
-export GSETTINGS_SCHEMA_DIR="$APPDIR/usr/share/glib-2.0/schemas${GSETTINGS_SCHEMA_DIR:+:$GSETTINGS_SCHEMA_DIR}"
-export XDG_DATA_DIRS="$APPDIR/usr/share${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
-
-# GDK pixbuf loaders cache (only set if bundled — falls back to system otherwise)
-PIXBUF_CACHE=$(find "$APPDIR/usr/lib" -name "loaders.cache" 2>/dev/null | head -1)
-if [ -n "$PIXBUF_CACHE" ]; then
-    export GDK_PIXBUF_MODULE_FILE="$PIXBUF_CACHE"
+# Source the linuxdeploy-plugin-gtk hook for GTK_PATH, GDK_PIXBUF_MODULE_FILE,
+# GTK_EXE_PREFIX, GI_TYPELIB_PATH, GDK_BACKEND — then override the parts
+# it gets wrong (forced Adwaita theme, missing host paths in XDG/GSettings).
+if [ -d "$APPDIR/apprun-hooks" ]; then
+    for _hook in "$APPDIR/apprun-hooks"/*.sh; do
+        [ -f "$_hook" ] && source "$_hook"
+    done
 fi
 
-# ---------------------------------------------------------------------------
-# Launch
-# ---------------------------------------------------------------------------
+# Let the host theme (e.g. Yaru-purple) apply — don't force Adwaita.
+unset GTK_THEME
+unset APPIMAGE_GTK_THEME
+# Allow GTK to find host theme directories.
+unset GTK_DATA_PREFIX
+
+# Always include host data dirs so GTK finds icon themes (Yaru, etc.).
+_HOST_XDG_DATA_DIRS="${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+export XDG_DATA_DIRS="$APPDIR/usr/share:$_HOST_XDG_DATA_DIRS"
+
+# Chain host GSettings schemas so libadwaita can read dconf preferences
+# (icon-theme, gtk-theme, accent-color, color-scheme, etc.).
+_HOST_GSETTINGS_DIR="${GSETTINGS_SCHEMA_DIR:-/usr/share/glib-2.0/schemas}"
+export GSETTINGS_SCHEMA_DIR="$APPDIR/usr/share/glib-2.0/schemas:$_HOST_GSETTINGS_DIR"
+
+# Expand the @@APPDIR@@ placeholder in the bundled loaders.cache.
+# The cache was generated at build time with an absolute Docker path;
+# we write a corrected copy to /tmp with the real runtime $APPDIR.
+_CACHE_TEMPLATE="$APPDIR/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"
+if [ -f "$_CACHE_TEMPLATE" ] && grep -q "@@APPDIR@@" "$_CACHE_TEMPLATE" 2>/dev/null; then
+    _CACHE_DIR="/tmp/.deployd-pixbuf-$$"
+    mkdir -p "$_CACHE_DIR"
+    sed "s|@@APPDIR@@|$APPDIR|g" "$_CACHE_TEMPLATE" > "$_CACHE_DIR/loaders.cache"
+    export GDK_PIXBUF_MODULE_FILE="$_CACHE_DIR/loaders.cache"
+    export GDK_PIXBUF_MODULEDIR="$APPDIR/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders"
+fi
+
 exec "$APPDIR/usr/bin/deployd" "$@"
