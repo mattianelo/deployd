@@ -27,7 +27,6 @@ pub struct SettingsDialog {
     has_key: bool,
     login_source: Option<LoginSource>,
     downloads_dir: String,
-    dao_experimental_enabled: bool,
 }
 
 #[derive(Debug)]
@@ -40,8 +39,6 @@ pub enum SettingsMsg {
     BrowseDownloadsDir,
     DownloadsDirChosen(PathBuf),
     ManageGames,
-    RescanGames,
-    DaoExperimentalToggled(bool),
 }
 
 #[derive(Debug)]
@@ -53,7 +50,6 @@ pub enum SettingsCmdMsg {
     LoggedOut(Result<(), String>),
     DownloadsDirLoaded(Option<String>),
     DownloadsDirSaved(Result<(), String>),
-    DaoExperimentalLoaded(bool),
 }
 
 #[derive(Debug)]
@@ -63,10 +59,6 @@ pub enum SettingsDialogOutput {
     ApiKeyChanged,
     /// User wants to open the game setup dialog.
     ManageGames,
-    /// User wants to rescan for installed games.
-    RescanGames,
-    /// User toggled Dragon Age: Origins experimental support.
-    DaoExperimentalChanged(bool),
 }
 
 #[relm4::component(pub)]
@@ -192,26 +184,7 @@ impl Component for SettingsDialog {
                         },
                     },
 
-                    add = &adw::ActionRow {
-                        set_title: "Rescan for games",
-                        set_subtitle: "Detect newly installed games",
-                        set_activatable: true,
-                        connect_activated => SettingsMsg::RescanGames,
 
-                        add_suffix = &gtk::Image::from_icon_name("view-refresh-symbolic") {
-                            set_valign: gtk::Align::Center,
-                        },
-                    },
-
-                    add = &adw::SwitchRow {
-                        set_title: "Dragon Age: Origins (Experimental)",
-                        set_subtitle: "Enable auto-detection and setup for Dragon Age: Origins",
-                        #[watch]
-                        set_active: model.dao_experimental_enabled,
-                        connect_active_notify[sender] => move |row| {
-                            sender.input(SettingsMsg::DaoExperimentalToggled(row.is_active()));
-                        },
-                    },
                 },
 
                 // About section
@@ -269,7 +242,6 @@ impl Component for SettingsDialog {
             has_key: false,
             login_source: None,
             downloads_dir: default_dir,
-            dao_experimental_enabled: false,
         };
 
         let status_label = &model.status_label;
@@ -323,19 +295,6 @@ impl Component for SettingsDialog {
         sender.oneshot_command(async move {
             let dir = t2.get_setting("downloads_dir").await.ok().flatten();
             SettingsCmdMsg::DownloadsDirLoaded(dir)
-        });
-
-        // Load DAO experimental setting
-        let t3 = model.tracker.clone();
-        sender.oneshot_command(async move {
-            let enabled = t3
-                .get_setting("dao_experimental_enabled")
-                .await
-                .ok()
-                .flatten()
-                .map(|v| v == "true")
-                .unwrap_or(false);
-            SettingsCmdMsg::DaoExperimentalLoaded(enabled)
         });
 
         root.present();
@@ -483,25 +442,6 @@ impl Component for SettingsDialog {
                 let _ = sender.output(SettingsDialogOutput::ManageGames);
                 root.close();
             }
-            SettingsMsg::RescanGames => {
-                let _ = sender.output(SettingsDialogOutput::RescanGames);
-                root.close();
-            }
-            SettingsMsg::DaoExperimentalToggled(enabled) => {
-                if enabled == self.dao_experimental_enabled {
-                    return;
-                }
-                self.dao_experimental_enabled = enabled;
-                let tracker = self.tracker.clone();
-                let val = if enabled { "true" } else { "false" };
-                sender.oneshot_command(async move {
-                    if let Err(e) = tracker.set_setting("dao_experimental_enabled", val).await {
-                        eprintln!("deployd: failed to save dao_experimental_enabled: {e}");
-                    }
-                    SettingsCmdMsg::DownloadsDirSaved(Ok(()))
-                });
-                let _ = sender.output(SettingsDialogOutput::DaoExperimentalChanged(enabled));
-            }
             SettingsMsg::DownloadsDirChosen(path) => {
                 let dir_str = path.to_string_lossy().to_string();
                 self.downloads_dir = dir_str.clone();
@@ -625,9 +565,6 @@ impl Component for SettingsDialog {
                 if let Err(e) = result {
                     eprintln!("deployd: failed to save downloads dir: {e}");
                 }
-            }
-            SettingsCmdMsg::DaoExperimentalLoaded(enabled) => {
-                self.dao_experimental_enabled = enabled;
             }
         }
     }

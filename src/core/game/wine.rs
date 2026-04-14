@@ -2,7 +2,6 @@ use std::path::{Path, PathBuf};
 
 use crate::models::game::Game;
 use super::known_games::{KnownGame, KNOWN_GAMES};
-use super::detection::heroic_game_config_paths;
 
 pub(crate) fn find_wine_user_dir(known: &KnownGame, game: &Game) -> Option<PathBuf> {
     let prefix = game
@@ -36,66 +35,10 @@ pub struct WineConfig {
     pub wine_bin: PathBuf,
     /// `None` when using plain Wine. Used to set `LD_LIBRARY_PATH` etc.
     pub proton_dir: Option<PathBuf>,
-    /// When true, tools must be launched via `flatpak run --command=... com.heroicgameslauncher.hgl`.
-    pub heroic_flatpak: bool,
 }
 
 pub fn detect_wine_config(game: &Game) -> Option<WineConfig> {
     let known = KNOWN_GAMES.iter().find(|k| k.deployd_id == game.id)?;
-
-    for (config_path, is_flatpak) in heroic_game_config_paths(known.heroic_app_name) {
-        if let Ok(content) = std::fs::read_to_string(&config_path)
-            && let Ok(json) = serde_json::from_str::<serde_json::Value>(&content)
-        {
-            let config = json.get(known.heroic_app_name).unwrap_or(&json);
-
-            // User-specified prefix takes priority over Heroic's.
-            let prefix = game.wine_prefix.clone().or_else(|| {
-                config
-                    .get("winePrefix")
-                    .and_then(|v| v.as_str())
-                    .map(PathBuf::from)
-                    .filter(|p| p.exists())
-            });
-
-            let wine_version = config.get("wineVersion");
-
-            let wine_type = wine_version
-                .and_then(|v| v.get("type"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-
-            let raw_bin = wine_version
-                .and_then(|v| v.get("bin"))
-                .and_then(|v| v.as_str())
-                .map(PathBuf::from)
-                .filter(|p| p.exists());
-
-            let (heroic_bin, heroic_proton_dir) = match raw_bin {
-                Some(bin) => {
-                    let (resolved, pdir) = resolve_wine_binary(bin, wine_type);
-                    (Some(resolved), pdir)
-                }
-                None => (None, None),
-            };
-
-            if let Some(prefix) = prefix {
-                let (wine_bin, proton_dir) = if let Some(bin) = heroic_bin {
-                    (bin, heroic_proton_dir)
-                } else if let Some((found_bin, found_pdir)) = find_wine_near_prefix(&prefix) {
-                    (found_bin, Some(found_pdir))
-                } else {
-                    (which_wine()?, None)
-                };
-                return Some(WineConfig {
-                    prefix,
-                    wine_bin,
-                    proton_dir,
-                    heroic_flatpak: is_flatpak,
-                });
-            }
-        }
-    }
 
     if let Some(prefix) = game.wine_prefix.clone() {
         let (wine_bin, proton_dir) = if let Some((bin, pdir)) = find_wine_near_prefix(&prefix) {
@@ -103,12 +46,7 @@ pub fn detect_wine_config(game: &Game) -> Option<WineConfig> {
         } else {
             (which_wine()?, None)
         };
-        return Some(WineConfig {
-            prefix,
-            wine_bin,
-            proton_dir,
-            heroic_flatpak: false,
-        });
+        return Some(WineConfig { prefix, wine_bin, proton_dir });
     }
 
     let prefix = detect_wine_prefix(known.heroic_app_name, &game.path)?;
@@ -117,27 +55,7 @@ pub fn detect_wine_config(game: &Game) -> Option<WineConfig> {
     } else {
         (which_wine()?, None)
     };
-    Some(WineConfig {
-        prefix,
-        wine_bin,
-        proton_dir,
-        heroic_flatpak: false,
-    })
-}
-
-/// Resolve the actual Wine binary from a Heroic `wineVersion.bin` path.
-/// Proton ships a wrapper script (`proton`); the real binary lives at `<proton_root>/files/bin/wine`.
-fn resolve_wine_binary(bin: PathBuf, wine_type: &str) -> (PathBuf, Option<PathBuf>) {
-    let is_proton = wine_type == "proton" || bin.file_name().is_some_and(|name| name == "proton");
-
-    if is_proton && let Some(proton_root) = bin.parent() {
-        let real_wine = proton_root.join("files/bin/wine");
-        if real_wine.exists() {
-            return (real_wine, Some(proton_root.to_path_buf()));
-        }
-    }
-
-    (bin, None)
+    Some(WineConfig { prefix, wine_bin, proton_dir })
 }
 
 fn best_proton_in_dir(dir: &Path) -> Option<(PathBuf, PathBuf)> {
@@ -210,20 +128,6 @@ fn which_wine() -> Option<PathBuf> {
 }
 
 pub(super) fn detect_wine_prefix(heroic_app_name: &str, game_path: &PathBuf) -> Option<PathBuf> {
-    for (config_path, _is_flatpak) in heroic_game_config_paths(heroic_app_name) {
-        if let Ok(content) = std::fs::read_to_string(&config_path)
-            && let Ok(json) = serde_json::from_str::<serde_json::Value>(&content)
-        {
-            let config = json.get(heroic_app_name).unwrap_or(&json);
-            if let Some(prefix) = config.get("winePrefix").and_then(|v| v.as_str()) {
-                let prefix_path = PathBuf::from(prefix);
-                if prefix_path.exists() {
-                    return Some(prefix_path);
-                }
-            }
-        }
-    }
-
     // Steam: <steamapps>/compatdata/<appid>/pfx relative to the game at <steamapps>/common/<Game>/.
     let steam_compat = format!("../../compatdata/{heroic_app_name}/pfx");
     for relative in &[steam_compat.as_str(), "../pfx", "../../pfx", "../compatdata/pfx"] {

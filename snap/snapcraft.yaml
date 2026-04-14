@@ -1,0 +1,54 @@
+name: deployd
+base: core24
+version: '0.9.8-beta'
+summary: Mod manager for PC games on Linux
+description: |
+  Deployd is a non-destructive mod manager for PC games running on Linux.
+  Supports Bethesda (Skyrim SE, Fallout 4, Starfield), REDEngine (The Witcher 3,
+  Cyberpunk 2077), and Eclipse (Dragon Age: Origins) engine games.
+
+  Mods are deployed as hardlinks — no copies, no risk of losing originals.
+  Supports multiple profiles per game, FOMOD installers, load order management,
+  conflict detection, and Nexus Mods integration (NXM links, SSO login).
+
+icon: snap/gui/deployd.svg
+
+grade: devel
+confinement: strict
+
+lint:
+  ignore:
+    - library
+
+apps:
+  deployd:
+    command: bin/deployd
+    extensions: [gnome]
+    plugs:
+      - home          # Game directories, wine prefixes, mod archives
+      - network       # Nexus Mods API and NXM downloads
+      - network-bind  # Local WebSocket listener for NXM scheme handler
+    desktop: usr/share/applications/deployd.desktop
+
+parts:
+  deployd:
+    plugin: rust
+    source: .
+    build-packages:
+      - libgtk-4-dev
+      - libadwaita-1-dev
+      - libsqlite3-dev
+      - libssl-dev
+      - pkg-config
+      - libarchive-dev
+    stage-packages:
+      - libsqlite3-0
+      - libarchive13t64
+    override-build: |
+      craftctl default
+      install -Dm644 data/deployd.desktop \
+        "$CRAFT_PART_INSTALL/usr/share/applications/deployd.desktop"
+      install -Dm644 data/icons/hicolor/scalable/apps/deployd.svg \
+        "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/scalable/apps/deployd.svg"
+      install -Dm644 data/deployd.metainfo.xml \
+        "$CRAFT_PART_INSTALL/usr/share/metainfo/deployd.metainfo.xml"

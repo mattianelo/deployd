@@ -152,8 +152,6 @@ pub struct App {
     /// If the dialog is dismissed without confirming, these are hidden so they
     /// do not keep re-triggering the prompt on every startup.
     pub(crate) pending_new_game_ids: Vec<String>,
-    /// Whether the user has opted in to Dragon Age: Origins experimental support.
-    pub(crate) dao_experimental_enabled: bool,
     /// Saved mod order snapshots for the current game.
     pub(crate) mod_order_snapshots: Vec<OrderSnapshot>,
     /// Saved plugin order snapshots for the current game.

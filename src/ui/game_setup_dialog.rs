@@ -9,36 +9,32 @@ use crate::core::game;
 use crate::models::game::{Game, GameEngine};
 use crate::core::tracker::PersistedGame;
 
-/// One row in the games list: a confirmed or custom-added game.
+/// One row in the games list: a manually added game.
 #[derive(Debug, Clone)]
 struct GameEntry {
     game: Game,
     /// Whether the user has included this game (checked).
     enabled: bool,
-    /// `true` if manually added by the user (not auto-detected).
-    custom: bool,
 }
 
 pub struct GameSetupDialog {
     entries: Vec<GameEntry>,
     /// Page switcher — "list" vs "add".
     stack: gtk::Stack,
-    /// Whether the "add custom game" page is currently shown.
+    /// Whether the "add game" page is currently shown.
     add_page_visible: bool,
-    /// ListBox for auto-detected game rows.
-    detected_list: gtk::ListBox,
-    /// ListBox for custom game rows.
-    custom_list: gtk::ListBox,
-    /// Container for the custom list section (hidden when empty).
-    custom_section: gtk::Box,
-    /// State for the "Add Custom Game" form.
+    /// ListBox for game rows.
+    games_list: gtk::ListBox,
+    /// Container for the games list section (hidden when empty).
+    games_section: gtk::Box,
+    /// State for the "Add Game" form.
     new_game_type_idx: usize,
     new_path: Option<PathBuf>,
     new_prefix: Option<PathBuf>,
     new_path_entry: gtk::Entry,
     new_prefix_entry: gtk::Entry,
     add_btn: gtk::Button,
-    /// Filtered list of known game options shown in the "Add Custom Game" dropdown.
+    /// Filtered list of known game options shown in the "Add Game" dropdown.
     known_opts: Vec<game::KnownGameOption>,
 }
 
@@ -52,12 +48,10 @@ pub enum GameSetupMsg {
     /// Browse for a wine prefix override for entry at index.
     BrowsePrefix(usize),
     PrefixChosen(usize, PathBuf),
-    /// Clear the wine prefix for entry at index.
-    ClearPrefix(usize),
-    /// Remove a custom game entry.
-    RemoveCustom(usize),
-    /// Switch to the "Add Custom Game" form.
-    AddCustomClicked,
+    /// Remove a game entry.
+    RemoveGame(usize),
+    /// Switch to the "Add Game" form.
+    AddGameClicked,
     /// Navigate back to the game list.
     BackClicked,
     /// The known-game-type dropdown selection changed.
@@ -65,11 +59,9 @@ pub enum GameSetupMsg {
     /// Browse for the new game's installation folder.
     BrowseNewPath,
     NewPathChosen(PathBuf),
-    /// Browse for the new game's wine prefix (optional).
+    /// Browse for the new game's wine prefix.
     BrowseNewPrefix,
     NewPrefixChosen(PathBuf),
-    /// Clear the pending new game's wine prefix.
-    ClearNewPrefix,
     /// Commit the pending "add" form.
     ConfirmAdd,
     /// User confirmed: emit the final game list.
@@ -88,52 +80,17 @@ pub enum GameSetupOutput {
 }
 
 impl GameSetupDialog {
-    /// Rebuild the detected-games list box from `self.entries` where `!custom`.
-    fn rebuild_detected(&self, sender: &ComponentSender<Self>) {
-        while let Some(child) = self.detected_list.first_child() {
-            self.detected_list.remove(&child);
+    /// Rebuild the games list box from `self.entries`.
+    fn rebuild_games(&self, sender: &ComponentSender<Self>) {
+        while let Some(child) = self.games_list.first_child() {
+            self.games_list.remove(&child);
         }
 
-        let detected: Vec<(usize, &GameEntry)> = self
-            .entries
-            .iter()
-            .enumerate()
-            .filter(|(_, e)| !e.custom)
-            .collect();
+        self.games_section.set_visible(!self.entries.is_empty());
 
-        if detected.is_empty() {
-            let lbl = gtk::Label::new(Some("No games were detected automatically."));
-            lbl.add_css_class("dim-label");
-            lbl.set_margin_top(12);
-            lbl.set_margin_bottom(12);
-            self.detected_list.append(&lbl);
-            return;
-        }
-
-        for (idx, entry) in detected {
-            self.detected_list
-                .append(&Self::build_entry_row(idx, entry, false, sender));
-        }
-    }
-
-    /// Rebuild the custom-games list box from `self.entries` where `custom`.
-    fn rebuild_custom(&self, sender: &ComponentSender<Self>) {
-        while let Some(child) = self.custom_list.first_child() {
-            self.custom_list.remove(&child);
-        }
-
-        let custom: Vec<(usize, &GameEntry)> = self
-            .entries
-            .iter()
-            .enumerate()
-            .filter(|(_, e)| e.custom)
-            .collect();
-
-        self.custom_section.set_visible(!custom.is_empty());
-
-        for (idx, entry) in custom {
-            self.custom_list
-                .append(&Self::build_entry_row(idx, entry, true, sender));
+        for (idx, entry) in self.entries.iter().enumerate() {
+            self.games_list
+                .append(&Self::build_entry_row(idx, entry, sender));
         }
     }
 
@@ -141,7 +98,6 @@ impl GameSetupDialog {
     fn build_entry_row(
         idx: usize,
         entry: &GameEntry,
-        show_remove: bool,
         sender: &ComponentSender<Self>,
     ) -> adw::ExpanderRow {
         let row = adw::ExpanderRow::new();
@@ -161,18 +117,18 @@ impl GameSetupDialog {
         }
         row.add_prefix(&check);
 
-        // Remove button (custom games only).
-        if show_remove {
-            let remove_btn = gtk::Button::from_icon_name("user-trash-symbolic");
-            remove_btn.set_valign(gtk::Align::Center);
-            remove_btn.add_css_class("flat");
-            remove_btn.set_tooltip_text(Some("Remove"));
+        // Remove button.
+        let remove_btn = gtk::Button::from_icon_name("user-trash-symbolic");
+        remove_btn.set_valign(gtk::Align::Center);
+        remove_btn.add_css_class("flat");
+        remove_btn.set_tooltip_text(Some("Remove"));
+        {
             let input = sender.input_sender().clone();
             remove_btn.connect_clicked(move |_| {
-                input.send(GameSetupMsg::RemoveCustom(idx)).ok();
+                input.send(GameSetupMsg::RemoveGame(idx)).ok();
             });
-            row.add_suffix(&remove_btn);
         }
+        row.add_suffix(&remove_btn);
 
         // ── Expanded content ────────────────────────────────────────────────
 
@@ -200,13 +156,13 @@ impl GameSetupDialog {
         if let Some(ref pfx) = entry.game.wine_prefix {
             prefix_row.set_subtitle(&pfx.to_string_lossy());
         } else {
-            prefix_row.set_subtitle("Auto-detect");
+            prefix_row.set_subtitle("Not set");
         }
 
         let prefix_btn = gtk::Button::from_icon_name("folder-symbolic");
         prefix_btn.set_valign(gtk::Align::Center);
         prefix_btn.add_css_class("flat");
-        prefix_btn.set_tooltip_text(Some("Set custom prefix…"));
+        prefix_btn.set_tooltip_text(Some("Browse…"));
         {
             let input = sender.input_sender().clone();
             prefix_btn.connect_clicked(move |_| {
@@ -214,33 +170,22 @@ impl GameSetupDialog {
             });
         }
         prefix_row.add_suffix(&prefix_btn);
-
-        if entry.game.wine_prefix.is_some() {
-            let clear_btn = gtk::Button::from_icon_name("edit-clear-symbolic");
-            clear_btn.set_valign(gtk::Align::Center);
-            clear_btn.add_css_class("flat");
-            clear_btn.set_tooltip_text(Some("Clear (auto-detect)"));
-            let input = sender.input_sender().clone();
-            clear_btn.connect_clicked(move |_| {
-                input.send(GameSetupMsg::ClearPrefix(idx)).ok();
-            });
-            prefix_row.add_suffix(&clear_btn);
-        }
         row.add_row(&prefix_row);
 
         row
     }
 
-    /// Update the sensitivity of the "Add Game" button on the add-form page.
+    /// Update the sensitivity of the "Add Game" button — both path and prefix are required.
     fn update_add_btn(&self) {
-        self.add_btn.set_sensitive(self.new_path.is_some());
+        self.add_btn
+            .set_sensitive(self.new_path.is_some() && self.new_prefix.is_some());
     }
 }
 
 #[relm4::component(pub)]
 impl Component for GameSetupDialog {
-    /// (auto-detected games, persisted custom games)
-    type Init = (Vec<Game>, Vec<PersistedGame>, bool);
+    /// (detected games — always empty, persisted games)
+    type Init = (Vec<Game>, Vec<PersistedGame>);
     type Input = GameSetupMsg;
     type Output = GameSetupOutput;
     type CommandOutput = ();
@@ -300,47 +245,35 @@ impl Component for GameSetupDialog {
                                 set_orientation: gtk::Orientation::Vertical,
                                 set_spacing: 12,
 
-                                gtk::Label {
-                                    set_label: "Detected Games",
-                                    set_halign: gtk::Align::Start,
-                                    add_css_class: "heading",
-                                },
-
                                 #[local_ref]
-                                detected_list -> gtk::ListBox {
-                                    add_css_class: "boxed-list",
-                                    set_selection_mode: gtk::SelectionMode::None,
-                                },
-
-                                #[local_ref]
-                                custom_section -> gtk::Box {
+                                games_section -> gtk::Box {
                                     set_orientation: gtk::Orientation::Vertical,
                                     set_spacing: 6,
 
                                     gtk::Label {
-                                        set_label: "Custom Games",
+                                        set_label: "Your Games",
                                         set_halign: gtk::Align::Start,
                                         add_css_class: "heading",
                                     },
 
                                     #[local_ref]
-                                    custom_list -> gtk::ListBox {
+                                    games_list -> gtk::ListBox {
                                         add_css_class: "boxed-list",
                                         set_selection_mode: gtk::SelectionMode::None,
                                     },
                                 },
 
                                 gtk::Button {
-                                    set_label: "Add a Game from Custom Directory…",
+                                    set_label: "Add a Game…",
                                     set_halign: gtk::Align::Start,
                                     add_css_class: "pill",
-                                    connect_clicked => GameSetupMsg::AddCustomClicked,
+                                    connect_clicked => GameSetupMsg::AddGameClicked,
                                 },
                             },
                         },
                     },
 
-                    // ── Add-custom page ──────────────────────────────────────
+                    // ── Add page ─────────────────────────────────────────────
                     #[name = "add_page"]
                     gtk::ScrolledWindow {
                         set_hscrollbar_policy: gtk::PolicyType::Never,
@@ -375,7 +308,7 @@ impl Component for GameSetupDialog {
                                 },
 
                                 gtk::Label {
-                                    set_label: "Installation Folder",
+                                    set_label: "Directories",
                                     set_halign: gtk::Align::Start,
                                     add_css_class: "heading",
                                 },
@@ -405,7 +338,7 @@ impl Component for GameSetupDialog {
 
                                     adw::ActionRow {
                                         set_title: "Wine Prefix",
-                                        set_subtitle: "Optional — leave empty to auto-detect",
+                                        set_subtitle: "Required",
 
                                         add_suffix = &gtk::Button::from_icon_name("folder-symbolic") {
                                             set_valign: gtk::Align::Center,
@@ -413,19 +346,12 @@ impl Component for GameSetupDialog {
                                             connect_clicked => GameSetupMsg::BrowseNewPrefix,
                                         },
 
-                                        add_suffix = &gtk::Button::from_icon_name("edit-clear-symbolic") {
-                                            set_valign: gtk::Align::Center,
-                                            add_css_class: "flat",
-                                            set_tooltip_text: Some("Clear"),
-                                            connect_clicked => GameSetupMsg::ClearNewPrefix,
-                                        },
-
                                         #[local_ref]
                                         add_suffix = new_prefix_entry -> gtk::Entry {
                                             set_valign: gtk::Align::Center,
                                             set_width_chars: 20,
                                             set_editable: false,
-                                            set_placeholder_text: Some("Auto-detect"),
+                                            set_placeholder_text: Some("Not set"),
                                         },
                                     },
                                 },
@@ -451,15 +377,12 @@ impl Component for GameSetupDialog {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let (detected_games, persisted_custom, dao_experimental_enabled) = init;
+        let (detected_games, persisted_custom) = init;
 
+        // Merge detected (now always empty) and persisted custom games.
         let mut entries: Vec<GameEntry> = detected_games
             .into_iter()
-            .map(|g| GameEntry {
-                game: g,
-                enabled: true,
-                custom: false,
-            })
+            .map(|g| GameEntry { game: g, enabled: true })
             .collect();
 
         for pg in persisted_custom {
@@ -480,30 +403,26 @@ impl Component for GameSetupDialog {
                     wine_prefix: pg.wine_prefix,
                 },
                 enabled: true,
-                custom: true,
             });
         }
 
         let stack = gtk::Stack::new();
-        let detected_list = gtk::ListBox::new();
-        let custom_list = gtk::ListBox::new();
-        let custom_section = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        let games_list = gtk::ListBox::new();
+        let games_section = gtk::Box::new(gtk::Orientation::Vertical, 6);
         let new_path_entry = gtk::Entry::new();
         let new_prefix_entry = gtk::Entry::new();
         let add_btn = gtk::Button::with_label("Add Game");
 
         let known_opts: Vec<game::KnownGameOption> = game::known_game_options()
             .into_iter()
-            .filter(|o| !o.experimental || dao_experimental_enabled)
             .collect();
 
         let model = GameSetupDialog {
             entries,
             stack,
             add_page_visible: false,
-            detected_list,
-            custom_list,
-            custom_section,
+            games_list,
+            games_section,
             new_game_type_idx: 0,
             new_path: None,
             new_prefix: None,
@@ -514,9 +433,8 @@ impl Component for GameSetupDialog {
         };
 
         let stack = &model.stack;
-        let detected_list = &model.detected_list;
-        let custom_list = &model.custom_list;
-        let custom_section = &model.custom_section;
+        let games_list = &model.games_list;
+        let games_section = &model.games_section;
         let new_path_entry = &model.new_path_entry;
         let new_prefix_entry = &model.new_prefix_entry;
         let add_btn = &model.add_btn;
@@ -527,27 +445,17 @@ impl Component for GameSetupDialog {
         let labels: Vec<String> = model
             .known_opts
             .iter()
-            .map(|o| {
-                if o.experimental {
-                    format!("{} ({}) (Experimental)", o.title, o.store)
-                } else {
-                    format!("{} ({})", o.title, o.store)
-                }
-            })
+            .map(|o| format!("{} ({})", o.title, o.store))
             .collect();
         let strs: Vec<&str> = labels.iter().map(String::as_str).collect();
         widgets
             .game_type_combo
             .set_model(Some(&gtk::StringList::new(&strs)));
 
-        // Give the stack pages their lookup names so set_visible_child_name works.
         model.stack.page(&widgets.list_page).set_name("list");
         model.stack.page(&widgets.add_page).set_name("add");
 
-        model.rebuild_detected(&sender);
-        model.rebuild_custom(&sender);
-
-        // Set the initial visible page.
+        model.rebuild_games(&sender);
         model.stack.set_visible_child_name("list");
 
         root.present();
@@ -561,8 +469,7 @@ impl Component for GameSetupDialog {
                 if let Some(entry) = self.entries.get_mut(idx) {
                     entry.enabled = !entry.enabled;
                 }
-                self.rebuild_detected(&sender);
-                self.rebuild_custom(&sender);
+                self.rebuild_games(&sender);
             }
 
             GameSetupMsg::BrowsePath(idx) => {
@@ -592,8 +499,7 @@ impl Component for GameSetupDialog {
                 if let Some(entry) = self.entries.get_mut(idx) {
                     entry.game.path = path;
                 }
-                self.rebuild_detected(&sender);
-                self.rebuild_custom(&sender);
+                self.rebuild_games(&sender);
             }
 
             GameSetupMsg::BrowsePrefix(idx) => {
@@ -620,25 +526,15 @@ impl Component for GameSetupDialog {
                 if let Some(entry) = self.entries.get_mut(idx) {
                     entry.game.wine_prefix = Some(path);
                 }
-                self.rebuild_detected(&sender);
-                self.rebuild_custom(&sender);
+                self.rebuild_games(&sender);
             }
 
-            GameSetupMsg::ClearPrefix(idx) => {
-                if let Some(entry) = self.entries.get_mut(idx) {
-                    entry.game.wine_prefix = None;
-                }
-                self.rebuild_detected(&sender);
-                self.rebuild_custom(&sender);
-            }
-
-            GameSetupMsg::RemoveCustom(idx) => {
+            GameSetupMsg::RemoveGame(idx) => {
                 self.entries.remove(idx);
-                self.rebuild_detected(&sender);
-                self.rebuild_custom(&sender);
+                self.rebuild_games(&sender);
             }
 
-            GameSetupMsg::AddCustomClicked => {
+            GameSetupMsg::AddGameClicked => {
                 self.new_path = None;
                 self.new_prefix = None;
                 self.new_game_type_idx = 0;
@@ -697,15 +593,14 @@ impl Component for GameSetupDialog {
             GameSetupMsg::NewPrefixChosen(path) => {
                 self.new_prefix_entry.set_text(&path.to_string_lossy());
                 self.new_prefix = Some(path);
-            }
-
-            GameSetupMsg::ClearNewPrefix => {
-                self.new_prefix_entry.set_text("");
-                self.new_prefix = None;
+                self.update_add_btn();
             }
 
             GameSetupMsg::ConfirmAdd => {
                 let Some(path) = self.new_path.take() else {
+                    return;
+                };
+                let Some(prefix) = self.new_prefix.take() else {
                     return;
                 };
                 let Some(opt) = self.known_opts.get(self.new_game_type_idx) else {
@@ -722,17 +617,13 @@ impl Component for GameSetupDialog {
                     path,
                     data_subdir: opt.data_subdir.to_string(),
                     engine,
-                    wine_prefix: self.new_prefix.take(),
+                    wine_prefix: Some(prefix),
                 };
-                self.entries.push(GameEntry {
-                    game,
-                    enabled: true,
-                    custom: true,
-                });
+                self.entries.push(GameEntry { game, enabled: true });
                 self.new_path_entry.set_text("");
                 self.new_prefix_entry.set_text("");
                 self.update_add_btn();
-                self.rebuild_custom(&sender);
+                self.rebuild_games(&sender);
                 self.stack.set_visible_child_name("list");
                 self.add_page_visible = false;
             }
@@ -744,7 +635,7 @@ impl Component for GameSetupDialog {
                     .filter(|e| e.enabled)
                     .map(|e| GameConfig {
                         game: e.game.clone(),
-                        custom: e.custom,
+                        custom: true,
                     })
                     .collect();
                 let hidden_ids: Vec<String> = self

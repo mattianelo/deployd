@@ -2,7 +2,6 @@ use gtk::prelude::*;
 use relm4::factory::DynamicIndex;
 use relm4::prelude::*;
 
-use crate::core::game;
 use crate::ui::mod_list::{ModListItemInit, ModListItemKind, ModRowInit};
 use crate::utils::paths;
 
@@ -246,15 +245,6 @@ impl App {
         self.refresh_priority_labels();
         self.save_group_positions();
         self.save_mod_priorities(sender);
-    }
-
-    pub(crate) fn handle_rescan_games(&mut self, sender: &ComponentSender<Self>) {
-        sender.oneshot_command(async move {
-            let games = tokio::task::spawn_blocking(game::detect_games)
-                .await
-                .unwrap_or_default();
-            AppCmdMsg::GamesRescanned(games)
-        });
     }
 
     pub(crate) fn handle_enable_all_mods(&mut self, sender: &ComponentSender<Self>) {

@@ -9,18 +9,10 @@ use crate::models::game::Game;
 use crate::models::tool::Tool;
 use crate::utils::paths;
 
-const HEROIC_FLATPAK_ID: &str = "com.heroicgameslauncher.hgl";
-
 /// Launch a Windows tool via Wine/Proton.
 ///
-/// When Heroic is a Flatpak, the Wine/Proton binaries depend on the Flatpak runtime's
-/// libraries (including 32-bit compat). We launch via `flatpak run --command=<wine>`
-/// so the process runs inside Heroic's sandbox with all necessary libraries available.
-///
-/// For native Heroic installs, runs the Wine binary directly.
-///
-/// Before launching, ensures the standard Bethesda registry key exists so modding tools
-/// can find the game (GOG installers don't create it).
+/// Runs the Wine binary directly. Before launching, ensures the standard Bethesda
+/// registry key exists so modding tools can find the game (GOG installers don't create it).
 ///
 /// Returns the child process ID on success.
 ///
@@ -48,16 +40,11 @@ pub fn launch_tool(
     // Map M: → named_mods/ so tools like NPC Plugin Chooser 2 can access all mod folders.
     ensure_named_mods_drive(wine_config);
 
-    let mut cmd = if wine_config.heroic_flatpak {
-        build_flatpak_command(&wine_bin, tool, game, wine_config)
-    } else {
-        build_native_command(&wine_bin, tool, game, wine_config)
-    };
+    let mut cmd = build_native_command(&wine_bin, tool, game, wine_config);
 
     dlog!(
-        "deployd: launching tool '{}' | heroic_flatpak={} | wine={}",
+        "deployd: launching tool '{}' | wine={}",
         tool.name,
-        wine_config.heroic_flatpak,
         wine_bin.display()
     );
 
@@ -68,11 +55,9 @@ pub fn launch_tool(
         anyhow!(
             "Could not start Wine ({}).\n\
              Binary: {}\n\
-             Heroic Flatpak: {}\n\
              Error: {e}",
             tool.name,
             wine_bin.display(),
-            wine_config.heroic_flatpak,
         )
     })?;
 
@@ -141,24 +126,11 @@ fn ensure_bethesda_reg_key(game: &Game, wine_config: &WineConfig, wine_bin: &Pat
     .map(|s| s.to_string())
     .collect();
 
-    let result = if wine_config.heroic_flatpak {
-        let mut flatpak_args = vec![
-            "run".to_string(),
-            format!("--command={}", wine_bin.display()),
-            format!("--env=WINEPREFIX={}", wine_config.prefix.display()),
-            "--env=WINEDEBUG=-all".to_string(),
-            HEROIC_FLATPAK_ID.to_string(),
-        ];
-        flatpak_args.extend(reg_args);
-
-        Command::new("flatpak").args(&flatpak_args).output()
-    } else {
-        Command::new(wine_bin)
-            .env("WINEPREFIX", &wine_config.prefix)
-            .env("WINEDEBUG", "-all")
-            .args(&reg_args)
-            .output()
-    };
+    let result = Command::new(wine_bin)
+        .env("WINEPREFIX", &wine_config.prefix)
+        .env("WINEDEBUG", "-all")
+        .args(&reg_args)
+        .output();
 
     match result {
         Ok(output) if output.status.success() => {
@@ -177,79 +149,7 @@ fn ensure_bethesda_reg_key(game: &Game, wine_config: &WineConfig, wine_bin: &Pat
     }
 }
 
-/// Build a command that runs Wine inside Heroic's Flatpak sandbox.
-///
-/// Uses `flatpak run --command=<wine_bin> --env=KEY=VAL ... com.heroicgameslauncher.hgl <exe>`.
-///
-/// CWD is set to the game root so modding tools can find game files.
-/// The tool's directory and the game directory are both exposed to Heroic's sandbox.
-fn build_flatpak_command(
-    wine_bin: &PathBuf,
-    tool: &Tool,
-    game: &Game,
-    wine_config: &WineConfig,
-) -> Command {
-    let mut flatpak_args = vec![
-        "run".to_string(),
-        format!("--command={}", wine_bin.display()),
-        format!("--env=WINEPREFIX={}", wine_config.prefix.display()),
-        "--env=WINEDEBUG=-all".to_string(),
-    ];
-
-    let compat_data = if wine_config.prefix.ends_with("pfx") {
-        wine_config.prefix.parent().unwrap_or(&wine_config.prefix)
-    } else {
-        &wine_config.prefix
-    };
-    flatpak_args.push(format!(
-        "--env=STEAM_COMPAT_DATA_PATH={}",
-        compat_data.display()
-    ));
-
-    if let Some(proton_dir) = &wine_config.proton_dir {
-        let lib_dir = proton_dir.join("files/lib");
-
-        let ld_val = format!(
-            "{}:{}",
-            lib_dir.join("x86_64-linux-gnu").display(),
-            lib_dir.join("i386-linux-gnu").display(),
-        );
-        flatpak_args.push(format!("--env=LD_LIBRARY_PATH={ld_val}"));
-
-        let dll_val = format!(
-            "{}:{}",
-            lib_dir.join("vkd3d").display(),
-            lib_dir.join("wine").display(),
-        );
-        flatpak_args.push(format!("--env=WINEDLLPATH={dll_val}"));
-    }
-
-    // Grant full home directory access inside Heroic's sandbox. Using --filesystem=home
-    // keeps the filesystem layout identical to the host, so Wine's Z: drive (symlink to /)
-    // resolves all paths correctly. Path-specific --filesystem= flags create additional
-    // bind mounts that Wine may assign separate drive letters (X:), breaking tools like
-    // BodySlide that resolve paths relative to their own exe location.
-    flatpak_args.push("--filesystem=home".to_string());
-
-    // CWD: use the tool's explicit working_dir when set, otherwise the exe's parent directory.
-    // The exe parent is the right default for bat/script wrappers that use %CD% to find
-    // siblings (e.g. Complex Sorter locating FO4Edit.exe next to itself).
-    let cwd = effective_cwd(tool, game);
-    flatpak_args.push(format!("--cwd={}", cwd.display()));
-
-    flatpak_args.push(HEROIC_FLATPAK_ID.to_string());
-    flatpak_args.push(tool.exe_path.clone());
-
-    for arg in tool.custom_args.split_whitespace() {
-        flatpak_args.push(arg.to_string());
-    }
-
-    let mut cmd = Command::new("flatpak");
-    cmd.args(flatpak_args);
-    cmd
-}
-
-/// Build a command that runs Wine directly (native Heroic install).
+/// Build a command that runs Wine directly.
 ///
 /// CWD is set to the game root so modding tools can find game files.
 fn build_native_command(

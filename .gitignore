@@ -25,3 +25,4 @@ target
 AppDir/
 *.AppImage
 squashfs-root/
+*.snap

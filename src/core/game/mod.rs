@@ -25,7 +25,6 @@ pub struct KnownGameOption {
     pub store: &'static str,
     pub data_subdir: &'static str,
     pub engine: &'static GameEngine,
-    pub experimental: bool,
 }
 
 /// For Eclipse, returns the Wine user's `Documents/` folder (two levels above `deploy_dir`).
@@ -62,7 +61,6 @@ pub fn known_game_options() -> Vec<KnownGameOption> {
             },
             data_subdir: k.data_subdir,
             engine: &k.engine,
-            experimental: k.experimental,
         })
         .collect()
 }

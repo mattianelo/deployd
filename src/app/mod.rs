@@ -258,26 +258,6 @@ impl Component for App {
                                 },
 
                                 gtk::Button {
-                                    set_icon_name: "software-update-available-symbolic",
-                                    set_label: "Check for Updates",
-                                    set_tooltip_text: Some("Check for updates on Nexus"),
-                                    add_css_class: "flat",
-                                    #[watch]
-                                    set_sensitive: !model.is_busy() && model.has_games(),
-                                    connect_clicked => AppMsg::CheckUpdatesClicked,
-                                },
-
-                                gtk::Button {
-                                    set_icon_name: "preferences-other-symbolic",
-                                    set_label: "Manage Tools",
-                                    set_tooltip_text: Some("Manage Tools"),
-                                    add_css_class: "flat",
-                                    #[watch]
-                                    set_sensitive: model.has_games(),
-                                    connect_clicked => AppMsg::ManageToolsClicked,
-                                },
-
-                                gtk::Button {
                                     set_icon_name: "view-refresh-symbolic",
                                     set_label: "Reset Vanilla Baseline",
                                     set_tooltip_text: Some("Re-snapshot the current game folder as the new vanilla state — use after a clean game reinstall"),
@@ -1074,7 +1054,6 @@ AppMsg::InstallDownload(idx) => self.handle_install_download(idx, &sender),
                 self.handle_open_pre_install_dialog_replacing(id, priority, root, &sender)
             }
             AppMsg::SortWithLoot => self.handle_sort_with_loot(&sender),
-            AppMsg::RescanGames => self.handle_rescan_games(&sender),
             AppMsg::EnableAllMods => self.handle_enable_all_mods(&sender),
             AppMsg::DisableAllMods => self.handle_disable_all_mods(&sender),
             AppMsg::EnableAllPlugins => self.handle_enable_all_plugins(&sender),
@@ -1103,9 +1082,6 @@ AppMsg::InstallDownload(idx) => self.handle_install_download(idx, &sender),
             AppMsg::SelfUpdateDownload => {
                 self.notifications_menu_btn.popdown();
                 self.handle_self_update_download(&sender);
-            }
-            AppMsg::DaoExperimentalChanged(enabled) => {
-                self.handle_dao_experimental_changed(enabled, &sender)
             }
             AppMsg::SaveModOrderSnapshot(name) => {
                 self.handle_save_mod_order_snapshot(name, &sender)
@@ -1192,7 +1168,6 @@ AppMsg::InstallDownload(idx) => self.handle_install_download(idx, &sender),
             }
             #[cfg(feature = "loot")]
             AppCmdMsg::LootSortDone(result) => self.handle_cmd_loot_sort_done(result, &sender),
-            AppCmdMsg::GamesRescanned(games) => self.handle_cmd_games_rescanned(games),
             AppCmdMsg::ModFilesLoaded(files) => self.handle_cmd_mod_files_loaded(files),
             AppCmdMsg::SaveModeToggled(result) => {
                 self.handle_cmd_save_mode_toggled(result, &sender)

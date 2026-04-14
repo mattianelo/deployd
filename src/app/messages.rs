@@ -184,8 +184,6 @@ InstallDownload(DynamicIndex),
     OpenPreInstallDialogReplacing(String, i32),
     /// Sort the Plugin Order panel using LOOT's masterlist algorithm.
     SortWithLoot,
-    /// Re-run game detection and append any newly found games.
-    RescanGames,
     /// Enable all mods for the current game.
     EnableAllMods,
     /// Disable all mods for the current game.
@@ -203,8 +201,6 @@ InstallDownload(DynamicIndex),
     ToggleProfileSaveMode,
     /// Manually sync the active profile's saves from the game save directory.
     SyncSaves,
-    /// User toggled Dragon Age: Origins experimental support in settings.
-    DaoExperimentalChanged(bool),
     /// Save the current mod order as a named snapshot.
     SaveModOrderSnapshot(String),
     /// Save the current plugin order as a named snapshot.
@@ -307,8 +303,6 @@ pub enum AppCmdMsg {
     /// Result of the async LOOT sort; payload is (sorted filenames, dirty-info map) on success.
     #[cfg(feature = "loot")]
     LootSortDone(Result<(Vec<String>, HashMap<String, PluginDirtyInfo>), String>),
-    /// All games found during a rescan; caller diffs against self.games.
-    GamesRescanned(Vec<Game>),
     /// Per-file list loaded for the open mod properties dialog.
     ModFilesLoaded(Vec<ModFile>),
     /// Result of toggling profile save mode (+ optional save backup/restore op).
