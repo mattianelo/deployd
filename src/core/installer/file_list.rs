@@ -8,11 +8,12 @@ use walkdir::WalkDir;
 use crate::dlog;
 use crate::utils::fomod_resolver;
 
+/// `(file_list, stripped_wrapper)` — the file list plus the optional wrapper dir name.
+type FileListResult = (Vec<(PathBuf, PathBuf)>, Option<String>);
+
 /// Returns (file_list, stripped_wrapper) where stripped_wrapper is the name of the
 /// single wrapper directory removed from the archive root (if any).
-pub(super) fn resolve_file_list(
-    extracted_root: &Path,
-) -> Result<(Vec<(PathBuf, PathBuf)>, Option<String>)> {
+pub(super) fn resolve_file_list(extracted_root: &Path) -> Result<FileListResult> {
     // Check for FOMOD first
     if let Some(config_path) = fomod_resolver::detect_fomod(extracted_root) {
         let mappings = fomod_resolver::resolve_fomod_default(extracted_root, &config_path)?;

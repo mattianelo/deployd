@@ -18,11 +18,11 @@ use crate::utils::fomod_resolver;
 
 use super::types::{InitData, LoadedData, NxmDownloadResult};
 
-/// A game entry produced by the game setup dialog, carrying the user-confirmed configuration.
+/// A game entry produced by the game setup dialog or welcome wizard, carrying the user-confirmed configuration.
 #[derive(Debug, Clone)]
 pub struct GameConfig {
     pub game: Game,
-    /// `true` if manually added by the user (not auto-detected).
+    /// `true` if manually added by the user.
     pub custom: bool,
 }
 
@@ -104,7 +104,7 @@ pub enum AppMsg {
     CheckUpdatesClicked,
     ToggleDownloads,
     SetDownloadsVisible(bool),
-InstallDownload(DynamicIndex),
+    InstallDownload(DynamicIndex),
     /// Reinstall an already-installed download, replacing the existing mod.
     ReinstallDownload(DynamicIndex),
     ClearDownloadMetadata(DynamicIndex),
@@ -182,6 +182,12 @@ InstallDownload(DynamicIndex),
     OpenPreInstallDialog,
     /// Open the pre-install dialog and replace the given mod (id, old_priority) after successful install.
     OpenPreInstallDialogReplacing(String, i32),
+    /// Show the first-launch welcome wizard.
+    ShowWelcomeWizard,
+    /// The welcome wizard was confirmed — apply game configuration.
+    WelcomeWizardConfirmed(Vec<GameConfig>, Vec<String>),
+    /// The welcome wizard was closed without confirming.
+    WelcomeWizardSkipped,
     /// Sort the Plugin Order panel using LOOT's masterlist algorithm.
     SortWithLoot,
     /// Enable all mods for the current game.

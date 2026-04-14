@@ -1,13 +1,13 @@
 use std::path::PathBuf;
 
-use gtk::prelude::*;
 use gtk::gio;
+use gtk::prelude::*;
 use relm4::prelude::*;
 
 use crate::core::deployer;
 
-use super::messages::{AppCmdMsg, AppMsg};
 use super::App;
+use super::messages::{AppCmdMsg, AppMsg};
 
 impl App {
     pub(crate) fn handle_deploy_clicked(
@@ -29,7 +29,10 @@ impl App {
             return;
         }
 
-        let current_id = self.profiles.get(self.active_profile_idx).map(|p| p.id.clone());
+        let current_id = self
+            .profiles
+            .get(self.active_profile_idx)
+            .map(|p| p.id.clone());
         let mismatch = self
             .last_deployed_profile_id
             .as_ref()
@@ -101,9 +104,16 @@ impl App {
         });
     }
 
-    pub(crate) fn handle_purge_clicked(&mut self, root: &adw::Window, sender: &ComponentSender<Self>) {
+    pub(crate) fn handle_purge_clicked(
+        &mut self,
+        root: &adw::Window,
+        sender: &ComponentSender<Self>,
+    ) {
         self.overflow_menu_btn.popdown();
-        let current_id = self.profiles.get(self.active_profile_idx).map(|p| p.id.clone());
+        let current_id = self
+            .profiles
+            .get(self.active_profile_idx)
+            .map(|p| p.id.clone());
         let mismatch = self
             .last_deployed_profile_id
             .as_ref()
@@ -179,7 +189,9 @@ impl App {
         root: &adw::Window,
         sender: &ComponentSender<Self>,
     ) {
-        let Some(game) = self.selected_game().cloned() else { return };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
         let dialog = gtk::FileDialog::builder()
             .title(format!("Confirm {} Game Folder", game.title))
             .modal(true)
@@ -201,7 +213,9 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         let idx = self.selected_game_idx;
-        let Some(game) = self.games.get_mut(idx) else { return };
+        let Some(game) = self.games.get_mut(idx) else {
+            return;
+        };
         game.path = path.clone();
         if let Some(tracker) = self.tracker.clone() {
             let game_id = game.id.clone();
@@ -282,7 +296,8 @@ impl App {
                         "No deployed files tracked — the game folder may already be clean, or try redeploying first",
                     );
                 } else {
-                    self.toaster.toast(&format!("Purged {count} deployed files"));
+                    self.toaster
+                        .toast(&format!("Purged {count} deployed files"));
                 }
             }
             Err(e) => {

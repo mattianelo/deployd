@@ -56,7 +56,11 @@ pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
         .map(|f| (f.game_rel_lowercase.as_str(), f))
         .collect();
 
-    eprintln!("[deployd] delta: deployed={}, winners={}", deployed.len(), winners.len());
+    eprintln!(
+        "[deployd] delta: deployed={}, winners={}",
+        deployed.len(),
+        winners.len()
+    );
 
     let mut to_remove: Vec<&ModFile> = Vec::new();
     for dep in &deployed {
@@ -76,7 +80,11 @@ pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
         }
     }
 
-    eprintln!("[deployd] delta: to_remove={}, to_add={}", to_remove.len(), to_add.len());
+    eprintln!(
+        "[deployd] delta: to_remove={}, to_add={}",
+        to_remove.len(),
+        to_add.len()
+    );
     if !to_add.is_empty() {
         let w = &to_add[0];
         if let Some(dep) = deployed_map.get(w.game_rel_lowercase.as_str()) {
@@ -84,7 +92,10 @@ pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
             eprintln!("[deployd]   deployed cache_path={:?}", dep.cache_path);
             eprintln!("[deployd]   winner  cache_path={:?}", w.cache_path);
         } else {
-            eprintln!("[deployd] sample new path={:?} (not in deployed_map)", w.game_rel_lowercase);
+            eprintln!(
+                "[deployd] sample new path={:?} (not in deployed_map)",
+                w.game_rel_lowercase
+            );
         }
     }
 
@@ -110,7 +121,7 @@ pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
     for f in &to_add {
         let cache_file = PathBuf::from(&f.cache_path);
 
-            if f.game_rel_lowercase.ends_with('/') {
+        if f.game_rel_lowercase.ends_with('/') {
             let docs = docs_base(&game_data);
             let (base, rel): (&PathBuf, &str) =
                 if let Some(root_rel) = f.game_rel_original.strip_prefix("../") {
@@ -181,8 +192,8 @@ pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
                         && entry.file_name().eq_ignore_ascii_case(fname)
                         && entry_path != deploy_target
                     {
-                        let was_ours = deployed_lower
-                            .contains(&entry_path.to_string_lossy().to_lowercase());
+                        let was_ours =
+                            deployed_lower.contains(&entry_path.to_string_lossy().to_lowercase());
                         if was_ours {
                             let _ = fs::remove_file(&entry_path);
                         }
@@ -221,13 +232,17 @@ pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
         .iter()
         .map(|f| f.game_rel_lowercase.as_str())
         .collect();
-    tracker.remove_deployed_files(&game.id, &remove_paths).await?;
-    tracker.record_deployed_files(&game.id, &newly_linked).await?;
+    tracker
+        .remove_deployed_files(&game.id, &remove_paths)
+        .await?;
+    tracker
+        .record_deployed_files(&game.id, &newly_linked)
+        .await?;
 
-    if game.engine == GameEngine::Eclipse {
-        if let Err(e) = game::write_addins_xml(&game::deploy_dir(game)) {
-            eprintln!("[deployd] WARNING: Addins.xml update failed: {e}");
-        }
+    if game.engine == GameEngine::Eclipse
+        && let Err(e) = game::write_addins_xml(&game::deploy_dir(game))
+    {
+        eprintln!("[deployd] WARNING: Addins.xml update failed: {e}");
     }
     if game.engine == GameEngine::Bethesda {
         let plugins = tracker.list_plugins(&game.id).await?;
@@ -265,7 +280,7 @@ pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
 /// Handles the case where a tool (e.g. xEdit safe-save) broke the hardlink:
 /// the on-disk file has a new inode while the cache still holds the original.
 /// In-place saves (same inode) are a no-op.
-async fn bake_modified_plugins(game: &Game, tracker: &Tracker, game_data: &PathBuf) {
+async fn bake_modified_plugins(game: &Game, tracker: &Tracker, game_data: &Path) {
     use std::os::unix::fs::MetadataExt;
     let Ok(plugin_files) = tracker.get_deployed_plugin_files(&game.id).await else {
         return;
@@ -283,21 +298,18 @@ async fn bake_modified_plugins(game: &Game, tracker: &Tracker, game_data: &PathB
             Ok(m) => m.ino(),
             Err(_) => continue,
         };
-        if disk_ino != cache_ino {
-            if let Err(e) = fs::copy(&disk_path, cache_path) {
-                eprintln!(
-                    "[deployd] WARNING: could not bake modified plugin \
-                     '{game_rel_orig}' to cache: {e}"
-                );
-            }
+        if disk_ino != cache_ino
+            && let Err(e) = fs::copy(&disk_path, cache_path)
+        {
+            eprintln!(
+                "[deployd] WARNING: could not bake modified plugin \
+                 '{game_rel_orig}' to cache: {e}"
+            );
         }
     }
 }
 
-async fn compute_winners(
-    tracker: &Tracker,
-    game_id: &str,
-) -> Result<(Vec<ModFile>, usize)> {
+async fn compute_winners(tracker: &Tracker, game_id: &str) -> Result<(Vec<ModFile>, usize)> {
     let all_files = tracker.get_all_mod_files_by_priority(game_id).await?;
     let mut winners: Vec<ModFile> = Vec::new();
     let mut conflicts_resolved: usize = 0;
@@ -353,7 +365,7 @@ fn remove_deployed_file(f: &ModFile, game: &Game, game_data: &PathBuf) {
     }
 }
 
-fn resolve_deploy_path(game_rel: &str, game_root: &PathBuf, game_data: &PathBuf) -> PathBuf {
+fn resolve_deploy_path(game_rel: &str, game_root: &Path, game_data: &Path) -> PathBuf {
     if let Some(root_rel) = game_rel.strip_prefix("../") {
         game_root.join(root_rel)
     } else if let Some(docs_rel) = game_rel.strip_prefix(DOCS_PREFIX) {
@@ -363,12 +375,12 @@ fn resolve_deploy_path(game_rel: &str, game_root: &PathBuf, game_data: &PathBuf)
     }
 }
 
-fn docs_base(game_data: &PathBuf) -> PathBuf {
+fn docs_base(game_data: &Path) -> PathBuf {
     game_data
         .parent()
         .and_then(|p| p.parent())
         .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| game_data.clone())
+        .unwrap_or_else(|| game_data.to_path_buf())
 }
 
 /// Build a lowercase→best-cased directory name map from winner paths.
@@ -407,12 +419,12 @@ fn build_dir_canonical_map(winners: &[ModFile]) -> HashMap<String, String> {
 }
 
 fn create_dirs_case_insensitive(
-    base: &PathBuf,
+    base: &Path,
     components: &[&str],
     canonical: &HashMap<String, String>,
     dir_cache: &mut HashMap<PathBuf, HashMap<String, PathBuf>>,
 ) -> Result<PathBuf> {
-    let mut current = base.clone();
+    let mut current = base.to_path_buf();
 
     for component in components {
         if component.is_empty() {
@@ -454,7 +466,7 @@ fn create_dirs_case_insensitive(
 }
 
 fn ensure_dirs_case_insensitive(
-    base: &PathBuf,
+    base: &Path,
     rel_path: &str,
     canonical: &HashMap<String, String>,
     dir_cache: &mut HashMap<PathBuf, HashMap<String, PathBuf>>,

@@ -5,15 +5,11 @@ use crate::core::game;
 use crate::core::tool_launcher;
 use crate::ui::tool_manager::{ToolManager, ToolManagerOutput};
 
-use super::super::messages::{AppCmdMsg, AppMsg};
 use super::super::App;
+use super::super::messages::{AppCmdMsg, AppMsg};
 
 impl App {
-    pub(crate) fn handle_launch_tool(
-        &mut self,
-        tool_id: String,
-        sender: &ComponentSender<Self>,
-    ) {
+    pub(crate) fn handle_launch_tool(&mut self, tool_id: String, sender: &ComponentSender<Self>) {
         if self.needs_deploy {
             self.toaster
                 .toast("Deploy your mods before launching tools");
@@ -24,7 +20,9 @@ impl App {
             self.toaster.toast("Tool not found");
             return;
         };
-        let Some(game) = self.selected_game().cloned() else { return };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
 
         let tool_name = tool.name.clone();
         let exit_sender = sender.input_sender().clone();
@@ -69,7 +67,9 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         self.overflow_menu_btn.popdown();
-        let Some(game) = self.selected_game() else { return };
+        let Some(game) = self.selected_game() else {
+            return;
+        };
         let game_id = game.id.clone();
         let game_path = game.path.clone();
         let game_engine = game.engine.clone();
@@ -80,7 +80,14 @@ impl App {
         self.tool_manager_dialog = Some(
             ToolManager::builder()
                 .transient_for(root)
-                .launch((game_id, tools, game_path, wine_prefix, game_engine, deploy_dir))
+                .launch((
+                    game_id,
+                    tools,
+                    game_path,
+                    wine_prefix,
+                    game_engine,
+                    deploy_dir,
+                ))
                 .forward(sender.input_sender(), |output| match output {
                     ToolManagerOutput::ToolAdded(tool) => AppMsg::ToolAdded(tool),
                     ToolManagerOutput::ToolRemoved(id) => AppMsg::ToolRemoved(id),
@@ -113,11 +120,7 @@ impl App {
         }
     }
 
-    pub(crate) fn handle_tool_removed(
-        &mut self,
-        tool_id: String,
-        sender: &ComponentSender<Self>,
-    ) {
+    pub(crate) fn handle_tool_removed(&mut self, tool_id: String, sender: &ComponentSender<Self>) {
         self.tools.retain(|t| t.id != tool_id);
         self.rebuild_tool_buttons(sender);
 

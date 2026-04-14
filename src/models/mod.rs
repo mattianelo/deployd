@@ -1,11 +1,12 @@
 pub mod download;
-pub mod order_snapshot;
 pub mod game;
 pub mod group;
 pub mod manifest;
 pub mod mod_entry;
 pub mod nexus;
+pub mod order_snapshot;
 pub mod plugin;
 pub mod profile;
 pub mod profile_export;
+pub mod proton_release;
 pub mod tool;

@@ -1,6 +1,5 @@
 pub mod deploy;
 pub mod downloads;
-pub mod order_snapshots;
 pub mod external;
 pub mod free_fns;
 pub mod helpers;
@@ -8,17 +7,16 @@ pub mod init;
 pub mod install;
 pub mod messages;
 pub mod mods;
+pub mod order_snapshots;
 pub mod plugins;
 pub mod profiles;
 pub mod types;
 
 pub use self::messages::{AppCmdMsg, AppMsg};
 
-
-
 use adw::prelude::*;
-use gtk::prelude::*;
 use gtk::glib;
+use gtk::prelude::*;
 use relm4::prelude::*;
 
 mod state;
@@ -265,6 +263,16 @@ impl Component for App {
                                     #[watch]
                                     set_sensitive: !model.is_busy() && model.has_games(),
                                     connect_clicked => AppMsg::ResetVanillaBaseline,
+                                },
+
+                                gtk::Button {
+                                    set_icon_name: "applications-engineering-symbolic",
+                                    set_label: "Manage Tools",
+                                    set_tooltip_text: Some("Add and configure external modding tools"),
+                                    add_css_class: "flat",
+                                    #[watch]
+                                    set_sensitive: !model.is_busy() && model.has_games(),
+                                    connect_clicked => AppMsg::ManageToolsClicked,
                                 },
 
                                 gtk::Button {
@@ -847,7 +855,7 @@ impl Component for App {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let (model, game_ids, games_for_init, profile_rename_btn, search_bar) =
+        let (model, _game_ids, _games_for_init, profile_rename_btn, search_bar) =
             init::build_model(nxm_link, &sender);
 
         let toast_overlay = model.toaster.overlay_widget();
@@ -875,11 +883,9 @@ impl Component for App {
         // keystroke into the search entry, causing the bar to flicker open/closed
         // whenever the user types while some other widget has focus.
 
-        init::wire_drag_drop(&sender, &mod_list, &plugin_list);
+        init::wire_drag_drop(&sender, mod_list, plugin_list);
 
-        sender.oneshot_command(async move {
-            init::load_init_data(game_ids, games_for_init).await
-        });
+        sender.oneshot_command(async move { init::load_init_data().await });
 
         ComponentParts { model, widgets }
     }
@@ -955,6 +961,13 @@ impl Component for App {
             AppMsg::GamesConfigured(configs, hidden_ids) => {
                 self.handle_games_configured(configs, hidden_ids, &sender)
             }
+            AppMsg::ShowWelcomeWizard => self.handle_show_welcome_wizard(root, &sender),
+            AppMsg::WelcomeWizardConfirmed(configs, hidden_ids) => {
+                self.handle_welcome_wizard_confirmed(configs, hidden_ids, &sender)
+            }
+            AppMsg::WelcomeWizardSkipped => {
+                self.welcome_wizard = None;
+            }
             AppMsg::RemoveGame(id) => self.handle_remove_game(id, &sender),
             AppMsg::RemoveCurrentGame => {
                 if let Some(game) = self.games.get(self.selected_game_idx) {
@@ -967,7 +980,7 @@ impl Component for App {
             AppMsg::CheckUpdatesClicked => self.handle_check_updates(&sender),
             AppMsg::ToggleDownloads => self.handle_toggle_downloads(),
             AppMsg::SetDownloadsVisible(v) => self.handle_set_downloads_visible(v),
-AppMsg::InstallDownload(idx) => self.handle_install_download(idx, &sender),
+            AppMsg::InstallDownload(idx) => self.handle_install_download(idx, &sender),
             AppMsg::ReinstallDownload(idx) => self.handle_reinstall_download(idx, &sender),
             AppMsg::ClearDownloadMetadata(idx) => self.handle_clear_download_metadata(idx, &sender),
             AppMsg::RenameDownload(idx) => self.handle_rename_download(idx, root, &sender),
@@ -1089,18 +1102,12 @@ AppMsg::InstallDownload(idx) => self.handle_install_download(idx, &sender),
             AppMsg::SavePluginOrderSnapshot(name) => {
                 self.handle_save_plugin_order_snapshot(name, &sender)
             }
-            AppMsg::LoadModOrderSnapshot(id) => {
-                self.handle_load_mod_order_snapshot(id, &sender)
-            }
+            AppMsg::LoadModOrderSnapshot(id) => self.handle_load_mod_order_snapshot(id, &sender),
             AppMsg::LoadPluginOrderSnapshot(id) => {
                 self.handle_load_plugin_order_snapshot(id, &sender)
             }
-            AppMsg::DeleteModOrderSnapshot(id) => {
-                self.handle_delete_order_snapshot(id, &sender)
-            }
-            AppMsg::DeletePluginOrderSnapshot(id) => {
-                self.handle_delete_order_snapshot(id, &sender)
-            }
+            AppMsg::DeleteModOrderSnapshot(id) => self.handle_delete_order_snapshot(id, &sender),
+            AppMsg::DeletePluginOrderSnapshot(id) => self.handle_delete_order_snapshot(id, &sender),
         }
     }
 
@@ -1124,9 +1131,7 @@ AppMsg::InstallDownload(idx) => self.handle_install_download(idx, &sender),
             AppCmdMsg::PurgeDone(result) => self.handle_cmd_purge_done(result),
             AppCmdMsg::PrioritySaved(result) => self.handle_cmd_priority_saved(result),
             AppCmdMsg::PluginOrderSaved(result) => self.handle_cmd_plugin_order_saved(result),
-            AppCmdMsg::ProfileSwitched(result) => {
-                self.handle_cmd_profile_switched(result, &sender)
-            }
+            AppCmdMsg::ProfileSwitched(result) => self.handle_cmd_profile_switched(result, &sender),
             AppCmdMsg::ProfileCreated(result) => self.handle_cmd_profile_created(result, &sender),
             AppCmdMsg::ProfileCloned(result) => self.handle_cmd_profile_cloned(result, &sender),
             AppCmdMsg::ProfileRenamed(result) => self.handle_cmd_profile_renamed(result),
@@ -1157,9 +1162,7 @@ AppMsg::InstallDownload(idx) => self.handle_install_download(idx, &sender),
             AppCmdMsg::VanillaEntriesUpdated(result) => {
                 self.handle_cmd_vanilla_entries_updated(result, &sender)
             }
-            AppCmdMsg::ProfileImported(result) => {
-                self.handle_cmd_profile_imported(result, &sender)
-            }
+            AppCmdMsg::ProfileImported(result) => self.handle_cmd_profile_imported(result, &sender),
             AppCmdMsg::EmptyModCreated(result) => {
                 self.handle_cmd_empty_mod_created(result, &sender)
             }
@@ -1175,7 +1178,12 @@ AppMsg::InstallDownload(idx) => self.handle_install_download(idx, &sender),
             AppCmdMsg::SavesSynced(result) => self.handle_cmd_saves_synced(result),
             AppCmdMsg::LastDeployedProfileLoaded(id) => self.last_deployed_profile_id = id,
             AppCmdMsg::AppUpdateResult(result) => self.handle_cmd_app_update_result(result),
-            AppCmdMsg::GamesPersisted => sender.input(AppMsg::GameSelected(0)),
+            AppCmdMsg::GamesPersisted => {
+                // Reset the selection sentinel so handle_game_selected's same-index
+                // guard does not skip the reload when the index was already 0.
+                self.selected_game_idx = usize::MAX;
+                sender.input(AppMsg::GameSelected(0));
+            }
             AppCmdMsg::OrderSnapshotsLoaded(mod_snaps, plugin_snaps) => {
                 self.mod_order_snapshots = mod_snaps;
                 self.plugin_order_snapshots = plugin_snaps;
@@ -1202,18 +1210,23 @@ AppMsg::InstallDownload(idx) => self.handle_install_download(idx, &sender),
                     self.apply_loaded_data(data, &sender);
                     self.toaster.toast("Mod order restored");
                 }
-                Err(e) => self.toaster.toast(&format!("Failed to restore snapshot: {e}")),
+                Err(e) => self
+                    .toaster
+                    .toast(&format!("Failed to restore snapshot: {e}")),
             },
             AppCmdMsg::PluginOrderSnapshotRestored(result) => match result {
                 Ok(data) => {
                     self.apply_loaded_data(data, &sender);
                     self.toaster.toast("Plugin order restored");
                 }
-                Err(e) => self.toaster.toast(&format!("Failed to restore snapshot: {e}")),
+                Err(e) => self
+                    .toaster
+                    .toast(&format!("Failed to restore snapshot: {e}")),
             },
             AppCmdMsg::OrderSnapshotDeleted(result) => {
                 if let Err(e) = result {
-                    self.toaster.toast(&format!("Failed to delete snapshot: {e}"));
+                    self.toaster
+                        .toast(&format!("Failed to delete snapshot: {e}"));
                 }
                 self.reload_order_snapshots(&sender);
             }

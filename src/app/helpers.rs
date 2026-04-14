@@ -5,11 +5,13 @@ use crate::core::game;
 use crate::models::game::Game;
 use crate::models::profile::SaveMode;
 use crate::ui::mod_list::ModListItemKind;
-use crate::ui::pre_install_dialog::{PreInstallDialog, PreInstallDialogInit, PreInstallDialogOutput};
+use crate::ui::pre_install_dialog::{
+    PreInstallDialog, PreInstallDialogInit, PreInstallDialogOutput,
+};
 
+use super::App;
 use super::messages::AppMsg;
 use super::types::SearchScope;
-use super::App;
 
 impl App {
     pub(crate) fn selected_game(&self) -> Option<&Game> {
@@ -78,8 +80,7 @@ impl App {
         };
         let mod_name = pending.mod_name.clone();
         let is_fomod = pending.fomod_config.is_some();
-        let is_bethesda =
-            pending.game.engine == crate::models::game::GameEngine::Bethesda;
+        let is_bethesda = pending.game.engine == crate::models::game::GameEngine::Bethesda;
         let file_preview = if let Some(ref fl) = pending.file_list {
             let rules = crate::core::rules::rules_for_game(&pending.game.id);
             crate::ui::pre_install_dialog::file_preview_from_list(fl, &rules)
@@ -188,7 +189,6 @@ impl App {
             })
             .unwrap_or_else(|| mod_id.to_string())
     }
-
 
     /// Number of distinct notification items currently in the popover.
     pub(crate) fn notifications_count(&self) -> usize {

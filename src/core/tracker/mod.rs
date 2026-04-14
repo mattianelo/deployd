@@ -259,6 +259,7 @@ impl Tracker {
         .execute(&pool)
         .await?;
 
+        migrations::migrate_game_ids(&pool).await?;
         migrations::migrate_games_columns(&pool).await?;
         migrations::migrate_nexus_columns(&pool).await?;
         migrations::migrate_download_columns(&pool).await?;

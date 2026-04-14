@@ -98,7 +98,6 @@ pub fn launch_tool(
     Ok(pid)
 }
 
-
 /// Ensure the standard Bethesda Softworks registry key exists for modding tool discovery.
 ///
 /// GOG installers only create `GOG.com\Games\...` keys, but tools like xEdit look for
@@ -223,14 +222,14 @@ fn effective_cwd(tool: &Tool, game: &Game) -> PathBuf {
 
 /// If `wine_bin` points to `wine` and a `wine64` sibling exists, prefer `wine64`.
 /// Modern Proton Wine uses WoW64 so `wine64` handles both 32/64-bit Windows apps.
-fn resolve_wine64(wine_bin: &PathBuf) -> PathBuf {
+fn resolve_wine64(wine_bin: &Path) -> PathBuf {
     if wine_bin.file_name().is_some_and(|n| n == "wine") {
         let wine64 = wine_bin.with_file_name("wine64");
         if wine64.exists() {
             return wine64;
         }
     }
-    wine_bin.clone()
+    wine_bin.to_path_buf()
 }
 
 /// Pre-configure BodySlide's Config.xml with the correct `GameDataPath` and `TargetGame`.
@@ -318,15 +317,13 @@ fn ensure_named_mods_drive(wine_config: &WineConfig) {
     }
 
     let link = dosdevices.join("m:");
-    if link.exists() || link.is_symlink() {
-        if link.is_symlink() {
-            if let Ok(target) = std::fs::read_link(&link) {
-                if target == named_mods {
-                    return; // Already correct.
-                }
-            }
-            let _ = std::fs::remove_file(&link);
+    if link.is_symlink() {
+        if let Ok(target) = std::fs::read_link(&link)
+            && target == named_mods
+        {
+            return; // Already correct.
         }
+        let _ = std::fs::remove_file(&link);
     }
 
     #[cfg(unix)]

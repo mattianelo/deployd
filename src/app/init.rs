@@ -1,24 +1,24 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use gtk::prelude::*;
 use gtk::glib;
+use gtk::prelude::*;
 use relm4::abstractions::Toaster;
 use relm4::factory::FactoryVecDeque;
 use relm4::prelude::*;
 
 use crate::core::game;
 use crate::core::tracker::Tracker;
-use crate::models::game::Game;
+use crate::models::game::{Game, GameEngine};
 use crate::ui::download_row::DownloadRowOutput;
 use crate::ui::mod_list::ModListItemOutput;
 use crate::ui::plugin_list::PluginRowOutput;
 use crate::utils::paths;
 
-use super::{App, AppMsg, AppCmdMsg};
+use super::free_fns::load_game_data;
 use super::free_fns::{clear_drop_indicators, update_drop_indicator};
 use super::types::{DownloadSort, InitData, SearchScope};
-use super::free_fns::load_game_data;
+use super::{App, AppCmdMsg, AppMsg};
 
 /// Builds the initial App model, wires up factory lists, constructs UI helpers
 /// (profile rename popover, search bar), and registers the global NXM sender.
@@ -39,9 +39,7 @@ pub(super) fn build_model(
                 }
                 ModListItemOutput::RenameMod(index, name) => AppMsg::RenameMod(index, name),
                 ModListItemOutput::OpenProperties(index) => AppMsg::OpenModProperties(index),
-                ModListItemOutput::ToggleGroupCollapse(index) => {
-                    AppMsg::ToggleGroupCollapse(index)
-                }
+                ModListItemOutput::ToggleGroupCollapse(index) => AppMsg::ToggleGroupCollapse(index),
                 ModListItemOutput::DeleteGroup(index) => AppMsg::DeleteGroup(index),
                 ModListItemOutput::RenameGroup(index, name) => AppMsg::RenameGroup(index, name),
             });
@@ -66,9 +64,11 @@ pub(super) fn build_model(
                 DownloadRowOutput::Rename(index) => AppMsg::RenameDownload(index),
             });
 
-    let games = game::detect_games();
+    // Games start empty; they are populated from the DB (persisted games) or via
+    // the welcome wizard / Manage Games dialog.
+    let games: Vec<Game> = game::detect_games();
 
-    // Build dropdown model from detected game titles (StringList allows dynamic updates)
+    // Build dropdown model (StringList allows dynamic updates after wizard completes)
     let game_names: Vec<&str> = games.iter().map(|g| g.title.as_str()).collect();
     let game_model = gtk::StringList::new(&game_names);
     let game_dropdown = gtk::DropDown::new(Some(game_model.clone()), None::<gtk::Expression>);
@@ -81,14 +81,16 @@ pub(super) fn build_model(
             .ellipsize(gtk::pango::EllipsizeMode::End)
             .xalign(0.0_f32)
             .build();
-        item.downcast_ref::<gtk::ListItem>().unwrap().set_child(Some(&label));
+        item.downcast_ref::<gtk::ListItem>()
+            .unwrap()
+            .set_child(Some(&label));
     });
     game_factory.connect_bind(|_, item| {
         let list_item = item.downcast_ref::<gtk::ListItem>().unwrap();
-        if let Some(s) = list_item.item().and_downcast::<gtk::StringObject>() {
-            if let Some(lbl) = list_item.child().and_downcast::<gtk::Label>() {
-                lbl.set_text(&s.string());
-            }
+        if let Some(s) = list_item.item().and_downcast::<gtk::StringObject>()
+            && let Some(lbl) = list_item.child().and_downcast::<gtk::Label>()
+        {
+            lbl.set_text(&s.string());
         }
     });
     game_dropdown.set_factory(Some(&game_factory));
@@ -97,21 +99,22 @@ pub(super) fn build_model(
     let game_list_factory = gtk::SignalListItemFactory::new();
     game_list_factory.connect_setup(|_, item| {
         let label = gtk::Label::builder().xalign(0.0_f32).build();
-        item.downcast_ref::<gtk::ListItem>().unwrap().set_child(Some(&label));
+        item.downcast_ref::<gtk::ListItem>()
+            .unwrap()
+            .set_child(Some(&label));
     });
     game_list_factory.connect_bind(|_, item| {
         let list_item = item.downcast_ref::<gtk::ListItem>().unwrap();
-        if let Some(s) = list_item.item().and_downcast::<gtk::StringObject>() {
-            if let Some(lbl) = list_item.child().and_downcast::<gtk::Label>() {
-                lbl.set_text(&s.string());
-            }
+        if let Some(s) = list_item.item().and_downcast::<gtk::StringObject>()
+            && let Some(lbl) = list_item.child().and_downcast::<gtk::Label>()
+        {
+            lbl.set_text(&s.string());
         }
     });
     game_dropdown.set_list_factory(Some(&game_list_factory));
 
     let profile_model = gtk::StringList::new(&[]);
-    let profile_dropdown =
-        gtk::DropDown::new(Some(profile_model.clone()), None::<gtk::Expression>);
+    let profile_dropdown = gtk::DropDown::new(Some(profile_model.clone()), None::<gtk::Expression>);
 
     let game_ids: Vec<String> = games.iter().map(|g| g.id.clone()).collect();
     let games_for_init = games.clone();
@@ -148,6 +151,7 @@ pub(super) fn build_model(
         tool_buttons_box,
         tool_manager_dialog: None,
         game_setup_dialog: None,
+        welcome_wizard: None,
         settings_dialog: None,
         mod_properties_dialog: None,
         absorb_dialog: None,
@@ -157,7 +161,7 @@ pub(super) fn build_model(
         downloads,
         all_downloads: Vec::new(),
         downloads_visible: false,
-active_download_id: None,
+        active_download_id: None,
         active_download_count: 0,
         global_active_downloads: 0,
         downloads_dir: paths::default_downloads_dir(),
@@ -275,7 +279,13 @@ active_download_id: None,
         });
     }
 
-    (model, game_ids, games_for_init, profile_rename_btn, search_bar)
+    (
+        model,
+        game_ids,
+        games_for_init,
+        profile_rename_btn,
+        search_bar,
+    )
 }
 
 /// Returns the insertion index for a drag-drop using half-row precision: cursor in the
@@ -419,10 +429,7 @@ pub(super) fn wire_drag_drop(
 
 /// Asynchronously opens the database, loads game data, and fetches initial
 /// settings.  Returns an `AppCmdMsg::Initialized` variant ready to dispatch.
-pub(super) async fn load_init_data(
-    game_ids: Vec<String>,
-    games_for_init: Vec<Game>,
-) -> AppCmdMsg {
+pub(super) async fn load_init_data() -> AppCmdMsg {
     let init = async {
         let db_path = paths::db_path().map_err(|e| e.to_string())?;
         if let Some(parent) = db_path.parent() {
@@ -431,12 +438,33 @@ pub(super) async fn load_init_data(
         let db_url = format!("sqlite://{}?mode=rwc", db_path.display());
         let tracker = Tracker::open(&db_url).await.map_err(|e| e.to_string())?;
 
-        // Determine which game to select: prefer last_game_id from settings
+        // Determine which game to select: prefer last_game_id from settings.
+        // detect_games() returns empty, so load persisted games from DB to find
+        // the game to initialise with.
         let last_game_id = tracker.get_setting("last_game_id").await.ok().flatten();
-        let selected_game_idx = last_game_id
-            .as_ref()
-            .and_then(|id| game_ids.iter().position(|g| g == id))
+        let persisted_games = tracker.load_persisted_games().await.unwrap_or_default();
+
+        let selected_persisted = last_game_id
+            .as_deref()
+            .and_then(|id| persisted_games.iter().find(|g| g.id == id))
+            .or_else(|| persisted_games.first());
+
+        let selected_game_idx = selected_persisted
+            .and_then(|g| persisted_games.iter().position(|p| p.id == g.id))
             .unwrap_or(0);
+
+        let init_game: Option<Game> = selected_persisted.map(|p| Game {
+            id: p.id.clone(),
+            title: p.title.clone(),
+            path: p.path.clone(),
+            data_subdir: p.data_subdir.clone(),
+            engine: match p.engine.as_str() {
+                "redengine" => GameEngine::REDEngine,
+                "eclipse" => GameEngine::Eclipse,
+                _ => GameEngine::Bethesda,
+            },
+            wine_prefix: p.wine_prefix.clone(),
+        });
 
         let (
             mods,
@@ -448,13 +476,9 @@ pub(super) async fn load_init_data(
             tools,
             vanilla_plugins,
             groups,
-        ) = if let Some(game) = games_for_init.get(selected_game_idx) {
-            // Ensure a default profile exists
-            tracker
-                .ensure_default_profile(&game.id)
-                .await
-                .map_err(|e| e.to_string())?;
-            let loaded = load_game_data(&tracker, game, false).await?;
+        ) = if let Some(game) = &init_game {
+            // sync_txt = true: honour any LOOT edits made while the app was closed.
+            let loaded = load_game_data(&tracker, game, true).await?;
             (
                 loaded.mods,
                 loaded.plugins,
@@ -509,12 +533,17 @@ pub(super) async fn load_init_data(
             tracker.load_rate_limits().await.unwrap_or(None)
         };
 
-        let persisted_games = tracker.load_persisted_games().await.unwrap_or_default();
         let hidden_game_ids = tracker.load_hidden_game_ids().await.unwrap_or_default();
 
-        let last_deployed_profile_id = if let Some(game) =
-            games_for_init.get(selected_game_idx)
-        {
+        let wizard_shown = tracker
+            .get_setting("welcome_wizard_shown")
+            .await
+            .ok()
+            .flatten()
+            .is_some();
+        let first_launch = !wizard_shown && persisted_games.is_empty();
+
+        let last_deployed_profile_id = if let Some(game) = &init_game {
             tracker
                 .get_setting(&format!("last_deployed_profile_{}", game.id))
                 .await
@@ -542,6 +571,7 @@ pub(super) async fn load_init_data(
             persisted_games,
             hidden_game_ids,
             last_deployed_profile_id,
+            first_launch,
         })
     };
     AppCmdMsg::Initialized(init.await)

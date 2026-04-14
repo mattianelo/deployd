@@ -3,13 +3,13 @@ use gtk::prelude::*;
 use relm4::factory::DynamicIndex;
 use relm4::prelude::*;
 
-use crate::core::{game, installer};
 use crate::core::installer::PrepareResult;
+use crate::core::{game, installer};
 use crate::models::download::DownloadStatus;
 use crate::ui::mod_list::ModListItemKind;
 
-use super::super::messages::{AppCmdMsg, AppMsg, PrepareResultMsg};
 use super::super::App;
+use super::super::messages::{AppCmdMsg, AppMsg, PrepareResultMsg};
 
 impl App {
     pub(crate) fn handle_toggle_downloads(&mut self) {
@@ -20,10 +20,7 @@ impl App {
         self.downloads_visible = visible;
     }
 
-    pub(crate) fn handle_download_sort_changed(
-        &mut self,
-        idx: u32,
-    ) {
+    pub(crate) fn handle_download_sort_changed(&mut self, idx: u32) {
         let new_sort = match idx {
             1 => crate::app::types::DownloadSort::Name,
             2 => crate::app::types::DownloadSort::Status,
@@ -85,8 +82,7 @@ impl App {
                 row.entry.metadata_fetched = false;
                 row.entry.nexus_file_name = None;
                 row.entry.nexus_is_primary = false;
-                if row.entry.status == DownloadStatus::Installed
-                    && row.entry.archive_path.is_some()
+                if row.entry.status == DownloadStatus::Installed && row.entry.archive_path.is_some()
                 {
                     row.entry.status = DownloadStatus::Downloaded;
                     row.entry.status_msg = String::new();
@@ -130,8 +126,7 @@ impl App {
             .margin_end(8)
             .build();
 
-        let dialog =
-            adw::MessageDialog::new(Some(root), Some("Rename Download"), None::<&str>);
+        let dialog = adw::MessageDialog::new(Some(root), Some("Rename Download"), None::<&str>);
         dialog.set_extra_child(Some(&entry));
         dialog.add_response("cancel", "Cancel");
         dialog.add_response("apply", "Apply");
@@ -254,11 +249,7 @@ impl App {
         self.active_download_id = Some(download_id.clone());
 
         // Update status to Extracting
-        self.update_download_status(
-            &download_id,
-            DownloadStatus::Extracting,
-            "Extracting...",
-        );
+        self.update_download_status(&download_id, DownloadStatus::Extracting, "Extracting...");
 
         // Feed into existing install pipeline
         self.installing = true;
@@ -425,7 +416,14 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         let idx = index.current_index();
-        let (download_id, nexus_mod_id, nexus_file_id, stored_domain, archive_filename) = {
+        let (
+            download_id,
+            nexus_mod_id,
+            nexus_file_id,
+            stored_domain,
+            archive_filename,
+            archive_hash,
+        ) = {
             let guard = self.downloads.guard();
             let Some(row) = guard.get(idx) else { return };
             let Some((nexus_mod_id, nexus_file_id, ref domain)) = row.entry.nexus_ids else {
@@ -442,12 +440,14 @@ impl App {
                 .as_ref()
                 .and_then(|p| p.file_name())
                 .map(|n| n.to_string_lossy().into_owned());
+            let archive_hash = row.entry.archive_hash.clone();
             (
                 row.entry.id.clone(),
                 nexus_mod_id,
                 nexus_file_id,
                 domain.clone(),
                 archive_filename,
+                archive_hash,
             )
         };
         // Use stored domain if non-empty, otherwise fall back to current game
@@ -477,7 +477,20 @@ impl App {
                 })
                 .find(|e| {
                     e.nexus_mod_id == Some(nexus_mod_id)
-                        && (nexus_file_id == 0 || e.nexus_file_id == Some(nexus_file_id))
+                        && if nexus_file_id != 0 {
+                            // Known file ID: require exact match so different versions
+                            // of the same mod each map to their own entry.
+                            e.nexus_file_id == Some(nexus_file_id)
+                        } else if let (Some(dl_hash), Some(mod_hash)) =
+                            (&archive_hash, &e.archive_hash)
+                        {
+                            // Disk-scanned (file_id == 0): use archive hash to
+                            // distinguish multiple versions of the same mod.
+                            dl_hash == mod_hash
+                        } else {
+                            // No hash available: fall back to first match.
+                            true
+                        }
                 })
                 .map(|e| e.id.clone())
         };
@@ -557,8 +570,7 @@ impl App {
                         )
                         .await
                         .map_err(|e| e.to_string())?;
-                    let installed_version =
-                        file_version.unwrap_or_else(|| mod_version.clone());
+                    let installed_version = file_version.unwrap_or_else(|| mod_version.clone());
                     tracker
                         .set_mod_installed_version(mod_id, &installed_version)
                         .await
@@ -568,12 +580,9 @@ impl App {
             }
             .await;
             match result {
-                Ok((name, version, author)) => AppCmdMsg::NexusMetadataFetched(Ok((
-                    String::new(),
-                    version,
-                    author,
-                    name,
-                ))),
+                Ok((name, version, author)) => {
+                    AppCmdMsg::NexusMetadataFetched(Ok((String::new(), version, author, name)))
+                }
                 Err(e) => AppCmdMsg::NexusMetadataFetched(Err(e)),
             }
         });

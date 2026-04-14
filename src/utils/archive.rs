@@ -181,24 +181,23 @@ pub fn extract_zip_to(archive_path: &Path, dest: &Path) -> Result<()> {
                     archive_path.display()
                 ));
             }
-            if let Some(parent) = out_path.parent() {
-                if let Err(e) = fs::create_dir_all(parent) {
-                    dlog!(
-                        "[deployd] extract_zip_to: skipping '{}' — cannot create parent: {e}",
-                        entry.name()
-                    );
-                    continue;
-                }
+            if let Some(parent) = out_path.parent()
+                && let Err(e) = fs::create_dir_all(parent)
+            {
+                dlog!(
+                    "[deployd] extract_zip_to: skipping '{}' — cannot create parent: {e}",
+                    entry.name()
+                );
+                continue;
             }
             match fs::File::create(&out_path) {
                 Ok(outfile) => {
                     let mut writer = io::BufWriter::with_capacity(131_072, outfile);
-                    io::copy(&mut entry, &mut writer).with_context(|| {
-                        format!("Failed to write file: {}", out_path.display())
-                    })?;
-                    writer.flush().with_context(|| {
-                        format!("Failed to flush file: {}", out_path.display())
-                    })?;
+                    io::copy(&mut entry, &mut writer)
+                        .with_context(|| format!("Failed to write file: {}", out_path.display()))?;
+                    writer
+                        .flush()
+                        .with_context(|| format!("Failed to flush file: {}", out_path.display()))?;
                 }
                 Err(e) if e.raw_os_error() == Some(21) => {
                     dlog!(
@@ -207,9 +206,8 @@ pub fn extract_zip_to(archive_path: &Path, dest: &Path) -> Result<()> {
                     );
                 }
                 Err(e) => {
-                    return Err(e).with_context(|| {
-                        format!("Failed to create file: {}", out_path.display())
-                    });
+                    return Err(e)
+                        .with_context(|| format!("Failed to create file: {}", out_path.display()));
                 }
             }
         }
@@ -440,7 +438,7 @@ fn run_zip_extraction<R: io::Read + Seek>(
 /// the `zip` crate already ignores extra-field errors in local headers.
 ///
 /// Returns `true` if at least one field was patched.
-fn strip_zip_unicode_extra_fields(data: &mut Vec<u8>) -> bool {
+fn strip_zip_unicode_extra_fields(data: &mut [u8]) -> bool {
     const EOCD_SIG: [u8; 4] = [0x50, 0x4b, 0x05, 0x06];
     const CD_SIG: [u8; 4] = [0x50, 0x4b, 0x01, 0x02];
     const UNICODE_PATH: u16 = 0x7075;
@@ -540,7 +538,9 @@ fn extract_7z(
     {
         match extract_7z_libarchive(archive_path) {
             Ok(tmp) => return Ok(tmp),
-            Err(e) => dlog!("[deployd] libarchive failed for 7z, falling back to sevenz_rust2: {e:#}"),
+            Err(e) => {
+                dlog!("[deployd] libarchive failed for 7z, falling back to sevenz_rust2: {e:#}")
+            }
         }
     }
 

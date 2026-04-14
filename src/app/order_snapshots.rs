@@ -4,14 +4,19 @@ use relm4::prelude::*;
 use crate::models::order_snapshot::{OrderSnapshot, SnapshotKind};
 use crate::ui::mod_list::ModListItemKind;
 
+use super::App;
 use super::free_fns::load_game_data;
 use super::messages::{AppCmdMsg, AppMsg};
-use super::App;
 
 impl App {
     /// Rebuild the Load popover listboxes from the current snapshot lists.
     pub(crate) fn rebuild_snapshot_lists(&self, sender: &ComponentSender<Self>) {
-        rebuild_list(&self.mod_snapshots_list, &self.mod_order_snapshots, true, sender);
+        rebuild_list(
+            &self.mod_snapshots_list,
+            &self.mod_order_snapshots,
+            true,
+            sender,
+        );
         rebuild_list(
             &self.plugin_snapshots_list,
             &self.plugin_order_snapshots,
@@ -25,8 +30,12 @@ impl App {
         name: String,
         sender: &ComponentSender<Self>,
     ) {
-        let Some(tracker) = self.tracker.clone() else { return };
-        let Some(game) = self.selected_game().cloned() else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
 
         let entries: Vec<(String, i32)> = {
             let guard = self.mods.guard();
@@ -61,8 +70,12 @@ impl App {
         name: String,
         sender: &ComponentSender<Self>,
     ) {
-        let Some(tracker) = self.tracker.clone() else { return };
-        let Some(game) = self.selected_game().cloned() else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
 
         let entries: Vec<(String, i32)> = {
             let guard = self.plugins.guard();
@@ -94,8 +107,12 @@ impl App {
         snapshot_id: String,
         sender: &ComponentSender<Self>,
     ) {
-        let Some(tracker) = self.tracker.clone() else { return };
-        let Some(game) = self.selected_game().cloned() else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
 
         sender.oneshot_command(async move {
             let result = async {
@@ -117,8 +134,12 @@ impl App {
         snapshot_id: String,
         sender: &ComponentSender<Self>,
     ) {
-        let Some(tracker) = self.tracker.clone() else { return };
-        let Some(game) = self.selected_game().cloned() else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
 
         sender.oneshot_command(async move {
             let result = async {
@@ -140,7 +161,9 @@ impl App {
         snapshot_id: String,
         sender: &ComponentSender<Self>,
     ) {
-        let Some(tracker) = self.tracker.clone() else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
 
         sender.oneshot_command(async move {
             AppCmdMsg::OrderSnapshotDeleted(
@@ -186,12 +209,9 @@ fn rebuild_list(
             .margin_end(8)
             .build();
 
-        let created = snap
-            .created_at
-            .get(..10)
-            .unwrap_or(&snap.created_at);
+        let created = snap.created_at.get(..10).unwrap_or(&snap.created_at);
         let label = gtk::Label::builder()
-            .label(&format!("{} ({})", snap.name, created))
+            .label(format!("{} ({})", snap.name, created))
             .hexpand(true)
             .halign(gtk::Align::Start)
             .ellipsize(gtk::pango::EllipsizeMode::End)
@@ -216,9 +236,11 @@ fn rebuild_list(
         let s = sender.input_sender().clone();
         restore_btn.connect_clicked(move |_| {
             if is_mod {
-                s.send(AppMsg::LoadModOrderSnapshot(snap_id.clone())).unwrap();
+                s.send(AppMsg::LoadModOrderSnapshot(snap_id.clone()))
+                    .unwrap();
             } else {
-                s.send(AppMsg::LoadPluginOrderSnapshot(snap_id.clone())).unwrap();
+                s.send(AppMsg::LoadPluginOrderSnapshot(snap_id.clone()))
+                    .unwrap();
             }
         });
 
@@ -226,9 +248,11 @@ fn rebuild_list(
         let s = sender.input_sender().clone();
         delete_btn.connect_clicked(move |_| {
             if is_mod {
-                s.send(AppMsg::DeleteModOrderSnapshot(snap_id.clone())).unwrap();
+                s.send(AppMsg::DeleteModOrderSnapshot(snap_id.clone()))
+                    .unwrap();
             } else {
-                s.send(AppMsg::DeletePluginOrderSnapshot(snap_id.clone())).unwrap();
+                s.send(AppMsg::DeletePluginOrderSnapshot(snap_id.clone()))
+                    .unwrap();
             }
         });
 

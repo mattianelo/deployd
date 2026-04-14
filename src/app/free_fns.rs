@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use gtk::prelude::WidgetExt;
 
-use crate::core::{detector, game, save_manager};
 use crate::core::tracker::Tracker;
+use crate::core::{detector, game, save_manager};
 use crate::models::game::Game;
 use crate::models::profile::SaveMode;
 
@@ -130,6 +130,13 @@ pub(crate) async fn load_game_data(
 ) -> Result<LoadedData, String> {
     let game_id = &game.id;
 
+    // Ensure a "Default" profile exists. This is idempotent and covers both the
+    // normal startup path and games added later via the wizard or Manage Games dialog.
+    tracker
+        .ensure_default_profile(game_id)
+        .await
+        .map_err(|e| e.to_string())?;
+
     // Take a one-time vanilla snapshot so the external-file detector can exclude
     // files that were already present before any mod was installed.
     {
@@ -179,7 +186,10 @@ pub(crate) async fn load_game_data(
         .map_err(|e| e.to_string())?
         .into_iter()
         .map(|(plugin_id, masters)| {
-            (plugin_id, masters.into_iter().map(|m| m.to_lowercase()).collect())
+            (
+                plugin_id,
+                masters.into_iter().map(|m| m.to_lowercase()).collect(),
+            )
         })
         .collect();
     let overrides = tracker

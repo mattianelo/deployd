@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 
-use gtk::prelude::*;
 use gtk::gio;
+use gtk::prelude::*;
 use relm4::prelude::*;
 
+use super::super::App;
 use super::super::free_fns::load_game_data;
 use super::super::messages::{AppCmdMsg, AppMsg};
-use super::super::App;
 
 impl App {
     pub(crate) fn handle_export_profile_clicked(
@@ -14,10 +14,13 @@ impl App {
         root: &adw::Window,
         sender: &ComponentSender<Self>,
     ) {
-        let Some(tracker) = self.tracker.clone() else { return };
-        let Some(profile) = self.profiles.get(self.active_profile_idx).cloned() else { return };
-        let initial_name =
-            format!("{}.deployd-profile.json", profile.name.replace(' ', "_"));
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Some(profile) = self.profiles.get(self.active_profile_idx).cloned() else {
+            return;
+        };
+        let initial_name = format!("{}.deployd-profile.json", profile.name.replace(' ', "_"));
         let dialog = gtk::FileDialog::builder()
             .title("Export Profile")
             .initial_name(&initial_name)
@@ -35,8 +38,8 @@ impl App {
                             .export_profile(&profile_id)
                             .await
                             .map_err(|e| e.to_string())?;
-                        let json = serde_json::to_string_pretty(&export)
-                            .map_err(|e| e.to_string())?;
+                        let json =
+                            serde_json::to_string_pretty(&export).map_err(|e| e.to_string())?;
                         std::fs::write(&path, json).map_err(|e| e.to_string())?;
                         Ok(())
                     }
@@ -83,8 +86,12 @@ impl App {
         path: PathBuf,
         sender: &ComponentSender<Self>,
     ) {
-        let Some(tracker) = self.tracker.clone() else { return };
-        let Some(game) = self.selected_game().cloned() else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
         sender.oneshot_command(async move {
             AppCmdMsg::ProfileImported(
                 async {

@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
-use crate::models::game::Game;
 use super::known_games::KNOWN_GAMES;
 use super::wine::find_wine_user_dir;
+use crate::models::game::Game;
 
 /// Detect the game's save directory inside the Wine prefix.
 ///

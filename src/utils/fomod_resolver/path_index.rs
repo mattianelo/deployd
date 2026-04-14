@@ -20,7 +20,10 @@ pub(super) struct FileRef<'a> {
 /// (i.e. the archive has a wrapper directory), additional keys relative to
 /// `content_root` are added so FOMOD source paths work regardless of whether
 /// they include the wrapper prefix.
-pub(super) fn build_path_index(extracted_root: &Path, content_root: &Path) -> HashMap<String, PathBuf> {
+pub(super) fn build_path_index(
+    extracted_root: &Path,
+    content_root: &Path,
+) -> HashMap<String, PathBuf> {
     let mut index = HashMap::new();
     for entry in WalkDir::new(extracted_root) {
         let Ok(entry) = entry else { continue };

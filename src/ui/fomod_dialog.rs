@@ -19,7 +19,10 @@ pub struct FomodDialogInit {
 }
 
 /// Build default selections for a FOMOD config without user input.
-pub fn default_fomod_selections(config: &FomodUiConfig, active_files: &HashSet<String>) -> FomodSelections {
+pub fn default_fomod_selections(
+    config: &FomodUiConfig,
+    active_files: &HashSet<String>,
+) -> FomodSelections {
     FomodSelections {
         selections: compute_default_selections(config, active_files),
         flags: std::collections::HashMap::new(),
@@ -220,16 +223,13 @@ impl FomodDialog {
             let mut indices: Vec<usize> = group_sel.iter().copied().collect();
             indices.sort_unstable();
             for plugin_idx in indices {
-                if let Some(plugin) = group.plugins.get(plugin_idx) {
-                    if let Some(ref img_path) = plugin.image_path {
-                        if let Some(abs_path) =
-                            resolve_image_path(&self.extracted_root, img_path)
-                        {
-                            self.preview_picture.set_filename(Some(abs_path));
-                            self.image_panel.set_visible(true);
-                            return;
-                        }
-                    }
+                if let Some(plugin) = group.plugins.get(plugin_idx)
+                    && let Some(ref img_path) = plugin.image_path
+                    && let Some(abs_path) = resolve_image_path(&self.extracted_root, img_path)
+                {
+                    self.preview_picture.set_filename(Some(abs_path));
+                    self.image_panel.set_visible(true);
+                    return;
                 }
             }
         }
@@ -267,7 +267,10 @@ fn resolve_image_path(extracted_root: &Path, image_path: &str) -> Option<PathBuf
     None
 }
 
-fn compute_default_selections(config: &FomodUiConfig, files: &HashSet<String>) -> Vec<Vec<HashSet<usize>>> {
+fn compute_default_selections(
+    config: &FomodUiConfig,
+    files: &HashSet<String>,
+) -> Vec<Vec<HashSet<usize>>> {
     config
         .steps
         .iter()

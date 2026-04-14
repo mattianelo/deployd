@@ -3,12 +3,15 @@ use std::collections::HashSet;
 use crate::core::game;
 use crate::models::download::{DownloadEntry, DownloadStatus};
 
+use super::super::App;
 use super::super::free_fns::parse_nexus_mod_id;
 use super::super::messages::AppCmdMsg;
-use super::super::App;
 
 impl App {
-    pub(crate) fn handle_scan_downloads_folder(&mut self, sender: &relm4::prelude::ComponentSender<Self>) {
+    pub(crate) fn handle_scan_downloads_folder(
+        &mut self,
+        sender: &relm4::prelude::ComponentSender<Self>,
+    ) {
         let base_dir = &self.downloads_dir;
         if !base_dir.exists() {
             if self.initial_scan_done {
@@ -124,8 +127,8 @@ impl App {
                     .to_string_lossy()
                     .to_string();
 
-                let nexus_ids = parse_nexus_mod_id(&file_name)
-                    .map(|mod_id| (mod_id, 0i64, domain.to_string()));
+                let nexus_ids =
+                    parse_nexus_mod_id(&file_name).map(|mod_id| (mod_id, 0i64, domain.to_string()));
 
                 let download_id = uuid::Uuid::new_v4().to_string();
                 let entry = DownloadEntry {
@@ -193,8 +196,8 @@ impl App {
                     .to_string_lossy()
                     .to_string();
 
-                let nexus_ids = parse_nexus_mod_id(&file_name)
-                    .map(|mod_id| (mod_id, 0i64, String::new()));
+                let nexus_ids =
+                    parse_nexus_mod_id(&file_name).map(|mod_id| (mod_id, 0i64, String::new()));
 
                 let download_id = uuid::Uuid::new_v4().to_string();
                 let entry = DownloadEntry {

@@ -3,16 +3,12 @@ use relm4::prelude::*;
 use crate::core::{game, save_manager};
 use crate::models::profile::SaveMode;
 
+use super::super::App;
 use super::super::free_fns::load_game_data;
 use super::super::messages::AppCmdMsg;
-use super::super::App;
 
 impl App {
-    pub(crate) fn handle_profile_selected(
-        &mut self,
-        idx: u32,
-        sender: &ComponentSender<Self>,
-    ) {
+    pub(crate) fn handle_profile_selected(&mut self, idx: u32, sender: &ComponentSender<Self>) {
         if self.updating_profiles {
             return;
         }
@@ -23,8 +19,12 @@ impl App {
 
         let target_profile_id = self.profiles[idx].id.clone();
         let target_save_mode = self.profiles[idx].save_mode.clone();
-        let Some(tracker) = self.tracker.clone() else { return };
-        let Some(game) = self.selected_game().cloned() else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
 
         let old_profile = self.profiles.get(self.active_profile_idx).cloned();
         let old_profile_id = old_profile.as_ref().map(|p| p.id.clone());
@@ -63,8 +63,12 @@ impl App {
     }
 
     pub(crate) fn handle_new_profile_clicked(&mut self, sender: &ComponentSender<Self>) {
-        let Some(tracker) = self.tracker.clone() else { return };
-        let Some(game) = self.selected_game().cloned() else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
 
         let existing_names: std::collections::HashSet<&str> =
             self.profiles.iter().map(|p| p.name.as_str()).collect();
@@ -104,8 +108,12 @@ impl App {
     }
 
     pub(crate) fn handle_clone_profile_clicked(&mut self, sender: &ComponentSender<Self>) {
-        let Some(tracker) = self.tracker.clone() else { return };
-        let Some(game) = self.selected_game().cloned() else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
         let Some(source_profile) = self.profiles.get(self.active_profile_idx).cloned() else {
             return;
         };
@@ -138,8 +146,12 @@ impl App {
             return;
         }
 
-        let Some(tracker) = self.tracker.clone() else { return };
-        let Some(game) = self.selected_game().cloned() else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
         let delete_id = self.profiles[self.active_profile_idx].id.clone();
 
         sender.oneshot_command(async move {
@@ -173,8 +185,12 @@ impl App {
         new_name: String,
         sender: &ComponentSender<Self>,
     ) {
-        let Some(tracker) = self.tracker.clone() else { return };
-        let Some(profile) = self.profiles.get(self.active_profile_idx) else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Some(profile) = self.profiles.get(self.active_profile_idx) else {
+            return;
+        };
         let profile_id = profile.id.clone();
 
         sender.oneshot_command(async move {
@@ -187,9 +203,15 @@ impl App {
     }
 
     pub(crate) fn handle_toggle_profile_save_mode(&mut self, sender: &ComponentSender<Self>) {
-        let Some(profile) = self.profiles.get(self.active_profile_idx).cloned() else { return };
-        let Some(tracker) = self.tracker.clone() else { return };
-        let Some(game) = self.selected_game().cloned() else { return };
+        let Some(profile) = self.profiles.get(self.active_profile_idx).cloned() else {
+            return;
+        };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
         let new_mode = match profile.save_mode {
             SaveMode::Global => SaveMode::ProfileSpecific,
             SaveMode::ProfileSpecific => SaveMode::Global,
@@ -212,8 +234,12 @@ impl App {
     }
 
     pub(crate) fn handle_sync_saves(&mut self, sender: &ComponentSender<Self>) {
-        let Some(profile) = self.profiles.get(self.active_profile_idx).cloned() else { return };
-        let Some(game) = self.selected_game().cloned() else { return };
+        let Some(profile) = self.profiles.get(self.active_profile_idx).cloned() else {
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
         let profile_id = profile.id.clone();
         sender.oneshot_command(async move {
             let result = save_manager::sync_profile_saves(&game, &profile_id)

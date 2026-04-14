@@ -1,18 +1,20 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use gtk::prelude::*;
 use gtk::gio;
+use gtk::prelude::*;
 use relm4::prelude::*;
 
 use crate::core::installer::{self, AddResult, PrepareResult};
-use crate::ui::fomod_dialog::{default_fomod_selections, FomodDialog, FomodDialogInit, FomodDialogOutput};
-use crate::utils::{fomod_resolver, paths};
 use crate::dlog;
+use crate::ui::fomod_dialog::{
+    FomodDialog, FomodDialogInit, FomodDialogOutput, default_fomod_selections,
+};
+use crate::utils::{fomod_resolver, paths};
 
+use super::App;
 use super::messages::{AppCmdMsg, AppMsg, PrepareResultMsg};
 use super::types::PendingInstall;
-use super::App;
 
 impl App {
     pub(crate) fn handle_install_clicked(
@@ -45,11 +47,7 @@ impl App {
         });
     }
 
-    pub(crate) fn handle_file_chosen(
-        &mut self,
-        path: PathBuf,
-        sender: &ComponentSender<Self>,
-    ) {
+    pub(crate) fn handle_file_chosen(&mut self, path: PathBuf, sender: &ComponentSender<Self>) {
         let mod_name = path
             .file_stem()
             .unwrap_or_default()
@@ -156,7 +154,10 @@ impl App {
             // No user choices needed — auto-install with defaults
             sender
                 .input_sender()
-                .emit(AppMsg::FomodConfirmed(default_fomod_selections(&config, &active_plugin_files)));
+                .emit(AppMsg::FomodConfirmed(default_fomod_selections(
+                    &config,
+                    &active_plugin_files,
+                )));
             return;
         }
 
@@ -520,9 +521,15 @@ impl App {
         existing_mod_id: String,
         sender: &ComponentSender<Self>,
     ) {
-        let Some(pending) = self.pending_install.take() else { return };
-        let Some(file_list) = pending.file_list else { return };
-        let Some(tracker) = self.tracker.clone() else { return };
+        let Some(pending) = self.pending_install.take() else {
+            return;
+        };
+        let Some(file_list) = pending.file_list else {
+            return;
+        };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
         let mod_name = pending.mod_name.clone();
 
         self.installing = true;
@@ -577,7 +584,6 @@ impl App {
         self.installing = false;
         self.status_msg = None;
 
-
         match result {
             Ok(PrepareResultMsg::Normal {
                 file_list,
@@ -610,9 +616,7 @@ impl App {
                     .and_then(|p| p.nexus_ids.as_ref())
                     .map(|(mid, fid, _)| (*mid, *fid));
                 let existing = hash_existing.or_else(|| {
-                    nexus_ids.and_then(|(mid, fid)| {
-                        self.find_installed_mod_by_nexus_id(mid, fid)
-                    })
+                    nexus_ids.and_then(|(mid, fid)| self.find_installed_mod_by_nexus_id(mid, fid))
                 });
                 if let Some((old_mod_id, old_mod_name, old_priority)) = existing {
                     if self.reinstall_mode {
@@ -682,9 +686,7 @@ impl App {
                     .and_then(|p| p.nexus_ids.as_ref())
                     .map(|(mid, fid, _)| (*mid, *fid));
                 let existing = hash_existing.or_else(|| {
-                    nexus_ids.and_then(|(mid, fid)| {
-                        self.find_installed_mod_by_nexus_id(mid, fid)
-                    })
+                    nexus_ids.and_then(|(mid, fid)| self.find_installed_mod_by_nexus_id(mid, fid))
                 });
                 if let Some((old_mod_id, old_mod_name, old_priority)) = existing {
                     if self.reinstall_mode {
@@ -732,8 +734,7 @@ impl App {
                         &format!("Extraction failed: {e}"),
                     );
                     if let Some(tracker) = self.tracker.clone()
-                        && let Some(entry) =
-                            self.all_downloads.iter().find(|e| e.id == dl_id)
+                        && let Some(entry) = self.all_downloads.iter().find(|e| e.id == dl_id)
                     {
                         let entry = entry.clone();
                         sender.oneshot_command(async move {
@@ -756,7 +757,6 @@ impl App {
         self.installing = false;
         self.status_msg = None;
 
-
         let maybe_archive_hash = match &result {
             Ok(add_result) => add_result.mod_entry.archive_hash.clone(),
             Err(_) => None,
@@ -764,9 +764,15 @@ impl App {
 
         if let Some(dl_id) = self.active_download_id.take() {
             let (status, msg) = if result.is_ok() {
-                (crate::models::download::DownloadStatus::Installed, "Installed")
+                (
+                    crate::models::download::DownloadStatus::Installed,
+                    "Installed",
+                )
             } else {
-                (crate::models::download::DownloadStatus::Failed, "Install failed")
+                (
+                    crate::models::download::DownloadStatus::Failed,
+                    "Install failed",
+                )
             };
             self.update_download_status(&dl_id, status, msg);
             if let (Some(hash), Some(entry)) = (
@@ -876,12 +882,17 @@ impl App {
         self.installing = false;
         self.status_msg = None;
 
-
         if let Some(dl_id) = self.active_download_id.take() {
             let (status, msg) = if result.is_ok() {
-                (crate::models::download::DownloadStatus::Installed, "Installed")
+                (
+                    crate::models::download::DownloadStatus::Installed,
+                    "Installed",
+                )
             } else {
-                (crate::models::download::DownloadStatus::Failed, "Merge failed")
+                (
+                    crate::models::download::DownloadStatus::Failed,
+                    "Merge failed",
+                )
             };
             self.update_download_status(&dl_id, status, msg);
             if let Some(tracker) = self.tracker.clone()

@@ -40,7 +40,11 @@ impl FomodUiDependencies {
     }
 
     /// Evaluate against condition flags and a set of known active file names (lowercased).
-    pub fn evaluate_with_files(&self, flags: &HashMap<String, String>, files: &HashSet<String>) -> bool {
+    pub fn evaluate_with_files(
+        &self,
+        flags: &HashMap<String, String>,
+        files: &HashSet<String>,
+    ) -> bool {
         let is_and = self.operator.eq_ignore_ascii_case("and");
         let mut results: Vec<bool> = Vec::new();
 
@@ -79,6 +83,7 @@ pub struct FomodUiGroup {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::enum_variant_names)] // Variant names mirror the FOMOD XML spec values verbatim.
 pub enum FomodGroupType {
     SelectAll,
     SelectExactlyOne,

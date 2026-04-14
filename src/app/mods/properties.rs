@@ -8,8 +8,8 @@ use crate::ui::mod_properties_dialog::{
     ModPropertiesDialog, ModPropertiesInit, ModPropertiesOutput,
 };
 
-use super::super::messages::{AppCmdMsg, AppMsg};
 use super::super::App;
+use super::super::messages::{AppCmdMsg, AppMsg};
 
 impl App {
     pub(crate) fn handle_open_mod_properties(
@@ -57,12 +57,12 @@ impl App {
                         file_targets,
                     },
                     ModPropertiesOutput::Cancelled => AppMsg::ModPropertiesCancelled,
-                    ModPropertiesOutput::ScanCache { mod_id } => {
-                        AppMsg::ScanModFromCache(mod_id)
-                    }
+                    ModPropertiesOutput::ScanCache { mod_id } => AppMsg::ScanModFromCache(mod_id),
                 }),
         );
-        let Some(tracker) = self.tracker.clone() else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
         let mod_id_for_load = mod_id;
         sender.oneshot_command(async move {
             let files = tracker
@@ -83,7 +83,9 @@ impl App {
         file_targets: HashMap<String, InstallTarget>,
     ) {
         self.mod_properties_dialog = None;
-        let Some(tracker) = self.tracker.clone() else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
 
         {
             let mut guard = self.mods.guard();
@@ -92,7 +94,11 @@ impl App {
             {
                 row.mod_entry.name = name.clone();
                 row.mod_entry.install_target = install_target.clone();
-                row.mod_entry.notes = if notes.is_empty() { None } else { Some(notes.clone()) };
+                row.mod_entry.notes = if notes.is_empty() {
+                    None
+                } else {
+                    Some(notes.clone())
+                };
             }
         }
 
@@ -125,12 +131,14 @@ impl App {
         mod_id: String,
         sender: &ComponentSender<Self>,
     ) {
-        let Some(tracker) = self.tracker.clone() else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
         let mod_name = self.mod_name_for_id(&mod_id);
         sender.oneshot_command(async move {
             let result: Result<String, String> = async {
-                let cache_dir = crate::utils::paths::mod_cache_dir(&mod_id)
-                    .map_err(|e| e.to_string())?;
+                let cache_dir =
+                    crate::utils::paths::mod_cache_dir(&mod_id).map_err(|e| e.to_string())?;
                 let mut files = Vec::new();
                 if cache_dir.is_dir() {
                     for entry in walkdir::WalkDir::new(&cache_dir).min_depth(1) {

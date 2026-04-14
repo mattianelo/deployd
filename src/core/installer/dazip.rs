@@ -50,12 +50,10 @@ pub(super) fn expand_dazip_files_in_place(dir: &Path) -> Result<()> {
 
         // Extract the whole DAZIP into a temporary sibling directory.
         let tmp_dir = parent.join(format!("_dazip_tmp_{idx}"));
-        fs::create_dir_all(&tmp_dir).with_context(|| {
-            format!("Cannot create dazip tmp dir: {}", tmp_dir.display())
-        })?;
-        archive::extract_zip_to(dazip_path, &tmp_dir).with_context(|| {
-            format!("Failed to expand dazip: {}", dazip_path.display())
-        })?;
+        fs::create_dir_all(&tmp_dir)
+            .with_context(|| format!("Cannot create dazip tmp dir: {}", tmp_dir.display()))?;
+        archive::extract_zip_to(dazip_path, &tmp_dir)
+            .with_context(|| format!("Failed to expand dazip: {}", dazip_path.display()))?;
 
         // Find manifest file case-insensitively (some DAPZIPs use "Manifest.xml").
         let manifest_path = find_file_case_insensitive(&tmp_dir, "manifest.xml");
@@ -109,7 +107,10 @@ pub(super) fn expand_dazip_files_in_place(dir: &Path) -> Result<()> {
                     fs::create_dir_all(p)?;
                 }
                 fs::rename(&package_dir, &addins_uid_dir).with_context(|| {
-                    format!("Cannot move package/ to AddIns/{uid}: {}", package_dir.display())
+                    format!(
+                        "Cannot move package/ to AddIns/{uid}: {}",
+                        package_dir.display()
+                    )
                 })?;
             } else {
                 // Fallback: copy root files directly into AddIns/<uid>/.
@@ -135,15 +136,17 @@ pub(super) fn expand_dazip_files_in_place(dir: &Path) -> Result<()> {
         if let Some(ref mp) = manifest_path {
             fs::create_dir_all(&addins_uid_dir)?;
             let dest_manifest = addins_uid_dir.join("manifest.xml");
-            fs::copy(mp, &dest_manifest).with_context(|| {
-                format!("Cannot copy manifest to {}", dest_manifest.display())
-            })?;
+            fs::copy(mp, &dest_manifest)
+                .with_context(|| format!("Cannot copy manifest to {}", dest_manifest.display()))?;
         }
 
         // Clean up the temp dir and the original .dazip.
         let _ = fs::remove_dir_all(&tmp_dir);
         fs::remove_file(dazip_path).with_context(|| {
-            format!("Failed to remove dazip after expansion: {}", dazip_path.display())
+            format!(
+                "Failed to remove dazip after expansion: {}",
+                dazip_path.display()
+            )
         })?;
     }
 
@@ -190,7 +193,10 @@ pub(super) fn process_dazip_root(dir: &Path, dazip_name: &str) -> Result<()> {
             copy_dir_recursive(&packages_src, &packages_dst)?;
         }
         fs::remove_dir_all(&contents_dir).with_context(|| {
-            format!("Failed to remove Contents/ after expansion: {}", contents_dir.display())
+            format!(
+                "Failed to remove Contents/ after expansion: {}",
+                contents_dir.display()
+            )
         })?;
     } else {
         let package_dir = dir.join("package");
@@ -198,9 +204,8 @@ pub(super) fn process_dazip_root(dir: &Path, dazip_name: &str) -> Result<()> {
             if let Some(p) = addins_uid_dir.parent() {
                 fs::create_dir_all(p)?;
             }
-            fs::rename(&package_dir, &addins_uid_dir).with_context(|| {
-                format!("Cannot move package/ to AddIns/{uid}")
-            })?;
+            fs::rename(&package_dir, &addins_uid_dir)
+                .with_context(|| format!("Cannot move package/ to AddIns/{uid}"))?;
         } else {
             fs::create_dir_all(&addins_uid_dir)?;
             for entry in fs::read_dir(dir)? {
@@ -224,9 +229,8 @@ pub(super) fn process_dazip_root(dir: &Path, dazip_name: &str) -> Result<()> {
         fs::create_dir_all(&addins_uid_dir)?;
         let dest_manifest = addins_uid_dir.join("manifest.xml");
         if mp != &dest_manifest {
-            fs::copy(mp, &dest_manifest).with_context(|| {
-                format!("Cannot copy manifest to {}", dest_manifest.display())
-            })?;
+            fs::copy(mp, &dest_manifest)
+                .with_context(|| format!("Cannot copy manifest to {}", dest_manifest.display()))?;
         }
     }
 
@@ -251,17 +255,19 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
 /// Find a file by name (case-insensitive) directly inside `dir`.
 fn find_file_case_insensitive(dir: &Path, name: &str) -> Option<PathBuf> {
     let lower = name.to_lowercase();
-    fs::read_dir(dir).ok()?.filter_map(|e| e.ok()).find(|e| {
-        e.file_name().to_string_lossy().to_lowercase() == lower
-    }).map(|e| e.path())
+    fs::read_dir(dir)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .find(|e| e.file_name().to_string_lossy().to_lowercase() == lower)
+        .map(|e| e.path())
 }
 
 /// Parse the first `UID="…"` attribute from any `<AddIn*>` element in a
 /// manifest.xml byte slice. Handles both `<AddIn>` (legacy) and `<AddInItem>`
 /// (standard DAO DAZIP format).
 fn parse_dazip_uid(data: &[u8]) -> Option<String> {
-    use quick_xml::events::Event;
     use quick_xml::Reader;
+    use quick_xml::events::Event;
 
     let src = std::str::from_utf8(data).ok()?;
     let mut reader = Reader::from_str(src);

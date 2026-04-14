@@ -13,10 +13,10 @@ use crate::models::profile::Profile;
 use crate::ui::mod_list::{ModListItemInit, ModListItemKind, ModRowInit};
 use crate::ui::plugin_list::PluginRowInit;
 
+use super::super::App;
 use super::super::free_fns::load_game_data;
 use super::super::messages::AppCmdMsg;
 use super::super::types::LoadedData;
-use super::super::App;
 
 impl App {
     /// In-session reload: recomputes conflict overrides and refreshes the mod/plugin
@@ -53,7 +53,10 @@ impl App {
         });
 
         let vadj = self.mod_scroll.vadjustment();
-        let saved_pos = self.pending_scroll_restore.take().unwrap_or_else(|| vadj.value());
+        let saved_pos = self
+            .pending_scroll_restore
+            .take()
+            .unwrap_or_else(|| vadj.value());
 
         let mut guard = self.mods.guard();
         guard.clear();
@@ -93,14 +96,14 @@ impl App {
             let info = overrides.get(&m.id);
             mod_display_idx += 1;
             guard.push_back(ModListItemInit {
-                kind: ModListItemKind::Mod(ModRowInit {
+                kind: ModListItemKind::Mod(Box::new(ModRowInit {
                     mod_entry: m,
                     priority_label: format!("#{mod_display_idx}"),
                     overrides: info.map_or(0, |i| i.overrides),
                     overridden_by: info.map_or(0, |i| i.overridden_by),
                     override_files: info.map_or_else(Vec::new, |i| i.override_files.clone()),
                     overridden_files: info.map_or_else(Vec::new, |i| i.overridden_files.clone()),
-                }),
+                })),
             });
             let last = guard.len() - 1;
             if let Some(item) = guard.get_mut(last) {
@@ -266,8 +269,12 @@ impl App {
     pub(crate) fn reload_order_snapshots(&self, sender: &ComponentSender<Self>) {
         use crate::app::messages::AppCmdMsg;
         use crate::models::order_snapshot::SnapshotKind;
-        let Some(tracker) = self.tracker.clone() else { return };
-        let Some(game) = self.selected_game().cloned() else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
         sender.oneshot_command(async move {
             let mod_snaps = tracker
                 .list_order_snapshots(&game.id, SnapshotKind::Mod)
@@ -303,11 +310,11 @@ impl App {
         let mut guard = self.mods.guard();
         let len = guard.len();
         for i in 0..len {
-            if let Some(item) = guard.get_mut(i) {
-                if let crate::ui::mod_list::ModListItemKind::Mod(ref mut init) = item.kind {
-                    count += 1;
-                    init.priority_label = format!("#{count}");
-                }
+            if let Some(item) = guard.get_mut(i)
+                && let crate::ui::mod_list::ModListItemKind::Mod(ref mut init) = item.kind
+            {
+                count += 1;
+                init.priority_label = format!("#{count}");
             }
         }
     }
@@ -357,12 +364,11 @@ impl App {
                     .update_priorities(&updates)
                     .await
                     .map_err(|e| e.to_string());
-                if result.is_ok() {
-                    if let Some(ref gid) = game_id {
-                        if let Err(e) = mod_folders::refresh_named_mod_folders(&tracker, gid).await {
-                            eprintln!("[deployd] named_mods refresh failed: {e}");
-                        }
-                    }
+                if result.is_ok()
+                    && let Some(ref gid) = game_id
+                    && let Err(e) = mod_folders::refresh_named_mod_folders(&tracker, gid).await
+                {
+                    eprintln!("[deployd] named_mods refresh failed: {e}");
                 }
                 AppCmdMsg::PrioritySaved(result)
             });

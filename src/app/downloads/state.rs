@@ -48,8 +48,9 @@ impl App {
             crate::app::types::DownloadSort::Name => {
                 entries.sort_by(|a, b| a.mod_name.to_lowercase().cmp(&b.mod_name.to_lowercase()))
             }
-            crate::app::types::DownloadSort::Status => entries
-                .sort_by_key(|e| crate::app::types::download_status_sort_key(&e.status)),
+            crate::app::types::DownloadSort::Status => {
+                entries.sort_by_key(|e| crate::app::types::download_status_sort_key(&e.status))
+            }
             crate::app::types::DownloadSort::Default => {}
         }
         // Save scroll position before rebuilding; restore it on the next GLib iteration

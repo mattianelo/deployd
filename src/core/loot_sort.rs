@@ -131,7 +131,7 @@ fn compute_file_crc32(path: &std::path::Path) -> Option<u32> {
 /// - `data_subdir`      — Subdirectory that holds plugin files (e.g. `"Data"`).
 /// - `plugin_filenames` — Plugin filenames to sort (e.g. `["Skyrim.esm", "MyMod.esp"]`).
 /// - `local_data_path`  — AppData local dir used by libloadorder; derived from
-///                        the Wine prefix for Heroic installs. Falls back to `game_path`.
+///   the Wine prefix for Heroic installs. Falls back to `game_path`.
 ///
 /// Returns `(sorted_filenames, dirty_info)` where `dirty_info` maps lowercase filenames
 /// to their dirty-edit summary (ITM, UDR, NAV counts + cleaning utility name).

@@ -27,7 +27,7 @@ pub enum ModListItemKind {
         collapsed: bool,
     },
     /// A regular mod row.
-    Mod(ModRowInit),
+    Mod(Box<ModRowInit>),
 }
 
 pub struct ModListItemInit {

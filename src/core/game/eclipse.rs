@@ -3,8 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 
 /// Prefix for files deployed to the Wine user's Documents folder.
 /// Resolves to `game_data.parent().parent()` (two levels up from `Documents/BioWare/Dragon Age`).
@@ -80,10 +80,7 @@ pub fn write_addins_xml(da_dir: &Path) -> Result<()> {
 
     if !addins_xml.is_file() {
         fs::create_dir_all(&settings_dir)?;
-        let inner: String = managed
-            .values()
-            .map(|b| format!("  {b}\n"))
-            .collect();
+        let inner: String = managed.values().map(|b| format!("  {b}\n")).collect();
         let content = format!(
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<AddInsList>\n{inner}</AddInsList>\n"
         );
@@ -112,7 +109,11 @@ pub fn write_addins_xml(da_dir: &Path) -> Result<()> {
             content.replace_range(pos..pos + "<AddInsList/>".len(), &replacement);
             changed = true;
         } else if let Some(pos) = content.rfind("</AddInsList>") {
-            let prefix = if content[..pos].ends_with('\n') { "" } else { "\n" };
+            let prefix = if content[..pos].ends_with('\n') {
+                ""
+            } else {
+                "\n"
+            };
             content.insert_str(pos, &format!("{prefix}  {block}\n"));
             changed = true;
         }
@@ -187,10 +188,10 @@ fn extract_addin_block_with_uid(data: &[u8]) -> Option<(String, String)> {
                     capturing = true;
                     depth = 1;
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"UID" {
-                            if let Ok(val) = attr.unescape_value() {
-                                uid = val.into_owned();
-                            }
+                        if attr.key.as_ref() == b"UID"
+                            && let Ok(val) = attr.unescape_value()
+                        {
+                            uid = val.into_owned();
                         }
                     }
                     let tag = std::str::from_utf8(e.as_ref()).unwrap_or("");

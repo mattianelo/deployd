@@ -6,8 +6,8 @@ use relm4::prelude::*;
 
 use crate::app::messages::GameConfig;
 use crate::core::game;
-use crate::models::game::{Game, GameEngine};
 use crate::core::tracker::PersistedGame;
+use crate::models::game::{Game, GameEngine};
 
 /// One row in the games list: a manually added game.
 #[derive(Debug, Clone)]
@@ -382,7 +382,10 @@ impl Component for GameSetupDialog {
         // Merge detected (now always empty) and persisted custom games.
         let mut entries: Vec<GameEntry> = detected_games
             .into_iter()
-            .map(|g| GameEntry { game: g, enabled: true })
+            .map(|g| GameEntry {
+                game: g,
+                enabled: true,
+            })
             .collect();
 
         for pg in persisted_custom {
@@ -413,9 +416,8 @@ impl Component for GameSetupDialog {
         let new_prefix_entry = gtk::Entry::new();
         let add_btn = gtk::Button::with_label("Add Game");
 
-        let known_opts: Vec<game::KnownGameOption> = game::known_game_options()
-            .into_iter()
-            .collect();
+        let known_opts: Vec<game::KnownGameOption> =
+            game::known_game_options().into_iter().collect();
 
         let model = GameSetupDialog {
             entries,
@@ -507,10 +509,10 @@ impl Component for GameSetupDialog {
                     .title("Select Wine Prefix Folder")
                     .modal(true)
                     .build();
-                if let Some(entry) = self.entries.get(idx) {
-                    if let Some(ref pfx) = entry.game.wine_prefix {
-                        dialog.set_initial_folder(Some(&gio::File::for_path(pfx)));
-                    }
+                if let Some(entry) = self.entries.get(idx)
+                    && let Some(ref pfx) = entry.game.wine_prefix
+                {
+                    dialog.set_initial_folder(Some(&gio::File::for_path(pfx)));
                 }
                 let input = sender.input_sender().clone();
                 dialog.select_folder(Some(root), None::<&gio::Cancellable>, move |result| {
@@ -619,7 +621,10 @@ impl Component for GameSetupDialog {
                     engine,
                     wine_prefix: Some(prefix),
                 };
-                self.entries.push(GameEntry { game, enabled: true });
+                self.entries.push(GameEntry {
+                    game,
+                    enabled: true,
+                });
                 self.new_path_entry.set_text("");
                 self.new_prefix_entry.set_text("");
                 self.update_add_btn();
@@ -644,7 +649,10 @@ impl Component for GameSetupDialog {
                     .filter(|e| !e.enabled)
                     .map(|e| e.game.id.clone())
                     .collect();
-                let _ = sender.output(GameSetupOutput::Confirmed { enabled, hidden_ids });
+                let _ = sender.output(GameSetupOutput::Confirmed {
+                    enabled,
+                    hidden_ids,
+                });
                 root.close();
             }
 

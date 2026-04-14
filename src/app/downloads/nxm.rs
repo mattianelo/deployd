@@ -6,16 +6,12 @@ use crate::core::game;
 use crate::models::download::DownloadEntry;
 use crate::utils::paths;
 
+use super::super::App;
 use super::super::messages::{AppCmdMsg, AppMsg};
 use super::super::types::NxmDownloadResult;
-use super::super::App;
 
 impl App {
-    pub(crate) fn handle_nxm_link_received(
-        &mut self,
-        uri: String,
-        sender: &ComponentSender<Self>,
-    ) {
+    pub(crate) fn handle_nxm_link_received(&mut self, uri: String, sender: &ComponentSender<Self>) {
         use crate::core::nexus_api::NexusClient;
         use crate::core::nxm::NxmLink;
 
@@ -71,11 +67,10 @@ impl App {
 
                 // Read configured downloads dir (fallback to default), with per-game subfolder
                 let download_dir = {
-                    let base =
-                        match tracker.get_setting("downloads_dir").await.ok().flatten() {
-                            Some(dir) => PathBuf::from(dir),
-                            None => paths::default_downloads_dir(),
-                        };
+                    let base = match tracker.get_setting("downloads_dir").await.ok().flatten() {
+                        Some(dir) => PathBuf::from(dir),
+                        None => paths::default_downloads_dir(),
+                    };
                     base.join(&link.domain)
                 };
 
@@ -149,9 +144,7 @@ impl App {
                             raw
                         }
                     })
-                    .unwrap_or_else(|| {
-                        format!("nexus_{}_{}.zip", link.mod_id, link.file_id)
-                    });
+                    .unwrap_or_else(|| format!("nexus_{}_{}.zip", link.mod_id, link.file_id));
                 let nexus_file_name = nexus_file.map(|f| f.name.clone());
                 let nexus_is_primary = nexus_file.map(|f| f.is_primary).unwrap_or(false);
 

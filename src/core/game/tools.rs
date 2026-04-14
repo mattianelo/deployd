@@ -130,10 +130,10 @@ pub fn detect_tool_path(
     deploy_dir: Option<&Path>,
 ) -> Option<PathBuf> {
     // Search deploy dir first (tools installed via Deployd land here)
-    if let Some(dir) = deploy_dir {
-        if let Some(found) = search_dir_for_exes(dir, preset.known_exe_names, 3) {
-            return Some(found);
-        }
+    if let Some(dir) = deploy_dir
+        && let Some(found) = search_dir_for_exes(dir, preset.known_exe_names, 3)
+    {
+        return Some(found);
     }
 
     // Try each known relative path (fast O(1) lookups before the recursive walk)

@@ -5,6 +5,7 @@ use relm4::abstractions::Toaster;
 use relm4::factory::FactoryVecDeque;
 use relm4::prelude::*;
 
+use super::types::{DownloadSort, PendingInstall, SearchScope};
 use crate::core::detector::ExternalFile;
 use crate::core::tracker::Tracker;
 use crate::models::download::DownloadEntry;
@@ -16,14 +17,14 @@ use crate::models::tool::Tool;
 use crate::ui::absorb_dialog::AbsorbDialog;
 use crate::ui::download_row::DownloadRow;
 use crate::ui::fomod_dialog::FomodDialog;
+use crate::ui::game_setup_dialog::GameSetupDialog;
 use crate::ui::mod_list::ModListItem;
 use crate::ui::mod_properties_dialog::ModPropertiesDialog;
 use crate::ui::plugin_list::PluginRow;
 use crate::ui::pre_install_dialog::PreInstallDialog;
-use crate::ui::game_setup_dialog::GameSetupDialog;
 use crate::ui::settings_dialog::SettingsDialog;
 use crate::ui::tool_manager::ToolManager;
-use super::types::{DownloadSort, PendingInstall, SearchScope};
+use crate::ui::welcome_wizard::WelcomeWizard;
 
 pub struct App {
     pub(crate) initializing: bool,
@@ -65,6 +66,8 @@ pub struct App {
     pub(crate) tool_manager_dialog: Option<Controller<ToolManager>>,
     /// Active game setup dialog controller.
     pub(crate) game_setup_dialog: Option<Controller<GameSetupDialog>>,
+    /// Active first-launch welcome wizard controller.
+    pub(crate) welcome_wizard: Option<Controller<WelcomeWizard>>,
     /// Active settings dialog controller.
     pub(crate) settings_dialog: Option<Controller<SettingsDialog>>,
     /// Active mod properties dialog controller.
@@ -83,7 +86,7 @@ pub struct App {
     pub(crate) all_downloads: Vec<DownloadEntry>,
     /// Whether the downloads sidebar is visible.
     pub(crate) downloads_visible: bool,
-/// ID of the currently active download (for status updates).
+    /// ID of the currently active download (for status updates).
     pub(crate) active_download_id: Option<String>,
     /// Cached count of active downloads for current game (for sidebar view).
     pub(crate) active_download_count: usize,

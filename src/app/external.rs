@@ -1,17 +1,19 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use gtk::prelude::*;
 use gtk::gio;
+use gtk::prelude::*;
 use relm4::prelude::*;
 
 use crate::core::detector;
 use crate::ui::absorb_dialog::{AbsorbDialog, AbsorbDialogOutput};
-use crate::ui::pre_install_dialog::{PreInstallDialog, PreInstallDialogInit, PreInstallDialogOutput};
+use crate::ui::pre_install_dialog::{
+    PreInstallDialog, PreInstallDialogInit, PreInstallDialogOutput,
+};
 
+use super::App;
 use super::messages::{AppCmdMsg, AppMsg};
 use super::types::PendingInstall;
-use super::App;
 
 impl App {
     pub(crate) fn handle_discard_external_files(
@@ -78,8 +80,12 @@ impl App {
         &mut self,
         sender: &ComponentSender<Self>,
     ) {
-        let Some(tracker) = self.tracker.clone() else { return };
-        let Some(game) = self.selected_game().cloned() else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
         self.toaster.toast("Resetting vanilla baseline…");
         sender.oneshot_command(async move {
             let result = async {
@@ -99,8 +105,12 @@ impl App {
         files: Vec<crate::core::detector::ExternalFile>,
         sender: &ComponentSender<Self>,
     ) {
-        let Some(tracker) = self.tracker.clone() else { return };
-        let Some(game) = self.selected_game().cloned() else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
         sender.oneshot_command(async move {
             let result = async {
                 let mut entries = Vec::with_capacity(files.len());
@@ -136,8 +146,12 @@ impl App {
         if let Some(dialog) = self.absorb_dialog.take() {
             dialog.widget().destroy();
         }
-        let Some(tracker) = self.tracker.clone() else { return };
-        let Some(game) = self.selected_game().cloned() else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
         self.toaster.toast("Adopting cleaned plugin(s)…");
         sender.oneshot_command(async move {
             let result = async {
@@ -145,11 +159,10 @@ impl App {
                     .get_deployed_plugin_files(&game.id)
                     .await
                     .map_err(|e: anyhow::Error| e.to_string())?;
-                let cache_map: std::collections::HashMap<String, std::path::PathBuf> =
-                    plugin_files
-                        .into_iter()
-                        .map(|(rel, _, path)| (rel, path))
-                        .collect();
+                let cache_map: std::collections::HashMap<String, std::path::PathBuf> = plugin_files
+                    .into_iter()
+                    .map(|(rel, _, path)| (rel, path))
+                    .collect();
 
                 let mut adopted = 0usize;
                 for ef in &files {
@@ -181,10 +194,7 @@ impl App {
                             format!("Failed to update cache for {}: {e}", ef.game_rel)
                         })?;
                         std::fs::remove_file(&ef.abs_path).map_err(|e| {
-                            format!(
-                                "Failed to remove {} from game folder: {e}",
-                                ef.game_rel
-                            )
+                            format!("Failed to remove {} from game folder: {e}", ef.game_rel)
                         })?;
                         std::fs::hard_link(cache_path, &ef.abs_path).map_err(|e| {
                             format!(
@@ -213,8 +223,12 @@ impl App {
         if let Some(dialog) = self.absorb_dialog.take() {
             dialog.widget().destroy();
         }
-        let Some(tracker) = self.tracker.clone() else { return };
-        let Some(game) = self.selected_game().cloned() else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
         self.toaster.toast("Restoring plugin(s) from xEdit backup…");
         sender.oneshot_command(async move {
             let result = async {
@@ -222,16 +236,19 @@ impl App {
                     .get_deployed_plugin_files(&game.id)
                     .await
                     .map_err(|e: anyhow::Error| e.to_string())?;
-                let cache_map: std::collections::HashMap<String, std::path::PathBuf> =
-                    plugin_files
-                        .into_iter()
-                        .map(|(rel, _, path)| (rel, path))
-                        .collect();
+                let cache_map: std::collections::HashMap<String, std::path::PathBuf> = plugin_files
+                    .into_iter()
+                    .map(|(rel, _, path)| (rel, path))
+                    .collect();
 
                 let mut restored = 0usize;
                 for ef in &files {
-                    let Some(backup_path) = &ef.xedit_backup_path else { continue };
-                    let Some(cache_path) = cache_map.get(&ef.game_rel) else { continue };
+                    let Some(backup_path) = &ef.xedit_backup_path else {
+                        continue;
+                    };
+                    let Some(cache_path) = cache_map.get(&ef.game_rel) else {
+                        continue;
+                    };
                     std::fs::copy(backup_path, cache_path).map_err(|e| {
                         format!("Failed to restore {} from backup: {e}", ef.game_rel)
                     })?;
@@ -239,14 +256,11 @@ impl App {
                         .file_name()
                         .map(|n| n.to_string_lossy().to_lowercase())
                         .unwrap_or_default();
-                    if let Some(dir_name) =
-                        crate::core::detector::xedit_backup_dir_name(&game.id)
-                    {
+                    if let Some(dir_name) = crate::core::detector::xedit_backup_dir_name(&game.id) {
                         let backup_base = game.data_dir().join(dir_name);
                         if let Ok(entries) = std::fs::read_dir(&backup_base) {
                             for e in entries.flatten() {
-                                if e.file_name().to_string_lossy().to_lowercase()
-                                    == plugin_filename
+                                if e.file_name().to_string_lossy().to_lowercase() == plugin_filename
                                 {
                                     let _ = std::fs::remove_dir_all(e.path());
                                     break;
@@ -264,8 +278,12 @@ impl App {
     }
 
     pub(crate) fn handle_scan_external_files(&mut self, sender: &ComponentSender<Self>) {
-        let Some(tracker) = self.tracker.clone() else { return };
-        let Some(game) = self.selected_game().cloned() else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
         sender.oneshot_command(async move {
             let result = async {
                 let tracked = tracker
@@ -309,9 +327,7 @@ impl App {
                     AbsorbDialogOutput::Selected(file_list) => {
                         AppMsg::AbsorbFilesSelected(file_list)
                     }
-                    AbsorbDialogOutput::Discarded(paths) => {
-                        AppMsg::DiscardExternalFiles(paths)
-                    }
+                    AbsorbDialogOutput::Discarded(paths) => AppMsg::DiscardExternalFiles(paths),
                     AbsorbDialogOutput::MarkedAsVanilla(files) => {
                         AppMsg::MarkExternalFilesAsVanilla(files)
                     }
@@ -335,11 +351,12 @@ impl App {
         if file_list.is_empty() {
             return;
         }
-        let Some(game) = self.selected_game().cloned() else { return };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
         let mod_name = "External Changes".to_string();
         let rules = crate::core::rules::rules_for_game(&game.id);
-        let preview =
-            crate::ui::pre_install_dialog::file_preview_from_list(&file_list, &rules);
+        let preview = crate::ui::pre_install_dialog::file_preview_from_list(&file_list, &rules);
         let is_bethesda = game.engine == crate::models::game::GameEngine::Bethesda;
         self.pending_install = Some(PendingInstall {
             tmp_dir: tempfile::tempdir().expect("tempdir"),

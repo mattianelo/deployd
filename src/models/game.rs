@@ -15,7 +15,7 @@ pub struct Game {
     pub path: PathBuf,
     pub data_subdir: String,
     pub engine: GameEngine,
-    /// User-specified Wine prefix override. `None` means auto-detect via Heroic config / relative paths.
+    /// User-specified Wine prefix. `None` means no prefix (native game or not yet configured).
     pub wine_prefix: Option<PathBuf>,
 }
 

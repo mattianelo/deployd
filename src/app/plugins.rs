@@ -9,9 +9,9 @@ use crate::models::plugin::Plugin;
 use crate::models::plugin::PluginDirtyInfo;
 use crate::ui::plugin_list::PluginRowInit;
 
+use super::App;
 use super::free_fns::{check_order_violates_masters, load_game_data};
 use super::messages::AppCmdMsg;
-use super::App;
 
 impl App {
     pub(crate) fn handle_move_plugin_to(
@@ -94,8 +94,7 @@ impl App {
                     })
                     .collect()
             };
-            let selected_set: std::collections::HashSet<usize> =
-                selected.iter().copied().collect();
+            let selected_set: std::collections::HashSet<usize> = selected.iter().copied().collect();
             let mut new_order: Vec<(String, String)> = order
                 .iter()
                 .enumerate()
@@ -107,9 +106,7 @@ impl App {
                     new_order.insert(anchor + i, order[idx].clone());
                 }
             }
-            if let Some(master) =
-                check_order_violates_masters(&new_order, &self.plugin_masters)
-            {
+            if let Some(master) = check_order_violates_masters(&new_order, &self.plugin_masters) {
                 self.toaster
                     .toast(&format!("Cannot move plugin: '{}' must load first", master));
                 return;
@@ -156,11 +153,11 @@ impl App {
         let mut guard = self.plugins.guard();
         let len = guard.len();
         for i in 0..len {
-            if let Some(row) = guard.get_mut(i) {
-                if !row.is_vanilla {
-                    count += 1;
-                    row.order_label = format!("#{count}");
-                }
+            if let Some(row) = guard.get_mut(i)
+                && !row.is_vanilla
+            {
+                count += 1;
+                row.order_label = format!("#{count}");
             }
         }
     }
@@ -200,8 +197,12 @@ impl App {
     }
 
     pub(crate) fn handle_enable_all_plugins(&mut self, sender: &ComponentSender<Self>) {
-        let Some(tracker) = self.tracker.clone() else { return };
-        let Some(game) = self.selected_game().cloned() else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
         let profile_id = self
             .profiles
             .get(self.active_profile_idx)
@@ -226,8 +227,12 @@ impl App {
     }
 
     pub(crate) fn handle_disable_all_plugins(&mut self, sender: &ComponentSender<Self>) {
-        let Some(tracker) = self.tracker.clone() else { return };
-        let Some(game) = self.selected_game().cloned() else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
         let profile_id = self
             .profiles
             .get(self.active_profile_idx)
@@ -289,7 +294,9 @@ impl App {
     }
 
     pub(crate) fn handle_sort_with_loot(&mut self, sender: &ComponentSender<Self>) {
-        let Some(game) = self.selected_game() else { return };
+        let Some(game) = self.selected_game() else {
+            return;
+        };
         let game_id = game.id.clone();
         let game_path = game.path.clone();
         let data_subdir = game.data_subdir.clone();
@@ -325,7 +332,13 @@ impl App {
         }
         #[cfg(not(feature = "loot"))]
         {
-            let _ = (game_id, game_path, data_subdir, plugin_names, local_data_path);
+            let _ = (
+                game_id,
+                game_path,
+                data_subdir,
+                plugin_names,
+                local_data_path,
+            );
             self.toaster
                 .toast("LOOT support is not enabled in this build");
         }
@@ -345,10 +358,7 @@ impl App {
     #[cfg(feature = "loot")]
     pub(crate) fn handle_cmd_loot_sort_done(
         &mut self,
-        result: Result<
-            (Vec<String>, HashMap<String, PluginDirtyInfo>),
-            String,
-        >,
+        result: Result<(Vec<String>, HashMap<String, PluginDirtyInfo>), String>,
         sender: &ComponentSender<Self>,
     ) {
         match result {
@@ -368,9 +378,9 @@ impl App {
                     let guard = self.plugins.guard();
                     let id_map: std::collections::HashMap<String, String> = (0..guard.len())
                         .filter_map(|i| {
-                            guard.get(i).map(|r| {
-                                (r.plugin.filename.to_lowercase(), r.plugin.id.clone())
-                            })
+                            guard
+                                .get(i)
+                                .map(|r| (r.plugin.filename.to_lowercase(), r.plugin.id.clone()))
                         })
                         .collect();
                     sorted_names

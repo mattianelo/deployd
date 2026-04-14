@@ -161,15 +161,13 @@ impl Tracker {
         .await
         .context("Failed to query active profile")?;
 
-        Ok(
-            row.map(|(id, name, is_active, save_mode)| Profile {
-                id,
-                name,
-                is_active,
-                save_mode: SaveMode::from_db(&save_mode),
-                save_synced_at: None,
-            }),
-        )
+        Ok(row.map(|(id, name, is_active, save_mode)| Profile {
+            id,
+            name,
+            is_active,
+            save_mode: SaveMode::from_db(&save_mode),
+            save_synced_at: None,
+        }))
     }
 
     /// Update the save mode for a profile.

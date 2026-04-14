@@ -1,9 +1,9 @@
-use gtk::prelude::*;
 use gtk::gio;
+use gtk::prelude::*;
 use relm4::prelude::*;
 
-use super::super::messages::AppMsg;
 use super::super::App;
+use super::super::messages::AppMsg;
 
 impl App {
     pub(crate) fn handle_rate_limit_updated(

@@ -52,6 +52,14 @@ pub fn game_data_dir(game: &Game) -> PathBuf {
     game::deploy_dir(game)
 }
 
+/// Managed ProtonGE runtimes root: `<data>/deployd/runtimes`
+///
+/// Each installed version lives in its own subdirectory, e.g. `runtimes/GE-Proton9-20/`.
+/// The active version is indicated by a `current` symlink at `runtimes/current`.
+pub fn runtimes_dir() -> Result<PathBuf> {
+    Ok(deployd_data_dir()?.join("runtimes"))
+}
+
 /// Default downloads directory (~/Downloads or fallback to $HOME/Downloads).
 pub fn default_downloads_dir() -> PathBuf {
     glib::user_special_dir(glib::UserDirectory::Downloads).unwrap_or_else(|| {

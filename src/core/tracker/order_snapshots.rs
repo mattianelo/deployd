@@ -91,11 +91,7 @@ impl Tracker {
 
     /// Restore mod priorities from a snapshot. Mods not in the snapshot keep their
     /// current priority. Mods in the snapshot that are no longer installed are ignored.
-    pub async fn restore_mod_order_snapshot(
-        &self,
-        snapshot_id: &str,
-        game_id: &str,
-    ) -> Result<()> {
+    pub async fn restore_mod_order_snapshot(&self, snapshot_id: &str, game_id: &str) -> Result<()> {
         let entries: Vec<(String, i32)> = sqlx::query_as(
             "SELECT entry_id, position FROM order_snapshot_entries
              WHERE snapshot_id = ? ORDER BY position",
@@ -107,14 +103,12 @@ impl Tracker {
 
         let mut tx = self.pool.begin().await?;
         for (mod_id, position) in &entries {
-            sqlx::query(
-                "UPDATE mods SET priority = ? WHERE id = ? AND game_id = ?",
-            )
-            .bind(position)
-            .bind(mod_id)
-            .bind(game_id)
-            .execute(&mut *tx)
-            .await?;
+            sqlx::query("UPDATE mods SET priority = ? WHERE id = ? AND game_id = ?")
+                .bind(position)
+                .bind(mod_id)
+                .bind(game_id)
+                .execute(&mut *tx)
+                .await?;
         }
         tx.commit()
             .await

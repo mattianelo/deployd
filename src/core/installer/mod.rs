@@ -20,8 +20,8 @@ use crate::models::game::{Game, GameEngine};
 use crate::models::manifest::ModFile;
 use crate::models::mod_entry::{InstallTarget, ModEntry};
 use crate::models::plugin::Plugin;
-use crate::utils::{archive, fomod_resolver};
 use crate::utils::paths as utils_paths;
+use crate::utils::{archive, fomod_resolver};
 
 #[derive(Debug)]
 pub struct AddResult {
@@ -104,6 +104,7 @@ pub async fn prepare_mod(
     }
 }
 
+#[allow(clippy::too_many_arguments)] // All parameters are meaningfully distinct; a builder struct would add complexity without clarity.
 pub async fn add_mod_with_file_list(
     file_list: Vec<(PathBuf, PathBuf)>,
     game: &Game,
@@ -344,6 +345,7 @@ pub async fn add_mod_with_file_list(
     })
 }
 
+#[allow(clippy::too_many_arguments)] // All parameters are meaningfully distinct; a builder struct would add complexity without clarity.
 pub async fn merge_files_into_mod(
     file_list: Vec<(PathBuf, PathBuf)>,
     game: &Game,

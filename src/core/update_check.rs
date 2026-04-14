@@ -64,7 +64,7 @@ fn parse_semver(v: &str) -> (u32, u32, u32) {
     let minor = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
     let patch = parts
         .next()
-        .and_then(|s| s.split('-').next())   // strip pre-release suffix
+        .and_then(|s| s.split('-').next()) // strip pre-release suffix
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
     (major, minor, patch)

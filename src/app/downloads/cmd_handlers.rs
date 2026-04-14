@@ -5,9 +5,9 @@ use relm4::prelude::*;
 use crate::models::download::DownloadStatus;
 use crate::utils::paths;
 
+use super::super::App;
 use super::super::messages::AppCmdMsg;
 use super::super::types::NxmDownloadResult;
-use super::super::App;
 
 impl App {
     pub(crate) fn handle_cmd_nexus_metadata_fetched(
@@ -39,8 +39,7 @@ impl App {
                 if updates.is_empty() {
                     self.toaster.toast("All mods are up to date");
                 } else {
-                    let names: Vec<_> =
-                        updates.iter().map(|(_, name, _)| name.as_str()).collect();
+                    let names: Vec<_> = updates.iter().map(|(_, name, _)| name.as_str()).collect();
                     self.toaster.toast(&format!(
                         "{} mod(s) have updates: {}",
                         updates.len(),

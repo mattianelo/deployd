@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use super::known_games::{KNOWN_GAMES, KnownGame};
 use crate::models::game::Game;
-use super::known_games::{KnownGame, KNOWN_GAMES};
 
 pub(crate) fn find_wine_user_dir(known: &KnownGame, game: &Game) -> Option<PathBuf> {
     let prefix = game
@@ -40,22 +40,34 @@ pub struct WineConfig {
 pub fn detect_wine_config(game: &Game) -> Option<WineConfig> {
     let known = KNOWN_GAMES.iter().find(|k| k.deployd_id == game.id)?;
 
-    if let Some(prefix) = game.wine_prefix.clone() {
-        let (wine_bin, proton_dir) = if let Some((bin, pdir)) = find_wine_near_prefix(&prefix) {
-            (bin, Some(pdir))
-        } else {
-            (which_wine()?, None)
-        };
-        return Some(WineConfig { prefix, wine_bin, proton_dir });
+    let prefix = game
+        .wine_prefix
+        .clone()
+        .or_else(|| detect_wine_prefix(known.heroic_app_name, &game.path))?;
+
+    // Prefer the Deployd-managed ProtonGE runtime when one is active.
+    if let Some(proton_dir) = crate::core::proton_manager::active_runtime_path() {
+        let wine_bin = proton_dir.join("files/bin/wine");
+        if wine_bin.exists() {
+            return Some(WineConfig {
+                prefix,
+                wine_bin,
+                proton_dir: Some(proton_dir),
+            });
+        }
     }
 
-    let prefix = detect_wine_prefix(known.heroic_app_name, &game.path)?;
+    // Fall back to a Proton installation detected near the prefix (e.g. Steam's own Proton).
     let (wine_bin, proton_dir) = if let Some((bin, pdir)) = find_wine_near_prefix(&prefix) {
         (bin, Some(pdir))
     } else {
         (which_wine()?, None)
     };
-    Some(WineConfig { prefix, wine_bin, proton_dir })
+    Some(WineConfig {
+        prefix,
+        wine_bin,
+        proton_dir,
+    })
 }
 
 fn best_proton_in_dir(dir: &Path) -> Option<(PathBuf, PathBuf)> {
@@ -127,10 +139,15 @@ fn which_wine() -> Option<PathBuf> {
     None
 }
 
-pub(super) fn detect_wine_prefix(heroic_app_name: &str, game_path: &PathBuf) -> Option<PathBuf> {
+pub(super) fn detect_wine_prefix(heroic_app_name: &str, game_path: &Path) -> Option<PathBuf> {
     // Steam: <steamapps>/compatdata/<appid>/pfx relative to the game at <steamapps>/common/<Game>/.
     let steam_compat = format!("../../compatdata/{heroic_app_name}/pfx");
-    for relative in &[steam_compat.as_str(), "../pfx", "../../pfx", "../compatdata/pfx"] {
+    for relative in &[
+        steam_compat.as_str(),
+        "../pfx",
+        "../../pfx",
+        "../compatdata/pfx",
+    ] {
         let candidate = game_path.join(relative);
         if candidate.exists() {
             return Some(candidate);

@@ -5,16 +5,12 @@ use relm4::prelude::*;
 use crate::ui::mod_list::{ModListItemInit, ModListItemKind, ModRowInit};
 use crate::utils::paths;
 
+use super::super::App;
 use super::super::free_fns::load_game_data;
 use super::super::messages::AppCmdMsg;
-use super::super::App;
 
 impl App {
-    pub(crate) fn handle_game_selected(
-        &mut self,
-        idx: u32,
-        sender: &ComponentSender<Self>,
-    ) {
+    pub(crate) fn handle_game_selected(&mut self, idx: u32, sender: &ComponentSender<Self>) {
         let new_idx = idx as usize;
         if new_idx == self.selected_game_idx {
             return;
@@ -46,13 +42,18 @@ impl App {
             let Some(row) = guard.get(idx) else { return };
             let Some(init) = row.mod_row() else { return };
             let id = init.mod_entry.id.clone();
-            let nids = init.mod_entry.nexus_mod_id.zip(init.mod_entry.nexus_file_id);
+            let nids = init
+                .mod_entry
+                .nexus_mod_id
+                .zip(init.mod_entry.nexus_file_id);
             let name = init.mod_entry.name.clone();
             let hash = init.mod_entry.archive_hash.clone();
             (id, nids, name, hash)
         };
 
-        let Some(tracker) = self.tracker.clone() else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
 
         self.pending_scroll_restore = Some(self.mod_scroll.vadjustment().value());
         self.mods.guard().remove(idx);
@@ -214,18 +215,19 @@ impl App {
             selected
                 .iter()
                 .filter_map(|&idx| {
-                    guard.get(idx).and_then(|row| row.mod_row()).map(|init| {
-                        ModListItemInit {
-                            kind: ModListItemKind::Mod(ModRowInit {
+                    guard
+                        .get(idx)
+                        .and_then(|row| row.mod_row())
+                        .map(|init| ModListItemInit {
+                            kind: ModListItemKind::Mod(Box::new(ModRowInit {
                                 mod_entry: init.mod_entry.clone(),
                                 priority_label: init.priority_label.clone(),
                                 overrides: init.overrides,
                                 overridden_by: init.overridden_by,
                                 override_files: init.override_files.clone(),
                                 overridden_files: init.overridden_files.clone(),
-                            }),
-                        }
-                    })
+                            })),
+                        })
                 })
                 .collect()
         };
@@ -248,8 +250,12 @@ impl App {
     }
 
     pub(crate) fn handle_enable_all_mods(&mut self, sender: &ComponentSender<Self>) {
-        let Some(tracker) = self.tracker.clone() else { return };
-        let Some(game) = self.selected_game().cloned() else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
         let profile_id = self
             .profiles
             .get(self.active_profile_idx)
@@ -284,8 +290,12 @@ impl App {
     }
 
     pub(crate) fn handle_disable_all_mods(&mut self, sender: &ComponentSender<Self>) {
-        let Some(tracker) = self.tracker.clone() else { return };
-        let Some(game) = self.selected_game().cloned() else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
         let profile_id = self
             .profiles
             .get(self.active_profile_idx)
@@ -360,7 +370,9 @@ impl App {
             let guard = self.mods.guard();
             if let Some(item) = guard.get(idx)
                 && let crate::ui::mod_list::ModListItemKind::Separator {
-                    group_id, collapsed, ..
+                    group_id,
+                    collapsed,
+                    ..
                 } = &item.kind
             {
                 (group_id.clone(), !collapsed)
@@ -419,8 +431,7 @@ impl App {
         let group_id = {
             let guard = self.mods.guard();
             if let Some(item) = guard.get(idx)
-                && let crate::ui::mod_list::ModListItemKind::Separator { group_id, .. } =
-                    &item.kind
+                && let crate::ui::mod_list::ModListItemKind::Separator { group_id, .. } = &item.kind
             {
                 group_id.clone()
             } else {
@@ -429,9 +440,7 @@ impl App {
         };
         self.collapsed_groups.remove(&group_id);
 
-        if let (Some(tracker), Some(game)) =
-            (self.tracker.clone(), self.selected_game().cloned())
-        {
+        if let (Some(tracker), Some(game)) = (self.tracker.clone(), self.selected_game().cloned()) {
             sender.oneshot_command(async move {
                 if let Err(e) = tracker.delete_group(&group_id).await {
                     eprintln!("Failed to delete group: {e}");
@@ -441,14 +450,8 @@ impl App {
         }
     }
 
-    pub(crate) fn handle_create_group(
-        &mut self,
-        name: String,
-        sender: &ComponentSender<Self>,
-    ) {
-        if let (Some(tracker), Some(game)) =
-            (self.tracker.clone(), self.selected_game().cloned())
-        {
+    pub(crate) fn handle_create_group(&mut self, name: String, sender: &ComponentSender<Self>) {
+        if let (Some(tracker), Some(game)) = (self.tracker.clone(), self.selected_game().cloned()) {
             let position = {
                 let guard = self.mods.guard();
                 guard.len() as f64
@@ -467,8 +470,7 @@ impl App {
         let group_id = {
             let guard = self.mods.guard();
             if let Some(item) = guard.get(idx)
-                && let crate::ui::mod_list::ModListItemKind::Separator { group_id, .. } =
-                    &item.kind
+                && let crate::ui::mod_list::ModListItemKind::Separator { group_id, .. } = &item.kind
             {
                 group_id.clone()
             } else {
@@ -479,8 +481,7 @@ impl App {
         {
             let mut guard = self.mods.guard();
             if let Some(item) = guard.get_mut(idx)
-                && let crate::ui::mod_list::ModListItemKind::Separator { name, .. } =
-                    &mut item.kind
+                && let crate::ui::mod_list::ModListItemKind::Separator { name, .. } = &mut item.kind
             {
                 *name = new_name.clone();
             }
@@ -495,14 +496,18 @@ impl App {
 
     pub(crate) fn handle_create_empty_mod(&mut self, sender: &ComponentSender<Self>) {
         self.overflow_menu_btn.popdown();
-        let Some(tracker) = self.tracker.clone() else { return };
-        let Some(game) = self.selected_game().cloned() else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
         let game_id = game.id.clone();
         sender.oneshot_command(async move {
             let result: Result<(String, std::path::PathBuf), String> = async {
                 let mod_id = uuid::Uuid::new_v4().to_string();
-                let cache_dir = crate::utils::paths::mod_cache_dir(&mod_id)
-                    .map_err(|e| e.to_string())?;
+                let cache_dir =
+                    crate::utils::paths::mod_cache_dir(&mod_id).map_err(|e| e.to_string())?;
                 std::fs::create_dir_all(&cache_dir).map_err(|e| e.to_string())?;
                 let priority = tracker
                     .next_priority(&game_id)

@@ -1,4 +1,3 @@
-
 use crate::models::game::GameEngine;
 
 #[derive(PartialEq, Eq, Clone, Copy)]
@@ -31,7 +30,7 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
     KnownGame {
         store: GameStore::Gog,
         heroic_app_name: "1711230643",
-        deployd_id: "skyrimse",
+        deployd_id: "skyrim-se",
         title: "Skyrim Special Edition",
         data_subdir: "Data",
         appdata_folders: &["Skyrim Special Edition", "Skyrim Special Edition GOG"],
@@ -44,7 +43,7 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
     KnownGame {
         store: GameStore::Gog,
         heroic_app_name: "1998527297",
-        deployd_id: "fallout4",
+        deployd_id: "fallout-4",
         title: "Fallout 4",
         data_subdir: "Data",
         appdata_folders: &["Fallout4"],
@@ -57,7 +56,7 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
     KnownGame {
         store: GameStore::Gog,
         heroic_app_name: "1454587428",
-        deployd_id: "falloutnv",
+        deployd_id: "fallout-nv",
         title: "Fallout: New Vegas",
         data_subdir: "Data",
         appdata_folders: &["Fallout New Vegas"],
@@ -69,12 +68,12 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
     },
     // ── Steam editions ────────────────────────────────────────────────────────
     // heroic_app_name holds the Steam App ID, which Heroic also uses as the
-    // GamesConfig key. GOG and Steam installs get distinct deployd_ids so they
-    // are tracked separately in the database.
+    // GamesConfig key. GOG and Steam installs share the same deployd_id; the
+    // store field distinguishes them for display purposes only.
     KnownGame {
         store: GameStore::Steam,
         heroic_app_name: "489830",
-        deployd_id: "skyrimse-steam",
+        deployd_id: "skyrim-se",
         title: "Skyrim Special Edition",
         data_subdir: "Data",
         appdata_folders: &["Skyrim Special Edition"],
@@ -87,7 +86,7 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
     KnownGame {
         store: GameStore::Steam,
         heroic_app_name: "377160",
-        deployd_id: "fallout4-steam",
+        deployd_id: "fallout-4",
         title: "Fallout 4",
         data_subdir: "Data",
         appdata_folders: &["Fallout4"],
@@ -100,7 +99,7 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
     KnownGame {
         store: GameStore::Steam,
         heroic_app_name: "22380",
-        deployd_id: "falloutnv-steam",
+        deployd_id: "fallout-nv",
         title: "Fallout: New Vegas",
         data_subdir: "Data",
         appdata_folders: &["Fallout New Vegas"],
@@ -127,21 +126,8 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
     KnownGame {
         store: GameStore::Gog,
         heroic_app_name: "1207664663",
-        deployd_id: "witcher3",
+        deployd_id: "witcher-3",
         title: "The Witcher 3: Wild Hunt",
-        data_subdir: ".",
-        appdata_folders: &[],
-        custom_ini_name: "",
-        bethesda_reg_key: "",
-        nexus_domain: "witcher3",
-        engine: GameEngine::REDEngine,
-        save_game_subpath: Some("Documents/The Witcher 3/gamesaves"),
-    },
-    KnownGame {
-        store: GameStore::Gog,
-        heroic_app_name: "1495134320",
-        deployd_id: "witcher3-goty",
-        title: "The Witcher 3: Wild Hunt - Game of the Year Edition",
         data_subdir: ".",
         appdata_folders: &[],
         custom_ini_name: "",
@@ -153,7 +139,7 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
     KnownGame {
         store: GameStore::Steam,
         heroic_app_name: "292030",
-        deployd_id: "witcher3-steam",
+        deployd_id: "witcher-3",
         title: "The Witcher 3: Wild Hunt",
         data_subdir: ".",
         appdata_folders: &[],
@@ -166,7 +152,7 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
     KnownGame {
         store: GameStore::Gog,
         heroic_app_name: "1423049311",
-        deployd_id: "cyberpunk2077",
+        deployd_id: "cyberpunk-2077",
         title: "Cyberpunk 2077",
         data_subdir: ".",
         appdata_folders: &[],
@@ -179,7 +165,7 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
     KnownGame {
         store: GameStore::Steam,
         heroic_app_name: "1091500",
-        deployd_id: "cyberpunk2077-steam",
+        deployd_id: "cyberpunk-2077",
         title: "Cyberpunk 2077",
         data_subdir: ".",
         appdata_folders: &[],
@@ -194,7 +180,7 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
     KnownGame {
         store: GameStore::Gog,
         heroic_app_name: "1949616134",
-        deployd_id: "dragonage",
+        deployd_id: "dragon-age",
         title: "Dragon Age: Origins - Ultimate Edition",
         data_subdir: "Documents/BioWare/Dragon Age",
         appdata_folders: &[],
@@ -207,7 +193,7 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
     KnownGame {
         store: GameStore::Steam,
         heroic_app_name: "47810",
-        deployd_id: "dragonage-steam",
+        deployd_id: "dragon-age",
         title: "Dragon Age: Origins",
         data_subdir: "Documents/BioWare/Dragon Age",
         appdata_folders: &[],

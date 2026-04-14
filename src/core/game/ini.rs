@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
+use super::known_games::KNOWN_GAMES;
+use super::wine::{detect_wine_prefix, find_wine_user_dir, linux_path_to_wine_path};
 use crate::dlog;
 use crate::models::game::Game;
-use super::known_games::KNOWN_GAMES;
-use super::wine::{find_wine_user_dir, detect_wine_prefix, linux_path_to_wine_path};
 
 /// Resolve all possible paths to Plugins.txt for a game.
 ///

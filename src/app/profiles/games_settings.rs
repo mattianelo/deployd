@@ -6,9 +6,10 @@ use relm4::prelude::*;
 use crate::models::game::GameEngine;
 use crate::ui::game_setup_dialog::{GameSetupDialog, GameSetupOutput};
 use crate::ui::settings_dialog::{SettingsDialog, SettingsDialogOutput};
+use crate::ui::welcome_wizard::{WelcomeWizard, WelcomeWizardOutput};
 
-use super::super::messages::{AppCmdMsg, AppMsg};
 use super::super::App;
+use super::super::messages::{AppCmdMsg, AppMsg};
 
 impl App {
     pub(crate) fn handle_settings_clicked(
@@ -66,9 +67,10 @@ impl App {
                 .transient_for(root)
                 .launch((detected, vec![]))
                 .forward(sender.input_sender(), |output| match output {
-                    GameSetupOutput::Confirmed { enabled, hidden_ids } => {
-                        AppMsg::GamesConfigured(enabled, hidden_ids)
-                    }
+                    GameSetupOutput::Confirmed {
+                        enabled,
+                        hidden_ids,
+                    } => AppMsg::GamesConfigured(enabled, hidden_ids),
                     GameSetupOutput::Closed => AppMsg::ManageGamesClosed,
                 }),
         );
@@ -157,6 +159,50 @@ impl App {
                 AppCmdMsg::PrioritySaved(Ok(()))
             });
         }
+    }
+
+    pub(crate) fn handle_show_welcome_wizard(
+        &mut self,
+        root: &adw::Window,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.welcome_wizard = Some(
+            WelcomeWizard::builder()
+                .transient_for(root)
+                .launch(())
+                .forward(sender.input_sender(), |out| match out {
+                    WelcomeWizardOutput::Confirmed {
+                        enabled,
+                        hidden_ids,
+                    } => AppMsg::WelcomeWizardConfirmed(enabled, hidden_ids),
+                    WelcomeWizardOutput::Skipped => AppMsg::WelcomeWizardSkipped,
+                }),
+        );
+    }
+
+    pub(crate) fn handle_welcome_wizard_confirmed(
+        &mut self,
+        configs: Vec<crate::app::messages::GameConfig>,
+        hidden_ids: Vec<String>,
+        sender: &ComponentSender<Self>,
+    ) {
+        if let Some(w) = self.welcome_wizard.take() {
+            w.widget().close();
+        }
+        // Persist the wizard-shown marker so we don't show it again.
+        if let Some(ref tracker) = self.tracker {
+            let t = tracker.clone();
+            relm4::spawn(async move {
+                let _ = t.set_setting("welcome_wizard_shown", "1").await;
+            });
+        }
+        // Reuse the existing game-configure flow.
+        self.handle_games_configured(configs, hidden_ids, sender);
+        // Kick off the downloads scan that was deferred while waiting for the wizard.
+        // External-file scan is deliberately omitted here: it must run *after* GameSelected
+        // loads the game data and creates the vanilla snapshot, otherwise every game file
+        // would be flagged as a new external change.
+        sender.input(AppMsg::ScanDownloadsFolder);
     }
 
     pub(crate) fn handle_remove_game(&mut self, game_id: String, sender: &ComponentSender<Self>) {

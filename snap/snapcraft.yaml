@@ -11,7 +11,7 @@ description: |
   Supports multiple profiles per game, FOMOD installers, load order management,
   conflict detection, and Nexus Mods integration (NXM links, SSO login).
 
-icon: snap/gui/deployd.svg
+icon: data/icons/hicolor/scalable/apps/deployd.svg
 
 grade: devel
 confinement: strict

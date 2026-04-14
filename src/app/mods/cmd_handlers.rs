@@ -1,8 +1,8 @@
 use relm4::prelude::*;
 
+use super::super::App;
 use super::super::messages::{AppCmdMsg, AppMsg};
 use super::super::types::LoadedData;
-use super::super::App;
 
 impl App {
     pub(crate) fn handle_cmd_mods_loaded(

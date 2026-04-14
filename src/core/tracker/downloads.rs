@@ -68,6 +68,7 @@ impl Tracker {
         &self,
     ) -> Result<Vec<crate::models::download::DownloadEntry>> {
         use crate::models::download::{DownloadEntry, DownloadStatus};
+        #[allow(clippy::type_complexity)] // Flat SQLx row tuple — a struct would need manual FromRow impl with no real gain.
         let rows: Vec<(String, String, Option<String>, Option<i64>, Option<i64>, Option<String>, Option<String>, bool, Option<String>, bool, Option<String>, Option<String>)> =
             sqlx::query_as(
                 "SELECT id, mod_name, archive_path, nexus_mod_id, nexus_file_id, nexus_domain, game_domain, metadata_fetched, nexus_file_name, nexus_is_primary, status, archive_hash

@@ -1,10 +1,10 @@
 use gtk::prelude::*;
 use relm4::prelude::*;
 
+use super::super::App;
 use super::super::free_fns::load_game_data;
 use super::super::messages::{AppCmdMsg, AppMsg};
 use super::super::types::{InitData, LoadedData};
-use super::super::App;
 
 impl App {
     pub(crate) fn handle_cmd_initialized(
@@ -20,8 +20,7 @@ impl App {
                     .set_selected(data.selected_game_idx as u32);
 
                 for game in &mut self.games {
-                    if let Some(persisted) = data.persisted_games.iter().find(|p| p.id == game.id)
-                    {
+                    if let Some(persisted) = data.persisted_games.iter().find(|p| p.id == game.id) {
                         game.path = persisted.path.clone();
                         if persisted.wine_prefix.is_some() {
                             game.wine_prefix = persisted.wine_prefix.clone();
@@ -63,23 +62,12 @@ impl App {
                     }
                 }
 
-                let persisted_ids: std::collections::HashSet<&str> =
-                    data.persisted_games.iter().map(|p| p.id.as_str()).collect();
-                let hidden_set: std::collections::HashSet<&str> =
-                    data.hidden_game_ids.iter().map(String::as_str).collect();
-                let new_ids: Vec<String> = self
-                    .games
-                    .iter()
-                    .filter(|g| {
-                        !persisted_ids.contains(g.id.as_str())
-                            && !hidden_set.contains(g.id.as_str())
-                    })
-                    .map(|g| g.id.clone())
-                    .collect();
-                if !new_ids.is_empty() {
-                    self.pending_new_game_ids = new_ids;
-                    sender.input(AppMsg::ManageGamesClicked);
+                if data.first_launch {
+                    self.initializing = false;
+                    sender.input(AppMsg::ShowWelcomeWizard);
+                    return;
                 }
+
                 self.collapsed_groups = data
                     .groups
                     .iter()
@@ -142,7 +130,13 @@ impl App {
 
     pub(crate) fn handle_cmd_profile_switched(
         &mut self,
-        result: Result<(LoadedData, Option<crate::core::save_manager::SaveSyncResult>), String>,
+        result: Result<
+            (
+                LoadedData,
+                Option<crate::core::save_manager::SaveSyncResult>,
+            ),
+            String,
+        >,
         sender: &ComponentSender<Self>,
     ) {
         match result {

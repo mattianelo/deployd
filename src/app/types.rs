@@ -81,10 +81,12 @@ pub struct InitData {
     pub groups: Vec<ModGroup>,
     /// Game records previously persisted to the DB (custom games + overrides).
     pub persisted_games: Vec<PersistedGame>,
-    /// IDs of games the user has explicitly hidden (excluded from auto-detection).
+    /// IDs of games the user has explicitly hidden.
     pub hidden_game_ids: Vec<String>,
     /// Profile ID that was active during the last successful deploy for the selected game.
     pub last_deployed_profile_id: Option<String>,
+    /// True when this is the very first launch (no games persisted, wizard not yet shown).
+    pub first_launch: bool,
 }
 
 #[derive(Debug)]

@@ -2,8 +2,8 @@ use relm4::prelude::*;
 
 use crate::core::game;
 
-use super::super::messages::{AppCmdMsg, AppMsg};
 use super::super::App;
+use super::super::messages::{AppCmdMsg, AppMsg};
 
 impl App {
     pub(crate) fn handle_check_updates(&mut self, sender: &ComponentSender<Self>) {
@@ -51,9 +51,9 @@ impl App {
                             // falsely flagged when only the main file version changes.
                             // Fall back to the latest primary file when the installed
                             // file is no longer listed (e.g. removed from Nexus).
-                            let installed_file = m.nexus_file_id.and_then(|fid| {
-                                files_resp.files.iter().find(|f| f.file_id == fid)
-                            });
+                            let installed_file = m
+                                .nexus_file_id
+                                .and_then(|fid| files_resp.files.iter().find(|f| f.file_id == fid));
                             let reference_file = installed_file.or_else(|| {
                                 files_resp
                                     .files
@@ -70,10 +70,7 @@ impl App {
                                     && !current_ver.is_empty()
                                     && latest_ver != current_ver
                                 {
-                                    tracker
-                                        .set_latest_version(&m.id, latest_ver)
-                                        .await
-                                        .ok();
+                                    tracker.set_latest_version(&m.id, latest_ver).await.ok();
                                     updates.push((
                                         m.id.clone(),
                                         m.name.clone(),
@@ -99,10 +96,14 @@ impl App {
     /// Only reachable when APPIMAGE env var is set (i.e. running as an AppImage).
     pub(crate) fn handle_self_update_download(&mut self, sender: &ComponentSender<Self>) {
         use crate::core::nexus_api::NexusClient;
-        use crate::core::update_check::{NEXUS_MOD_ID, NEXUS_DOMAIN};
+        use crate::core::update_check::{NEXUS_DOMAIN, NEXUS_MOD_ID};
 
-        let Some(tracker) = self.tracker.clone() else { return };
-        let Ok(appimage_path) = std::env::var("APPIMAGE") else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Ok(appimage_path) = std::env::var("APPIMAGE") else {
+            return;
+        };
 
         self.toaster.toast("Downloading update...");
 

@@ -213,17 +213,13 @@ impl Tracker {
         }
         let mut tx = self.pool.begin().await?;
         for path in paths {
-            sqlx::query(
-                "DELETE FROM deployed_files WHERE game_id = ? AND game_rel_lowercase = ?",
-            )
-            .bind(game_id)
-            .bind(*path)
-            .execute(&mut *tx)
-            .await?;
+            sqlx::query("DELETE FROM deployed_files WHERE game_id = ? AND game_rel_lowercase = ?")
+                .bind(game_id)
+                .bind(*path)
+                .execute(&mut *tx)
+                .await?;
         }
-        tx.commit()
-            .await
-            .context("Failed to remove deployed files")
+        tx.commit().await.context("Failed to remove deployed files")
     }
 
     /// Record the currently deployed files in a single transaction.

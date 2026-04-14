@@ -69,14 +69,23 @@ pub fn parse_fomod_config(config_path: &Path) -> Result<FomodUiConfig> {
                                                             ps.pattern
                                                                 .iter()
                                                                 .filter_map(|pat| {
-                                                                    let type_name = pat.typ.as_ref()?.name.clone();
-                                                                    let deps = pat.dependencies.as_ref()
+                                                                    let type_name = pat
+                                                                        .typ
+                                                                        .as_ref()?
+                                                                        .name
+                                                                        .clone();
+                                                                    let deps = pat
+                                                                        .dependencies
+                                                                        .as_ref()
                                                                         .map(convert_deps_to_ui)
-                                                                        .unwrap_or_else(|| FomodUiDependencies {
-                                                                            operator: "And".to_string(),
-                                                                            flag_deps: vec![],
-                                                                            file_deps: vec![],
-                                                                            nested: vec![],
+                                                                        .unwrap_or_else(|| {
+                                                                            FomodUiDependencies {
+                                                                                operator: "And"
+                                                                                    .to_string(),
+                                                                                flag_deps: vec![],
+                                                                                file_deps: vec![],
+                                                                                nested: vec![],
+                                                                            }
                                                                         });
                                                                     Some((deps, type_name))
                                                                 })
