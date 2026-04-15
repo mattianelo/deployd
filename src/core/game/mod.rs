@@ -44,8 +44,8 @@ pub fn tool_search_dir(game: &Game) -> Option<PathBuf> {
 /// For Eclipse, resolves inside the Wine prefix user directory instead of the game folder.
 pub fn deploy_dir(game: &Game) -> PathBuf {
     if game.engine == GameEngine::Eclipse
-        && let Some(known) = KNOWN_GAMES.iter().find(|k| k.deployd_id == game.id)
-        && let Some(user_dir) = wine::find_wine_user_dir(known, game)
+        && KNOWN_GAMES.iter().any(|k| k.deployd_id == game.id)
+        && let Some(user_dir) = wine::find_wine_user_dir(game)
     {
         return user_dir.join(&game.data_subdir);
     }

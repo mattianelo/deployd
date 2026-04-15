@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use super::known_games::KNOWN_GAMES;
-use super::wine::{detect_wine_prefix, find_wine_user_dir, linux_path_to_wine_path};
+use super::wine::{find_wine_user_dir, linux_path_to_wine_path};
 use crate::dlog;
 use crate::models::game::Game;
 
@@ -14,7 +14,7 @@ pub fn plugins_txt_paths(game: &Game) -> Vec<PathBuf> {
     let Some(known) = KNOWN_GAMES.iter().find(|k| k.deployd_id == game.id) else {
         return Vec::new();
     };
-    let Some(user_dir) = find_wine_user_dir(known, game) else {
+    let Some(user_dir) = find_wine_user_dir(game) else {
         return Vec::new();
     };
     known
@@ -38,7 +38,7 @@ pub fn custom_ini_paths(game: &Game) -> Vec<PathBuf> {
     let Some(known) = KNOWN_GAMES.iter().find(|k| k.deployd_id == game.id) else {
         return Vec::new();
     };
-    let Some(user_dir) = find_wine_user_dir(known, game) else {
+    let Some(user_dir) = find_wine_user_dir(game) else {
         return Vec::new();
     };
     known
@@ -64,10 +64,7 @@ pub fn custom_ini_paths(game: &Game) -> Vec<PathBuf> {
 pub fn missing_bethesda_reg_key(game: &Game) -> Option<(String, String)> {
     let known = KNOWN_GAMES.iter().find(|k| k.deployd_id == game.id)?;
 
-    let prefix = game
-        .wine_prefix
-        .clone()
-        .or_else(|| detect_wine_prefix(known.heroic_app_name, &game.path))?;
+    let prefix = game.wine_prefix.clone()?;
     let system_reg = prefix.join("system.reg");
     let reg_content = std::fs::read_to_string(&system_reg).ok()?;
 
@@ -99,7 +96,7 @@ pub fn ensure_ini_symlinks(game: &Game) {
         return; // No GOG variant to symlink from
     }
 
-    let Some(user_dir) = find_wine_user_dir(known, game) else {
+    let Some(user_dir) = find_wine_user_dir(game) else {
         return;
     };
     let my_games = user_dir.join("Documents/My Games");

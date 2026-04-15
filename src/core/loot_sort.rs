@@ -6,9 +6,9 @@ use crate::models::plugin::PluginDirtyInfo;
 
 fn loot_game_type(game_id: &str) -> Option<libloot::GameType> {
     match game_id {
-        "skyrimse" => Some(libloot::GameType::SkyrimSE),
-        "fallout4" => Some(libloot::GameType::Fallout4),
-        "falloutnv" => Some(libloot::GameType::FalloutNV),
+        "skyrim-se" => Some(libloot::GameType::SkyrimSE),
+        "fallout-4" => Some(libloot::GameType::Fallout4),
+        "fallout-nv" => Some(libloot::GameType::FalloutNV),
         _ => None,
     }
 }
@@ -21,18 +21,18 @@ pub fn game_has_loot_support(game_id: &str) -> bool {
 
 fn loot_game_folder(game_id: &str) -> Option<&'static str> {
     match game_id {
-        "skyrimse" => Some("Skyrim Special Edition"),
-        "fallout4" => Some("Fallout 4"),
-        "falloutnv" => Some("Fallout New Vegas"),
+        "skyrim-se" => Some("Skyrim Special Edition"),
+        "fallout-4" => Some("Fallout 4"),
+        "fallout-nv" => Some("Fallout New Vegas"),
         _ => None,
     }
 }
 
 fn loot_masterlist_repo(game_id: &str) -> Option<&'static str> {
     match game_id {
-        "skyrimse" => Some("skyrimse"),
-        "fallout4" => Some("fallout4"),
-        "falloutnv" => Some("falloutnv"),
+        "skyrim-se" => Some("skyrimse"),
+        "fallout-4" => Some("fallout4"),
+        "fallout-nv" => Some("falloutnv"),
         _ => None,
     }
 }
@@ -126,7 +126,7 @@ fn compute_file_crc32(path: &std::path::Path) -> Option<u32> {
 
 /// Sort `plugin_filenames` using libloot and the LOOT masterlist.
 ///
-/// - `game_id`          — Deployd game identifier (e.g. `"skyrimse"`).
+/// - `game_id`          — Deployd game identifier (e.g. `"skyrim-se"`).
 /// - `game_path`        — Game install directory (root, not Data/).
 /// - `data_subdir`      — Subdirectory that holds plugin files (e.g. `"Data"`).
 /// - `plugin_filenames` — Plugin filenames to sort (e.g. `["Skyrim.esm", "MyMod.esp"]`).

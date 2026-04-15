@@ -1,13 +1,10 @@
 use std::path::{Path, PathBuf};
 
-use super::known_games::{KNOWN_GAMES, KnownGame};
+use super::known_games::KNOWN_GAMES;
 use crate::models::game::Game;
 
-pub(crate) fn find_wine_user_dir(known: &KnownGame, game: &Game) -> Option<PathBuf> {
-    let prefix = game
-        .wine_prefix
-        .clone()
-        .or_else(|| detect_wine_prefix(known.heroic_app_name, &game.path))?;
+pub(crate) fn find_wine_user_dir(game: &Game) -> Option<PathBuf> {
+    let prefix = game.wine_prefix.clone()?;
     let users_dir = prefix.join("drive_c/users");
 
     for user_dir in &["steamuser", "Public"] {
@@ -25,7 +22,7 @@ pub(crate) fn find_wine_user_dir(known: &KnownGame, game: &Game) -> Option<PathB
         }
     }
 
-    // Fall back to "steamuser" even if it doesn't exist yet.
+    // Fall back to "steamuser" even if it doesn't exist yet (Wine creates it on first run).
     Some(users_dir.join("steamuser"))
 }
 
@@ -37,124 +34,32 @@ pub struct WineConfig {
     pub proton_dir: Option<PathBuf>,
 }
 
+/// Resolve the Wine configuration for a game.
+///
+/// Requires both a user-configured Wine prefix (`game.wine_prefix`) and a
+/// deployd-managed ProtonGE runtime to be active. Neither is auto-detected —
+/// the user selects the prefix manually and installs the runtime via the
+/// ProtonGE manager. Returns `None` if either is missing.
 pub fn detect_wine_config(game: &Game) -> Option<WineConfig> {
-    let known = KNOWN_GAMES.iter().find(|k| k.deployd_id == game.id)?;
+    let _known = KNOWN_GAMES.iter().find(|k| k.deployd_id == game.id)?;
 
-    let prefix = game
-        .wine_prefix
-        .clone()
-        .or_else(|| detect_wine_prefix(known.heroic_app_name, &game.path))?;
+    let prefix = game.wine_prefix.clone()?;
 
-    // Prefer the Deployd-managed ProtonGE runtime when one is active.
-    if let Some(proton_dir) = crate::core::proton_manager::active_runtime_path() {
-        let wine_bin = proton_dir.join("files/bin/wine");
-        if wine_bin.exists() {
-            return Some(WineConfig {
-                prefix,
-                wine_bin,
-                proton_dir: Some(proton_dir),
-            });
-        }
+    let proton_dir = crate::core::proton_manager::active_runtime_path()?;
+    let wine_bin = proton_dir.join("files/bin/wine");
+    if !wine_bin.exists() {
+        eprintln!(
+            "deployd: ProtonGE runtime at {} has no wine binary",
+            proton_dir.display()
+        );
+        return None;
     }
 
-    // Fall back to a Proton installation detected near the prefix (e.g. Steam's own Proton).
-    let (wine_bin, proton_dir) = if let Some((bin, pdir)) = find_wine_near_prefix(&prefix) {
-        (bin, Some(pdir))
-    } else {
-        (which_wine()?, None)
-    };
     Some(WineConfig {
         prefix,
         wine_bin,
-        proton_dir,
+        proton_dir: Some(proton_dir),
     })
-}
-
-fn best_proton_in_dir(dir: &Path) -> Option<(PathBuf, PathBuf)> {
-    let entries: Vec<PathBuf> = std::fs::read_dir(dir)
-        .ok()?
-        .flatten()
-        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
-        .filter(|e| e.path().join("files/bin/wine").exists())
-        .map(|e| e.path())
-        .collect();
-
-    let chosen = entries
-        .iter()
-        .find(|p| {
-            p.file_name()
-                .is_some_and(|n| n.to_string_lossy().starts_with("GE-Proton"))
-        })
-        .or_else(|| {
-            entries.iter().find(|p| {
-                p.file_name()
-                    .is_some_and(|n| n.to_string_lossy().contains("Proton"))
-            })
-        })
-        .or_else(|| entries.first())?;
-
-    Some((chosen.join("files/bin/wine"), chosen.clone()))
-}
-
-fn find_wine_near_prefix(prefix: &Path) -> Option<(PathBuf, PathBuf)> {
-    // A Steam prefix lives at <steamapps>/compatdata/<appid>/pfx.
-    let mut ancestor = prefix.to_path_buf();
-    loop {
-        if ancestor.file_name().is_some_and(|n| n == "compatdata") {
-            let steamapps = ancestor.parent()?;
-            if let Some(result) = best_proton_in_dir(&steamapps.join("common")) {
-                return Some(result);
-            }
-            break;
-        }
-        if !ancestor.pop() {
-            break;
-        }
-    }
-
-    let home = dirs::home_dir()?;
-    for ctd in &[
-        home.join(".local/share/Steam/compatibilitytools.d"),
-        home.join(".steam/steam/compatibilitytools.d"),
-    ] {
-        if let Some(result) = best_proton_in_dir(ctd) {
-            return Some(result);
-        }
-    }
-
-    None
-}
-
-fn which_wine() -> Option<PathBuf> {
-    let output = std::process::Command::new("which")
-        .arg("wine")
-        .output()
-        .ok()?;
-    if output.status.success() {
-        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !path.is_empty() {
-            return Some(PathBuf::from(path));
-        }
-    }
-    None
-}
-
-pub(super) fn detect_wine_prefix(heroic_app_name: &str, game_path: &Path) -> Option<PathBuf> {
-    // Steam: <steamapps>/compatdata/<appid>/pfx relative to the game at <steamapps>/common/<Game>/.
-    let steam_compat = format!("../../compatdata/{heroic_app_name}/pfx");
-    for relative in &[
-        steam_compat.as_str(),
-        "../pfx",
-        "../../pfx",
-        "../compatdata/pfx",
-    ] {
-        let candidate = game_path.join(relative);
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-
-    None
 }
 
 /// Translate a Linux absolute path to its Wine drive-letter form via `<prefix>/dosdevices/`.

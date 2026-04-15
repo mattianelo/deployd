@@ -29,6 +29,18 @@ impl App {
         let exit_tool_name = tool_name.clone();
         sender.oneshot_command(async move {
             let result: Result<String, String> = (|| {
+                // Surface a specific, actionable error when no ProtonGE runtime is
+                // installed and no prefix has been manually configured. Without both,
+                // Wine cannot start — the generic "could not detect" message below
+                // gives the user nothing to act on.
+                if crate::core::proton_manager::active_runtime_path().is_none()
+                    && game.wine_prefix.is_none()
+                {
+                    return Err("No ProtonGE runtime installed. \
+                         Open the ProtonGE manager to download one first."
+                        .to_string());
+                }
+
                 let wine_config = game::detect_wine_config(&game).ok_or_else(|| {
                     "Could not detect Wine configuration for this game".to_string()
                 })?;

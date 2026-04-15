@@ -11,7 +11,7 @@ use crate::models::game::Game;
 pub fn detect_save_dir(game: &Game) -> Option<PathBuf> {
     let known = KNOWN_GAMES.iter().find(|k| k.deployd_id == game.id)?;
     let subpath = known.save_game_subpath?;
-    let user_dir = find_wine_user_dir(known, game)?;
+    let user_dir = find_wine_user_dir(game)?;
     Some(user_dir.join(subpath))
 }
 

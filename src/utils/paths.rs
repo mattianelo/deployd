@@ -12,8 +12,17 @@ pub fn lowercase_path(rel: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
-/// Return the data directory for Deployd (`$XDG_DATA_HOME/deployd`).
+/// Return the data directory for Deployd.
+///
+/// Outside a snap this is `$XDG_DATA_HOME/deployd` (~/.local/share/deployd).
+///
+/// Inside a snap `$SNAP_USER_DATA` is revision-specific — it changes on every
+/// `snap install`, wiping out runtimes, the database, and cached mods. We use
+/// `$SNAP_USER_COMMON` instead, which snapd keeps stable across revisions.
 fn deployd_data_dir() -> Result<PathBuf> {
+    if let Some(common) = std::env::var_os("SNAP_USER_COMMON") {
+        return Ok(PathBuf::from(common).join("deployd"));
+    }
     let data_dir = dirs::data_dir().ok_or_else(|| anyhow!("Cannot determine XDG_DATA_HOME"))?;
     Ok(data_dir.join("deployd"))
 }

@@ -8,8 +8,6 @@ pub(super) enum GameStore {
 
 pub(super) struct KnownGame {
     pub(super) store: GameStore,
-    /// GOG: numeric app name; Steam: app ID. Also the Heroic GamesConfig key.
-    pub(super) heroic_app_name: &'static str,
     pub(super) deployd_id: &'static str,
     pub(super) title: &'static str,
     pub(super) data_subdir: &'static str,
@@ -29,7 +27,6 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
     // ── GOG editions ──────────────────────────────────────────────────────────
     KnownGame {
         store: GameStore::Gog,
-        heroic_app_name: "1711230643",
         deployd_id: "skyrim-se",
         title: "Skyrim Special Edition",
         data_subdir: "Data",
@@ -42,7 +39,6 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
     },
     KnownGame {
         store: GameStore::Gog,
-        heroic_app_name: "1998527297",
         deployd_id: "fallout-4",
         title: "Fallout 4",
         data_subdir: "Data",
@@ -55,7 +51,6 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
     },
     KnownGame {
         store: GameStore::Gog,
-        heroic_app_name: "1454587428",
         deployd_id: "fallout-nv",
         title: "Fallout: New Vegas",
         data_subdir: "Data",
@@ -67,12 +62,10 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         save_game_subpath: Some("Documents/My Games/FalloutNV/Saves"),
     },
     // ── Steam editions ────────────────────────────────────────────────────────
-    // heroic_app_name holds the Steam App ID, which Heroic also uses as the
-    // GamesConfig key. GOG and Steam installs share the same deployd_id; the
-    // store field distinguishes them for display purposes only.
+    // GOG and Steam installs share the same deployd_id; the store field distinguishes
+    // them for display purposes only.
     KnownGame {
         store: GameStore::Steam,
-        heroic_app_name: "489830",
         deployd_id: "skyrim-se",
         title: "Skyrim Special Edition",
         data_subdir: "Data",
@@ -85,7 +78,6 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
     },
     KnownGame {
         store: GameStore::Steam,
-        heroic_app_name: "377160",
         deployd_id: "fallout-4",
         title: "Fallout 4",
         data_subdir: "Data",
@@ -98,7 +90,6 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
     },
     KnownGame {
         store: GameStore::Steam,
-        heroic_app_name: "22380",
         deployd_id: "fallout-nv",
         title: "Fallout: New Vegas",
         data_subdir: "Data",
@@ -111,7 +102,6 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
     },
     KnownGame {
         store: GameStore::Steam,
-        heroic_app_name: "1716740",
         deployd_id: "starfield",
         title: "Starfield",
         data_subdir: "Data",
@@ -125,7 +115,6 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
     // ── REDEngine games ───────────────────────────────────────────────────────
     KnownGame {
         store: GameStore::Gog,
-        heroic_app_name: "1207664663",
         deployd_id: "witcher-3",
         title: "The Witcher 3: Wild Hunt",
         data_subdir: ".",
@@ -138,7 +127,6 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
     },
     KnownGame {
         store: GameStore::Steam,
-        heroic_app_name: "292030",
         deployd_id: "witcher-3",
         title: "The Witcher 3: Wild Hunt",
         data_subdir: ".",
@@ -151,7 +139,6 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
     },
     KnownGame {
         store: GameStore::Gog,
-        heroic_app_name: "1423049311",
         deployd_id: "cyberpunk-2077",
         title: "Cyberpunk 2077",
         data_subdir: ".",
@@ -164,7 +151,6 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
     },
     KnownGame {
         store: GameStore::Steam,
-        heroic_app_name: "1091500",
         deployd_id: "cyberpunk-2077",
         title: "Cyberpunk 2077",
         data_subdir: ".",
@@ -179,7 +165,6 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
     // data_subdir is relative to the Wine user dir; deploy_dir() resolves <wine_user>/<data_subdir>.
     KnownGame {
         store: GameStore::Gog,
-        heroic_app_name: "1949616134",
         deployd_id: "dragon-age",
         title: "Dragon Age: Origins - Ultimate Edition",
         data_subdir: "Documents/BioWare/Dragon Age",
@@ -192,7 +177,6 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
     },
     KnownGame {
         store: GameStore::Steam,
-        heroic_app_name: "47810",
         deployd_id: "dragon-age",
         title: "Dragon Age: Origins",
         data_subdir: "Documents/BioWare/Dragon Age",
