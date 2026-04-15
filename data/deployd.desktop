@@ -1,6 +1,6 @@
 [Desktop Entry]
 Name=Deployd
-Comment=Mod manager for Bethesda games
+Comment=Mod manager for PC games on Linux
 Exec=deployd %u
 Icon=deployd
 Terminal=false

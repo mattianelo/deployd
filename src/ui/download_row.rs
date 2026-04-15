@@ -127,7 +127,8 @@ impl FactoryComponent for DownloadRow {
                     add_css_class: "flat",
                     add_css_class: "circular",
                     #[watch]
-                    set_visible: self.entry.nexus_ids.is_some() && !self.entry.metadata_fetched,
+                    set_visible: (self.entry.nexus_ids.is_some() || self.entry.game_domain.is_some())
+                        && !self.entry.metadata_fetched,
                     connect_clicked[sender, index] => move |_| {
                         sender.output(DownloadRowOutput::FetchMetadata(index.clone())).unwrap();
                     }

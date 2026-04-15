@@ -69,6 +69,14 @@ pub fn runtimes_dir() -> Result<PathBuf> {
     Ok(deployd_data_dir()?.join("runtimes"))
 }
 
+/// Vanilla file backup storage: `<data>/deployd/<game_id>/vanilla-backup/`
+///
+/// Files here are copies of game files that deployd overwrote with mod files.
+/// They are restored when the owning mod is removed or the modlist is purged.
+pub fn vanilla_backup_dir(game_id: &str) -> Result<PathBuf> {
+    Ok(deployd_data_dir()?.join(game_id).join("vanilla-backup"))
+}
+
 /// Default downloads directory (~/Downloads or fallback to $HOME/Downloads).
 pub fn default_downloads_dir() -> PathBuf {
     glib::user_special_dir(glib::UserDirectory::Downloads).unwrap_or_else(|| {

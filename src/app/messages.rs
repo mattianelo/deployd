@@ -111,6 +111,8 @@ pub enum AppMsg {
     RenameDownload(DynamicIndex),
     /// (download_id, new_name) — confirmed from the rename dialog
     ConfirmDownloadRename(String, String),
+    /// (download_id, nexus_mod_id, domain) — confirmed from the "enter Nexus URL" dialog
+    ConfirmNexusIdEntry(String, i64, String),
     DownloadProgress(String, f64, String),
     /// (download_id, mod_name, game_domain, nexus_file_name, nexus_is_primary)
     DownloadNameResolved(String, String, Option<String>, Option<String>, bool),

@@ -83,7 +83,7 @@ impl App {
         let is_bethesda = pending.game.engine == crate::models::game::GameEngine::Bethesda;
         let file_preview = if let Some(ref fl) = pending.file_list {
             let rules = crate::core::rules::rules_for_game(&pending.game.id);
-            crate::ui::pre_install_dialog::file_preview_from_list(fl, &rules)
+            crate::ui::pre_install_dialog::file_preview_from_list(fl, &rules, pending.game.engine.clone())
         } else {
             vec![]
         };

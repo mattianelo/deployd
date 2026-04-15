@@ -184,6 +184,126 @@ fn sanitize_mod_name_preserve_case(mod_name: &str) -> String {
         .collect()
 }
 
+/// Route file paths for Aurora-engine (Witcher 1) mods.
+///
+/// The Aurora engine (NWN-based) resolves all Override resources by **filename
+/// only** — it reads the entire Override directory tree recursively and makes
+/// every file available under its bare name, regardless of which subdirectory it
+/// lives in.  That means `Override/textures/foo.dds` and `Override/foo.dds` are
+/// the same resource to the game.  Preserving any subdirectory structure inside
+/// Override therefore breaks conflict detection without helping the engine.
+///
+/// Routing rules:
+/// 1. Files under `system/` or `modules/` are left unchanged — the engine
+///    resolves them by name relative to the Data directory.
+/// 2. Everything else is flattened to `Override/<filename>`.  All wrapper
+///    directories and content-type subdirectories are stripped so that conflict
+///    detection can compare files by canonical name.
+///
+/// `Override/` is created at deploy time if absent by the existing
+/// directory-creation pass in `deployer.rs`.
+pub(super) fn route_aurora_paths(file_list: Vec<(PathBuf, PathBuf)>) -> Vec<(PathBuf, PathBuf)> {
+    file_list
+        .into_iter()
+        .filter_map(|(src, dest)| {
+            let lower = dest.to_string_lossy().to_lowercase();
+            // Pass `system/` and `modules/` through unchanged.
+            if lower.starts_with("system/") || lower.starts_with("modules/") {
+                return Some((src, dest));
+            }
+            // For everything else extract just the filename and place it flat
+            // inside Override/.  Directory sentinel entries (trailing '/') are
+            // dropped — Override needs no pre-created subdirectories.
+            let s = dest.to_string_lossy();
+            if s.ends_with('/') {
+                return None;
+            }
+            let filename = dest.file_name()?;
+            Some((src, PathBuf::from("Override").join(filename)))
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn route(pairs: Vec<(&str, &str)>) -> Vec<(PathBuf, PathBuf)> {
+        route_aurora_paths(
+            pairs
+                .into_iter()
+                .map(|(s, d)| (PathBuf::from(s), PathBuf::from(d)))
+                .collect(),
+        )
+    }
+
+    fn dests(pairs: Vec<(PathBuf, PathBuf)>) -> Vec<PathBuf> {
+        pairs.into_iter().map(|(_, d)| d).collect()
+    }
+
+    #[test]
+    fn override_file_is_flattened() {
+        assert_eq!(
+            dests(route(vec![("src", "Override/ModName/textures/foo.dds")])),
+            vec![PathBuf::from("Override/foo.dds")]
+        );
+    }
+
+    #[test]
+    fn nested_content_subdir_is_flattened() {
+        assert_eq!(
+            dests(route(vec![("src", "Override/items/keys/it_key_019.uti")])),
+            vec![PathBuf::from("Override/it_key_019.uti")]
+        );
+    }
+
+    #[test]
+    fn textures_subdir_is_flattened() {
+        assert_eq!(
+            dests(route(vec![("src", "Override/textures/foo.dds")])),
+            vec![PathBuf::from("Override/foo.dds")]
+        );
+    }
+
+    #[test]
+    fn bare_override_file_stays_flat() {
+        assert_eq!(
+            dests(route(vec![("src", "Override/foo.dlg")])),
+            vec![PathBuf::from("Override/foo.dlg")]
+        );
+    }
+
+    #[test]
+    fn bare_path_goes_into_override() {
+        assert_eq!(
+            dests(route(vec![("src", "foo.dlg")])),
+            vec![PathBuf::from("Override/foo.dlg")]
+        );
+    }
+
+    #[test]
+    fn system_path_passes_through() {
+        assert_eq!(
+            dests(route(vec![("src", "system/foo.key")])),
+            vec![PathBuf::from("system/foo.key")]
+        );
+    }
+
+    #[test]
+    fn modules_path_passes_through() {
+        assert_eq!(
+            dests(route(vec![("src", "modules/chapter1.mod")])),
+            vec![PathBuf::from("modules/chapter1.mod")]
+        );
+    }
+
+    #[test]
+    fn directory_sentinels_are_dropped() {
+        let result = route(vec![("src", "Override/ModName/")]);
+        assert!(result.is_empty(), "directory sentinels should be filtered out");
+    }
+}
+
 /// Strip a leading data-subdir prefix from the deployment-relative path.
 ///
 /// We deploy into `game/Data/`, so a relative path of `data/textures/foo.dds`

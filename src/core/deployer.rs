@@ -32,6 +32,26 @@ pub async fn purge(game: &Game, tracker: &Tracker) -> Result<usize> {
     }
     tracker.clear_deployed_files(&game.id).await?;
 
+    // Restore all vanilla files that were backed up before mod deployment.
+    if let Ok(backups) = tracker.get_all_vanilla_backups(&game.id).await {
+        for (rel, backup_path) in backups {
+            let deploy_path = resolve_deploy_path(&rel, &game.path, &game_data);
+            if deploy_path.exists() {
+                // File already present — nothing to restore; clean up the record.
+                let _ = tracker.delete_vanilla_backup(&game.id, &rel).await;
+                continue;
+            }
+            // remove_empty_parents may have deleted the parent dir; recreate it.
+            if let Some(parent) = deploy_path.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            if fs::copy(&backup_path, &deploy_path).is_ok() {
+                let _ = tracker.delete_vanilla_backup(&game.id, &rel).await;
+            }
+            // If copy failed, keep the DB record so the restore can be retried.
+        }
+    }
+
     if let Err(e) = mod_folders::refresh_named_mod_folders(tracker, &game.id).await {
         eprintln!("[deployd] named_mods refresh failed: {e}");
     }
@@ -110,8 +130,34 @@ pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
         })
         .collect();
 
+    // Collect game_rel_original values for files being removed, so we can
+    // restore vanilla backups after the removal loop.
+    let removed_rels: Vec<String> = to_remove
+        .iter()
+        .map(|f| f.game_rel_original.clone())
+        .collect();
+
     for f in &to_remove {
         remove_deployed_file(f, game, &game_data);
+    }
+
+    // Restore vanilla files for paths that are no longer claimed by any mod.
+    for removed_rel in &removed_rels {
+        if let Ok(Some(backup_path)) = tracker.get_vanilla_backup(&game.id, removed_rel).await {
+            let deploy_path = resolve_deploy_path(removed_rel, &game.path, &game_data);
+            if !deploy_path.exists() {
+                // remove_empty_parents may have deleted the parent dir; recreate it.
+                if let Some(parent) = deploy_path.parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+                if fs::copy(&backup_path, &deploy_path).is_ok() {
+                    let _ = tracker
+                        .delete_vanilla_backup(&game.id, removed_rel)
+                        .await;
+                }
+                // If copy failed, keep the DB record so the restore can be retried.
+            }
+        }
     }
 
     let canonical_dirs = build_dir_canonical_map(&winners);
@@ -179,6 +225,23 @@ pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
             ensure_dirs_case_insensitive(base, rel, &canonical_dirs, &mut dir_cache)?;
 
         if deploy_target.exists() {
+            // If this file was not previously deployed by deployd it's a vanilla/user
+            // file — copy it to our backup store before replacing it with the mod file.
+            let deploy_target_lower = deploy_target.to_string_lossy().to_lowercase();
+            let is_ours = deployed_lower.contains(&deploy_target_lower);
+            if !is_ours
+                && let Ok(backup_dir) = paths::vanilla_backup_dir(&game.id)
+            {
+                let _ = fs::create_dir_all(&backup_dir);
+                let backup_name = f.game_rel_lowercase.replace('/', "__");
+                let backup_path = backup_dir.join(&backup_name);
+                // Idempotent: skip if backup copy already exists on disk.
+                if !backup_path.exists() && fs::copy(&deploy_target, &backup_path).is_ok() {
+                    let _ = tracker
+                        .save_vanilla_backup(&game.id, &f.game_rel_original, &backup_path)
+                        .await;
+                }
+            }
             fs::remove_file(&deploy_target)?;
         } else if let (Some(parent), Some(fname)) =
             (deploy_target.parent(), deploy_target.file_name())

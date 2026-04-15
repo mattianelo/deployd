@@ -4,6 +4,20 @@ mod paths;
 
 pub use paths::auto_detect_install_target;
 
+/// Apply engine-specific path routing to a file list for preview purposes.
+///
+/// Mirrors the routing applied by the installer so that the pre-install dialog
+/// shows paths that match where files will actually land on disk.
+pub fn route_paths_for_preview(
+    engine: GameEngine,
+    file_list: Vec<(PathBuf, PathBuf)>,
+) -> Vec<(PathBuf, PathBuf)> {
+    match engine {
+        GameEngine::Aurora => paths::route_aurora_paths(file_list),
+        _ => file_list,
+    }
+}
+
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -126,6 +140,12 @@ pub async fn add_mod_with_file_list(
 
     let file_list = if game.engine == GameEngine::Eclipse {
         paths::route_eclipse_paths(file_list, mod_name)
+    } else {
+        file_list
+    };
+
+    let file_list = if game.engine == GameEngine::Aurora {
+        paths::route_aurora_paths(file_list)
     } else {
         file_list
     };
@@ -358,6 +378,18 @@ pub async fn merge_files_into_mod(
 ) -> Result<usize> {
     let file_list = if game.engine == GameEngine::REDEngine {
         paths::apply_redengine_path_fixups(game, mod_name, stripped_wrapper.as_deref(), file_list)
+    } else {
+        file_list
+    };
+
+    let file_list = if game.engine == GameEngine::Eclipse {
+        paths::route_eclipse_paths(file_list, mod_name)
+    } else {
+        file_list
+    };
+
+    let file_list = if game.engine == GameEngine::Aurora {
+        paths::route_aurora_paths(file_list)
     } else {
         file_list
     };

@@ -8,6 +8,7 @@ use gtk::prelude::*;
 use relm4::prelude::*;
 
 use crate::core::installer;
+use crate::models::game::GameEngine;
 use crate::models::mod_entry::InstallTarget;
 
 pub struct PreInstallDialog {
@@ -366,20 +367,33 @@ impl SimpleComponent for PreInstallDialog {
 /// `Data/NVSE/nvse_config.ini` archive path is shown as `NVSE/nvse_config.ini`
 /// — matching exactly what the installer will deploy — preventing users from
 /// incorrectly overriding the target to avoid a phantom Data/Data nesting.
+///
+/// `engine` is used to apply engine-specific path routing (e.g. Aurora mods
+/// get the `Override/` prefix and wrapper-stripping applied so the preview
+/// shows where files will actually land).  For non-Bethesda games the
+/// Root/Data auto-detection is skipped; all files default to `Data`.
 pub fn file_preview_from_list(
     file_list: &[(PathBuf, PathBuf)],
     rules: &[crate::core::rules::Rule],
+    engine: GameEngine,
 ) -> Vec<(String, InstallTarget)> {
-    let mut entries: Vec<(String, InstallTarget)> = file_list
-        .iter()
+    // Apply engine-specific routing so the preview reflects actual deploy paths.
+    let is_bethesda = engine == GameEngine::Bethesda;
+    let routed = installer::route_paths_for_preview(engine, file_list.to_vec());
+
+    let mut entries: Vec<(String, InstallTarget)> = routed
+        .into_iter()
         .map(|(_, dest)| {
             let raw = dest.to_string_lossy();
-            // Apply game rules — same transformation the installer performs first.
+            // Apply game rules — same transformation the installer performs.
             let s = crate::core::rules::apply_rules(rules, &raw).replace('\\', "/");
             let target = if s.starts_with("../") || raw.starts_with("../") {
                 InstallTarget::Root
-            } else {
+            } else if is_bethesda {
                 installer::auto_detect_install_target(&s)
+            } else {
+                // Root/Data distinction does not apply to non-Bethesda games.
+                InstallTarget::Data
             };
             (s, target)
         })

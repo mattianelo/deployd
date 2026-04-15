@@ -13,6 +13,7 @@ pub mod plugins;
 pub mod profiles;
 pub mod settings;
 pub mod vanilla;
+pub mod vanilla_backups;
 
 #[derive(Clone)]
 pub struct Tracker {
@@ -249,6 +250,17 @@ impl Tracker {
         .await?;
 
         sqlx::query(
+            "CREATE TABLE IF NOT EXISTS vanilla_backups (
+                game_id       TEXT NOT NULL,
+                game_rel_path TEXT NOT NULL,
+                backup_path   TEXT NOT NULL,
+                PRIMARY KEY (game_id, game_rel_path)
+            )",
+        )
+        .execute(&pool)
+        .await?;
+
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS order_snapshot_entries (
                 snapshot_id TEXT NOT NULL REFERENCES order_snapshots(id) ON DELETE CASCADE,
                 entry_id TEXT NOT NULL,
@@ -282,6 +294,12 @@ impl Tracker {
         }
         if let Err(e) = migrations::migrate_deployed_files_game_id(&pool).await {
             eprintln!("deployed_files migration failed (non-fatal): {e}");
+        }
+        if let Err(e) = migrations::migrate_aurora_file_paths(&pool).await {
+            eprintln!("Aurora path migration failed (non-fatal): {e}");
+        }
+        if let Err(e) = migrations::migrate_eclipse_file_paths(&pool).await {
+            eprintln!("Eclipse path migration failed (non-fatal): {e}");
         }
 
         let _ =

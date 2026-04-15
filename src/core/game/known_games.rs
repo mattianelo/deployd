@@ -1,13 +1,6 @@
 use crate::models::game::GameEngine;
 
-#[derive(PartialEq, Eq, Clone, Copy)]
-pub(super) enum GameStore {
-    Gog,
-    Steam,
-}
-
 pub(super) struct KnownGame {
-    pub(super) store: GameStore,
     pub(super) deployd_id: &'static str,
     pub(super) title: &'static str,
     pub(super) data_subdir: &'static str,
@@ -24,12 +17,12 @@ pub(super) struct KnownGame {
 }
 
 pub(super) const KNOWN_GAMES: &[KnownGame] = &[
-    // ── GOG editions ──────────────────────────────────────────────────────────
+    // ── Bethesda games ────────────────────────────────────────────────────────
     KnownGame {
-        store: GameStore::Gog,
         deployd_id: "skyrim-se",
         title: "Skyrim Special Edition",
         data_subdir: "Data",
+        // Includes both the standard and GOG-specific AppData folder names.
         appdata_folders: &["Skyrim Special Edition", "Skyrim Special Edition GOG"],
         custom_ini_name: "SkyrimCustom.ini",
         bethesda_reg_key: "SOFTWARE\\Bethesda Softworks\\Skyrim Special Edition",
@@ -38,7 +31,6 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         save_game_subpath: Some("Documents/My Games/Skyrim Special Edition/Saves"),
     },
     KnownGame {
-        store: GameStore::Gog,
         deployd_id: "fallout-4",
         title: "Fallout 4",
         data_subdir: "Data",
@@ -50,46 +42,6 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         save_game_subpath: Some("Documents/My Games/Fallout4/Saves"),
     },
     KnownGame {
-        store: GameStore::Gog,
-        deployd_id: "fallout-nv",
-        title: "Fallout: New Vegas",
-        data_subdir: "Data",
-        appdata_folders: &["Fallout New Vegas"],
-        custom_ini_name: "FalloutCustom.ini",
-        bethesda_reg_key: "SOFTWARE\\Bethesda Softworks\\FalloutNV",
-        nexus_domain: "newvegas",
-        engine: GameEngine::Bethesda,
-        save_game_subpath: Some("Documents/My Games/FalloutNV/Saves"),
-    },
-    // ── Steam editions ────────────────────────────────────────────────────────
-    // GOG and Steam installs share the same deployd_id; the store field distinguishes
-    // them for display purposes only.
-    KnownGame {
-        store: GameStore::Steam,
-        deployd_id: "skyrim-se",
-        title: "Skyrim Special Edition",
-        data_subdir: "Data",
-        appdata_folders: &["Skyrim Special Edition"],
-        custom_ini_name: "SkyrimCustom.ini",
-        bethesda_reg_key: "SOFTWARE\\Bethesda Softworks\\Skyrim Special Edition",
-        nexus_domain: "skyrimspecialedition",
-        engine: GameEngine::Bethesda,
-        save_game_subpath: Some("Documents/My Games/Skyrim Special Edition/Saves"),
-    },
-    KnownGame {
-        store: GameStore::Steam,
-        deployd_id: "fallout-4",
-        title: "Fallout 4",
-        data_subdir: "Data",
-        appdata_folders: &["Fallout4"],
-        custom_ini_name: "Fallout4Custom.ini",
-        bethesda_reg_key: "SOFTWARE\\Bethesda Softworks\\Fallout4",
-        nexus_domain: "fallout4",
-        engine: GameEngine::Bethesda,
-        save_game_subpath: Some("Documents/My Games/Fallout4/Saves"),
-    },
-    KnownGame {
-        store: GameStore::Steam,
         deployd_id: "fallout-nv",
         title: "Fallout: New Vegas",
         data_subdir: "Data",
@@ -101,7 +53,6 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         save_game_subpath: Some("Documents/My Games/FalloutNV/Saves"),
     },
     KnownGame {
-        store: GameStore::Steam,
         deployd_id: "starfield",
         title: "Starfield",
         data_subdir: "Data",
@@ -114,7 +65,6 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
     },
     // ── REDEngine games ───────────────────────────────────────────────────────
     KnownGame {
-        store: GameStore::Gog,
         deployd_id: "witcher-3",
         title: "The Witcher 3: Wild Hunt",
         data_subdir: ".",
@@ -126,19 +76,6 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         save_game_subpath: Some("Documents/The Witcher 3/gamesaves"),
     },
     KnownGame {
-        store: GameStore::Steam,
-        deployd_id: "witcher-3",
-        title: "The Witcher 3: Wild Hunt",
-        data_subdir: ".",
-        appdata_folders: &[],
-        custom_ini_name: "",
-        bethesda_reg_key: "",
-        nexus_domain: "witcher3",
-        engine: GameEngine::REDEngine,
-        save_game_subpath: Some("Documents/The Witcher 3/gamesaves"),
-    },
-    KnownGame {
-        store: GameStore::Gog,
         deployd_id: "cyberpunk-2077",
         title: "Cyberpunk 2077",
         data_subdir: ".",
@@ -149,34 +86,21 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         engine: GameEngine::REDEngine,
         save_game_subpath: Some("Saved Games/CD Projekt Red/Cyberpunk 2077"),
     },
+    // ── The Witcher (Aurora engine) ───────────────────────────────────────────
     KnownGame {
-        store: GameStore::Steam,
-        deployd_id: "cyberpunk-2077",
-        title: "Cyberpunk 2077",
-        data_subdir: ".",
+        deployd_id: "witcher-1",
+        title: "The Witcher",
+        data_subdir: "Data",
         appdata_folders: &[],
         custom_ini_name: "",
         bethesda_reg_key: "",
-        nexus_domain: "cyberpunk2077",
-        engine: GameEngine::REDEngine,
-        save_game_subpath: Some("Saved Games/CD Projekt Red/Cyberpunk 2077"),
+        nexus_domain: "witcher",
+        engine: GameEngine::Aurora,
+        save_game_subpath: None,
     },
-    // ── Dragon Age: Origins ──────────────────────────────────────────────────
+    // ── Dragon Age: Origins ───────────────────────────────────────────────────
     // data_subdir is relative to the Wine user dir; deploy_dir() resolves <wine_user>/<data_subdir>.
     KnownGame {
-        store: GameStore::Gog,
-        deployd_id: "dragon-age",
-        title: "Dragon Age: Origins - Ultimate Edition",
-        data_subdir: "Documents/BioWare/Dragon Age",
-        appdata_folders: &[],
-        custom_ini_name: "",
-        bethesda_reg_key: "",
-        nexus_domain: "dragonage",
-        engine: GameEngine::Eclipse,
-        save_game_subpath: Some("Documents/BioWare/Dragon Age/Characters"),
-    },
-    KnownGame {
-        store: GameStore::Steam,
         deployd_id: "dragon-age",
         title: "Dragon Age: Origins",
         data_subdir: "Documents/BioWare/Dragon Age",

@@ -6,6 +6,7 @@ pub enum GameEngine {
     Bethesda,
     REDEngine,
     Eclipse,
+    Aurora,
 }
 
 #[derive(Debug, Clone)]

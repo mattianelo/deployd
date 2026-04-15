@@ -42,6 +42,18 @@ pub fn game_id_for_nexus_domain(domain: &str) -> Option<&'static str> {
         .map(|k| k.deployd_id)
 }
 
+/// Return the canonical `data_subdir` for a known game ID.
+///
+/// Used to recover the correct value when the persisted DB record pre-dates a
+/// `KNOWN_GAMES` update (e.g. Witcher 1 going from `"."` to `"Data"`).
+/// Returns `None` for custom games that have no `KNOWN_GAMES` entry.
+pub fn known_data_subdir(id: &str) -> Option<&'static str> {
+    KNOWN_GAMES
+        .iter()
+        .find(|k| k.deployd_id == id)
+        .map(|k| k.data_subdir)
+}
+
 /// Return all known Nexus domain names (for scanning per-game download subfolders).
 pub fn all_nexus_domains() -> Vec<&'static str> {
     let mut seen = std::collections::HashSet::new();

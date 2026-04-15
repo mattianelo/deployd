@@ -987,11 +987,14 @@ impl Component for App {
             AppMsg::ConfirmDownloadRename(id, name) => {
                 self.handle_confirm_download_rename(id, name, &sender)
             }
+            AppMsg::ConfirmNexusIdEntry(dl_id, mod_id, domain) => {
+                self.handle_confirm_nexus_id_entry(dl_id, mod_id, domain, &sender)
+            }
             AppMsg::DownloadProgress(id, frac, msg) => self.handle_download_progress(id, frac, msg),
             AppMsg::DownloadNameResolved(id, name, domain, fname, is_primary) => {
                 self.handle_download_name_resolved(id, name, domain, fname, is_primary, &sender)
             }
-            AppMsg::FetchDownloadMetadata(idx) => self.handle_fetch_download_metadata(idx, &sender),
+            AppMsg::FetchDownloadMetadata(idx) => self.handle_fetch_download_metadata(idx, root, &sender),
             AppMsg::ScanDownloadsFolder => self.handle_scan_downloads_folder(&sender),
             AppMsg::DownloadSortChanged(idx) => self.handle_download_sort_changed(idx),
             AppMsg::SearchToggled(active) => self.handle_search_toggled(active),

@@ -265,6 +265,198 @@ pub(super) async fn backfill_download_statuses(pool: &SqlitePool) -> Result<()> 
     Ok(())
 }
 
+/// Re-apply the canonical Aurora Override/ flattening to a stored path string.
+///
+/// The Aurora engine (NWN-based) resolves Override resources by filename only,
+/// so all Override files must be stored flat as `override/<filename>`.  Files
+/// under `system/` or `modules/` are left unchanged.
+///
+/// Mirrors the logic in `installer/paths::route_aurora_paths`.
+fn restrip_aurora_path(path: &str) -> Option<String> {
+    let lower = path.to_lowercase();
+    // system/ and modules/ pass through unchanged.
+    if lower.starts_with("system/") || lower.starts_with("modules/") {
+        return Some(path.to_owned());
+    }
+    // Directory sentinels (trailing '/') have no filename — drop them.
+    if path.ends_with('/') {
+        return None;
+    }
+    // Extract the bare filename and place it flat inside Override/.
+    let filename = std::path::Path::new(path).file_name()?.to_str()?;
+    Some(format!("Override/{filename}"))
+}
+
+/// One-shot migration that re-applies correct Aurora Override/ path stripping to
+/// all Witcher 1 mod files stored with old (pre-fix) paths.
+///
+/// For each affected `mod_files` row the function:
+/// 1. Derives the corrected `game_rel_lowercase` / `game_rel_original`.
+/// 2. Moves the cached file on disk to the new path inside the mod cache dir.
+/// 3. Updates the DB row.
+///
+/// Disk moves are attempted before the transaction commits.  If the process is
+/// interrupted the on-disk state may be ahead of the DB, but the next run of the
+/// migration will not re-run (the settings guard is written inside the same
+/// transaction) and re-deploy will recreate hard-links from wherever the cache
+/// file ended up.
+pub(super) async fn migrate_aurora_file_paths(pool: &SqlitePool) -> Result<()> {
+    let done: Option<String> =
+        sqlx::query_scalar("SELECT value FROM settings WHERE key = 'aurora_path_migration_v2'")
+            .fetch_optional(pool)
+            .await
+            .unwrap_or(None);
+
+    if done.is_some() {
+        return Ok(());
+    }
+
+    // Collect all mod_files rows belonging to witcher-1 mods.
+    let rows: Vec<(String, String, String, String)> = sqlx::query_as(
+        "SELECT mf.mod_id, mf.game_rel_lowercase, mf.game_rel_original, mf.cache_path
+         FROM mod_files mf
+         JOIN mods m ON mf.mod_id = m.id
+         WHERE m.game_id = 'witcher-1'",
+    )
+    .fetch_all(pool)
+    .await
+    .context("Failed to query witcher-1 mod_files for aurora migration")?;
+
+    if rows.is_empty() {
+        // Nothing to do; still write the guard so this never runs again.
+        sqlx::query(
+            "INSERT INTO settings (key, value) VALUES ('aurora_path_migration_v2', 'true')
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        )
+        .execute(pool)
+        .await
+        .context("Failed to record aurora path migration")?;
+        return Ok(());
+    }
+
+    // Pre-compute all path changes; perform disk moves outside the transaction.
+    struct FileChange {
+        mod_id: String,
+        old_lowercase: String,
+        new_lowercase: String,
+        new_original: String,
+        old_cache_path: String,
+        new_cache_path: String,
+    }
+
+    let mut changes: Vec<FileChange> = Vec::new();
+    for (mod_id, old_lowercase, old_original, old_cache_path) in rows {
+        let Some(new_lowercase) = restrip_aurora_path(&old_lowercase) else {
+            // Directory sentinel with no filename — drop the row entirely.
+            continue;
+        };
+        let new_original = restrip_aurora_path(&old_original)
+            .unwrap_or_else(|| new_lowercase.clone());
+
+        if new_lowercase == old_lowercase {
+            continue; // path already correct
+        }
+
+        // Derive new cache path: replace the trailing relative portion.
+        // cache_path is an absolute path; the relative part starts where the
+        // mod-cache root ends (i.e. the old_lowercase suffix).
+        let new_cache_path = if old_cache_path.ends_with(&old_lowercase) {
+            let base = &old_cache_path[..old_cache_path.len() - old_lowercase.len()];
+            format!("{base}{new_lowercase}")
+        } else {
+            // Fallback: can't derive; leave cache_path unchanged — deploy will
+            // still find the file if it wasn't moved.
+            old_cache_path.clone()
+        };
+
+        changes.push(FileChange {
+            mod_id,
+            old_lowercase,
+            new_lowercase,
+            new_original,
+            old_cache_path,
+            new_cache_path,
+        });
+    }
+
+    dlog!(
+        "[deployd] aurora path migration: {} file(s) to repath",
+        changes.len()
+    );
+
+    // Move files on disk before touching the DB.
+    for change in &changes {
+        if change.old_cache_path == change.new_cache_path {
+            continue;
+        }
+        let old = std::path::Path::new(&change.old_cache_path);
+        let new = std::path::Path::new(&change.new_cache_path);
+        if !old.exists() {
+            continue;
+        }
+        if let Some(parent) = new.parent()
+            && let Err(e) = std::fs::create_dir_all(parent)
+        {
+            dlog!(
+                "[deployd] aurora migration: failed to create dir {}: {e}",
+                parent.display()
+            );
+            continue;
+        }
+        if let Err(e) = std::fs::rename(old, new) {
+            dlog!(
+                "[deployd] aurora migration: failed to move {} → {}: {e}",
+                old.display(),
+                new.display()
+            );
+        }
+    }
+
+    // Update DB records and write guard in a single transaction.
+    let mut tx = pool
+        .begin()
+        .await
+        .context("Failed to begin aurora path migration transaction")?;
+
+    for change in &changes {
+        sqlx::query(
+            "UPDATE mod_files
+             SET game_rel_lowercase = ?,
+                 game_rel_original  = ?,
+                 cache_path         = ?
+             WHERE mod_id = ? AND game_rel_lowercase = ?",
+        )
+        .bind(&change.new_lowercase)
+        .bind(&change.new_original)
+        .bind(&change.new_cache_path)
+        .bind(&change.mod_id)
+        .bind(&change.old_lowercase)
+        .execute(&mut *tx)
+        .await
+        .with_context(|| {
+            format!(
+                "Failed to update mod_files for mod {} path {}",
+                change.mod_id, change.old_lowercase
+            )
+        })?;
+    }
+
+    sqlx::query(
+        "INSERT INTO settings (key, value) VALUES ('aurora_path_migration_v2', 'true')
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    )
+    .execute(&mut *tx)
+    .await
+    .context("Failed to record aurora path migration")?;
+
+    tx.commit()
+        .await
+        .context("Failed to commit aurora path migration")?;
+
+    dlog!("[deployd] aurora path migration complete");
+    Ok(())
+}
+
 pub(super) async fn backfill_archive_hashes(pool: &SqlitePool) -> Result<()> {
     let done: Option<String> =
         sqlx::query_scalar("SELECT value FROM settings WHERE key = 'archive_hash_backfill_v1'")
@@ -579,5 +771,231 @@ pub(super) async fn migrate_deployed_files_game_id(pool: &SqlitePool) -> Result<
         .context("Failed to commit deployed_files migration")?;
 
     dlog!("[deployd] deployed_files migrated to include game_id");
+    Ok(())
+}
+
+/// Recognised first-level content directories inside Dragon Age's
+/// `packages/core/override/`.  Must stay in sync with the list in
+/// `core/game/eclipse.rs`.
+const ECLIPSE_CONTENT_DIRS: &[&str] = &[
+    "2da",
+    "animationevents",
+    "animations",
+    "areas",
+    "characters",
+    "conversations",
+    "creatures",
+    "environments",
+    "gui",
+    "items",
+    "levels",
+    "lights",
+    "materials",
+    "models",
+    "movies",
+    "plots",
+    "quests",
+    "scripts",
+    "sound",
+    "sounds",
+    "spells",
+    "store",
+    "textures",
+    "triggers",
+    "vfx",
+];
+
+/// Re-apply Eclipse wrapper stripping to a stored `packages/core/override/…` path.
+///
+/// Strips leading unrecognised wrapper directories from the portion after
+/// `packages/core/override/`, preserving the structure below the first
+/// recognised content directory.  Non-override paths pass through unchanged.
+/// Directory sentinels (trailing `/`) are dropped.
+fn restrip_eclipse_path(path: &str) -> Option<String> {
+    const OVERRIDE_PREFIX: &str = "packages/core/override/";
+    let lower = path.to_lowercase();
+
+    if !lower.starts_with(OVERRIDE_PREFIX) {
+        // addins/, settings/, ~docs~/, etc. — pass through as-is.
+        if path.ends_with('/') {
+            return None; // drop directory sentinels
+        }
+        return Some(path.to_owned());
+    }
+
+    // Drop directory sentinels inside override/ — override needs no pre-created subdirs.
+    if path.ends_with('/') {
+        return None;
+    }
+
+    let after_prefix = &path[OVERRIDE_PREFIX.len()..];
+    // Strip leading unrecognised wrappers (same loop as `strip_eclipse_override_wrappers`).
+    let mut s = after_prefix.to_owned();
+    loop {
+        let Some(slash) = s.find('/') else {
+            break; // bare filename
+        };
+        let first = &s[..slash];
+        if ECLIPSE_CONTENT_DIRS.contains(&first.to_lowercase().as_str()) {
+            break; // recognised content dir — stop
+        }
+        let rest = &s[slash + 1..];
+        if rest.is_empty() {
+            s = String::new();
+            break;
+        }
+        s = rest.to_owned();
+    }
+
+    Some(format!("{OVERRIDE_PREFIX}{s}"))
+}
+
+/// One-shot migration that re-applies correct Eclipse `packages/core/override/`
+/// wrapper stripping to all Dragon Age mod files stored with old (unwrapped) paths.
+///
+/// Mirrors `migrate_aurora_file_paths` in structure and behaviour.
+pub(super) async fn migrate_eclipse_file_paths(pool: &SqlitePool) -> Result<()> {
+    let done: Option<String> =
+        sqlx::query_scalar("SELECT value FROM settings WHERE key = 'eclipse_path_migration_v1'")
+            .fetch_optional(pool)
+            .await
+            .unwrap_or(None);
+
+    if done.is_some() {
+        return Ok(());
+    }
+
+    let rows: Vec<(String, String, String, String)> = sqlx::query_as(
+        "SELECT mf.mod_id, mf.game_rel_lowercase, mf.game_rel_original, mf.cache_path
+         FROM mod_files mf
+         JOIN mods m ON mf.mod_id = m.id
+         WHERE m.game_id = 'dragon-age'",
+    )
+    .fetch_all(pool)
+    .await
+    .context("Failed to query dragon-age mod_files for eclipse migration")?;
+
+    if rows.is_empty() {
+        sqlx::query(
+            "INSERT INTO settings (key, value) VALUES ('eclipse_path_migration_v1', 'true')
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        )
+        .execute(pool)
+        .await
+        .context("Failed to record eclipse path migration")?;
+        return Ok(());
+    }
+
+    struct FileChange {
+        mod_id: String,
+        old_lowercase: String,
+        new_lowercase: String,
+        new_original: String,
+        old_cache_path: String,
+        new_cache_path: String,
+    }
+
+    let mut changes: Vec<FileChange> = Vec::new();
+    for (mod_id, old_lowercase, old_original, old_cache_path) in rows {
+        let Some(new_lowercase) = restrip_eclipse_path(&old_lowercase) else {
+            continue; // directory sentinel — drop
+        };
+        let new_original = restrip_eclipse_path(&old_original)
+            .unwrap_or_else(|| new_lowercase.clone());
+
+        if new_lowercase == old_lowercase {
+            continue; // already correct
+        }
+
+        let new_cache_path = if old_cache_path.ends_with(&old_lowercase) {
+            let base = &old_cache_path[..old_cache_path.len() - old_lowercase.len()];
+            format!("{base}{new_lowercase}")
+        } else {
+            old_cache_path.clone()
+        };
+
+        changes.push(FileChange {
+            mod_id,
+            old_lowercase,
+            new_lowercase,
+            new_original,
+            old_cache_path,
+            new_cache_path,
+        });
+    }
+
+    dlog!(
+        "[deployd] eclipse path migration: {} file(s) to repath",
+        changes.len()
+    );
+
+    for change in &changes {
+        if change.old_cache_path == change.new_cache_path {
+            continue;
+        }
+        let old = std::path::Path::new(&change.old_cache_path);
+        let new = std::path::Path::new(&change.new_cache_path);
+        if !old.exists() {
+            continue;
+        }
+        if let Some(parent) = new.parent()
+            && let Err(e) = std::fs::create_dir_all(parent)
+        {
+            dlog!(
+                "[deployd] eclipse migration: failed to create dir {}: {e}",
+                parent.display()
+            );
+            continue;
+        }
+        if let Err(e) = std::fs::rename(old, new) {
+            dlog!(
+                "[deployd] eclipse migration: failed to move {} → {}: {e}",
+                old.display(),
+                new.display()
+            );
+        }
+    }
+
+    let mut tx = pool
+        .begin()
+        .await
+        .context("Failed to begin eclipse path migration transaction")?;
+
+    for change in &changes {
+        sqlx::query(
+            "UPDATE mod_files
+             SET game_rel_lowercase = ?,
+                 game_rel_original  = ?,
+                 cache_path         = ?
+             WHERE mod_id = ? AND game_rel_lowercase = ?",
+        )
+        .bind(&change.new_lowercase)
+        .bind(&change.new_original)
+        .bind(&change.new_cache_path)
+        .bind(&change.mod_id)
+        .bind(&change.old_lowercase)
+        .execute(&mut *tx)
+        .await
+        .with_context(|| {
+            format!(
+                "Failed to update mod_files for mod {} path {}",
+                change.mod_id, change.old_lowercase
+            )
+        })?;
+    }
+
+    sqlx::query(
+        "INSERT INTO settings (key, value) VALUES ('eclipse_path_migration_v1', 'true')
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    )
+    .execute(&mut *tx)
+    .await
+    .context("Failed to record eclipse path migration")?;
+
+    tx.commit()
+        .await
+        .context("Failed to commit eclipse path migration")?;
+
+    dlog!("[deployd] eclipse path migration complete");
     Ok(())
 }

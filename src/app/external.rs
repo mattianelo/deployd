@@ -356,7 +356,7 @@ impl App {
         };
         let mod_name = "External Changes".to_string();
         let rules = crate::core::rules::rules_for_game(&game.id);
-        let preview = crate::ui::pre_install_dialog::file_preview_from_list(&file_list, &rules);
+        let preview = crate::ui::pre_install_dialog::file_preview_from_list(&file_list, &rules, game.engine.clone());
         let is_bethesda = game.engine == crate::models::game::GameEngine::Bethesda;
         self.pending_install = Some(PendingInstall {
             tmp_dir: tempfile::tempdir().expect("tempdir"),

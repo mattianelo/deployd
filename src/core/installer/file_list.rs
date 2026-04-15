@@ -168,6 +168,14 @@ fn is_known_content_dir(name_lower: &str) -> bool {
             | "bin"       // CP2077 binary plugins (CET: bin/x64/plugins/…)
             | "content"   // W3 content subdirectories
             | "dlc" // W3 DLC-style mods
+            // Aurora (The Witcher)
+            | "override" // Witcher 1 primary mod folder
+            | "system" // Witcher 1 system data folder
+            | "modules" // Witcher 1 module/scenario files
+            // Eclipse (Dragon Age: Origins)
+            | "packages"  // DA:O primary data tree — must not be stripped as a wrapper
+            | "addins"    // DA:O DAZIP mod tree
+            | "settings"  // DA:O settings / AddIns.xml
     )
 }
 

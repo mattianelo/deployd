@@ -34,7 +34,7 @@ impl App {
         let is_bethesda = self
             .selected_game()
             .map(|g| g.engine == crate::models::game::GameEngine::Bethesda)
-            .unwrap_or(true);
+            .unwrap_or(false);
         self.mod_properties_dialog = Some(
             ModPropertiesDialog::builder()
                 .transient_for(root)

@@ -32,19 +32,75 @@ impl App {
                     self.games.iter().map(|g| g.id.clone()).collect();
                 for persisted in data.persisted_games.iter().filter(|p| p.custom) {
                     if !known_ids.contains(&persisted.id) {
-                        let engine = if persisted.engine == "redengine" {
-                            crate::models::game::GameEngine::REDEngine
-                        } else {
-                            crate::models::game::GameEngine::Bethesda
+                        let engine = match persisted.engine.as_str() {
+                            "redengine" => crate::models::game::GameEngine::REDEngine,
+                            "eclipse" => crate::models::game::GameEngine::Eclipse,
+                            "aurora" => crate::models::game::GameEngine::Aurora,
+                            _ => crate::models::game::GameEngine::Bethesda,
                         };
                         self.game_model.append(&persisted.title);
                         self.games.push(crate::models::game::Game {
                             id: persisted.id.clone(),
                             title: persisted.title.clone(),
                             path: persisted.path.clone(),
-                            data_subdir: persisted.data_subdir.clone(),
+                            data_subdir: crate::core::game::known_data_subdir(&persisted.id)
+                                .map(|s| s.to_string())
+                                .unwrap_or_else(|| persisted.data_subdir.clone()),
                             engine,
                             wine_prefix: persisted.wine_prefix.clone(),
+                        });
+                    }
+                }
+
+                // One-time migration: persist any corrected data_subdir values to DB
+                // so subsequent loads get the right value directly.
+                if let Some(tracker) = self.tracker.clone() {
+                    let migrations: Vec<_> = self
+                        .games
+                        .iter()
+                        .filter_map(|g| {
+                            let canonical = crate::core::game::known_data_subdir(&g.id)?;
+                            let persisted_val = data
+                                .persisted_games
+                                .iter()
+                                .find(|p| p.id == g.id)
+                                .map(|p| p.data_subdir.as_str())
+                                .unwrap_or("");
+                            if persisted_val != canonical {
+                                Some((
+                                    g.id.clone(),
+                                    g.title.clone(),
+                                    g.path.clone(),
+                                    canonical.to_string(),
+                                    g.engine.clone(),
+                                    g.wine_prefix.clone(),
+                                ))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    if !migrations.is_empty() {
+                        relm4::spawn(async move {
+                            for (id, title, path, data_subdir, engine, wine_prefix) in migrations {
+                                let engine_str = match engine {
+                                    crate::models::game::GameEngine::REDEngine => "redengine",
+                                    crate::models::game::GameEngine::Eclipse => "eclipse",
+                                    crate::models::game::GameEngine::Aurora => "aurora",
+                                    _ => "bethesda",
+                                };
+                                let _ = tracker
+                                    .upsert_game(
+                                        &id,
+                                        &title,
+                                        &path,
+                                        &data_subdir,
+                                        engine_str,
+                                        wine_prefix.as_deref(),
+                                        true,
+                                    )
+                                    .await;
+                            }
                         });
                     }
                 }

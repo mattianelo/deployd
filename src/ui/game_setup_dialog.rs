@@ -393,6 +393,8 @@ impl Component for GameSetupDialog {
                 GameEngine::REDEngine
             } else if pg.engine == "eclipse" {
                 GameEngine::Eclipse
+            } else if pg.engine == "aurora" {
+                GameEngine::Aurora
             } else {
                 GameEngine::Bethesda
             };
@@ -447,7 +449,7 @@ impl Component for GameSetupDialog {
         let labels: Vec<String> = model
             .known_opts
             .iter()
-            .map(|o| format!("{} ({})", o.title, o.store))
+            .map(|o| o.title.to_string())
             .collect();
         let strs: Vec<&str> = labels.iter().map(String::as_str).collect();
         widgets
@@ -608,11 +610,7 @@ impl Component for GameSetupDialog {
                 let Some(opt) = self.known_opts.get(self.new_game_type_idx) else {
                     return;
                 };
-                let engine = match opt.engine {
-                    GameEngine::REDEngine => GameEngine::REDEngine,
-                    GameEngine::Eclipse => GameEngine::Eclipse,
-                    GameEngine::Bethesda => GameEngine::Bethesda,
-                };
+                let engine = opt.engine.clone();
                 let game = Game {
                     id: opt.deployd_id.to_string(),
                     title: opt.title.to_string(),

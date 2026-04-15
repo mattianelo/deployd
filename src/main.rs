@@ -65,5 +65,7 @@ fn main() {
         ",
     );
 
+    utils::nxm_handler::ensure_registered();
+
     app.run::<app::App>(None);
 }

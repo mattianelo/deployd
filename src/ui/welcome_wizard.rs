@@ -6,7 +6,7 @@ use relm4::prelude::*;
 
 use crate::app::messages::GameConfig;
 use crate::core::game;
-use crate::models::game::{Game, GameEngine};
+use crate::models::game::Game;
 
 pub struct WelcomeWizard {
     known_opts: Vec<game::KnownGameOption>,
@@ -72,7 +72,7 @@ impl WelcomeWizard {
 
         for (idx, opt) in self.known_opts.iter().enumerate() {
             let row = adw::ActionRow::new();
-            row.set_title(&format!("{} ({})", opt.title, opt.store));
+            row.set_title(opt.title);
 
             let check = gtk::CheckButton::new();
             check.set_active(self.selected[idx]);
@@ -112,7 +112,7 @@ impl WelcomeWizard {
             let opt = &self.known_opts[idx];
 
             let expander = adw::ExpanderRow::new();
-            expander.set_title(&format!("{} ({})", opt.title, opt.store));
+            expander.set_title(opt.title);
             expander.set_expanded(true);
 
             // Installation folder row.
@@ -488,11 +488,7 @@ impl Component for WelcomeWizard {
                     .enumerate()
                     .filter(|&(i, _)| self.selected[i] && self.install_paths[i].is_some())
                     .map(|(i, opt)| {
-                        let engine = match opt.engine {
-                            GameEngine::REDEngine => GameEngine::REDEngine,
-                            GameEngine::Eclipse => GameEngine::Eclipse,
-                            GameEngine::Bethesda => GameEngine::Bethesda,
-                        };
+                        let engine = opt.engine.clone();
                         GameConfig {
                             game: Game {
                                 id: opt.deployd_id.to_string(),

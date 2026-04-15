@@ -457,10 +457,16 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             id: p.id.clone(),
             title: p.title.clone(),
             path: p.path.clone(),
-            data_subdir: p.data_subdir.clone(),
+            // Prefer the canonical value from KNOWN_GAMES so that updates to the
+            // constant (e.g. Witcher 1 changing from "." to "Data") take effect
+            // without requiring the user to re-add the game.
+            data_subdir: game::known_data_subdir(&p.id)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| p.data_subdir.clone()),
             engine: match p.engine.as_str() {
                 "redengine" => GameEngine::REDEngine,
                 "eclipse" => GameEngine::Eclipse,
+                "aurora" => GameEngine::Aurora,
                 _ => GameEngine::Bethesda,
             },
             wine_prefix: p.wine_prefix.clone(),

@@ -413,36 +413,151 @@ impl App {
     pub(crate) fn handle_fetch_download_metadata(
         &mut self,
         index: DynamicIndex,
+        root: &adw::Window,
         sender: &ComponentSender<Self>,
     ) {
         let idx = index.current_index();
-        let (
-            download_id,
-            nexus_mod_id,
-            nexus_file_id,
-            stored_domain,
-            archive_filename,
-            archive_hash,
-        ) = {
+        // If the entry has no nexus_ids yet, ask the user for a Nexus URL or mod ID.
+        {
+            let no_nexus_ids = {
+                let guard = self.downloads.guard();
+                let Some(row) = guard.get(idx) else { return };
+                if row.entry.nexus_ids.is_some() {
+                    None
+                } else {
+                    Some((row.entry.id.clone(), row.entry.game_domain.clone()))
+                }
+            };
+            if let Some((download_id, game_domain)) = no_nexus_ids {
+                let fallback_domain = self
+                    .selected_game()
+                    .and_then(game::nexus_domain)
+                    .unwrap_or("skyrimspecialedition")
+                    .to_string();
+                let domain = game_domain
+                    .filter(|d| !d.is_empty())
+                    .unwrap_or(fallback_domain);
+
+                let text_entry = gtk::Entry::builder()
+                    .placeholder_text("Nexus mod URL or ID  (e.g. 101)")
+                    .hexpand(true)
+                    .activates_default(true)
+                    .margin_top(8)
+                    .margin_bottom(8)
+                    .margin_start(8)
+                    .margin_end(8)
+                    .build();
+
+                let dialog = adw::MessageDialog::new(
+                    Some(root),
+                    Some("Enter Nexus Mod ID"),
+                    Some("Paste a Nexus mod URL or type the numeric mod ID."),
+                );
+                dialog.set_extra_child(Some(&text_entry));
+                dialog.add_response("cancel", "Cancel");
+                dialog.add_response("fetch", "Fetch");
+                dialog.set_default_response(Some("fetch"));
+                dialog.set_close_response("cancel");
+                dialog.set_response_appearance("fetch", adw::ResponseAppearance::Suggested);
+
+                let input_sender = sender.input_sender().clone();
+                dialog.connect_response(None, move |_, response| {
+                    if response != "fetch" {
+                        return;
+                    }
+                    let raw = text_entry.text().to_string();
+                    let Some(mod_id) = parse_nexus_mod_id_from_input(&raw) else {
+                        return;
+                    };
+                    let _ = input_sender.send(AppMsg::ConfirmNexusIdEntry(
+                        download_id.clone(),
+                        mod_id,
+                        domain.clone(),
+                    ));
+                });
+                dialog.present();
+                return;
+            }
+        }
+
+        let download_id = {
             let guard = self.downloads.guard();
             let Some(row) = guard.get(idx) else { return };
-            let Some((nexus_mod_id, nexus_file_id, ref domain)) = row.entry.nexus_ids else {
-                drop(guard);
-                self.toaster
-                    .toast("No Nexus info available for this download");
+            row.entry.id.clone()
+        };
+        self.start_nexus_metadata_fetch(download_id, sender);
+    }
+
+    /// Called after the user confirms a Nexus mod ID in the "Enter Nexus Mod ID" dialog.
+    ///
+    /// Updates `nexus_ids` on the entry, persists it, then runs the metadata fetch.
+    pub(crate) fn handle_confirm_nexus_id_entry(
+        &mut self,
+        download_id: String,
+        mod_id: i64,
+        domain: String,
+        sender: &ComponentSender<Self>,
+    ) {
+        let new_nexus_ids = Some((mod_id, 0i64, domain));
+
+        // Update backing store
+        if let Some(entry) = self.all_downloads.iter_mut().find(|e| e.id == download_id) {
+            entry.nexus_ids = new_nexus_ids.clone();
+        }
+
+        // Update factory
+        {
+            let mut guard = self.downloads.guard();
+            for i in 0..guard.len() {
+                if let Some(row) = guard.get_mut(i)
+                    && row.entry.id == download_id
+                {
+                    row.entry.nexus_ids = new_nexus_ids;
+                    break;
+                }
+            }
+        }
+
+        // Persist the updated entry
+        if let (Some(tracker), Some(entry)) = (
+            self.tracker.clone(),
+            self.all_downloads
+                .iter()
+                .find(|e| e.id == download_id)
+                .cloned(),
+        ) {
+            sender.oneshot_command(async move {
+                let _ = tracker.save_download_entry(&entry).await;
+                AppCmdMsg::PrioritySaved(Ok(()))
+            });
+        }
+
+        self.start_nexus_metadata_fetch(download_id, sender);
+    }
+
+    /// Perform the async Nexus metadata fetch for a download entry identified by ID.
+    ///
+    /// Looks up the entry in `self.all_downloads` to collect the required fields,
+    /// then dispatches the oneshot command that calls the API.
+    fn start_nexus_metadata_fetch(
+        &mut self,
+        download_id: String,
+        sender: &ComponentSender<Self>,
+    ) {
+        let (nexus_mod_id, nexus_file_id, stored_domain, archive_filename, archive_hash) = {
+            let Some(entry) = self.all_downloads.iter().find(|e| e.id == download_id) else {
                 return;
             };
-            // Extract archive filename for disk-scanned entries (file_id == 0)
-            // so we can match it against NexusFileEntry.file_name.
-            let archive_filename = row
-                .entry
+            let Some((nexus_mod_id, nexus_file_id, ref domain)) = entry.nexus_ids else {
+                return;
+            };
+            let archive_filename = entry
                 .archive_path
                 .as_ref()
                 .and_then(|p| p.file_name())
                 .map(|n| n.to_string_lossy().into_owned());
-            let archive_hash = row.entry.archive_hash.clone();
+            let archive_hash = entry.archive_hash.clone();
             (
-                row.entry.id.clone(),
                 nexus_mod_id,
                 nexus_file_id,
                 domain.clone(),
@@ -450,6 +565,7 @@ impl App {
                 archive_hash,
             )
         };
+
         // Use stored domain if non-empty, otherwise fall back to current game
         let domain = if stored_domain.is_empty() {
             self.selected_game()
@@ -587,4 +703,22 @@ impl App {
             }
         });
     }
+}
+
+/// Parse a Nexus mod ID from user input.
+///
+/// Accepts a bare integer (`101`) or a Nexus URL
+/// (`https://www.nexusmods.com/witcher/mods/101`).
+/// Returns `None` if the input cannot be parsed.
+fn parse_nexus_mod_id_from_input(raw: &str) -> Option<i64> {
+    let raw = raw.trim();
+    // Try bare integer first
+    if let Ok(id) = raw.parse::<i64>() {
+        return if id > 0 { Some(id) } else { None };
+    }
+    // Try to extract trailing integer from a URL path
+    // e.g. "https://www.nexusmods.com/witcher/mods/101"
+    raw.trim_end_matches('/')
+        .rsplit('/')
+        .find_map(|seg| seg.parse::<i64>().ok().filter(|&id| id > 0))
 }
