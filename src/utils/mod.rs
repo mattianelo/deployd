@@ -1,6 +1,6 @@
 pub mod archive;
-pub mod nxm_handler;
 pub mod fomod_resolver;
+pub mod nxm_handler;
 pub mod paths;
 pub mod plugin_header;
 pub mod plugins_txt;

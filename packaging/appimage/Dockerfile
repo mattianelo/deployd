@@ -19,6 +19,17 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
     && /root/.cargo/bin/rustup component add rust-std
 ENV PATH="/root/.cargo/bin:$PATH"
 
+# UMU Launcher — Python zipapp bundling all dependencies; needs python3 at runtime.
+# Pinned to a specific release for reproducible builds.
+ARG UMU_VERSION=1.4.0
+RUN wget -q \
+        "https://github.com/Open-Wine-Components/umu-launcher/releases/download/${UMU_VERSION}/umu-launcher-${UMU_VERSION}-zipapp.tar" \
+        -O /tmp/umu-zipapp.tar \
+    && tar -xf /tmp/umu-zipapp.tar -C /tmp \
+    && mv /tmp/umu/umu-run /opt/umu-run \
+    && chmod +x /opt/umu-run \
+    && rm -rf /tmp/umu-zipapp.tar /tmp/umu
+
 RUN mkdir -p /opt/appimage-tools \
     && wget -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage" \
          -O /opt/appimage-tools/linuxdeploy \

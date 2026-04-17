@@ -186,40 +186,44 @@ fn sanitize_mod_name_preserve_case(mod_name: &str) -> String {
 
 /// Route file paths for Aurora-engine (Witcher 1) mods.
 ///
-/// The Aurora engine (NWN-based) resolves all Override resources by **filename
-/// only** — it reads the entire Override directory tree recursively and makes
-/// every file available under its bare name, regardless of which subdirectory it
-/// lives in.  That means `Override/textures/foo.dds` and `Override/foo.dds` are
-/// the same resource to the game.  Preserving any subdirectory structure inside
-/// Override therefore breaks conflict detection without helping the engine.
-///
 /// Routing rules:
 /// 1. Files under `system/` or `modules/` are left unchanged — the engine
 ///    resolves them by name relative to the Data directory.
-/// 2. Everything else is flattened to `Override/<filename>`.  All wrapper
-///    directories and content-type subdirectories are stripped so that conflict
-///    detection can compare files by canonical name.
+/// 2. Files already under `Override/` are kept at their exact position.
+///    Subfolder structure is preserved so users can selectively include or
+///    exclude optional mod components before installation.
+/// 3. Bare files (no recognised top-level prefix) are placed inside
+///    `Override/` while preserving any relative sub-path
+///    (e.g. `sub/foo.nif` → `Override/sub/foo.nif`).
+/// 4. Directory sentinels (trailing `/`) not under a known prefix are dropped.
 ///
-/// `Override/` is created at deploy time if absent by the existing
-/// directory-creation pass in `deployer.rs`.
+/// `Override/` and any required subdirectories are created at deploy time by
+/// the directory-creation pass in `deployer.rs`.
 pub(super) fn route_aurora_paths(file_list: Vec<(PathBuf, PathBuf)>) -> Vec<(PathBuf, PathBuf)> {
     file_list
         .into_iter()
         .filter_map(|(src, dest)| {
             let lower = dest.to_string_lossy().to_lowercase();
+
             // Pass `system/` and `modules/` through unchanged.
             if lower.starts_with("system/") || lower.starts_with("modules/") {
                 return Some((src, dest));
             }
-            // For everything else extract just the filename and place it flat
-            // inside Override/.  Directory sentinel entries (trailing '/') are
-            // dropped — Override needs no pre-created subdirectories.
-            let s = dest.to_string_lossy();
-            if s.ends_with('/') {
+
+            // Files already under Override/ keep their full path — subfolder
+            // structure is intentional and must not be discarded.
+            if lower.starts_with("override/") {
+                return Some((src, dest));
+            }
+
+            // Drop directory sentinels not under a known prefix.
+            if dest.to_string_lossy().ends_with('/') {
                 return None;
             }
-            let filename = dest.file_name()?;
-            Some((src, PathBuf::from("Override").join(filename)))
+
+            // Bare files go into Override/ preserving any relative sub-path
+            // (e.g. sub/foo.nif → Override/sub/foo.nif).
+            Some((src, PathBuf::from("Override").join(&dest)))
         })
         .collect()
 }
@@ -242,26 +246,26 @@ mod tests {
     }
 
     #[test]
-    fn override_file_is_flattened() {
+    fn override_subfolder_structure_is_preserved() {
         assert_eq!(
             dests(route(vec![("src", "Override/ModName/textures/foo.dds")])),
-            vec![PathBuf::from("Override/foo.dds")]
+            vec![PathBuf::from("Override/ModName/textures/foo.dds")]
         );
     }
 
     #[test]
-    fn nested_content_subdir_is_flattened() {
+    fn nested_override_subdir_is_preserved() {
         assert_eq!(
             dests(route(vec![("src", "Override/items/keys/it_key_019.uti")])),
-            vec![PathBuf::from("Override/it_key_019.uti")]
+            vec![PathBuf::from("Override/items/keys/it_key_019.uti")]
         );
     }
 
     #[test]
-    fn textures_subdir_is_flattened() {
+    fn single_override_subdir_is_preserved() {
         assert_eq!(
             dests(route(vec![("src", "Override/textures/foo.dds")])),
-            vec![PathBuf::from("Override/foo.dds")]
+            vec![PathBuf::from("Override/textures/foo.dds")]
         );
     }
 
@@ -282,6 +286,14 @@ mod tests {
     }
 
     #[test]
+    fn bare_path_with_subdir_goes_into_override_preserving_structure() {
+        assert_eq!(
+            dests(route(vec![("src", "sub/foo.nif")])),
+            vec![PathBuf::from("Override/sub/foo.nif")]
+        );
+    }
+
+    #[test]
     fn system_path_passes_through() {
         assert_eq!(
             dests(route(vec![("src", "system/foo.key")])),
@@ -298,9 +310,22 @@ mod tests {
     }
 
     #[test]
-    fn directory_sentinels_are_dropped() {
+    fn directory_sentinel_under_override_is_kept() {
         let result = route(vec![("src", "Override/ModName/")]);
-        assert!(result.is_empty(), "directory sentinels should be filtered out");
+        assert_eq!(
+            result,
+            vec![(PathBuf::from("src"), PathBuf::from("Override/ModName/"))],
+            "directory sentinels under Override/ should be preserved for deployer"
+        );
+    }
+
+    #[test]
+    fn directory_sentinel_without_prefix_is_dropped() {
+        let result = route(vec![("src", "SomeFolder/")]);
+        assert!(
+            result.is_empty(),
+            "bare directory sentinels should be dropped"
+        );
     }
 }
 

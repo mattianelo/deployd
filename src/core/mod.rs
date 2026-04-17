@@ -7,7 +7,6 @@ pub mod loot_sort;
 pub mod mod_folders;
 pub mod nexus_api;
 pub mod nxm;
-pub mod proton_manager;
 pub mod rules;
 pub mod save_manager;
 pub mod tool_launcher;

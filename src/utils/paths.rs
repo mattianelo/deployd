@@ -61,14 +61,6 @@ pub fn game_data_dir(game: &Game) -> PathBuf {
     game::deploy_dir(game)
 }
 
-/// Managed ProtonGE runtimes root: `<data>/deployd/runtimes`
-///
-/// Each installed version lives in its own subdirectory, e.g. `runtimes/GE-Proton9-20/`.
-/// The active version is indicated by a `current` symlink at `runtimes/current`.
-pub fn runtimes_dir() -> Result<PathBuf> {
-    Ok(deployd_data_dir()?.join("runtimes"))
-}
-
 /// Vanilla file backup storage: `<data>/deployd/<game_id>/vanilla-backup/`
 ///
 /// Files here are copies of game files that deployd overwrote with mod files.

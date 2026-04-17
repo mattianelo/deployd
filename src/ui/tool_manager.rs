@@ -6,7 +6,6 @@ use relm4::factory::FactoryVecDeque;
 use relm4::prelude::*;
 
 use crate::core::game;
-use crate::core::proton_manager;
 use crate::models::game::GameEngine;
 use crate::models::tool::Tool;
 
@@ -112,10 +111,6 @@ pub struct ToolManager {
     game_engine: GameEngine,
     tools: FactoryVecDeque<ToolRow>,
     preset_box: gtk::ListBox,
-    /// Widget containing the Proton runtime selector section (built once at init).
-    runtime_section: gtk::Box,
-    /// Currently active ProtonGE tag, updated when the user changes the selection.
-    active_runtime: Option<String>,
 }
 
 #[derive(Debug)]
@@ -130,8 +125,6 @@ pub enum ToolManagerMsg {
     /// Open a folder dialog to change the working directory for tool at `idx`.
     ChangeWorkingDir(usize),
     WorkingDirChosen(usize, PathBuf),
-    /// Set the active ProtonGE runtime to the given version tag.
-    SetRuntime(String),
     Close,
 }
 
@@ -240,6 +233,12 @@ impl Component for ToolManager {
                     },
                 },
 
+                adw::Banner {
+                    set_title: "External tools are not supported in the Snap package. \
+                                Use the AppImage or a native build to run modding tools.",
+                    set_revealed: is_snap,
+                },
+
                 gtk::ScrolledWindow {
                     set_vexpand: true,
                     set_hscrollbar_policy: gtk::PolicyType::Never,
@@ -249,10 +248,6 @@ impl Component for ToolManager {
                         set_orientation: gtk::Orientation::Vertical,
                         set_margin_all: 12,
                         set_spacing: 12,
-
-                        // Proton runtime selector section (built imperatively at init)
-                        #[local_ref]
-                        runtime_section -> gtk::Box {},
 
                         // Preset catalog section
                         gtk::Label {
@@ -315,6 +310,8 @@ impl Component for ToolManager {
     ) -> ComponentParts<Self> {
         let (game_id, init_tools, game_path, wine_prefix, game_engine, deploy_dir) = init;
 
+        let is_snap = std::env::var("SNAP").is_ok();
+
         let mut tools = FactoryVecDeque::<ToolRow>::builder()
             .launch(gtk::ListBox::new())
             .forward(sender.input_sender(), |output| match output {
@@ -333,15 +330,6 @@ impl Component for ToolManager {
 
         let preset_box = gtk::ListBox::new();
 
-        // Build the Proton runtime selector section.
-        let installed_runtimes = proton_manager::installed_versions();
-        let active_runtime = proton_manager::active_runtime_tag();
-        let runtime_section = build_runtime_section(
-            &installed_runtimes,
-            active_runtime.as_deref(),
-            sender.input_sender(),
-        );
-
         let model = ToolManager {
             game_id,
             game_path,
@@ -350,13 +338,10 @@ impl Component for ToolManager {
             game_engine,
             tools,
             preset_box,
-            runtime_section,
-            active_runtime,
         };
 
         let tool_list = model.tools.widget();
         let preset_box = &model.preset_box;
-        let runtime_section = &model.runtime_section;
         let widgets = view_output!();
 
         model.rebuild_presets(&sender);
@@ -549,76 +534,9 @@ impl Component for ToolManager {
                 }
                 self.rebuild_presets(&sender);
             }
-            ToolManagerMsg::SetRuntime(tag) => match proton_manager::set_active_runtime(&tag) {
-                Ok(()) => self.active_runtime = Some(tag),
-                Err(e) => eprintln!("deployd: failed to set active runtime: {e}"),
-            },
             ToolManagerMsg::Close => {
                 let _ = sender.output(ToolManagerOutput::Closed);
             }
         }
     }
-}
-
-// ---------------------------------------------------------------------------
-// Build helpers
-// ---------------------------------------------------------------------------
-
-/// Build the Proton runtime selector section widget.
-///
-/// If no runtimes are installed, shows a dimmed label directing the user to
-/// Settings. Otherwise renders an `adw::ComboRow` that lets the user switch
-/// the active runtime; selecting an entry immediately updates the `current`
-/// symlink via `proton_manager::set_active_runtime`.
-fn build_runtime_section(
-    installed: &[String],
-    active: Option<&str>,
-    sender: &relm4::Sender<ToolManagerMsg>,
-) -> gtk::Box {
-    let section = gtk::Box::new(gtk::Orientation::Vertical, 8);
-
-    let heading = gtk::Label::new(Some("Proton Runtime"));
-    heading.set_halign(gtk::Align::Start);
-    heading.add_css_class("heading");
-    section.append(&heading);
-
-    if installed.is_empty() {
-        let notice = gtk::Label::new(Some("No ProtonGE runtimes installed — add one in Settings"));
-        notice.set_halign(gtk::Align::Start);
-        notice.add_css_class("dim-label");
-        notice.set_wrap(true);
-        section.append(&notice);
-    } else {
-        let tags: Vec<&str> = installed.iter().map(String::as_str).collect();
-        let string_list = gtk::StringList::new(&tags);
-
-        let combo = adw::ComboRow::new();
-        combo.set_title("Active Runtime");
-        combo.set_subtitle("Proton version used to launch tools");
-        combo.set_model(Some(&string_list));
-
-        let selected_idx = active
-            .and_then(|tag| installed.iter().position(|r| r == tag))
-            .unwrap_or(0);
-        combo.set_selected(selected_idx as u32);
-
-        let sender = sender.clone();
-        let installed_owned: Vec<String> = installed.to_vec();
-        combo.connect_selected_item_notify(move |row| {
-            let idx = row.selected() as usize;
-            if let Some(tag) = installed_owned.get(idx) {
-                sender
-                    .send(ToolManagerMsg::SetRuntime(tag.clone()))
-                    .unwrap();
-            }
-        });
-
-        let list = gtk::ListBox::new();
-        list.set_selection_mode(gtk::SelectionMode::None);
-        list.add_css_class("boxed-list");
-        list.append(&combo);
-        section.append(&list);
-    }
-
-    section
 }

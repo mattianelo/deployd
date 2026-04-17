@@ -200,6 +200,7 @@ pub(super) fn build_model(
         plugin_snapshot_save_entry: gtk::Entry::new(),
         mod_snapshots_list: gtk::ListBox::new(),
         plugin_snapshots_list: gtk::ListBox::new(),
+        proton_setup: false,
     };
 
     // Profile rename popover

@@ -55,6 +55,21 @@ else
     echo "    WARNING: loaders directory not found, skipping"
 fi
 
+# 2c. Bundle umu-run (UMU Launcher)
+# umu-run is a self-contained binary built with PyInstaller; it does not need
+# linuxdeploy shared-library resolution.  On first tool launch deployd will
+# check whether a Proton GE runtime is already present; if not it shows a
+# first-run setup dialog before calling umu-run, which downloads Proton GE
+# automatically.
+echo "==> Bundling umu-run into AppDir"
+if [ -f /opt/umu-run ]; then
+    cp /opt/umu-run "$APPDIR/usr/bin/umu-run"
+    chmod +x "$APPDIR/usr/bin/umu-run"
+    echo "  umu-run bundled successfully"
+else
+    echo "  WARNING: /opt/umu-run not found; external tools will not be available"
+fi
+
 # 3. Install custom AppRun (handles NXM protocol registration)
 echo "==> Installing custom AppRun"
 cp "packaging/appimage/AppRun" "$APPDIR/AppRun"

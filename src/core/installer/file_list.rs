@@ -108,7 +108,9 @@ fn detect_wrapper(extracted_root: &Path) -> (PathBuf, Option<String>) {
     }
 
     if dirs.len() == 1 && !has_meaningful_file {
-        let (path, name_lower, orig_name) = dirs.into_iter().next().unwrap();
+        let Some((path, name_lower, orig_name)) = dirs.into_iter().next() else {
+            return (extracted_root.to_path_buf(), None);
+        };
         if is_known_content_dir(&name_lower) {
             (extracted_root.to_path_buf(), None)
         } else {
@@ -175,7 +177,7 @@ fn is_known_content_dir(name_lower: &str) -> bool {
             // Eclipse (Dragon Age: Origins)
             | "packages"  // DA:O primary data tree — must not be stripped as a wrapper
             | "addins"    // DA:O DAZIP mod tree
-            | "settings"  // DA:O settings / AddIns.xml
+            | "settings" // DA:O settings / AddIns.xml
     )
 }
 

@@ -151,9 +151,7 @@ pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
                     let _ = fs::create_dir_all(parent);
                 }
                 if fs::copy(&backup_path, &deploy_path).is_ok() {
-                    let _ = tracker
-                        .delete_vanilla_backup(&game.id, removed_rel)
-                        .await;
+                    let _ = tracker.delete_vanilla_backup(&game.id, removed_rel).await;
                 }
                 // If copy failed, keep the DB record so the restore can be retried.
             }
@@ -229,9 +227,7 @@ pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
             // file — copy it to our backup store before replacing it with the mod file.
             let deploy_target_lower = deploy_target.to_string_lossy().to_lowercase();
             let is_ours = deployed_lower.contains(&deploy_target_lower);
-            if !is_ours
-                && let Ok(backup_dir) = paths::vanilla_backup_dir(&game.id)
-            {
+            if !is_ours && let Ok(backup_dir) = paths::vanilla_backup_dir(&game.id) {
                 let _ = fs::create_dir_all(&backup_dir);
                 let backup_name = f.game_rel_lowercase.replace('/', "__");
                 let backup_path = backup_dir.join(&backup_name);

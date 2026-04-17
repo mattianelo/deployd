@@ -3,21 +3,21 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, anyhow};
 
-use crate::core::game::{self, WineConfig};
+use crate::core::game::{self, WineConfig, WineLauncher};
 use crate::dlog;
 use crate::models::game::Game;
 use crate::models::tool::Tool;
 use crate::utils::paths;
 
-/// Launch a Windows tool via Wine/Proton.
+/// Launch a Windows tool via Wine or UMU/Proton.
 ///
-/// Runs the Wine binary directly. Before launching, ensures the standard Bethesda
-/// registry key exists so modding tools can find the game (GOG installers don't create it).
+/// Dispatches to the appropriate launch path based on the launcher stored in
+/// `wine_config`:
+/// - `WineLauncher::Wine` — runs the tool directly under plain Wine/wine64.
+/// - `WineLauncher::Umu` — runs via `umu-run`, which selects (and downloads if
+///   absent) a Proton GE runtime automatically.
 ///
-/// Returns the child process ID on success.
-///
-/// `on_exit` is called from a background thread once the Wine process exits
-/// (regardless of exit status). Use this to trigger a post-tool file scan.
+/// `on_exit` is called from a background thread once the process exits.
 pub fn launch_tool(
     tool: &Tool,
     game: &Game,
@@ -29,42 +29,55 @@ pub fn launch_tool(
         return Err(anyhow!("Tool executable not found: {}", tool.exe_path));
     }
 
-    let wine_bin = resolve_wine64(&wine_config.wine_bin);
+    match &wine_config.launcher {
+        WineLauncher::Wine(bin) => {
+            let wine_bin = resolve_wine64(bin);
+            ensure_bethesda_reg_key(game, wine_config, &wine_bin);
+            game::ensure_ini_symlinks(game);
+            ensure_bodyslide_config(tool, game, wine_config);
+            ensure_named_mods_drive(wine_config);
+            dlog!(
+                "deployd: launching tool '{}' | wine={}",
+                tool.name,
+                wine_bin.display()
+            );
+            let cmd = build_wine_command(&wine_bin, tool, game, wine_config);
+            spawn_tool(cmd, &tool.name, on_exit)
+        }
+        WineLauncher::Umu(bin) => {
+            // Registry key setup requires a bare Wine binary (wine reg add) which is
+            // not directly available through UMU — skip it.  INI symlinks and the
+            // BodySlide config are filesystem operations and work regardless.
+            game::ensure_ini_symlinks(game);
+            ensure_bodyslide_config(tool, game, wine_config);
+            ensure_named_mods_drive(wine_config);
+            ensure_no_x_drive_conflict(wine_config);
+            dlog!(
+                "deployd: launching tool '{}' | umu={}",
+                tool.name,
+                bin.display()
+            );
+            let cmd = build_umu_command(bin, tool, game, wine_config);
+            spawn_tool(cmd, &tool.name, on_exit)
+        }
+    }
+}
 
-    // Ensure modding tools can find the game via standard registry keys
-    // and INI files in the standard My Games folder.
-    ensure_bethesda_reg_key(game, wine_config, &wine_bin);
-    game::ensure_ini_symlinks(game);
-    ensure_bodyslide_config(tool, game, wine_config);
-
-    // Map M: → named_mods/ so tools like NPC Plugin Chooser 2 can access all mod folders.
-    ensure_named_mods_drive(wine_config);
-
-    let mut cmd = build_native_command(&wine_bin, tool, game, wine_config);
-
-    dlog!(
-        "deployd: launching tool '{}' | wine={}",
-        tool.name,
-        wine_bin.display()
-    );
-
-    // Capture stderr so we can report Wine errors on early failure.
+/// Shared process-spawn logic for both Wine and UMU paths.
+fn spawn_tool(
+    mut cmd: Command,
+    tool_name: &str,
+    on_exit: Option<Box<dyn FnOnce() + Send + 'static>>,
+) -> Result<u32> {
     cmd.stderr(Stdio::piped());
 
-    let mut child = cmd.spawn().map_err(|e| {
-        anyhow!(
-            "Could not start Wine ({}).\n\
-             Binary: {}\n\
-             Error: {e}",
-            tool.name,
-            wine_bin.display(),
-        )
-    })?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| anyhow!("Could not start process for \"{tool_name}\".\nError: {e}"))?;
 
     let pid = child.id();
-    let tool_name = tool.name.clone();
+    let name = tool_name.to_owned();
 
-    // Background thread captures stderr on early crash, then fires the on_exit callback.
     std::thread::spawn(move || {
         match child.wait() {
             Ok(status) if !status.success() => {
@@ -80,14 +93,12 @@ pub fn launch_tool(
                     .unwrap_or_default();
 
                 if !stderr.is_empty() {
-                    eprintln!("deployd: {tool_name} Wine exited {status}. stderr:\n{stderr}");
+                    eprintln!("deployd: {name} exited {status}. stderr:\n{stderr}");
                 } else {
-                    eprintln!("deployd: {tool_name} Wine exited {status} (no stderr).");
+                    eprintln!("deployd: {name} exited {status} (no stderr).");
                 }
             }
-            Err(e) => {
-                eprintln!("deployd: failed to wait on Wine process: {e}");
-            }
+            Err(e) => eprintln!("deployd: failed to wait on process: {e}"),
             _ => {}
         }
         if let Some(cb) = on_exit {
@@ -96,6 +107,95 @@ pub fn launch_tool(
     });
 
     Ok(pid)
+}
+
+/// Build a command that runs the tool under plain Wine.
+fn build_wine_command(
+    wine_bin: &PathBuf,
+    tool: &Tool,
+    game: &Game,
+    wine_config: &WineConfig,
+) -> Command {
+    let compat_data = strip_pfx_suffix(&wine_config.prefix);
+
+    let mut cmd = Command::new(wine_bin);
+    cmd.env("WINEPREFIX", &wine_config.prefix)
+        .env("WINEDEBUG", "-all")
+        .env("STEAM_COMPAT_DATA_PATH", &compat_data);
+
+    if let Some(proton_dir) = &wine_config.proton_dir {
+        let lib_dir = proton_dir.join("files/lib");
+        cmd.env(
+            "LD_LIBRARY_PATH",
+            format!(
+                "{}:{}",
+                lib_dir.join("x86_64-linux-gnu").display(),
+                lib_dir.join("i386-linux-gnu").display(),
+            ),
+        );
+        cmd.env(
+            "WINEDLLPATH",
+            format!(
+                "{}:{}",
+                lib_dir.join("vkd3d").display(),
+                lib_dir.join("wine").display(),
+            ),
+        );
+    }
+
+    cmd.arg(&tool.exe_path);
+    for arg in tool.custom_args.split_whitespace() {
+        cmd.arg(arg);
+    }
+
+    cmd.current_dir(effective_cwd(tool, game));
+    cmd
+}
+
+/// Build a command that runs the tool via `umu-run`.
+///
+/// UMU resolves `PROTONPATH` to select the Proton runtime:
+/// - A concrete directory path → use that installation.
+/// - `"GE-Proton"` → download the latest Proton GE release on first use.
+fn build_umu_command(
+    umu_bin: &Path,
+    tool: &Tool,
+    game: &Game,
+    wine_config: &WineConfig,
+) -> Command {
+    let proton_path = game::find_proton_runtime()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "GE-Proton".to_string());
+
+    let compat_data = strip_pfx_suffix(&wine_config.prefix);
+
+    let mut cmd = Command::new(umu_bin);
+    // The snap GNOME extension injects PYTHONPATH pointing at its own stdlib,
+    // which breaks umu-run (a Python zipapp) at import time. Harmless no-op
+    // in AppImage context where these vars are never set.
+    cmd.env_remove("PYTHONPATH").env_remove("PYTHONHOME");
+    cmd.env("GAMEID", "0")
+        .env("WINEPREFIX", &wine_config.prefix)
+        .env("STEAM_COMPAT_DATA_PATH", &compat_data)
+        .env("PROTONPATH", &proton_path);
+
+    cmd.arg(&tool.exe_path);
+    for arg in tool.custom_args.split_whitespace() {
+        cmd.arg(arg);
+    }
+
+    cmd.current_dir(effective_cwd(tool, game));
+    cmd
+}
+
+/// If the prefix path ends with `pfx` (Proton layout), return its parent as
+/// the `STEAM_COMPAT_DATA_PATH` directory.  Otherwise return the path as-is.
+fn strip_pfx_suffix(prefix: &Path) -> PathBuf {
+    if prefix.ends_with("pfx") {
+        prefix.parent().unwrap_or(prefix).to_path_buf()
+    } else {
+        prefix.to_path_buf()
+    }
 }
 
 /// Ensure the standard Bethesda Softworks registry key exists for modding tool discovery.
@@ -148,67 +248,11 @@ fn ensure_bethesda_reg_key(game: &Game, wine_config: &WineConfig, wine_bin: &Pat
     }
 }
 
-/// Build a command that runs Wine directly.
-///
-/// CWD is set to the game root so modding tools can find game files.
-fn build_native_command(
-    wine_bin: &PathBuf,
-    tool: &Tool,
-    game: &Game,
-    wine_config: &WineConfig,
-) -> Command {
-    let compat_data = if wine_config.prefix.ends_with("pfx") {
-        wine_config
-            .prefix
-            .parent()
-            .unwrap_or(&wine_config.prefix)
-            .to_path_buf()
-    } else {
-        wine_config.prefix.clone()
-    };
-
-    let mut cmd = Command::new(wine_bin);
-    cmd.env("WINEPREFIX", &wine_config.prefix)
-        .env("WINEDEBUG", "-all")
-        .env("STEAM_COMPAT_DATA_PATH", &compat_data);
-
-    if let Some(proton_dir) = &wine_config.proton_dir {
-        let lib_dir = proton_dir.join("files/lib");
-        cmd.env(
-            "LD_LIBRARY_PATH",
-            format!(
-                "{}:{}",
-                lib_dir.join("x86_64-linux-gnu").display(),
-                lib_dir.join("i386-linux-gnu").display(),
-            ),
-        );
-        cmd.env(
-            "WINEDLLPATH",
-            format!(
-                "{}:{}",
-                lib_dir.join("vkd3d").display(),
-                lib_dir.join("wine").display(),
-            ),
-        );
-    }
-
-    cmd.arg(&tool.exe_path);
-    for arg in tool.custom_args.split_whitespace() {
-        cmd.arg(arg);
-    }
-
-    // CWD: use the tool's explicit working_dir when set, otherwise the exe's parent directory.
-    let cwd = effective_cwd(tool, game);
-    cmd.current_dir(&cwd);
-    cmd
-}
-
 /// Determine the working directory to use when launching a tool.
 ///
 /// Priority:
 /// 1. `tool.working_dir` if explicitly set by the user.
-/// 2. The directory that contains the tool executable (covers bat/script wrappers
-///    that use `%CD%` to locate sibling files such as FO4Edit.exe).
+/// 2. The directory that contains the tool executable.
 /// 3. The game root as final fallback.
 fn effective_cwd(tool: &Tool, game: &Game) -> PathBuf {
     if !tool.working_dir.is_empty() {
@@ -232,14 +276,95 @@ fn resolve_wine64(wine_bin: &Path) -> PathBuf {
     wine_bin.to_path_buf()
 }
 
+/// Create (or update) `<prefix>/dosdevices/m:` → `named_mods/` so the deployd mod
+/// library is accessible as `M:\` inside any Wine/Proton process.
+fn ensure_named_mods_drive(wine_config: &WineConfig) {
+    let named_mods = match paths::named_mods_dir() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("[deployd] named_mods_dir: {e}");
+            return;
+        }
+    };
+
+    if !named_mods.exists() {
+        return;
+    }
+
+    let dosdevices = wine_config.prefix.join("dosdevices");
+    if !dosdevices.is_dir() {
+        return;
+    }
+
+    let link = dosdevices.join("m:");
+    if link.is_symlink() {
+        if let Ok(target) = std::fs::read_link(&link)
+            && target == named_mods
+        {
+            return;
+        }
+        let _ = std::fs::remove_file(&link);
+    }
+
+    #[cfg(unix)]
+    if let Err(e) = std::os::unix::fs::symlink(&named_mods, &link) {
+        eprintln!("[deployd] failed to create M: drive in dosdevices: {e}");
+    } else {
+        dlog!("deployd: mapped M: → {}", named_mods.display());
+    }
+}
+
+/// Remap drive X: to an available letter if it exists in dosdevices.
+///
+/// Proton reserves X: for the Steam Linux Runtime at container setup time,
+/// shadowing any dosdevices entry the game installer (e.g. Heroic) placed
+/// there. If the game's Windows path was X:\, tools running under Proton will
+/// get access-denied errors even though the Linux path is readable.
+///
+/// This is a no-op when X: is not present — the common case for prefixes that
+/// were never mapped to X:.
+fn ensure_no_x_drive_conflict(wine_config: &WineConfig) {
+    let dosdevices = wine_config.prefix.join("dosdevices");
+    let x_drive = dosdevices.join("x:");
+
+    if !x_drive.is_symlink() {
+        return;
+    }
+
+    let Ok(target) = std::fs::read_link(&x_drive) else {
+        return;
+    };
+
+    // Letters Proton does not reserve. M: is already used by deployd for mods.
+    const CANDIDATES: &[char] = &['s', 'g', 'h', 'i', 'j', 'k', 'l', 'n', 'o', 'p', 'q', 'r'];
+    let Some(&new_letter) = CANDIDATES
+        .iter()
+        .find(|&&c| !dosdevices.join(format!("{c}:")).exists())
+    else {
+        eprintln!("deployd: no free drive letter to remap X: — leaving as-is");
+        return;
+    };
+
+    let new_drive = dosdevices.join(format!("{new_letter}:"));
+
+    #[cfg(unix)]
+    {
+        if let Err(e) = std::os::unix::fs::symlink(&target, &new_drive) {
+            eprintln!("deployd: failed to create {new_letter}: drive: {e}");
+            return;
+        }
+        if let Err(e) = std::fs::remove_file(&x_drive) {
+            eprintln!("deployd: failed to remove x: drive: {e}");
+            let _ = std::fs::remove_file(&new_drive);
+        } else {
+            dlog!(
+                "deployd: remapped X: → {new_letter}: (Proton reserves X: for runtime)"
+            );
+        }
+    }
+}
+
 /// Pre-configure BodySlide's Config.xml with the correct `GameDataPath` and `TargetGame`.
-///
-/// BodySlide stores its settings at `%LOCALAPPDATA%\BodySlide and Outfit Studio\Config.xml`
-/// inside the Wine prefix. Without a correct `GameDataPath`, BodySlide cannot find slider
-/// sets or outfit groups — resulting in an empty outfit list even when CBBE is deployed.
-///
-/// MO2 performs the same operation on Windows before launching BodySlide. We replicate that
-/// here to handle both first-run and stale-config cases.
 fn ensure_bodyslide_config(tool: &Tool, game: &Game, wine_config: &WineConfig) {
     let exe_name = Path::new(&tool.exe_path)
         .file_name()
@@ -258,8 +383,6 @@ fn ensure_bodyslide_config(tool: &Tool, game: &Game, wine_config: &WineConfig) {
         return;
     };
 
-    // BodySlide uses %LOCALAPPDATA% (AppData/Local) in recent versions.
-    // Fall back to AppData/Roaming if that's where a previous run stored the config.
     let config_dir_local = user_dir.join("AppData/Local/BodySlide and Outfit Studio");
     let config_dir_roaming = user_dir.join("AppData/Roaming/BodySlide and Outfit Studio");
     let config_dir = if config_dir_roaming.exists() && !config_dir_local.exists() {
@@ -270,13 +393,9 @@ fn ensure_bodyslide_config(tool: &Tool, game: &Game, wine_config: &WineConfig) {
 
     let config_path = config_dir.join("Config.xml");
 
-    // Resolve the correct Wine drive letter for the game Data directory by inspecting
-    // <prefix>/dosdevices/. Heroic/Proton may map game library paths to X:, S:, etc.
-    // rather than Z:, so we must not hardcode Z:.
     let game_data_dir = game.path.join(&game.data_subdir);
     let data_path = game::linux_path_to_wine_path(&game_data_dir, &wine_config.prefix)
         .unwrap_or_else(|| {
-            // Fallback: Z: always maps to / in Wine.
             format!(
                 "Z:{}\\{}\\",
                 game.path.to_string_lossy().replace('/', "\\"),
@@ -290,47 +409,6 @@ fn ensure_bodyslide_config(tool: &Tool, game: &Game, wine_config: &WineConfig) {
             data_path
         ),
         Err(e) => eprintln!("deployd: failed to write BodySlide Config.xml: {e}"),
-    }
-}
-
-/// Create (or update) `<prefix>/dosdevices/m:` → `named_mods/` so the deployd mod
-/// library is accessible as `M:\` inside any Wine/Proton process.
-///
-/// `M:` is used as the deployd-specific drive letter. If it is already mapped to the
-/// correct target, this is a no-op. Errors are logged but do not abort the tool launch.
-fn ensure_named_mods_drive(wine_config: &WineConfig) {
-    let named_mods = match paths::named_mods_dir() {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("[deployd] named_mods_dir: {e}");
-            return;
-        }
-    };
-
-    if !named_mods.exists() {
-        return; // No mods installed yet — nothing to map.
-    }
-
-    let dosdevices = wine_config.prefix.join("dosdevices");
-    if !dosdevices.is_dir() {
-        return;
-    }
-
-    let link = dosdevices.join("m:");
-    if link.is_symlink() {
-        if let Ok(target) = std::fs::read_link(&link)
-            && target == named_mods
-        {
-            return; // Already correct.
-        }
-        let _ = std::fs::remove_file(&link);
-    }
-
-    #[cfg(unix)]
-    if let Err(e) = std::os::unix::fs::symlink(&named_mods, &link) {
-        eprintln!("[deployd] failed to create M: drive in dosdevices: {e}");
-    } else {
-        dlog!("deployd: mapped M: → {}", named_mods.display());
     }
 }
 
@@ -350,10 +428,6 @@ fn find_prefix_user_dir(users_dir: &Path) -> Option<PathBuf> {
 }
 
 /// Write (or update in-place) BodySlide's `Config.xml`.
-///
-/// If the file already exists, the `GameDataPath` and `TargetGame` elements are updated
-/// while all other settings are preserved. If the file is absent or malformed it is
-/// replaced with a minimal valid config.
 fn write_bodyslide_config(
     config_path: &Path,
     game_data_path: &str,
@@ -387,7 +461,7 @@ fn patch_xml_value(xml: &str, tag: &str, value: &str) -> String {
     let close = format!("</{tag}>");
     if let (Some(start), Some(end)) = (xml.find(&open), xml.find(&close)) {
         let before = &xml[..start + open.len()];
-        let after = &xml[end..]; // starts at `</tag>`
+        let after = &xml[end..];
         format!("{before}{value}{after}")
     } else if let Some(pos) = xml.rfind("</Config>") {
         let (before, after) = xml.split_at(pos);

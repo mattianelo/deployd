@@ -255,10 +255,7 @@ mod tests {
 
     #[test]
     fn settings_prefix_passes_through() {
-        assert_eq!(
-            route_path("settings/AddIns.xml"),
-            "settings/AddIns.xml"
-        );
+        assert_eq!(route_path("settings/AddIns.xml"), "settings/AddIns.xml");
     }
 }
 

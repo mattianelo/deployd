@@ -8,5 +8,4 @@ pub mod order_snapshot;
 pub mod plugin;
 pub mod profile;
 pub mod profile_export;
-pub mod proton_release;
 pub mod tool;

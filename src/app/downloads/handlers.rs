@@ -539,11 +539,7 @@ impl App {
     ///
     /// Looks up the entry in `self.all_downloads` to collect the required fields,
     /// then dispatches the oneshot command that calls the API.
-    fn start_nexus_metadata_fetch(
-        &mut self,
-        download_id: String,
-        sender: &ComponentSender<Self>,
-    ) {
+    fn start_nexus_metadata_fetch(&mut self, download_id: String, sender: &ComponentSender<Self>) {
         let (nexus_mod_id, nexus_file_id, stored_domain, archive_filename, archive_hash) = {
             let Some(entry) = self.all_downloads.iter().find(|e| e.id == download_id) else {
                 return;

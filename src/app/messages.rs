@@ -72,6 +72,11 @@ pub enum AppMsg {
     LaunchTool(String),
     /// Fired from the background wait-thread when a launched tool's Wine process exits.
     ToolExited(String),
+    /// Show a first-run Proton GE download confirmation dialog for `tool_id`.
+    /// Sent when UMU is the active launcher but no Proton runtime is installed yet.
+    ConfirmUmuSetup(String),
+    /// User confirmed the first-run Proton GE download; proceed with the launch.
+    UmuSetupConfirmed(String),
     ManageToolsClicked,
     ToolAdded(Tool),
     ToolRemoved(String),

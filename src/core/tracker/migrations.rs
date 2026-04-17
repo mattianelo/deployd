@@ -350,8 +350,8 @@ pub(super) async fn migrate_aurora_file_paths(pool: &SqlitePool) -> Result<()> {
             // Directory sentinel with no filename — drop the row entirely.
             continue;
         };
-        let new_original = restrip_aurora_path(&old_original)
-            .unwrap_or_else(|| new_lowercase.clone());
+        let new_original =
+            restrip_aurora_path(&old_original).unwrap_or_else(|| new_lowercase.clone());
 
         if new_lowercase == old_lowercase {
             continue; // path already correct
@@ -623,21 +623,28 @@ async fn rename_game_id(
     new_id: &str,
 ) -> Result<()> {
     // Cascade the rename across every table that references game_id.
-    for stmt in &[
-        format!("UPDATE mods          SET game_id = '{new_id}' WHERE game_id = '{old_id}'"),
-        format!("UPDATE deployed_files SET game_id = '{new_id}' WHERE game_id = '{old_id}'"),
-        format!("UPDATE profiles      SET game_id = '{new_id}' WHERE game_id = '{old_id}'"),
-        format!("UPDATE tools         SET game_id = '{new_id}' WHERE game_id = '{old_id}'"),
-        format!("UPDATE mod_groups    SET game_id = '{new_id}' WHERE game_id = '{old_id}'"),
-        format!("UPDATE vanilla_files SET game_id = '{new_id}' WHERE game_id = '{old_id}'"),
-        format!("UPDATE order_snapshots SET game_id = '{new_id}' WHERE game_id = '{old_id}'"),
-        format!("UPDATE games         SET id       = '{new_id}' WHERE id       = '{old_id}'"),
+    for table_sql in &[
+        "UPDATE mods           SET game_id = ? WHERE game_id = ?",
+        "UPDATE deployed_files SET game_id = ? WHERE game_id = ?",
+        "UPDATE profiles       SET game_id = ? WHERE game_id = ?",
+        "UPDATE tools          SET game_id = ? WHERE game_id = ?",
+        "UPDATE mod_groups     SET game_id = ? WHERE game_id = ?",
+        "UPDATE vanilla_files  SET game_id = ? WHERE game_id = ?",
+        "UPDATE order_snapshots SET game_id = ? WHERE game_id = ?",
     ] {
-        sqlx::query(stmt)
+        sqlx::query(table_sql)
+            .bind(new_id)
+            .bind(old_id)
             .execute(&mut **tx)
             .await
-            .with_context(|| format!("Failed rename step: {stmt}"))?;
+            .with_context(|| format!("Failed rename step: {table_sql}"))?;
     }
+    sqlx::query("UPDATE games SET id = ? WHERE id = ?")
+        .bind(new_id)
+        .bind(old_id)
+        .execute(&mut **tx)
+        .await
+        .context("Failed to rename games.id")?;
 
     // Update per-game settings keys.
     rename_settings_key(
@@ -665,21 +672,26 @@ async fn rename_game_id(
 }
 
 async fn drop_game_id(tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>, game_id: &str) -> Result<()> {
-    for stmt in &[
-        format!("DELETE FROM mods          WHERE game_id = '{game_id}'"),
-        format!("DELETE FROM deployed_files WHERE game_id = '{game_id}'"),
-        format!("DELETE FROM profiles      WHERE game_id = '{game_id}'"),
-        format!("DELETE FROM tools         WHERE game_id = '{game_id}'"),
-        format!("DELETE FROM mod_groups    WHERE game_id = '{game_id}'"),
-        format!("DELETE FROM vanilla_files WHERE game_id = '{game_id}'"),
-        format!("DELETE FROM order_snapshots WHERE game_id = '{game_id}'"),
-        format!("DELETE FROM games         WHERE id       = '{game_id}'"),
+    for table_sql in &[
+        "DELETE FROM mods           WHERE game_id = ?",
+        "DELETE FROM deployed_files WHERE game_id = ?",
+        "DELETE FROM profiles       WHERE game_id = ?",
+        "DELETE FROM tools          WHERE game_id = ?",
+        "DELETE FROM mod_groups     WHERE game_id = ?",
+        "DELETE FROM vanilla_files  WHERE game_id = ?",
+        "DELETE FROM order_snapshots WHERE game_id = ?",
     ] {
-        sqlx::query(stmt)
+        sqlx::query(table_sql)
+            .bind(game_id)
             .execute(&mut **tx)
             .await
-            .with_context(|| format!("Failed drop step: {stmt}"))?;
+            .with_context(|| format!("Failed drop step: {table_sql}"))?;
     }
+    sqlx::query("DELETE FROM games WHERE id = ?")
+        .bind(game_id)
+        .execute(&mut **tx)
+        .await
+        .context("Failed to delete from games")?;
     Ok(())
 }
 
@@ -900,8 +912,8 @@ pub(super) async fn migrate_eclipse_file_paths(pool: &SqlitePool) -> Result<()> 
         let Some(new_lowercase) = restrip_eclipse_path(&old_lowercase) else {
             continue; // directory sentinel — drop
         };
-        let new_original = restrip_eclipse_path(&old_original)
-            .unwrap_or_else(|| new_lowercase.clone());
+        let new_original =
+            restrip_eclipse_path(&old_original).unwrap_or_else(|| new_lowercase.clone());
 
         if new_lowercase == old_lowercase {
             continue; // already correct

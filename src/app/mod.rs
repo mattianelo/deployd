@@ -941,6 +941,10 @@ impl Component for App {
             AppMsg::GameFolderGranted(path) => self.handle_game_folder_granted(path, &sender),
             AppMsg::LaunchTool(name) => self.handle_launch_tool(name, &sender),
             AppMsg::ToolExited(name) => self.handle_tool_exited(name, &sender),
+            AppMsg::ConfirmUmuSetup(tool_id) => {
+                self.handle_confirm_umu_setup(tool_id, root, &sender)
+            }
+            AppMsg::UmuSetupConfirmed(tool_id) => self.handle_umu_setup_confirmed(tool_id, &sender),
             AppMsg::ManageToolsClicked => self.handle_manage_tools_clicked(root, &sender),
             AppMsg::ToolAdded(tool) => self.handle_tool_added(tool, &sender),
             AppMsg::ToolRemoved(name) => self.handle_tool_removed(name, &sender),
@@ -994,7 +998,9 @@ impl Component for App {
             AppMsg::DownloadNameResolved(id, name, domain, fname, is_primary) => {
                 self.handle_download_name_resolved(id, name, domain, fname, is_primary, &sender)
             }
-            AppMsg::FetchDownloadMetadata(idx) => self.handle_fetch_download_metadata(idx, root, &sender),
+            AppMsg::FetchDownloadMetadata(idx) => {
+                self.handle_fetch_download_metadata(idx, root, &sender)
+            }
             AppMsg::ScanDownloadsFolder => self.handle_scan_downloads_folder(&sender),
             AppMsg::DownloadSortChanged(idx) => self.handle_download_sort_changed(idx),
             AppMsg::SearchToggled(active) => self.handle_search_toggled(active),

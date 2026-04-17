@@ -47,10 +47,7 @@ impl Tracker {
     }
 
     /// Return all backup records for a game as `(game_rel_path, backup_path)` pairs.
-    pub async fn get_all_vanilla_backups(
-        &self,
-        game_id: &str,
-    ) -> Result<Vec<(String, PathBuf)>> {
+    pub async fn get_all_vanilla_backups(&self, game_id: &str) -> Result<Vec<(String, PathBuf)>> {
         let rows: Vec<(String, String)> = sqlx::query_as(
             "SELECT game_rel_path, backup_path FROM vanilla_backups WHERE game_id = ?",
         )
@@ -58,23 +55,20 @@ impl Tracker {
         .fetch_all(&self.pool)
         .await
         .context("Failed to query vanilla backups")?;
-        Ok(rows.into_iter().map(|(r, p)| (r, PathBuf::from(p))).collect())
+        Ok(rows
+            .into_iter()
+            .map(|(r, p)| (r, PathBuf::from(p)))
+            .collect())
     }
 
     /// Remove a single backup record (call after successfully restoring one file).
-    pub async fn delete_vanilla_backup(
-        &self,
-        game_id: &str,
-        game_rel_path: &str,
-    ) -> Result<()> {
-        sqlx::query(
-            "DELETE FROM vanilla_backups WHERE game_id = ? AND game_rel_path = ?",
-        )
-        .bind(game_id)
-        .bind(game_rel_path)
-        .execute(&self.pool)
-        .await
-        .context("Failed to delete vanilla backup record")?;
+    pub async fn delete_vanilla_backup(&self, game_id: &str, game_rel_path: &str) -> Result<()> {
+        sqlx::query("DELETE FROM vanilla_backups WHERE game_id = ? AND game_rel_path = ?")
+            .bind(game_id)
+            .bind(game_rel_path)
+            .execute(&self.pool)
+            .await
+            .context("Failed to delete vanilla backup record")?;
         Ok(())
     }
 }

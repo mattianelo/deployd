@@ -1,7 +1,8 @@
+use gtk::gio;
 use gtk::prelude::*;
 use relm4::prelude::*;
 
-use crate::core::game;
+use crate::core::game::{self, WineLauncher};
 use crate::core::tool_launcher;
 use crate::ui::tool_manager::{ToolManager, ToolManagerOutput};
 
@@ -24,42 +25,100 @@ impl App {
             return;
         };
 
-        let tool_name = tool.name.clone();
-        let exit_sender = sender.input_sender().clone();
-        let exit_tool_name = tool_name.clone();
-        sender.oneshot_command(async move {
-            let result: Result<String, String> = (|| {
-                // Surface a specific, actionable error when no ProtonGE runtime is
-                // installed and no prefix has been manually configured. Without both,
-                // Wine cannot start — the generic "could not detect" message below
-                // gives the user nothing to act on.
-                if crate::core::proton_manager::active_runtime_path().is_none()
-                    && game.wine_prefix.is_none()
-                {
-                    return Err("No ProtonGE runtime installed. \
-                         Open the ProtonGE manager to download one first."
-                        .to_string());
-                }
+        // Detect wine/UMU config synchronously so we can check for UMU-specific
+        // first-run requirements before spawning the async command.
+        let wine_config = match game::detect_wine_config(&game) {
+            Some(c) => c,
+            None => {
+                let msg = if std::env::var("SNAP").is_ok() {
+                    "External tools are not supported in the Snap package. \
+                     Use the AppImage or a native build."
+                        .to_string()
+                } else {
+                    "Wine (wine64) or UMU Launcher (umu-run) not found. \
+                     Install one via your system package manager."
+                        .to_string()
+                };
+                self.toaster.toast(&msg);
+                return;
+            }
+        };
 
-                let wine_config = game::detect_wine_config(&game).ok_or_else(|| {
-                    "Could not detect Wine configuration for this game".to_string()
-                })?;
-                tool_launcher::launch_tool(
-                    &tool,
-                    &game,
-                    &wine_config,
-                    Some(Box::new(move || {
-                        let _ = exit_sender.send(AppMsg::ToolExited(exit_tool_name));
-                    })),
-                )
-                .map_err(|e| e.to_string())?;
-                Ok(tool_name)
-            })();
-            AppCmdMsg::ToolLaunched(result)
+        // For UMU: if no Proton runtime is installed, show a one-time confirmation
+        // dialog that warns the user about the ~300 MB first-run download before proceeding.
+        if let WineLauncher::Umu(_) = &wine_config.launcher
+            && !game::proton_runtime_available()
+        {
+            sender.input(AppMsg::ConfirmUmuSetup(tool_id));
+            return;
+        }
+
+        self.do_launch_tool(tool, game, wine_config, sender);
+    }
+
+    /// Show the first-run Proton GE confirmation dialog for UMU.
+    ///
+    /// If the user confirms, `UmuSetupConfirmed` is sent and the tool is launched
+    /// (UMU will download Proton GE automatically during the launch).
+    pub(crate) fn handle_confirm_umu_setup(
+        &mut self,
+        tool_id: String,
+        root: &adw::Window,
+        sender: &ComponentSender<Self>,
+    ) {
+        let dialog = gtk::AlertDialog::builder()
+            .message("First-run Setup Required")
+            .detail(
+                "UMU Launcher needs to download Proton GE (~300 MB) before \
+                 tools can run. This is a one-time download.\n\n\
+                 The tool will launch automatically when the download finishes.",
+            )
+            .buttons(["Cancel", "Download & Launch"])
+            .cancel_button(0)
+            .default_button(1)
+            .modal(true)
+            .build();
+
+        let s = sender.input_sender().clone();
+        dialog.choose(Some(root), None::<&gio::Cancellable>, move |result| {
+            if result == Ok(1) {
+                let _ = s.send(AppMsg::UmuSetupConfirmed(tool_id));
+            }
         });
     }
 
+    /// User confirmed the first-run Proton GE download.
+    ///
+    /// Sets the busy state with a descriptive status message, then launches the
+    /// tool via UMU.  `ToolExited` will clear the busy state when done.
+    pub(crate) fn handle_umu_setup_confirmed(
+        &mut self,
+        tool_id: String,
+        sender: &ComponentSender<Self>,
+    ) {
+        let Some(tool) = self.tools.iter().find(|t| t.id == tool_id).cloned() else {
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
+        let Some(wine_config) = game::detect_wine_config(&game) else {
+            return;
+        };
+
+        self.proton_setup = true;
+        self.status_msg = Some("Downloading Proton GE for first use…".to_string());
+
+        self.do_launch_tool(tool, game, wine_config, sender);
+    }
+
     pub(crate) fn handle_tool_exited(&mut self, tool_name: String, sender: &ComponentSender<Self>) {
+        // Clear any Proton first-run busy state.
+        self.proton_setup = false;
+        if self.status_msg.as_deref() == Some("Downloading Proton GE for first use…") {
+            self.status_msg = None;
+        }
+
         self.toaster
             .toast(&format!("{tool_name} closed — scanning for changes…"));
         sender.input(AppMsg::ScanExternalFiles);
@@ -176,5 +235,34 @@ impl App {
         if let Some(dialog) = self.tool_manager_dialog.take() {
             dialog.widget().destroy();
         }
+    }
+
+    /// Shared inner launch logic used by both the normal path and the UMU-confirmed path.
+    fn do_launch_tool(
+        &mut self,
+        tool: crate::models::tool::Tool,
+        game: crate::models::game::Game,
+        wine_config: crate::core::game::WineConfig,
+        sender: &ComponentSender<Self>,
+    ) {
+        let tool_name = tool.name.clone();
+        let exit_sender = sender.input_sender().clone();
+        let exit_tool_name = tool_name.clone();
+
+        sender.oneshot_command(async move {
+            let result: Result<String, String> = (move || {
+                tool_launcher::launch_tool(
+                    &tool,
+                    &game,
+                    &wine_config,
+                    Some(Box::new(move || {
+                        let _ = exit_sender.send(AppMsg::ToolExited(exit_tool_name));
+                    })),
+                )
+                .map_err(|e| e.to_string())?;
+                Ok(tool_name)
+            })();
+            AppCmdMsg::ToolLaunched(result)
+        });
     }
 }
