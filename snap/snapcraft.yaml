@@ -20,6 +20,13 @@ lint:
   ignore:
     - library
 
+plugs:
+  bwrap-overflow-ids:
+    interface: system-files
+    read:
+      - /proc/sys/kernel/overflowuid
+      - /proc/sys/kernel/overflowgid
+
 slots:
   dbus-deployd:
     interface: dbus
@@ -31,10 +38,12 @@ apps:
     command: bin/deployd
     extensions: [gnome]
     plugs:
-      - home           # Game directories, wine prefixes, mod archives
-      - network        # Nexus Mods API and NXM downloads
-      - network-bind   # Local WebSocket listener for NXM scheme handler
-      - mount-observe  # UMU Launcher reads /proc/mounts to verify tmpfs for downloads
+      - home              # Game directories, wine prefixes, mod archives
+      - network           # Nexus Mods API and NXM downloads
+      - network-bind      # Local WebSocket listener for NXM scheme handler
+      - mount-observe     # UMU Launcher reads /proc/mounts to verify tmpfs for downloads
+      - opengl            # Vulkan ICD/layer enumeration at GTK4 startup
+      - bwrap-overflow-ids  # srt-bwrap reads overflow{uid,gid} for device UID setup
     slots: [dbus-deployd]
     desktop: usr/share/applications/deployd.desktop
 

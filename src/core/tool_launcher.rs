@@ -196,6 +196,10 @@ fn build_umu_command(
     // revision-specific and is wiped on every update).
     if let Ok(snap_common) = std::env::var("SNAP_USER_COMMON") {
         cmd.env("XDG_DATA_HOME", snap_common);
+        // Strict snap confinement denies CLONE_NEWUSER, which pressure-vessel
+        // uses to create a user namespace. Disabling unsharing lets bwrap run
+        // without that capability.
+        cmd.env("PRESSURE_VESSEL_UNSHARE_USER", "0");
     }
 
     cmd.arg(&tool.exe_path);
