@@ -139,10 +139,17 @@ pub fn find_proton_runtime() -> Option<PathBuf> {
         .map(PathBuf::from)
         .unwrap_or_else(|| home.join(".local/share"));
 
-    let search_dirs = [
+    let mut search_dirs = vec![
         xdg_data.join("Steam/compatibilitytools.d"),
         home.join(".steam/steam/compatibilitytools.d"),
     ];
+
+    // In a snap, XDG_DATA_HOME points to the revision-specific directory and
+    // is wiped on every update. SNAP_USER_COMMON persists across revisions, so
+    // UMU is told to download Proton GE there (see build_umu_command).
+    if let Some(snap_common) = std::env::var_os("SNAP_USER_COMMON") {
+        search_dirs.push(PathBuf::from(snap_common).join("Steam/compatibilitytools.d"));
+    }
 
     for dir in &search_dirs {
         let Ok(entries) = std::fs::read_dir(dir) else {

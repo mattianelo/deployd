@@ -22,7 +22,7 @@ pub fn launch_tool(
     tool: &Tool,
     game: &Game,
     wine_config: &WineConfig,
-    on_exit: Option<Box<dyn FnOnce() + Send + 'static>>,
+    on_exit: Option<Box<dyn FnOnce(Option<String>) + Send + 'static>>,
 ) -> Result<u32> {
     let exe_path = PathBuf::from(&tool.exe_path);
     if !exe_path.exists() {
@@ -64,10 +64,13 @@ pub fn launch_tool(
 }
 
 /// Shared process-spawn logic for both Wine and UMU paths.
+///
+/// `on_exit` receives `Some(error_string)` if the process exited with a non-zero
+/// status or could not be waited on; `None` on clean exit.
 fn spawn_tool(
     mut cmd: Command,
     tool_name: &str,
-    on_exit: Option<Box<dyn FnOnce() + Send + 'static>>,
+    on_exit: Option<Box<dyn FnOnce(Option<String>) + Send + 'static>>,
 ) -> Result<u32> {
     cmd.stderr(Stdio::piped());
 
@@ -78,31 +81,41 @@ fn spawn_tool(
     let pid = child.id();
     let name = tool_name.to_owned();
 
-    std::thread::spawn(move || {
-        match child.wait() {
-            Ok(status) if !status.success() => {
-                let stderr = child
-                    .stderr
-                    .take()
-                    .and_then(|mut s| {
-                        use std::io::Read;
-                        let mut buf = String::new();
-                        s.read_to_string(&mut buf).ok()?;
-                        Some(buf)
-                    })
-                    .unwrap_or_default();
+    // Drain stderr on a dedicated thread so the subprocess never blocks on a
+    // full pipe buffer while we wait for it to exit (classic pipe-deadlock).
+    let stderr_thread = child.stderr.take().map(|s| {
+        std::thread::spawn(move || {
+            use std::io::Read;
+            let mut buf = String::new();
+            let _ = std::io::BufReader::new(s).read_to_string(&mut buf);
+            buf
+        })
+    });
 
-                if !stderr.is_empty() {
-                    eprintln!("deployd: {name} exited {status}. stderr:\n{stderr}");
+    std::thread::spawn(move || {
+        let wait_result = child.wait();
+        let stderr = stderr_thread
+            .and_then(|h| h.join().ok())
+            .filter(|s| !s.is_empty());
+
+        let error = match wait_result {
+            Ok(status) if !status.success() => {
+                if let Some(s) = &stderr {
+                    eprintln!("deployd: {name} exited {status}. stderr:\n{s}");
                 } else {
                     eprintln!("deployd: {name} exited {status} (no stderr).");
                 }
+                Some(stderr.unwrap_or_else(|| format!("process exited with {status}")))
             }
-            Err(e) => eprintln!("deployd: failed to wait on process: {e}"),
-            _ => {}
-        }
+            Err(e) => {
+                eprintln!("deployd: failed to wait on process: {e}");
+                Some(e.to_string())
+            }
+            _ => None,
+        };
+
         if let Some(cb) = on_exit {
-            cb();
+            cb(error);
         }
     });
 
@@ -178,6 +191,12 @@ fn build_umu_command(
         .env("WINEPREFIX", &wine_config.prefix)
         .env("STEAM_COMPAT_DATA_PATH", &compat_data)
         .env("PROTONPATH", &proton_path);
+    // In a snap, redirect UMU's data directory to SNAP_USER_COMMON so that
+    // downloaded Proton GE runtimes survive snap updates (XDG_DATA_HOME is
+    // revision-specific and is wiped on every update).
+    if let Ok(snap_common) = std::env::var("SNAP_USER_COMMON") {
+        cmd.env("XDG_DATA_HOME", snap_common);
+    }
 
     cmd.arg(&tool.exe_path);
     for arg in tool.custom_args.split_whitespace() {

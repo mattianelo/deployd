@@ -71,7 +71,8 @@ pub enum AppMsg {
     GameFolderGranted(PathBuf),
     LaunchTool(String),
     /// Fired from the background wait-thread when a launched tool's Wine process exits.
-    ToolExited(String),
+    /// The second field carries the stderr output if the process exited with a non-zero status.
+    ToolExited(String, Option<String>),
     /// Show a first-run Proton GE download confirmation dialog for `tool_id`.
     /// Sent when UMU is the active launcher but no Proton runtime is installed yet.
     ConfirmUmuSetup(String),

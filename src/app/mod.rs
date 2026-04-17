@@ -940,7 +940,7 @@ impl Component for App {
             AppMsg::GrantGameFolderAccess => self.handle_grant_game_folder_access(root, &sender),
             AppMsg::GameFolderGranted(path) => self.handle_game_folder_granted(path, &sender),
             AppMsg::LaunchTool(name) => self.handle_launch_tool(name, &sender),
-            AppMsg::ToolExited(name) => self.handle_tool_exited(name, &sender),
+            AppMsg::ToolExited(name, error) => self.handle_tool_exited(name, error, &sender),
             AppMsg::ConfirmUmuSetup(tool_id) => {
                 self.handle_confirm_umu_setup(tool_id, root, &sender)
             }

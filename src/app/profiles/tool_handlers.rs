@@ -106,7 +106,14 @@ impl App {
         self.do_launch_tool(tool, game, wine_config, sender);
     }
 
-    pub(crate) fn handle_tool_exited(&mut self, tool_name: String, sender: &ComponentSender<Self>) {
+    pub(crate) fn handle_tool_exited(
+        &mut self,
+        tool_name: String,
+        error: Option<String>,
+        sender: &ComponentSender<Self>,
+    ) {
+        let was_proton_setup = self.proton_setup;
+
         // Clear any Proton first-run busy state.
         self.proton_setup = false;
         if self.status_msg.as_deref() == Some("Downloading Proton GE for first use…") {
@@ -249,8 +256,8 @@ impl App {
                     &tool,
                     &game,
                     &wine_config,
-                    Some(Box::new(move || {
-                        let _ = exit_sender.send(AppMsg::ToolExited(exit_tool_name));
+                    Some(Box::new(move |error| {
+                        let _ = exit_sender.send(AppMsg::ToolExited(exit_tool_name, error));
                     })),
                 )
                 .map_err(|e| e.to_string())?;
