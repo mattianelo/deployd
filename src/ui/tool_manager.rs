@@ -233,12 +233,6 @@ impl Component for ToolManager {
                     },
                 },
 
-                adw::Banner {
-                    set_title: "External tools are not supported in the Snap package. \
-                                Use the AppImage or a native build to run modding tools.",
-                    set_revealed: is_snap,
-                },
-
                 gtk::ScrolledWindow {
                     set_vexpand: true,
                     set_hscrollbar_policy: gtk::PolicyType::Never,
@@ -309,8 +303,6 @@ impl Component for ToolManager {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let (game_id, init_tools, game_path, wine_prefix, game_engine, deploy_dir) = init;
-
-        let is_snap = std::env::var("SNAP").is_ok();
 
         let mut tools = FactoryVecDeque::<ToolRow>::builder()
             .launch(gtk::ListBox::new())

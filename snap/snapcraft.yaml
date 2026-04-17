@@ -64,5 +64,5 @@ parts:
   umu-launcher:
     plugin: nil
     override-build: |
-      tar -xf "$CRAFT_PROJECT_DIR/snap/local/umu-launcher-1.4.0-zipapp.tar" -C "$CRAFT_PART_BUILD"
+      tar -xf "$CRAFT_PROJECT_DIR/snap/local/umu-launcher-zipapp.tar" -C "$CRAFT_PART_BUILD"
       install -Dm755 "$CRAFT_PART_BUILD/umu/umu-run" "$CRAFT_PART_INSTALL/usr/bin/umu-run"

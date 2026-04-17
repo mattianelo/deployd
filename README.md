@@ -1,11 +1,11 @@
 # Deployd
 
-![Version](https://img.shields.io/badge/version-0.9.7-blue)
+![Version](https://img.shields.io/badge/version-0.9.8--beta-blue)
 ![Status](https://img.shields.io/badge/status-beta-orange)
 ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey?logo=linux)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 
-A Linux-native mod manager for Bethesda and REDEngine games, built with GTK4 and Rust.
+A Linux-native mod manager for Bethesda, REDEngine, Aurora, and Eclipse games, built with GTK4 and Rust.
 Works with both **Steam** and **Heroic Launcher** out of the box.
 
 > **Public Beta — v0.9.7.** If you find bugs, please [open an issue](https://gitlab.com/mattianelo/deployd/-/issues).
@@ -18,6 +18,7 @@ Works with both **Steam** and **Heroic Launcher** out of the box.
 |--------|-------|
 | Bethesda | Skyrim Special Edition · Fallout 4 · Fallout: New Vegas · Starfield |
 | REDEngine | The Witcher 3 · Cyberpunk 2077 |
+| Aurora | The Witcher 1 |
 | Eclipse | Dragon Age: Origins *(Experimental)* |
 
 ---
@@ -40,6 +41,21 @@ Works with both **Steam** and **Heroic Launcher** out of the box.
 ---
 
 ## Installation
+
+### Snap
+
+```bash
+snap install deployd
+```
+
+The Snap bundles all required libraries and UMU Launcher. No additional runtime dependencies needed.
+
+> **Note:** The NXM scheme handler requires the `network-bind` interface. Connect it once after install:
+> ```bash
+> snap connect deployd:network-bind
+> ```
+
+### AppImage
 
 ### Runtime Dependencies (AppImage)
 
@@ -66,7 +82,7 @@ Deployd reads your game library automatically from **Steam** and **Heroic Launch
 - For Steam: games are detected from the default Steam library
 - For Heroic: make sure the game has been launched at least once so Heroic has written its config
 
-Supported titles: **Skyrim SE**, **Fallout 4**, **Fallout: New Vegas**, **Starfield**, **The Witcher 3**, **Cyberpunk 2077**, **Dragon Age: Origins** *(Experimental)*
+Supported titles: **Skyrim SE**, **Fallout 4**, **Fallout: New Vegas**, **Starfield**, **The Witcher 3**, **Cyberpunk 2077**, **The Witcher 1**, **Dragon Age: Origins** *(Experimental)*
 
 Use the game selector in the top bar to switch between detected games.
 

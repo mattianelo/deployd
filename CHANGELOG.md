@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.9.8] — 2026-04-17
+
+### Added
+
+- **Snap package** — Deployd is now available as a Snap with strict confinement. Supports all features including external tools via the bundled UMU Launcher.
+- **The Witcher 1 support** — Aurora engine (The Witcher 1, GOG and Steam) games can now be added and managed.
+- **First-run Proton GE wizard** — When launching an external tool for the first time with no Proton runtime present, a dialog prompts before UMU Launcher downloads Proton GE (~300 MB). The tool launches automatically once the download finishes.
+
+### Changed
+
+- **External tools now work in the Snap package** — UMU Launcher (`umu-run`) is bundled in both the Snap and AppImage. The previous "not supported in Snap" restriction is removed.
+- **External tool launching refactored** — Tool launch logic centralises around UMU Launcher (`umu-run`). `proton_manager.rs` removed; Proton runtime selection and download delegated to UMU entirely.
+
+---
+
 ## [0.9.7] — 2026-04-02
 
 ### Fixed

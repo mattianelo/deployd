@@ -30,16 +30,10 @@ impl App {
         let wine_config = match game::detect_wine_config(&game) {
             Some(c) => c,
             None => {
-                let msg = if std::env::var("SNAP").is_ok() {
-                    "External tools are not supported in the Snap package. \
-                     Use the AppImage or a native build."
-                        .to_string()
-                } else {
+                self.toaster.toast(
                     "Wine (wine64) or UMU Launcher (umu-run) not found. \
-                     Install one via your system package manager."
-                        .to_string()
-                };
-                self.toaster.toast(&msg);
+                     Install one via your system package manager.",
+                );
                 return;
             }
         };
