@@ -22,6 +22,9 @@ pub struct PreInstallDialog {
     /// Whether the selected game is a Bethesda game. REDEngine games hide the
     /// per-file Root/Data toggle since the concept doesn't apply to them.
     is_bethesda: bool,
+    /// Whether the selected game uses the Aurora engine (Witcher 1). Shows the
+    /// Override/Root toggle with Aurora-specific labels and auto-detection.
+    is_aurora: bool,
 }
 
 #[derive(Debug)]
@@ -50,6 +53,8 @@ pub struct PreInstallDialogInit {
     /// Set to true for Bethesda games to show per-file Root/Data toggles.
     /// REDEngine games have no Data/Root distinction (data_subdir = ".").
     pub is_bethesda: bool,
+    /// Set to true for Aurora (Witcher 1) to show per-file Override/Root toggles.
+    pub is_aurora: bool,
 }
 
 #[relm4::component(pub)]
@@ -108,7 +113,7 @@ impl SimpleComponent for PreInstallDialog {
                         set_orientation: gtk::Orientation::Vertical,
                         set_spacing: 4,
                         #[watch]
-                        set_visible: model.is_bethesda && !model.is_fomod && !model.file_preview.is_empty(),
+                        set_visible: (model.is_bethesda || model.is_aurora) && !model.is_fomod && !model.file_preview.is_empty(),
 
                         gtk::Button {
                             #[watch]
@@ -197,6 +202,7 @@ impl SimpleComponent for PreInstallDialog {
             file_targets,
             files_visible: false,
             is_bethesda: init.is_bethesda,
+            is_aurora: init.is_aurora,
         };
 
         let widgets = view_output!();
@@ -265,9 +271,12 @@ impl SimpleComponent for PreInstallDialog {
 
         // Populate the "Set all" row (only meaningful when there are files)
         if !model.file_preview.is_empty() {
-            let legend = gtk::Label::new(Some(
-                "D = Data directory · R = game root (script extenders, ENB)",
-            ));
+            let legend_text = if model.is_aurora {
+                "D = Override (Data/Override/) · R = game root (system, launcher)"
+            } else {
+                "D = Data directory · R = game root (script extenders, ENB)"
+            };
+            let legend = gtk::Label::new(Some(legend_text));
             legend.add_css_class("dim-label");
             legend.set_hexpand(true);
             legend.set_halign(gtk::Align::Start);
@@ -376,10 +385,15 @@ pub fn file_preview_from_list(
     file_list: &[(PathBuf, PathBuf)],
     rules: &[crate::core::rules::Rule],
     engine: GameEngine,
+    data_subdir: &str,
 ) -> Vec<(String, InstallTarget)> {
-    // Apply engine-specific routing so the preview reflects actual deploy paths.
     let is_bethesda = engine == GameEngine::Bethesda;
-    let routed = installer::route_paths_for_preview(engine, file_list.to_vec());
+    let is_aurora = engine == GameEngine::Aurora;
+    // route_paths_for_preview now returns paths unchanged; routing happens at
+    // install time once the user's file_targets are known.
+    let routed = installer::route_paths_for_preview(engine, data_subdir, file_list.to_vec());
+
+    let data_prefix = format!("{}/", data_subdir.to_lowercase());
 
     let mut entries: Vec<(String, InstallTarget)> = routed
         .into_iter()
@@ -391,11 +405,40 @@ pub fn file_preview_from_list(
                 InstallTarget::Root
             } else if is_bethesda {
                 installer::auto_detect_install_target(&s)
+            } else if is_aurora {
+                // Auto-detect Root for game-root sibling dirs (system/, launcher/,
+                // register/) after stripping any leading data/ prefix from the path.
+                let lower_s = s.to_lowercase();
+                let check = if lower_s.starts_with(&data_prefix) {
+                    &lower_s[data_prefix.len()..]
+                } else {
+                    &lower_s[..]
+                };
+                if check.starts_with("system/")
+                    || check.starts_with("launcher/")
+                    || check.starts_with("register/")
+                {
+                    InstallTarget::Root
+                } else {
+                    InstallTarget::Data
+                }
             } else {
-                // Root/Data distinction does not apply to non-Bethesda games.
                 InstallTarget::Data
             };
-            (s, target)
+
+            // For Aurora, display (and key) uses the data/-stripped path so it
+            // matches the key that route_aurora_paths uses for file_targets lookup.
+            let display = if is_aurora {
+                let lower_s = s.to_lowercase();
+                if lower_s.starts_with(&data_prefix) {
+                    s[data_prefix.len()..].to_string()
+                } else {
+                    s
+                }
+            } else {
+                s
+            };
+            (display, target)
         })
         .collect();
     entries.sort_by(|a, b| a.0.cmp(&b.0));

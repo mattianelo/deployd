@@ -81,12 +81,14 @@ impl App {
         let mod_name = pending.mod_name.clone();
         let is_fomod = pending.fomod_config.is_some();
         let is_bethesda = pending.game.engine == crate::models::game::GameEngine::Bethesda;
+        let is_aurora = pending.game.engine == crate::models::game::GameEngine::Aurora;
         let file_preview = if let Some(ref fl) = pending.file_list {
             let rules = crate::core::rules::rules_for_game(&pending.game.id);
             crate::ui::pre_install_dialog::file_preview_from_list(
                 fl,
                 &rules,
                 pending.game.engine.clone(),
+                &pending.game.data_subdir,
             )
         } else {
             vec![]
@@ -99,6 +101,7 @@ impl App {
                     file_preview,
                     is_fomod,
                     is_bethesda,
+                    is_aurora,
                 })
                 .forward(sender.input_sender(), |output| match output {
                     PreInstallDialogOutput::Confirmed(name, targets) => {

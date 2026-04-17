@@ -109,11 +109,9 @@ impl App {
     pub(crate) fn handle_tool_exited(
         &mut self,
         tool_name: String,
-        error: Option<String>,
+        _error: Option<String>,
         sender: &ComponentSender<Self>,
     ) {
-        let was_proton_setup = self.proton_setup;
-
         // Clear any Proton first-run busy state.
         self.proton_setup = false;
         if self.status_msg.as_deref() == Some("Downloading Proton GE for first use…") {

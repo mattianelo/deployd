@@ -4,18 +4,32 @@ mod paths;
 
 pub use paths::auto_detect_install_target;
 
+/// Re-scan a staging directory for its current file contents, picking up any
+/// modifications the user made after initial extraction. Returns a fresh
+/// `(abs_src, rel_dest)` list; falls back to empty if the root is missing.
+///
+/// Call this just before installation so that folder renames or file additions
+/// in the staging area are reflected in the install (e.g. moving files into a
+/// `system/` subfolder for Aurora/Witcher-1 mods).
+pub fn rescan_staged_files(
+    tmp_dir: &std::path::Path,
+    stripped_wrapper: Option<&str>,
+) -> Vec<(std::path::PathBuf, std::path::PathBuf)> {
+    file_list::rescan(tmp_dir, stripped_wrapper)
+}
+
 /// Apply engine-specific path routing to a file list for preview purposes.
 ///
 /// Mirrors the routing applied by the installer so that the pre-install dialog
 /// shows paths that match where files will actually land on disk.
 pub fn route_paths_for_preview(
-    engine: GameEngine,
+    _engine: GameEngine,
+    _data_subdir: &str,
     file_list: Vec<(PathBuf, PathBuf)>,
 ) -> Vec<(PathBuf, PathBuf)> {
-    match engine {
-        GameEngine::Aurora => paths::route_aurora_paths(file_list),
-        _ => file_list,
-    }
+    // Return original archive paths unchanged. Routing happens at install time
+    // once file_targets are known (set by the pre-install dialog).
+    file_list
 }
 
 use std::collections::{HashMap, HashSet};
@@ -145,7 +159,7 @@ pub async fn add_mod_with_file_list(
     };
 
     let file_list = if game.engine == GameEngine::Aurora {
-        paths::route_aurora_paths(file_list)
+        paths::route_aurora_paths(file_list, &game.data_subdir, &file_targets)
     } else {
         file_list
     };
@@ -389,7 +403,7 @@ pub async fn merge_files_into_mod(
     };
 
     let file_list = if game.engine == GameEngine::Aurora {
-        paths::route_aurora_paths(file_list)
+        paths::route_aurora_paths(file_list, &game.data_subdir, &file_targets)
     } else {
         file_list
     };

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::models::game::Game;
@@ -187,26 +188,92 @@ fn sanitize_mod_name_preserve_case(mod_name: &str) -> String {
 /// Route file paths for Aurora-engine (Witcher 1) mods.
 ///
 /// Routing rules:
-/// 1. Files under `system/` or `modules/` are left unchanged — the engine
-///    resolves them by name relative to the Data directory.
-/// 2. Files already under `Override/` are kept at their exact position.
-///    Subfolder structure is preserved so users can selectively include or
-///    exclude optional mod components before installation.
-/// 3. Bare files (no recognised top-level prefix) are placed inside
-///    `Override/` while preserving any relative sub-path
+/// 1. Files under `system/`, `launcher/`, or `register/` live at the game
+///    root (siblings of `Data/`). They are prefixed with `../` so the deployer
+///    resolves them relative to `game.path` instead of `game.data_dir()`.
+/// 2. Files under `modules/` or `override/` live inside `Data/` and are passed
+///    through unchanged.
+/// 3. Bare files (no recognised top-level prefix) are placed inside `Override/`
+///    while preserving any relative sub-path
 ///    (e.g. `sub/foo.nif` → `Override/sub/foo.nif`).
 /// 4. Directory sentinels (trailing `/`) not under a known prefix are dropped.
 ///
 /// `Override/` and any required subdirectories are created at deploy time by
 /// the directory-creation pass in `deployer.rs`.
-pub(super) fn route_aurora_paths(file_list: Vec<(PathBuf, PathBuf)>) -> Vec<(PathBuf, PathBuf)> {
+pub(super) fn route_aurora_paths(
+    file_list: Vec<(PathBuf, PathBuf)>,
+    data_subdir: &str,
+    file_targets: &HashMap<String, InstallTarget>,
+) -> Vec<(PathBuf, PathBuf)> {
+    let data_prefix = format!("{}/", data_subdir.to_lowercase());
     file_list
         .into_iter()
         .filter_map(|(src, dest)| {
             let lower = dest.to_string_lossy().to_lowercase();
 
-            // Pass `system/` and `modules/` through unchanged.
-            if lower.starts_with("system/") || lower.starts_with("modules/") {
+            // If the user explicitly set Root for this file (keyed by the
+            // data/-stripped original archive path), bypass Override routing.
+            let orig_key = {
+                let k = dest.to_string_lossy().replace('\\', "/");
+                let lk = k.to_lowercase();
+                if lk.starts_with(&data_prefix) {
+                    k[data_prefix.len()..].to_string()
+                } else {
+                    k
+                }
+            };
+            if file_targets.get(orig_key.as_str()) == Some(&InstallTarget::Root) {
+                // Strip data/ then override/ prefixes — the user's intent is game-root.
+                let s = dest.to_string_lossy();
+                let stripped = if lower.starts_with(&data_prefix) {
+                    &s[data_prefix.len()..]
+                } else {
+                    &s[..]
+                };
+                let stripped_lower = stripped.to_lowercase();
+                let stripped = if stripped_lower.starts_with("override/") {
+                    &stripped["override/".len()..]
+                } else {
+                    stripped
+                };
+                let stripped_lower = stripped.to_lowercase();
+                // Files not already in a game-root sibling dir (system/, launcher/,
+                // register/) are wrapped in system/ — that is the Aurora game-root
+                // target for loose mod files.
+                let final_dest = if stripped_lower.starts_with("system/")
+                    || stripped_lower.starts_with("launcher/")
+                    || stripped_lower.starts_with("register/")
+                {
+                    PathBuf::from("..").join(stripped)
+                } else {
+                    PathBuf::from("..").join("system").join(stripped)
+                };
+                return Some((src, final_dest));
+            }
+
+            // Strip a leading Data/ prefix so that archives structured as
+            // Data/system/foo.key are treated identically to system/foo.key.
+            let (lower, dest) = if lower.starts_with(&data_prefix) {
+                (
+                    lower[data_prefix.len()..].to_string(),
+                    PathBuf::from(&dest.to_string_lossy()[data_prefix.len()..]),
+                )
+            } else {
+                (lower, dest)
+            };
+
+            // system/, launcher/, and register/ are game-root directories
+            // (siblings of Data/). Prefix with ../ so resolve_deploy_path routes
+            // them to game.path instead of game.data_dir().
+            if lower.starts_with("system/")
+                || lower.starts_with("launcher/")
+                || lower.starts_with("register/")
+            {
+                return Some((src, PathBuf::from("..").join(&dest)));
+            }
+
+            // modules/ lives inside Data/ — pass through unchanged.
+            if lower.starts_with("modules/") {
                 return Some((src, dest));
             }
 
@@ -232,12 +299,14 @@ pub(super) fn route_aurora_paths(file_list: Vec<(PathBuf, PathBuf)>) -> Vec<(Pat
 mod tests {
     use super::*;
 
-    fn route(pairs: Vec<(&str, &str)>) -> Vec<(PathBuf, PathBuf)> {
+    fn route(data_subdir: &str, pairs: Vec<(&str, &str)>) -> Vec<(PathBuf, PathBuf)> {
         route_aurora_paths(
             pairs
                 .into_iter()
                 .map(|(s, d)| (PathBuf::from(s), PathBuf::from(d)))
                 .collect(),
+            data_subdir,
+            &HashMap::default(),
         )
     }
 
@@ -248,7 +317,7 @@ mod tests {
     #[test]
     fn override_subfolder_structure_is_preserved() {
         assert_eq!(
-            dests(route(vec![("src", "Override/ModName/textures/foo.dds")])),
+            dests(route("Data", vec![("src", "Override/ModName/textures/foo.dds")])),
             vec![PathBuf::from("Override/ModName/textures/foo.dds")]
         );
     }
@@ -256,7 +325,7 @@ mod tests {
     #[test]
     fn nested_override_subdir_is_preserved() {
         assert_eq!(
-            dests(route(vec![("src", "Override/items/keys/it_key_019.uti")])),
+            dests(route("Data", vec![("src", "Override/items/keys/it_key_019.uti")])),
             vec![PathBuf::from("Override/items/keys/it_key_019.uti")]
         );
     }
@@ -264,7 +333,7 @@ mod tests {
     #[test]
     fn single_override_subdir_is_preserved() {
         assert_eq!(
-            dests(route(vec![("src", "Override/textures/foo.dds")])),
+            dests(route("Data", vec![("src", "Override/textures/foo.dds")])),
             vec![PathBuf::from("Override/textures/foo.dds")]
         );
     }
@@ -272,7 +341,7 @@ mod tests {
     #[test]
     fn bare_override_file_stays_flat() {
         assert_eq!(
-            dests(route(vec![("src", "Override/foo.dlg")])),
+            dests(route("Data", vec![("src", "Override/foo.dlg")])),
             vec![PathBuf::from("Override/foo.dlg")]
         );
     }
@@ -280,7 +349,7 @@ mod tests {
     #[test]
     fn bare_path_goes_into_override() {
         assert_eq!(
-            dests(route(vec![("src", "foo.dlg")])),
+            dests(route("Data", vec![("src", "foo.dlg")])),
             vec![PathBuf::from("Override/foo.dlg")]
         );
     }
@@ -288,30 +357,54 @@ mod tests {
     #[test]
     fn bare_path_with_subdir_goes_into_override_preserving_structure() {
         assert_eq!(
-            dests(route(vec![("src", "sub/foo.nif")])),
+            dests(route("Data", vec![("src", "sub/foo.nif")])),
             vec![PathBuf::from("Override/sub/foo.nif")]
         );
     }
 
     #[test]
-    fn system_path_passes_through() {
+    fn system_path_routed_to_game_root() {
         assert_eq!(
-            dests(route(vec![("src", "system/foo.key")])),
-            vec![PathBuf::from("system/foo.key")]
+            dests(route("Data", vec![("src", "system/foo.key")])),
+            vec![PathBuf::from("../system/foo.key")]
         );
     }
 
     #[test]
-    fn modules_path_passes_through() {
+    fn system_scripts_path_routed_to_game_root() {
         assert_eq!(
-            dests(route(vec![("src", "modules/chapter1.mod")])),
+            dests(route("Data", vec![("src", "System/Scripts/foo.ws")])),
+            vec![PathBuf::from("../System/Scripts/foo.ws")]
+        );
+    }
+
+    #[test]
+    fn launcher_path_routed_to_game_root() {
+        assert_eq!(
+            dests(route("Data", vec![("src", "Launcher/witcher.exe")])),
+            vec![PathBuf::from("../Launcher/witcher.exe")]
+        );
+    }
+
+    #[test]
+    fn register_path_routed_to_game_root() {
+        assert_eq!(
+            dests(route("Data", vec![("src", "Register/witcher.reg")])),
+            vec![PathBuf::from("../Register/witcher.reg")]
+        );
+    }
+
+    #[test]
+    fn modules_path_stays_in_data() {
+        assert_eq!(
+            dests(route("Data", vec![("src", "modules/chapter1.mod")])),
             vec![PathBuf::from("modules/chapter1.mod")]
         );
     }
 
     #[test]
     fn directory_sentinel_under_override_is_kept() {
-        let result = route(vec![("src", "Override/ModName/")]);
+        let result = route("Data", vec![("src", "Override/ModName/")]);
         assert_eq!(
             result,
             vec![(PathBuf::from("src"), PathBuf::from("Override/ModName/"))],
@@ -321,11 +414,69 @@ mod tests {
 
     #[test]
     fn directory_sentinel_without_prefix_is_dropped() {
-        let result = route(vec![("src", "SomeFolder/")]);
+        let result = route("Data", vec![("src", "SomeFolder/")]);
         assert!(
             result.is_empty(),
             "bare directory sentinels should be dropped"
         );
+    }
+
+    #[test]
+    fn data_prefixed_system_path_routed_to_game_root() {
+        assert_eq!(
+            dests(route("Data", vec![("src", "Data/system/foo.key")])),
+            vec![PathBuf::from("../system/foo.key")]
+        );
+    }
+
+    #[test]
+    fn data_prefixed_system_scripts_path_routed_to_game_root() {
+        assert_eq!(
+            dests(route("Data", vec![("src", "Data/System/Scripts/foo.ws")])),
+            vec![PathBuf::from("../System/Scripts/foo.ws")]
+        );
+    }
+
+    #[test]
+    fn data_prefixed_launcher_path_routed_to_game_root() {
+        assert_eq!(
+            dests(route("Data", vec![("src", "Data/Launcher/witcher.exe")])),
+            vec![PathBuf::from("../Launcher/witcher.exe")]
+        );
+    }
+
+    #[test]
+    fn explicit_root_target_wraps_loose_file_in_system() {
+        let targets = HashMap::from([("foo.key".to_string(), InstallTarget::Root)]);
+        let result = route_aurora_paths(
+            vec![(PathBuf::from("src"), PathBuf::from("foo.key"))],
+            "Data",
+            &targets,
+        );
+        assert_eq!(result[0].1, PathBuf::from("../system/foo.key"));
+    }
+
+    #[test]
+    fn explicit_root_target_strips_override_prefix_before_system_wrap() {
+        // Archive has Override/foo.key; dialog key is "Override/foo.key".
+        let targets = HashMap::from([("Override/foo.key".to_string(), InstallTarget::Root)]);
+        let result = route_aurora_paths(
+            vec![(PathBuf::from("src"), PathBuf::from("Override/foo.key"))],
+            "Data",
+            &targets,
+        );
+        assert_eq!(result[0].1, PathBuf::from("../system/foo.key"));
+    }
+
+    #[test]
+    fn explicit_root_target_preserves_system_prefix() {
+        let targets = HashMap::from([("system/foo.key".to_string(), InstallTarget::Root)]);
+        let result = route_aurora_paths(
+            vec![(PathBuf::from("src"), PathBuf::from("Data/system/foo.key"))],
+            "Data",
+            &targets,
+        );
+        assert_eq!(result[0].1, PathBuf::from("../system/foo.key"));
     }
 }
 

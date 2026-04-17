@@ -213,8 +213,21 @@ impl App {
             Some(p) => p,
             None => return,
         };
-        let Some(file_list) = pending.file_list else {
+        let Some(original_file_list) = pending.file_list else {
             return;
+        };
+        // Re-scan the staging dir to pick up any modifications the user made
+        // after initial extraction (e.g. moving files into a system/ subfolder).
+        let file_list = {
+            let rescanned = installer::rescan_staged_files(
+                pending.tmp_dir.path(),
+                pending.stripped_wrapper.as_deref(),
+            );
+            if rescanned.is_empty() {
+                original_file_list
+            } else {
+                rescanned
+            }
         };
         let Some(tracker) = self.tracker.clone() else {
             return;

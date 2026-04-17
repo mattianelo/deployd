@@ -457,6 +457,161 @@ pub(super) async fn migrate_aurora_file_paths(pool: &SqlitePool) -> Result<()> {
     Ok(())
 }
 
+/// One-shot migration that adds `../` prefix to Witcher 1 mod files stored
+/// under `system/`, `launcher/`, or `register/`, routing them to the game root
+/// instead of inside `Data/`.
+///
+/// No cache files are moved — only the DB records are updated. A re-deploy
+/// will remove the old `Data/system/…` symlinks and place the files at the
+/// correct `System/…` location in the game root.
+pub(super) async fn migrate_aurora_root_paths(pool: &SqlitePool) -> Result<()> {
+    let done: Option<String> =
+        sqlx::query_scalar("SELECT value FROM settings WHERE key = 'aurora_root_migration_v3'")
+            .fetch_optional(pool)
+            .await
+            .unwrap_or(None);
+
+    if done.is_some() {
+        return Ok(());
+    }
+
+    let rows: Vec<(String, String, String)> = sqlx::query_as(
+        "SELECT mf.mod_id, mf.game_rel_lowercase, mf.game_rel_original
+         FROM mod_files mf
+         JOIN mods m ON mf.mod_id = m.id
+         WHERE m.game_id = 'witcher-1'
+           AND (mf.game_rel_lowercase LIKE 'system/%'
+                OR mf.game_rel_lowercase LIKE 'launcher/%'
+                OR mf.game_rel_lowercase LIKE 'register/%')",
+    )
+    .fetch_all(pool)
+    .await
+    .context("Failed to query witcher-1 mod_files for aurora root migration")?;
+
+    let mut tx = pool
+        .begin()
+        .await
+        .context("Failed to begin aurora root migration transaction")?;
+
+    for (mod_id, old_lowercase, old_original) in &rows {
+        let new_lowercase = format!("../{old_lowercase}");
+        let new_original = format!("../{old_original}");
+        sqlx::query(
+            "UPDATE mod_files
+             SET game_rel_lowercase = ?,
+                 game_rel_original  = ?
+             WHERE mod_id = ? AND game_rel_lowercase = ?",
+        )
+        .bind(&new_lowercase)
+        .bind(&new_original)
+        .bind(mod_id)
+        .bind(old_lowercase)
+        .execute(&mut *tx)
+        .await
+        .with_context(|| {
+            format!("Failed to update mod_files for mod {mod_id} path {old_lowercase}")
+        })?;
+    }
+
+    sqlx::query(
+        "INSERT INTO settings (key, value) VALUES ('aurora_root_migration_v3', 'true')
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    )
+    .execute(&mut *tx)
+    .await
+    .context("Failed to record aurora root migration")?;
+
+    tx.commit()
+        .await
+        .context("Failed to commit aurora root migration")?;
+
+    dlog!(
+        "[deployd] aurora root migration: {} file(s) re-pathed to game root",
+        rows.len()
+    );
+
+    Ok(())
+}
+
+/// One-shot migration that fixes Witcher 1 mod files incorrectly stored as
+/// `override/data/system/…` (or launcher/register variants), routing them to
+/// the game root with a `../` prefix instead.
+///
+/// These paths were created by the pre-fix installer when the archive packaged
+/// files under a `Data/system/` top-level folder. No cache files are moved;
+/// a re-deploy will clean up the old `Data/Override/Data/system/…` symlinks
+/// and place files at the correct `system/…` location under the game root.
+pub(super) async fn migrate_aurora_data_system_paths(pool: &SqlitePool) -> Result<()> {
+    let done: Option<String> =
+        sqlx::query_scalar("SELECT value FROM settings WHERE key = 'aurora_root_migration_v4'")
+            .fetch_optional(pool)
+            .await
+            .unwrap_or(None);
+
+    if done.is_some() {
+        return Ok(());
+    }
+
+    let rows: Vec<(String, String, String)> = sqlx::query_as(
+        "SELECT mf.mod_id, mf.game_rel_lowercase, mf.game_rel_original
+         FROM mod_files mf
+         JOIN mods m ON mf.mod_id = m.id
+         WHERE m.game_id = 'witcher-1'
+           AND (mf.game_rel_lowercase LIKE 'override/data/system/%'
+                OR mf.game_rel_lowercase LIKE 'override/data/launcher/%'
+                OR mf.game_rel_lowercase LIKE 'override/data/register/%')",
+    )
+    .fetch_all(pool)
+    .await
+    .context("Failed to query witcher-1 mod_files for aurora data-system migration")?;
+
+    let mut tx = pool
+        .begin()
+        .await
+        .context("Failed to begin aurora data-system migration transaction")?;
+
+    // "override/data/" is 14 bytes (all ASCII); strip it and prepend "../".
+    const STRIP_LEN: usize = "override/data/".len();
+    for (mod_id, old_lowercase, old_original) in &rows {
+        let new_lowercase = format!("../{}", &old_lowercase[STRIP_LEN..]);
+        let new_original = format!("../{}", &old_original[STRIP_LEN..]);
+        sqlx::query(
+            "UPDATE mod_files
+             SET game_rel_lowercase = ?,
+                 game_rel_original  = ?
+             WHERE mod_id = ? AND game_rel_lowercase = ?",
+        )
+        .bind(&new_lowercase)
+        .bind(&new_original)
+        .bind(mod_id)
+        .bind(old_lowercase)
+        .execute(&mut *tx)
+        .await
+        .with_context(|| {
+            format!("Failed to update mod_files for mod {mod_id} path {old_lowercase}")
+        })?;
+    }
+
+    sqlx::query(
+        "INSERT INTO settings (key, value) VALUES ('aurora_root_migration_v4', 'true')
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    )
+    .execute(&mut *tx)
+    .await
+    .context("Failed to record aurora data-system migration")?;
+
+    tx.commit()
+        .await
+        .context("Failed to commit aurora data-system migration")?;
+
+    dlog!(
+        "[deployd] aurora data-system migration: {} file(s) re-pathed to game root",
+        rows.len()
+    );
+
+    Ok(())
+}
+
 pub(super) async fn backfill_archive_hashes(pool: &SqlitePool) -> Result<()> {
     let done: Option<String> =
         sqlx::query_scalar("SELECT value FROM settings WHERE key = 'archive_hash_backfill_v1'")

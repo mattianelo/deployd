@@ -73,6 +73,57 @@ pub(super) fn resolve_file_list(extracted_root: &Path) -> Result<FileListResult>
     Ok((files, stripped_wrapper))
 }
 
+/// Re-scan a staging directory to pick up modifications made after the
+/// initial extraction (e.g. the user moved files into a `system/` subfolder).
+///
+/// Mirrors the file-collection logic of `resolve_file_list` without FOMOD
+/// detection. `stripped_wrapper`, if present, is used as the effective root so
+/// relative paths match those produced at extraction time.
+pub(super) fn rescan(tmp_dir: &Path, stripped_wrapper: Option<&str>) -> Vec<(PathBuf, PathBuf)> {
+    let effective_root = match stripped_wrapper {
+        Some(w) => tmp_dir.join(w),
+        None => tmp_dir.to_path_buf(),
+    };
+    if !effective_root.exists() {
+        return Vec::new();
+    }
+
+    let mut files: Vec<(PathBuf, PathBuf)> = Vec::new();
+    let mut all_dirs: Vec<(PathBuf, PathBuf)> = Vec::new();
+    let mut dirs_with_files: HashSet<PathBuf> = HashSet::new();
+
+    for entry in WalkDir::new(&effective_root) {
+        let Ok(entry) = entry else { continue };
+        let Ok(rel) = entry.path().strip_prefix(&effective_root) else {
+            continue;
+        };
+        if rel.as_os_str().is_empty() {
+            continue;
+        }
+        if entry.file_type().is_file() {
+            let mut parent = rel.parent();
+            while let Some(p) = parent {
+                if p.as_os_str().is_empty() {
+                    break;
+                }
+                dirs_with_files.insert(p.to_path_buf());
+                parent = p.parent();
+            }
+            files.push((entry.path().to_path_buf(), rel.to_path_buf()));
+        } else if entry.file_type().is_dir() {
+            all_dirs.push((entry.path().to_path_buf(), rel.to_path_buf()));
+        }
+    }
+
+    for (dir_abs, dir_rel) in all_dirs {
+        if !dirs_with_files.contains(&dir_rel) {
+            files.push((dir_abs, dir_rel));
+        }
+    }
+
+    files
+}
+
 /// Detect a single wrapper directory.
 ///
 /// A wrapper exists when the root contains exactly one non-fomod subdirectory

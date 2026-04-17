@@ -360,8 +360,10 @@ impl App {
             &file_list,
             &rules,
             game.engine.clone(),
+            &game.data_subdir,
         );
         let is_bethesda = game.engine == crate::models::game::GameEngine::Bethesda;
+        let is_aurora = game.engine == crate::models::game::GameEngine::Aurora;
         self.pending_install = Some(PendingInstall {
             tmp_dir: tempfile::tempdir().expect("tempdir"),
             mod_name: mod_name.clone(),
@@ -382,6 +384,7 @@ impl App {
                     file_preview: preview,
                     is_fomod: false,
                     is_bethesda,
+                    is_aurora,
                 })
                 .forward(sender.input_sender(), |output| match output {
                     PreInstallDialogOutput::Confirmed(name, targets) => {
