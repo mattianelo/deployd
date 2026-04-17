@@ -40,6 +40,20 @@ pub struct PluginRow {
     pub dirty_info: Option<PluginDirtyInfo>,
     /// True for vanilla/DLC plugins not managed by Deployd (checkbox read-only).
     pub is_vanilla: bool,
+    /// Short type label derived from file extension: "ESM", "ESL", or "ESP".
+    pub plugin_type_label: &'static str,
+    /// CSS modifier class for the type badge: "plugin-badge-esm" etc.
+    pub plugin_type_css: &'static str,
+}
+
+impl PluginRow {
+    fn badge_css_classes(&self) -> &'static [&'static str] {
+        match self.plugin_type_css {
+            "plugin-badge-esm" => &["plugin-badge", "plugin-badge-esm"],
+            "plugin-badge-esl" => &["plugin-badge", "plugin-badge-esl"],
+            _ => &["plugin-badge", "plugin-badge-esp"],
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -84,6 +98,13 @@ impl FactoryComponent for PluginRow {
                     connect_toggled[sender, index] => move |btn| {
                         sender.output(PluginRowOutput::ToggleEnabled(index.clone(), btn.is_active())).unwrap();
                     }
+                },
+
+                gtk::Label {
+                    #[watch]
+                    set_label: self.plugin_type_label,
+                    #[watch]
+                    set_css_classes: self.badge_css_classes(),
                 },
 
                 gtk::Label {
@@ -140,6 +161,14 @@ impl FactoryComponent for PluginRow {
     }
 
     fn init_model(init: Self::Init, _index: &DynamicIndex, _sender: FactorySender<Self>) -> Self {
+        let fname_lower = init.plugin.filename.to_lowercase();
+        let (plugin_type_label, plugin_type_css) = if fname_lower.ends_with(".esm") {
+            ("ESM", "plugin-badge-esm")
+        } else if fname_lower.ends_with(".esl") {
+            ("ESL", "plugin-badge-esl")
+        } else {
+            ("ESP", "plugin-badge-esp")
+        };
         Self {
             plugin: init.plugin,
             display_filename: init.display_filename,
@@ -150,6 +179,8 @@ impl FactoryComponent for PluginRow {
             mod_enabled: init.mod_enabled,
             dirty_info: init.dirty_info,
             is_vanilla: init.is_vanilla,
+            plugin_type_label,
+            plugin_type_css,
         }
     }
 

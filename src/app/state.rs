@@ -5,7 +5,7 @@ use relm4::abstractions::Toaster;
 use relm4::factory::FactoryVecDeque;
 use relm4::prelude::*;
 
-use super::types::{DownloadSort, PendingInstall, SearchScope};
+use super::types::{DownloadFilter, DownloadSort, ModFilter, PendingInstall, SearchScope};
 use crate::core::detector::ExternalFile;
 use crate::core::tracker::Tracker;
 use crate::models::download::DownloadEntry;
@@ -106,6 +106,10 @@ pub struct App {
     pub(crate) rate_limit_info: Option<crate::core::nexus_api::RateLimitInfo>,
     /// Current sort order for the downloads sidebar.
     pub(crate) download_sort: DownloadSort,
+    /// Active filter chip selection for the mod order pane.
+    pub(crate) mod_filter: ModFilter,
+    /// Active filter chip selection for the downloads sidebar.
+    pub(crate) download_filter: DownloadFilter,
     /// Files found in the game folder that are not tracked by any mod.
     pub(crate) pending_external_files: Vec<ExternalFile>,
     /// Number of external files detected (drives the badge button visibility).

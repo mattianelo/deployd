@@ -2,6 +2,7 @@ use gtk::prelude::*;
 use relm4::prelude::*;
 
 use crate::core::game;
+use crate::models::download::DownloadStatus;
 use crate::models::game::Game;
 use crate::models::profile::SaveMode;
 use crate::ui::mod_list::ModListItemKind;
@@ -11,7 +12,7 @@ use crate::ui::pre_install_dialog::{
 
 use super::App;
 use super::messages::AppMsg;
-use super::types::SearchScope;
+use super::types::{DownloadFilter, ModFilter, SearchScope};
 
 impl App {
     pub(crate) fn selected_game(&self) -> Option<&Game> {
@@ -232,19 +233,88 @@ impl App {
         classes
     }
 
+    pub(crate) fn total_mods_count(&self) -> usize {
+        self.mods.iter().filter(|m| !m.is_separator()).count()
+    }
+
+    pub(crate) fn enabled_mods_count(&self) -> usize {
+        self.mods
+            .iter()
+            .filter(|m| m.mod_row().is_some_and(|r| r.mod_entry.enabled))
+            .count()
+    }
+
+    pub(crate) fn issues_mods_count(&self) -> usize {
+        self.mods
+            .iter()
+            .filter(|m| {
+                m.mod_row()
+                    .is_some_and(|r| r.overrides > 0 || r.overridden_by > 0)
+            })
+            .count()
+    }
+
+    pub(crate) fn enabled_plugins_count(&self) -> usize {
+        self.plugins.iter().filter(|p| p.plugin.enabled).count()
+    }
+
+    pub(crate) fn active_downloads_count(&self) -> usize {
+        self.downloads.iter().filter(|d| d.entry.is_active()).count()
+    }
+
+    pub(crate) fn completed_downloads_count(&self) -> usize {
+        self.downloads
+            .iter()
+            .filter(|d| {
+                matches!(
+                    d.entry.status,
+                    DownloadStatus::Installed | DownloadStatus::Downloaded
+                )
+            })
+            .count()
+    }
+
+    pub(crate) fn mod_status_label(&self) -> String {
+        format!(
+            "{} of {} mods",
+            self.enabled_mods_count(),
+            self.total_mods_count()
+        )
+    }
+
+    pub(crate) fn plugin_status_label(&self) -> String {
+        format!(
+            "{} of {} plugins",
+            self.enabled_plugins_count(),
+            self.plugins.len()
+        )
+    }
+
     pub(crate) fn apply_search_filter(&mut self) {
         let query = self.search_text.to_lowercase();
         let empty = query.is_empty();
 
         if self.search_scope == SearchScope::All || self.search_scope == SearchScope::ModOrder {
+            let mod_filter = self.mod_filter;
             let mut guard = self.mods.guard();
             for i in 0..guard.len() {
                 if let Some(row) = guard.get_mut(i) {
-                    // Separator rows stay visible unless searching (hide them during search).
                     if row.is_separator() {
-                        row.visible = empty;
+                        // Hide separators during search or when a filter chip is active.
+                        row.visible = empty && matches!(mod_filter, ModFilter::All);
                     } else {
-                        row.visible = empty || row.mod_name().to_lowercase().contains(&query);
+                        let name_match =
+                            empty || row.mod_name().to_lowercase().contains(&query);
+                        let filter_match = match mod_filter {
+                            ModFilter::All => true,
+                            ModFilter::Enabled => {
+                                row.mod_row().is_some_and(|r| r.mod_entry.enabled)
+                            }
+                            ModFilter::Issues => row
+                                .mod_row()
+                                .is_some_and(|r| r.overrides > 0 || r.overridden_by > 0),
+                        };
+                        row.visible = name_match && filter_match;
                     }
                 }
             }
@@ -262,10 +332,21 @@ impl App {
         }
 
         if self.search_scope == SearchScope::All || self.search_scope == SearchScope::Downloads {
+            let download_filter = self.download_filter;
             let mut guard = self.downloads.guard();
             for i in 0..guard.len() {
                 if let Some(row) = guard.get_mut(i) {
-                    row.visible = empty || row.entry.mod_name.to_lowercase().contains(&query);
+                    let name_match =
+                        empty || row.entry.mod_name.to_lowercase().contains(&query);
+                    let filter_match = match download_filter {
+                        DownloadFilter::All => true,
+                        DownloadFilter::Active => row.entry.is_active(),
+                        DownloadFilter::Completed => matches!(
+                            row.entry.status,
+                            DownloadStatus::Installed | DownloadStatus::Downloaded
+                        ),
+                    };
+                    row.visible = name_match && filter_match;
                 }
             }
         }

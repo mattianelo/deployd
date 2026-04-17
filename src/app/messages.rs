@@ -16,7 +16,7 @@ use crate::models::plugin::PluginDirtyInfo;
 use crate::models::tool::Tool;
 use crate::utils::fomod_resolver;
 
-use super::types::{InitData, LoadedData, NxmDownloadResult};
+use super::types::{DownloadFilter, InitData, LoadedData, ModFilter, NxmDownloadResult};
 
 /// A game entry produced by the game setup dialog or welcome wizard, carrying the user-confirmed configuration.
 #[derive(Debug, Clone)]
@@ -233,6 +233,12 @@ pub enum AppMsg {
     OpenUpdatePage,
     /// User clicked "Download Update" — download and replace the current AppImage.
     SelfUpdateDownload,
+    /// Set the active filter chip for the mod order pane.
+    SetModFilter(ModFilter),
+    /// Set the active filter chip for the downloads sidebar.
+    SetDownloadFilter(DownloadFilter),
+    /// Open the current game's installation folder in the system file manager.
+    OpenDeploymentFolder,
 }
 
 pub(crate) enum PrepareResultMsg {

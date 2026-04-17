@@ -62,6 +62,25 @@ fn main() {
             color: @warning_color;
             animation: notification-pulse 1.5s ease-in-out infinite;
         }
+        .plugin-badge {
+            font-size: 10px;
+            font-weight: 700;
+            padding: 1px 5px;
+            border-radius: 4px;
+            letter-spacing: 0.03em;
+        }
+        .plugin-badge-esm {
+            background-color: alpha(@accent_color, 0.2);
+            color: @accent_color;
+        }
+        .plugin-badge-esl {
+            background-color: alpha(@success_color, 0.2);
+            color: @success_color;
+        }
+        .plugin-badge-esp {
+            background-color: alpha(@warning_color, 0.15);
+            color: @warning_color;
+        }
         ",
     );
 

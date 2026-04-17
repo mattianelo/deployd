@@ -19,6 +19,8 @@ use gtk::glib;
 use gtk::prelude::*;
 use relm4::prelude::*;
 
+use self::types::{DownloadFilter, ModFilter};
+
 mod state;
 pub use state::App;
 
@@ -77,6 +79,14 @@ impl Component for App {
                         connect_selected_notify[sender] => move |dd| {
                             sender.input(AppMsg::ProfileSelected(dd.selected()));
                         }
+                    },
+
+                    pack_start = &gtk::Image {
+                        set_icon_name: Some("emblem-important-symbolic"),
+                        #[watch]
+                        set_visible: model.needs_deploy && model.has_games() && !model.initializing,
+                        set_pixel_size: 10,
+                        set_tooltip_text: Some("Unsaved changes — redeploy to apply"),
                     },
 
                     // Profile management MenuButton — icon-only, opens action popover
@@ -206,19 +216,60 @@ impl Component for App {
                         },
                     },
 
-                    pack_end = &gtk::Button {
-                        #[watch]
-                        set_label: if model.needs_deploy { "Deploy \u{2022}" } else { "Deploy" },
-                        #[watch]
-                        set_css_classes: if model.needs_deploy {
-                            &["suggested-action"]
-                        } else {
-                            &[]
+                    pack_end = &gtk::Box {
+                        add_css_class: "linked",
+
+                        gtk::Button {
+                            #[watch]
+                            set_label: if model.deploying { "Deploying\u{2026}" } else { "Deploy" },
+                            #[watch]
+                            set_css_classes: if model.needs_deploy {
+                                &["suggested-action"]
+                            } else {
+                                &[]
+                            },
+                            set_tooltip_text: Some("Deploy mods to game folder"),
+                            #[watch]
+                            set_sensitive: !model.is_busy() && model.has_games(),
+                            connect_clicked => AppMsg::DeployClicked,
                         },
-                        set_tooltip_text: Some("Deploy mods to game folder"),
-                        #[watch]
-                        set_sensitive: !model.is_busy() && model.has_games(),
-                        connect_clicked => AppMsg::DeployClicked,
+
+                        gtk::MenuButton {
+                            set_icon_name: "pan-down-symbolic",
+                            set_tooltip_text: Some("Deploy options"),
+                            #[watch]
+                            set_css_classes: if model.needs_deploy {
+                                &["suggested-action"]
+                            } else {
+                                &[]
+                            },
+                            #[watch]
+                            set_sensitive: !model.is_busy() && model.has_games(),
+                            #[wrap(Some)]
+                            set_popover = &gtk::Popover {
+                                #[wrap(Some)]
+                                set_child = &gtk::Box {
+                                    set_orientation: gtk::Orientation::Vertical,
+                                    set_spacing: 2,
+                                    set_margin_all: 4,
+
+                                    gtk::Button {
+                                        set_icon_name: "folder-open-symbolic",
+                                        set_label: "Open deployment folder",
+                                        add_css_class: "flat",
+                                        connect_clicked => AppMsg::OpenDeploymentFolder,
+                                    },
+
+                                    gtk::Separator {},
+
+                                    gtk::Button {
+                                        set_label: "Purge deployment",
+                                        add_css_class: "flat",
+                                        connect_clicked => AppMsg::PurgeClicked,
+                                    },
+                                },
+                            },
+                        },
                     },
 
                     // Overflow menu — secondary/infrequent actions
@@ -501,6 +552,50 @@ impl Component for App {
                         set_content = &gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
 
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Horizontal,
+                                set_margin_start: 8,
+                                set_margin_end: 8,
+                                set_margin_top: 4,
+                                set_margin_bottom: 4,
+                                set_spacing: 4,
+
+                                gtk::Button {
+                                    #[watch]
+                                    set_css_classes: if matches!(model.download_filter, DownloadFilter::All) {
+                                        &["pill", "suggested-action"]
+                                    } else {
+                                        &["pill"]
+                                    },
+                                    set_label: "All",
+                                    connect_clicked => AppMsg::SetDownloadFilter(DownloadFilter::All),
+                                },
+
+                                gtk::Button {
+                                    #[watch]
+                                    set_css_classes: if matches!(model.download_filter, DownloadFilter::Active) {
+                                        &["pill", "suggested-action"]
+                                    } else {
+                                        &["pill"]
+                                    },
+                                    #[watch]
+                                    set_label: &format!("Active ({})", model.active_downloads_count()),
+                                    connect_clicked => AppMsg::SetDownloadFilter(DownloadFilter::Active),
+                                },
+
+                                gtk::Button {
+                                    #[watch]
+                                    set_css_classes: if matches!(model.download_filter, DownloadFilter::Completed) {
+                                        &["pill", "suggested-action"]
+                                    } else {
+                                        &["pill"]
+                                    },
+                                    #[watch]
+                                    set_label: &format!("Completed ({})", model.completed_downloads_count()),
+                                    connect_clicked => AppMsg::SetDownloadFilter(DownloadFilter::Completed),
+                                },
+                            },
+
                             #[local_ref]
                             downloads_scroll -> gtk::ScrolledWindow {
                                 set_vexpand: true,
@@ -649,6 +744,50 @@ impl Component for App {
                                     connect_clicked[sender] => move |_| {
                                         sender.input(AppMsg::CreateGroup("New Group".to_string()));
                                     }
+                                },
+                            },
+
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Horizontal,
+                                set_margin_start: 8,
+                                set_margin_end: 8,
+                                set_margin_bottom: 4,
+                                set_spacing: 4,
+
+                                gtk::Button {
+                                    #[watch]
+                                    set_css_classes: if matches!(model.mod_filter, ModFilter::All) {
+                                        &["pill", "suggested-action"]
+                                    } else {
+                                        &["pill"]
+                                    },
+                                    #[watch]
+                                    set_label: &format!("All ({})", model.total_mods_count()),
+                                    connect_clicked => AppMsg::SetModFilter(ModFilter::All),
+                                },
+
+                                gtk::Button {
+                                    #[watch]
+                                    set_css_classes: if matches!(model.mod_filter, ModFilter::Enabled) {
+                                        &["pill", "suggested-action"]
+                                    } else {
+                                        &["pill"]
+                                    },
+                                    #[watch]
+                                    set_label: &format!("Enabled ({})", model.enabled_mods_count()),
+                                    connect_clicked => AppMsg::SetModFilter(ModFilter::Enabled),
+                                },
+
+                                gtk::Button {
+                                    #[watch]
+                                    set_css_classes: if matches!(model.mod_filter, ModFilter::Issues) {
+                                        &["pill", "suggested-action"]
+                                    } else {
+                                        &["pill"]
+                                    },
+                                    #[watch]
+                                    set_label: &format!("Issues ({})", model.issues_mods_count()),
+                                    connect_clicked => AppMsg::SetModFilter(ModFilter::Issues),
                                 },
                             },
 
@@ -831,20 +970,64 @@ impl Component for App {
                     }
                 },
 
-                // Rate limit status bar
-                gtk::Label {
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Horizontal,
+                    set_margin_start: 10,
+                    set_margin_end: 10,
+                    set_margin_top: 3,
+                    set_margin_bottom: 3,
+                    set_spacing: 8,
                     #[watch]
-                    set_label: &model.rate_limit_label(),
-                    #[watch]
-                    set_visible: model.rate_limit_info.is_some(),
-                    set_halign: gtk::Align::End,
-                    set_margin_end: 8,
-                    set_margin_top: 2,
-                    set_margin_bottom: 2,
-                    add_css_class: "caption",
-                    add_css_class: "dim-label",
-                    #[watch]
-                    set_css_classes: &model.rate_limit_css(),
+                    set_visible: !model.initializing,
+
+                    gtk::Label {
+                        #[watch]
+                        set_label: &model.mod_status_label(),
+                        add_css_class: "caption",
+                        add_css_class: "dim-label",
+                    },
+
+                    gtk::Label {
+                        set_label: "\u{00b7}",
+                        add_css_class: "caption",
+                        add_css_class: "dim-label",
+                    },
+
+                    gtk::Label {
+                        #[watch]
+                        set_label: &model.plugin_status_label(),
+                        add_css_class: "caption",
+                        add_css_class: "dim-label",
+                    },
+
+                    gtk::Box { set_hexpand: true },
+
+                    gtk::Label {
+                        #[watch]
+                        set_label: &model.rate_limit_label(),
+                        #[watch]
+                        set_visible: model.rate_limit_info.is_some(),
+                        add_css_class: "caption",
+                        #[watch]
+                        set_css_classes: &model.rate_limit_css(),
+                    },
+
+                    gtk::Label {
+                        #[watch]
+                        set_label: if model.needs_deploy {
+                            "\u{25cf} Unsaved changes"
+                        } else {
+                            "\u{2713} Synced"
+                        },
+                        #[watch]
+                        set_css_classes: if model.needs_deploy {
+                            &["caption", "warning"]
+                        } else {
+                            &["caption", "dim-label"]
+                        },
+                        #[watch]
+                        set_visible: model.has_games(),
+                    },
                 },
             }
         }
@@ -1117,6 +1300,23 @@ impl Component for App {
             }
             AppMsg::DeleteModOrderSnapshot(id) => self.handle_delete_order_snapshot(id, &sender),
             AppMsg::DeletePluginOrderSnapshot(id) => self.handle_delete_order_snapshot(id, &sender),
+            AppMsg::SetModFilter(filter) => {
+                self.mod_filter = filter;
+                self.apply_search_filter();
+            }
+            AppMsg::SetDownloadFilter(filter) => {
+                self.download_filter = filter;
+                self.apply_search_filter();
+            }
+            AppMsg::OpenDeploymentFolder => {
+                if let Some(game) = self.selected_game() {
+                    let uri = format!("file://{}", game.path.display());
+                    let _ = gtk::gio::AppInfo::launch_default_for_uri(
+                        &uri,
+                        None::<&gtk::gio::AppLaunchContext>,
+                    );
+                }
+            }
         }
     }
 

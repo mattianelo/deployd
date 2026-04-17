@@ -17,7 +17,7 @@ use crate::utils::paths;
 
 use super::free_fns::load_game_data;
 use super::free_fns::{clear_drop_indicators, update_drop_indicator};
-use super::types::{DownloadSort, InitData, SearchScope};
+use super::types::{DownloadFilter, DownloadSort, InitData, ModFilter, SearchScope};
 use super::{App, AppCmdMsg, AppMsg};
 
 /// Builds the initial App model, wires up factory lists, constructs UI helpers
@@ -172,6 +172,8 @@ pub(super) fn build_model(
         rate_limit_info: None,
         collapsed_groups: HashSet::new(),
         download_sort: DownloadSort::Default,
+        mod_filter: ModFilter::All,
+        download_filter: DownloadFilter::All,
         pending_external_files: Vec::new(),
         external_changes_count: 0,
         pending_replace_mod_id: None,

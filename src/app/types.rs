@@ -29,6 +29,22 @@ pub(crate) enum DownloadSort {
     Status,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ModFilter {
+    #[default]
+    All,
+    Enabled,
+    Issues,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DownloadFilter {
+    #[default]
+    All,
+    Active,
+    Completed,
+}
+
 pub(crate) struct PendingInstall {
     pub(crate) tmp_dir: TempDir,
     pub(crate) mod_name: String,
