@@ -428,7 +428,18 @@ impl App {
             self.tool_buttons_box.append(&overflow_btn);
         }
 
-        self.tool_buttons_box
-            .set_visible(self.has_games() && !self.tools.is_empty());
+        let has_tools = self.has_games() && !self.tools.is_empty();
+        self.tool_buttons_box.set_visible(has_tools);
+
+        if has_tools {
+            // Prepend a vertical separator to visually divide tool buttons from
+            // the general-action buttons (search, downloads, notifications).
+            let sep = gtk::Separator::builder()
+                .orientation(gtk::Orientation::Vertical)
+                .margin_top(6)
+                .margin_bottom(6)
+                .build();
+            self.tool_buttons_box.prepend(&sep);
+        }
     }
 }

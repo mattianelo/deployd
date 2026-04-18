@@ -186,14 +186,18 @@ impl Component for App {
                         #[watch]
                         set_visible: model.has_games() && !model.initializing,
 
+                        // Create mod group — moved here from the mod panel header
                         gtk::Button {
-                            set_icon_name: "list-add-symbolic",
-                            set_tooltip_text: Some("Add Mod"),
+                            set_icon_name: "folder-new-symbolic",
+                            set_tooltip_text: Some("Create mod group"),
+                            add_css_class: "flat",
                             #[watch]
                             set_visible: !model.is_busy(),
                             #[watch]
                             set_sensitive: !model.is_busy(),
-                            connect_clicked => AppMsg::InstallClicked,
+                            connect_clicked[sender] => move |_| {
+                                sender.input(AppMsg::CreateGroup("New Group".to_string()));
+                            },
                         },
 
                         gtk::Box {
@@ -287,16 +291,6 @@ impl Component for App {
                                 set_margin_all: 4,
 
                                 gtk::Button {
-                                    set_icon_name: "edit-clear-all-symbolic",
-                                    set_label: "Purge",
-                                    set_tooltip_text: Some("Purge deployed files from game folder"),
-                                    add_css_class: "flat",
-                                    #[watch]
-                                    set_sensitive: !model.is_busy() && model.has_games(),
-                                    connect_clicked => AppMsg::PurgeClicked,
-                                },
-
-                                gtk::Button {
                                     set_icon_name: "folder-new-symbolic",
                                     set_label: "Create Empty Mod",
                                     set_tooltip_text: Some("Create Empty Mod — opens cache folder in file manager"),
@@ -350,18 +344,15 @@ impl Component for App {
                         set_child = &gtk::Box {
                             set_spacing: 4,
                             gtk::Image {
-                                #[watch]
-                                set_icon_name: Some(if model.external_changes_count > 0 {
-                                    "preferences-system-notifications-symbolic"
-                                } else {
-                                    "emblem-ok-symbolic"
-                                }),
+                                // Always a bell; filled when there are notifications
+                                set_icon_name: Some("notification-symbolic"),
                             },
                             gtk::Label {
                                 #[watch]
                                 set_label: &model.notifications_badge(),
                                 #[watch]
                                 set_visible: model.notifications_count() > 0,
+                                add_css_class: "notification-badge",
                             },
                         },
                         #[wrap(Some)]
@@ -563,9 +554,9 @@ impl Component for App {
                                 gtk::Button {
                                     #[watch]
                                     set_css_classes: if matches!(model.download_filter, DownloadFilter::All) {
-                                        &["pill", "suggested-action"]
+                                        &["pill", "filter-chip", "suggested-action"]
                                     } else {
-                                        &["pill"]
+                                        &["pill", "filter-chip"]
                                     },
                                     set_label: "All",
                                     connect_clicked => AppMsg::SetDownloadFilter(DownloadFilter::All),
@@ -574,9 +565,9 @@ impl Component for App {
                                 gtk::Button {
                                     #[watch]
                                     set_css_classes: if matches!(model.download_filter, DownloadFilter::Active) {
-                                        &["pill", "suggested-action"]
+                                        &["pill", "filter-chip", "suggested-action"]
                                     } else {
-                                        &["pill"]
+                                        &["pill", "filter-chip"]
                                     },
                                     #[watch]
                                     set_label: &format!("Active ({})", model.active_downloads_count()),
@@ -586,9 +577,9 @@ impl Component for App {
                                 gtk::Button {
                                     #[watch]
                                     set_css_classes: if matches!(model.download_filter, DownloadFilter::Completed) {
-                                        &["pill", "suggested-action"]
+                                        &["pill", "filter-chip", "suggested-action"]
                                     } else {
-                                        &["pill"]
+                                        &["pill", "filter-chip"]
                                     },
                                     #[watch]
                                     set_label: &format!("Completed ({})", model.completed_downloads_count()),
@@ -668,62 +659,59 @@ impl Component for App {
                                     },
                                 },
 
-                                gtk::Box {
-                                    add_css_class: "linked",
-                                    set_margin_start: 8,
-
-                                    // Save mod order as named snapshot
-                                    gtk::MenuButton {
-                                        set_label: "Save",
-                                        set_tooltip_text: Some("Save current mod order as a named snapshot"),
+                                // Mod order snapshots — save and load in one icon button
+                                gtk::MenuButton {
+                                    set_icon_name: "media-floppy-symbolic",
+                                    set_tooltip_text: Some("Mod order snapshots"),
+                                    add_css_class: "flat",
+                                    set_margin_start: 4,
+                                    #[wrap(Some)]
+                                    set_popover = &gtk::Popover {
                                         #[wrap(Some)]
-                                        set_popover = &gtk::Popover {
-                                            #[wrap(Some)]
-                                            set_child = &gtk::Box {
-                                                set_orientation: gtk::Orientation::Vertical,
-                                                set_spacing: 6,
-                                                set_margin_all: 8,
+                                        set_child = &gtk::Box {
+                                            set_orientation: gtk::Orientation::Vertical,
+                                            set_spacing: 6,
+                                            set_margin_all: 8,
 
-                                                gtk::Label {
-                                                    set_label: "Snapshot name",
-                                                    set_halign: gtk::Align::Start,
-                                                    add_css_class: "caption",
-                                                },
+                                            gtk::Label {
+                                                set_label: "Save snapshot",
+                                                set_halign: gtk::Align::Start,
+                                                add_css_class: "caption",
+                                                add_css_class: "dim-label",
+                                            },
 
-                                                #[local_ref]
-                                                mod_snapshot_save_entry -> gtk::Entry {
-                                                    set_placeholder_text: Some("e.g. Pre-DLC run"),
-                                                },
+                                            #[local_ref]
+                                            mod_snapshot_save_entry -> gtk::Entry {
+                                                set_placeholder_text: Some("e.g. Pre-DLC run"),
+                                            },
 
-                                                gtk::Button {
-                                                    set_label: "Save",
-                                                    add_css_class: "suggested-action",
-                                                    connect_clicked[sender, mod_snapshot_save_entry] => move |btn| {
-                                                        let name = mod_snapshot_save_entry.text().to_string();
-                                                        if !name.is_empty() {
-                                                            sender.input(AppMsg::SaveModOrderSnapshot(name));
-                                                            mod_snapshot_save_entry.set_text("");
-                                                            if let Some(w) = btn.ancestor(gtk::Popover::static_type()) {
-                                                                w.downcast_ref::<gtk::Popover>().unwrap().popdown();
-                                                            }
+                                            gtk::Button {
+                                                set_label: "Save",
+                                                add_css_class: "suggested-action",
+                                                connect_clicked[sender, mod_snapshot_save_entry] => move |btn| {
+                                                    let name = mod_snapshot_save_entry.text().to_string();
+                                                    if !name.is_empty() {
+                                                        sender.input(AppMsg::SaveModOrderSnapshot(name));
+                                                        mod_snapshot_save_entry.set_text("");
+                                                        if let Some(w) = btn.ancestor(gtk::Popover::static_type()) {
+                                                            w.downcast_ref::<gtk::Popover>().unwrap().popdown();
                                                         }
-                                                    },
+                                                    }
                                                 },
                                             },
-                                        },
-                                    },
 
-                                    // Load mod order from saved snapshot
-                                    gtk::MenuButton {
-                                        set_label: "Load",
-                                        set_tooltip_text: Some("Restore a saved mod order snapshot"),
-                                        #[wrap(Some)]
-                                        set_popover = &gtk::Popover {
-                                            #[wrap(Some)]
-                                            set_child = &gtk::ScrolledWindow {
+                                            gtk::Separator {},
+
+                                            gtk::Label {
+                                                set_label: "Restore snapshot",
+                                                set_halign: gtk::Align::Start,
+                                                add_css_class: "caption",
+                                                add_css_class: "dim-label",
+                                            },
+
+                                            gtk::ScrolledWindow {
                                                 set_min_content_height: 40,
                                                 set_max_content_height: 200,
-
                                                 set_hscrollbar_policy: gtk::PolicyType::Never,
 
                                                 #[local_ref]
@@ -736,14 +724,16 @@ impl Component for App {
                                     },
                                 },
 
+                                // Add Mod — moved here from headerbar
                                 gtk::Button {
                                     set_icon_name: "list-add-symbolic",
-                                    set_tooltip_text: Some("New group"),
+                                    set_tooltip_text: Some("Add mod from file"),
                                     add_css_class: "flat",
-                                    add_css_class: "circular",
-                                    connect_clicked[sender] => move |_| {
-                                        sender.input(AppMsg::CreateGroup("New Group".to_string()));
-                                    }
+                                    #[watch]
+                                    set_sensitive: !model.is_busy(),
+                                    #[watch]
+                                    set_visible: !model.is_busy(),
+                                    connect_clicked => AppMsg::InstallClicked,
                                 },
                             },
 
@@ -757,9 +747,9 @@ impl Component for App {
                                 gtk::Button {
                                     #[watch]
                                     set_css_classes: if matches!(model.mod_filter, ModFilter::All) {
-                                        &["pill", "suggested-action"]
+                                        &["pill", "filter-chip", "suggested-action"]
                                     } else {
-                                        &["pill"]
+                                        &["pill", "filter-chip"]
                                     },
                                     #[watch]
                                     set_label: &format!("All ({})", model.total_mods_count()),
@@ -769,9 +759,9 @@ impl Component for App {
                                 gtk::Button {
                                     #[watch]
                                     set_css_classes: if matches!(model.mod_filter, ModFilter::Enabled) {
-                                        &["pill", "suggested-action"]
+                                        &["pill", "filter-chip", "suggested-action"]
                                     } else {
-                                        &["pill"]
+                                        &["pill", "filter-chip"]
                                     },
                                     #[watch]
                                     set_label: &format!("Enabled ({})", model.enabled_mods_count()),
@@ -781,9 +771,9 @@ impl Component for App {
                                 gtk::Button {
                                     #[watch]
                                     set_css_classes: if matches!(model.mod_filter, ModFilter::Issues) {
-                                        &["pill", "suggested-action"]
+                                        &["pill", "filter-chip", "suggested-action"]
                                     } else {
-                                        &["pill"]
+                                        &["pill", "filter-chip"]
                                     },
                                     #[watch]
                                     set_label: &format!("Issues ({})", model.issues_mods_count()),
@@ -856,63 +846,60 @@ impl Component for App {
                                     },
                                 },
 
-                                gtk::Box {
-                                    add_css_class: "linked",
+                                // Plugin order snapshots — save and load in one icon button
+                                gtk::MenuButton {
+                                    set_icon_name: "media-floppy-symbolic",
+                                    set_tooltip_text: Some("Plugin order snapshots"),
+                                    add_css_class: "flat",
                                     set_valign: gtk::Align::Center,
-                                    set_margin_start: 8,
-
-                                    // Save plugin order as named snapshot
-                                    gtk::MenuButton {
-                                        set_label: "Save",
-                                        set_tooltip_text: Some("Save current plugin order as a named snapshot"),
+                                    set_margin_start: 4,
+                                    #[wrap(Some)]
+                                    set_popover = &gtk::Popover {
                                         #[wrap(Some)]
-                                        set_popover = &gtk::Popover {
-                                            #[wrap(Some)]
-                                            set_child = &gtk::Box {
-                                                set_orientation: gtk::Orientation::Vertical,
-                                                set_spacing: 6,
-                                                set_margin_all: 8,
+                                        set_child = &gtk::Box {
+                                            set_orientation: gtk::Orientation::Vertical,
+                                            set_spacing: 6,
+                                            set_margin_all: 8,
 
-                                                gtk::Label {
-                                                    set_label: "Snapshot name",
-                                                    set_halign: gtk::Align::Start,
-                                                    add_css_class: "caption",
-                                                },
+                                            gtk::Label {
+                                                set_label: "Save snapshot",
+                                                set_halign: gtk::Align::Start,
+                                                add_css_class: "caption",
+                                                add_css_class: "dim-label",
+                                            },
 
-                                                #[local_ref]
-                                                plugin_snapshot_save_entry -> gtk::Entry {
-                                                    set_placeholder_text: Some("e.g. Vanilla load order"),
-                                                },
+                                            #[local_ref]
+                                            plugin_snapshot_save_entry -> gtk::Entry {
+                                                set_placeholder_text: Some("e.g. Vanilla load order"),
+                                            },
 
-                                                gtk::Button {
-                                                    set_label: "Save",
-                                                    add_css_class: "suggested-action",
-                                                    connect_clicked[sender, plugin_snapshot_save_entry] => move |btn| {
-                                                        let name = plugin_snapshot_save_entry.text().to_string();
-                                                        if !name.is_empty() {
-                                                            sender.input(AppMsg::SavePluginOrderSnapshot(name));
-                                                            plugin_snapshot_save_entry.set_text("");
-                                                            if let Some(w) = btn.ancestor(gtk::Popover::static_type()) {
-                                                                w.downcast_ref::<gtk::Popover>().unwrap().popdown();
-                                                            }
+                                            gtk::Button {
+                                                set_label: "Save",
+                                                add_css_class: "suggested-action",
+                                                connect_clicked[sender, plugin_snapshot_save_entry] => move |btn| {
+                                                    let name = plugin_snapshot_save_entry.text().to_string();
+                                                    if !name.is_empty() {
+                                                        sender.input(AppMsg::SavePluginOrderSnapshot(name));
+                                                        plugin_snapshot_save_entry.set_text("");
+                                                        if let Some(w) = btn.ancestor(gtk::Popover::static_type()) {
+                                                            w.downcast_ref::<gtk::Popover>().unwrap().popdown();
                                                         }
-                                                    },
+                                                    }
                                                 },
                                             },
-                                        },
-                                    },
 
-                                    // Load plugin order from saved snapshot
-                                    gtk::MenuButton {
-                                        set_label: "Load",
-                                        set_tooltip_text: Some("Restore a saved plugin order snapshot"),
-                                        #[wrap(Some)]
-                                        set_popover = &gtk::Popover {
-                                            #[wrap(Some)]
-                                            set_child = &gtk::ScrolledWindow {
+                                            gtk::Separator {},
+
+                                            gtk::Label {
+                                                set_label: "Restore snapshot",
+                                                set_halign: gtk::Align::Start,
+                                                add_css_class: "caption",
+                                                add_css_class: "dim-label",
+                                            },
+
+                                            gtk::ScrolledWindow {
                                                 set_min_content_height: 40,
                                                 set_max_content_height: 200,
-
                                                 set_hscrollbar_policy: gtk::PolicyType::Never,
 
                                                 #[local_ref]
@@ -1317,6 +1304,9 @@ impl Component for App {
                     );
                 }
             }
+            AppMsg::PauseDownload(idx) => self.handle_pause_download(idx),
+            AppMsg::ResumeDownload(idx) => self.handle_resume_download(idx, &sender),
+            AppMsg::SetCompactPluginRows(compact) => self.handle_set_compact_plugin_rows(compact),
         }
     }
 

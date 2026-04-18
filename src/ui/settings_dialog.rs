@@ -39,6 +39,8 @@ pub enum SettingsMsg {
     BrowseDownloadsDir,
     DownloadsDirChosen(PathBuf),
     ManageGames,
+    SetColorScheme(u32),
+    ToggleCompactPlugins(bool),
 }
 
 #[derive(Debug)]
@@ -59,6 +61,8 @@ pub enum SettingsDialogOutput {
     ApiKeyChanged,
     /// User wants to open the game setup dialog.
     ManageGames,
+    /// User toggled compact plugin row mode.
+    SetCompactPluginRows(bool),
 }
 
 #[relm4::component(pub)]
@@ -181,6 +185,27 @@ impl Component for SettingsDialog {
 
                         add_suffix = &gtk::Image::from_icon_name("go-next-symbolic") {
                             set_valign: gtk::Align::Center,
+                        },
+                    },
+                },
+
+                // Appearance section
+                add = &adw::PreferencesGroup {
+                    set_title: "Appearance",
+
+                    add = &adw::ComboRow {
+                        set_title: "Color Scheme",
+                        set_model: Some(&gtk::StringList::new(&["System", "Light", "Dark"])),
+                        connect_selected_notify[sender] => move |row| {
+                            sender.input(SettingsMsg::SetColorScheme(row.selected()));
+                        },
+                    },
+
+                    add = &adw::SwitchRow {
+                        set_title: "Compact Plugin List",
+                        set_subtitle: "Reduce row height in the Plugin Order panel",
+                        connect_active_notify[sender] => move |row| {
+                            sender.input(SettingsMsg::ToggleCompactPlugins(row.is_active()));
                         },
                     },
                 },
@@ -441,6 +466,17 @@ impl Component for SettingsDialog {
             SettingsMsg::ManageGames => {
                 let _ = sender.output(SettingsDialogOutput::ManageGames);
                 root.close();
+            }
+            SettingsMsg::SetColorScheme(idx) => {
+                let scheme = match idx {
+                    1 => adw::ColorScheme::ForceLight,
+                    2 => adw::ColorScheme::ForceDark,
+                    _ => adw::ColorScheme::Default,
+                };
+                adw::StyleManager::default().set_color_scheme(scheme);
+            }
+            SettingsMsg::ToggleCompactPlugins(compact) => {
+                let _ = sender.output(SettingsDialogOutput::SetCompactPluginRows(compact));
             }
             SettingsMsg::DownloadsDirChosen(path) => {
                 let dir_str = path.to_string_lossy().to_string();

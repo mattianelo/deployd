@@ -62,6 +62,8 @@ pub(super) fn build_model(
                 DownloadRowOutput::FetchMetadata(index) => AppMsg::FetchDownloadMetadata(index),
                 DownloadRowOutput::ClearMetadata(index) => AppMsg::ClearDownloadMetadata(index),
                 DownloadRowOutput::Rename(index) => AppMsg::RenameDownload(index),
+                DownloadRowOutput::Pause(index) => AppMsg::PauseDownload(index),
+                DownloadRowOutput::Resume(index) => AppMsg::ResumeDownload(index),
             });
 
     // Games start empty; they are populated from the DB (persisted games) or via
@@ -203,6 +205,7 @@ pub(super) fn build_model(
         mod_snapshots_list: gtk::ListBox::new(),
         plugin_snapshots_list: gtk::ListBox::new(),
         proton_setup: false,
+        compact_plugin_rows: false,
     };
 
     // Profile rename popover

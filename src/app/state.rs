@@ -175,4 +175,6 @@ pub struct App {
     /// Drives the headerbar spinner + status label and disables the "Add Mod"
     /// button until the download completes.
     pub(crate) proton_setup: bool,
+    /// Whether plugin list rows should use compact (reduced height) display.
+    pub(crate) compact_plugin_rows: bool,
 }

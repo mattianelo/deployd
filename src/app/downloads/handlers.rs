@@ -699,6 +699,38 @@ impl App {
             }
         });
     }
+
+    pub(crate) fn handle_pause_download(&mut self, index: DynamicIndex) {
+        let idx = index.current_index();
+        let download_id = {
+            let guard = self.downloads.guard();
+            guard.get(idx).map(|r| r.entry.id.clone())
+        };
+        let Some(download_id) = download_id else { return };
+        self.update_download_status(&download_id, DownloadStatus::Paused, "Paused");
+    }
+
+    pub(crate) fn handle_resume_download(&mut self, index: DynamicIndex, sender: &ComponentSender<Self>) {
+        let idx = index.current_index();
+        let (download_id, nexus_ids) = {
+            let guard = self.downloads.guard();
+            let Some(row) = guard.get(idx) else { return };
+            (row.entry.id.clone(), row.entry.nexus_ids.clone())
+        };
+        // Only resume if actually paused
+        let is_paused = self
+            .all_downloads
+            .iter()
+            .any(|e| e.id == download_id && e.status == DownloadStatus::Paused);
+        if !is_paused {
+            return;
+        }
+        // Re-request the NXM download URL from Nexus and re-enqueue
+        if let Some((mod_id, file_id, ref domain)) = nexus_ids {
+            let uri = format!("nxm://{domain}/mods/{mod_id}/files/{file_id}");
+            sender.input(AppMsg::NxmLinkReceived(uri));
+        }
+    }
 }
 
 /// Parse a Nexus mod ID from user input.

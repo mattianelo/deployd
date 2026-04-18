@@ -3,6 +3,7 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, PartialEq)]
 pub enum DownloadStatus {
     Downloading,
+    Paused,
     Downloaded,
     Extracting,
     Installed,
@@ -13,6 +14,7 @@ impl DownloadStatus {
     pub fn as_db_str(&self) -> &str {
         match self {
             Self::Downloading => "downloading",
+            Self::Paused => "paused",
             Self::Downloaded => "downloaded",
             Self::Extracting => "extracting",
             Self::Installed => "installed",
@@ -22,6 +24,7 @@ impl DownloadStatus {
 
     pub fn from_db_str(s: &str) -> Self {
         match s {
+            "paused" => Self::Paused,
             "installed" => Self::Installed,
             "failed" => Self::Failed,
             _ => Self::Downloaded,
@@ -31,6 +34,7 @@ impl DownloadStatus {
     pub fn default_status_msg(&self) -> &str {
         match self {
             Self::Downloading => "Downloading...",
+            Self::Paused => "Paused",
             Self::Downloaded => "Ready to install",
             Self::Extracting => "Extracting...",
             Self::Installed => "Installed",

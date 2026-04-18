@@ -30,6 +30,9 @@ impl App {
                     SettingsDialogOutput::Closed => AppMsg::SettingsClosed,
                     SettingsDialogOutput::ApiKeyChanged => AppMsg::NexusApiKeyUpdated,
                     SettingsDialogOutput::ManageGames => AppMsg::ManageGamesClicked,
+                    SettingsDialogOutput::SetCompactPluginRows(compact) => {
+                        AppMsg::SetCompactPluginRows(compact)
+                    }
                 }),
         );
     }

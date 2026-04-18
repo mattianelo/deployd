@@ -17,6 +17,8 @@ pub enum DownloadRowOutput {
     FetchMetadata(DynamicIndex),
     ClearMetadata(DynamicIndex),
     Rename(DynamicIndex),
+    Pause(DynamicIndex),
+    Resume(DynamicIndex),
 }
 
 #[relm4::factory(pub)]
@@ -62,9 +64,6 @@ impl FactoryComponent for DownloadRow {
                         set_width_request: 1,
                     },
 
-                    // File-specific label from Nexus (e.g. "Main File", "Textures 4K").
-                    // Always shown when available so multiple files from the same mod page
-                    // are visually distinct regardless of their primary/non-primary status.
                     gtk::Label {
                         #[watch]
                         set_label: self.entry.nexus_file_name.as_deref().unwrap_or(""),
@@ -107,56 +106,60 @@ impl FactoryComponent for DownloadRow {
                     },
                 },
 
+                // Pause — shown while actively downloading
                 gtk::Button {
-                    set_icon_name: "document-edit-symbolic",
-                    set_tooltip_text: Some("Rename"),
+                    set_icon_name: "media-playback-pause-symbolic",
+                    set_tooltip_text: Some("Pause download"),
                     set_valign: gtk::Align::Center,
                     add_css_class: "flat",
                     add_css_class: "circular",
                     #[watch]
-                    set_visible: !self.entry.is_active(),
+                    set_visible: self.entry.status == DownloadStatus::Downloading,
                     connect_clicked[sender, index] => move |_| {
-                        sender.output(DownloadRowOutput::Rename(index.clone())).ok();
-                    }
+                        sender.output(DownloadRowOutput::Pause(index.clone())).ok();
+                    },
                 },
 
+                // Resume — shown when paused
                 gtk::Button {
-                    set_icon_name: "emblem-synchronizing-symbolic",
-                    set_tooltip_text: Some("Fetch Nexus metadata"),
+                    set_icon_name: "media-playback-start-symbolic",
+                    set_tooltip_text: Some("Resume download"),
                     set_valign: gtk::Align::Center,
                     add_css_class: "flat",
                     add_css_class: "circular",
                     #[watch]
-                    set_visible: (self.entry.nexus_ids.is_some() || self.entry.game_domain.is_some())
-                        && !self.entry.metadata_fetched,
+                    set_visible: self.entry.status == DownloadStatus::Paused,
                     connect_clicked[sender, index] => move |_| {
-                        sender.output(DownloadRowOutput::FetchMetadata(index.clone())).unwrap();
-                    }
+                        sender.output(DownloadRowOutput::Resume(index.clone())).ok();
+                    },
                 },
 
+                // Install — labeled pill shown when ready or failed (not just icon)
                 gtk::Button {
                     #[watch]
-                    set_icon_name: if self.entry.status == DownloadStatus::Failed {
-                        "view-refresh-symbolic"
+                    set_label: if self.entry.status == DownloadStatus::Failed {
+                        "Retry"
                     } else {
-                        "package-x-generic-symbolic"
+                        "Install"
                     },
                     #[watch]
                     set_tooltip_text: Some(if self.entry.status == DownloadStatus::Failed {
                         "Retry install"
                     } else {
-                        "Install"
+                        "Install mod"
                     }),
                     set_valign: gtk::Align::Center,
-                    add_css_class: "flat",
-                    add_css_class: "circular",
+                    add_css_class: "suggested-action",
+                    add_css_class: "pill",
+                    add_css_class: "install-action-btn",
                     #[watch]
                     set_visible: self.entry.is_installable(),
                     connect_clicked[sender, index] => move |_| {
                         sender.output(DownloadRowOutput::Install(index.clone())).unwrap();
-                    }
+                    },
                 },
 
+                // Reinstall — icon only, shown when installed and archive present
                 gtk::Button {
                     set_icon_name: "view-refresh-symbolic",
                     set_tooltip_text: Some("Reinstall (replace existing mod)"),
@@ -168,20 +171,21 @@ impl FactoryComponent for DownloadRow {
                         && self.entry.archive_path.is_some(),
                     connect_clicked[sender, index] => move |_| {
                         sender.output(DownloadRowOutput::Reinstall(index.clone())).ok();
-                    }
+                    },
                 },
 
+                // Rename — icon only, shown when not active
                 gtk::Button {
-                    set_icon_name: "edit-clear-symbolic",
-                    set_tooltip_text: Some("Clear metadata (re-fetch later)"),
+                    set_icon_name: "document-edit-symbolic",
+                    set_tooltip_text: Some("Rename"),
                     set_valign: gtk::Align::Center,
                     add_css_class: "flat",
                     add_css_class: "circular",
                     #[watch]
-                    set_visible: self.entry.metadata_fetched,
+                    set_visible: !self.entry.is_active(),
                     connect_clicked[sender, index] => move |_| {
-                        sender.output(DownloadRowOutput::ClearMetadata(index.clone())).unwrap();
-                    }
+                        sender.output(DownloadRowOutput::Rename(index.clone())).ok();
+                    },
                 },
             },
         }
@@ -193,11 +197,73 @@ impl FactoryComponent for DownloadRow {
             visible: true,
         }
     }
+
+    fn init_widgets(
+        &mut self,
+        index: &DynamicIndex,
+        root: Self::Root,
+        _returned_widget: &<Self::ParentWidget as relm4::factory::FactoryView>::ReturnedWidget,
+        sender: FactorySender<Self>,
+    ) -> Self::Widgets {
+        // Right-click context menu for metadata actions
+        let popover = gtk::Popover::new();
+        let menu_box = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(2)
+            .margin_top(4)
+            .margin_bottom(4)
+            .margin_start(4)
+            .margin_end(4)
+            .build();
+
+        let fetch_btn = gtk::Button::builder()
+            .label("Fetch Nexus metadata")
+            .css_classes(["flat"])
+            .halign(gtk::Align::Fill)
+            .build();
+        let clear_btn = gtk::Button::builder()
+            .label("Clear metadata")
+            .css_classes(["flat"])
+            .halign(gtk::Align::Fill)
+            .build();
+
+        let fetch_idx = index.clone();
+        let fetch_sender = sender.clone();
+        fetch_btn.connect_clicked(move |_| {
+            fetch_sender
+                .output(DownloadRowOutput::FetchMetadata(fetch_idx.clone()))
+                .ok();
+        });
+
+        let clear_idx = index.clone();
+        let clear_sender = sender.clone();
+        clear_btn.connect_clicked(move |_| {
+            clear_sender
+                .output(DownloadRowOutput::ClearMetadata(clear_idx.clone()))
+                .ok();
+        });
+
+        menu_box.append(&fetch_btn);
+        menu_box.append(&clear_btn);
+        popover.set_child(Some(&menu_box));
+        popover.set_parent(&root);
+
+        let gesture = gtk::GestureClick::new();
+        gesture.set_button(3); // right mouse button
+        let pop = popover.clone();
+        gesture.connect_released(move |g, _, x, y| {
+            g.set_state(gtk::EventSequenceState::Claimed);
+            pop.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+            pop.popup();
+        });
+        root.add_controller(gesture);
+
+        let widgets = view_output!();
+        widgets
+    }
 }
 
 impl DownloadRow {
-    /// Primary display name: always the mod name once metadata is fetched.
-    /// The per-file Nexus label is shown separately as a subtitle below.
     fn display_name(&self) -> String {
         self.entry.mod_name.clone()
     }
@@ -206,6 +272,7 @@ impl DownloadRow {
 fn status_icon(status: &DownloadStatus) -> &'static str {
     match status {
         DownloadStatus::Downloading => "folder-download-symbolic",
+        DownloadStatus::Paused => "media-playback-pause-symbolic",
         DownloadStatus::Downloaded => "document-save-symbolic",
         DownloadStatus::Extracting => "package-x-generic-symbolic",
         DownloadStatus::Installed => "object-select-symbolic",
@@ -216,6 +283,7 @@ fn status_icon(status: &DownloadStatus) -> &'static str {
 fn status_css(status: &DownloadStatus) -> Vec<&'static str> {
     match status {
         DownloadStatus::Downloading => vec!["accent"],
+        DownloadStatus::Paused => vec!["dim-label"],
         DownloadStatus::Downloaded => vec!["success"],
         DownloadStatus::Extracting => vec!["accent"],
         DownloadStatus::Installed => vec!["success"],

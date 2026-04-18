@@ -412,4 +412,14 @@ impl App {
             }
         }
     }
+
+    pub(crate) fn handle_set_compact_plugin_rows(&mut self, compact: bool) {
+        self.compact_plugin_rows = compact;
+        let mut guard = self.plugins.guard();
+        for i in 0..guard.len() {
+            if let Some(row) = guard.get_mut(i) {
+                row.compact = compact;
+            }
+        }
+    }
 }

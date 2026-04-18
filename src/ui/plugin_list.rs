@@ -44,6 +44,8 @@ pub struct PluginRow {
     pub plugin_type_label: &'static str,
     /// CSS modifier class for the type badge: "plugin-badge-esm" etc.
     pub plugin_type_css: &'static str,
+    /// Whether compact (reduced height) display is active.
+    pub compact: bool,
 }
 
 impl PluginRow {
@@ -74,6 +76,8 @@ impl FactoryComponent for PluginRow {
             set_selectable: false,
             #[watch]
             set_visible: self.visible,
+            #[watch]
+            set_css_classes: if self.compact { &["compact-row"] } else { &[] },
 
             gtk::Box {
                 set_orientation: gtk::Orientation::Horizontal,
@@ -181,6 +185,7 @@ impl FactoryComponent for PluginRow {
             is_vanilla: init.is_vanilla,
             plugin_type_label,
             plugin_type_css,
+            compact: false,
         }
     }
 

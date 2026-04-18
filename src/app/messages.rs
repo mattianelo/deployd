@@ -239,6 +239,12 @@ pub enum AppMsg {
     SetDownloadFilter(DownloadFilter),
     /// Open the current game's installation folder in the system file manager.
     OpenDeploymentFolder,
+    /// Pause an in-progress download (download_id).
+    PauseDownload(DynamicIndex),
+    /// Resume a paused download (download_id).
+    ResumeDownload(DynamicIndex),
+    /// Set compact plugin row display mode.
+    SetCompactPluginRows(bool),
 }
 
 pub(crate) enum PrepareResultMsg {

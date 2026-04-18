@@ -122,9 +122,10 @@ pub(crate) fn download_status_sort_key(status: &crate::models::download::Downloa
     use crate::models::download::DownloadStatus;
     match status {
         DownloadStatus::Downloading => 0,
-        DownloadStatus::Extracting => 1,
-        DownloadStatus::Downloaded => 2,
-        DownloadStatus::Installed => 3,
-        DownloadStatus::Failed => 4,
+        DownloadStatus::Paused => 1,
+        DownloadStatus::Extracting => 2,
+        DownloadStatus::Downloaded => 3,
+        DownloadStatus::Installed => 4,
+        DownloadStatus::Failed => 5,
     }
 }

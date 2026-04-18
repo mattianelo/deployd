@@ -59,8 +59,34 @@ fn main() {
             50% { opacity: 0.4; }
         }
         .notification-active {
-            color: @warning_color;
+            color: @error_color;
             animation: notification-pulse 1.5s ease-in-out infinite;
+        }
+        .notification-badge {
+            font-size: 10px;
+            font-weight: 700;
+            color: @error_color;
+        }
+        .filter-chip {
+            padding: 2px 10px;
+            min-height: 0;
+            font-size: 0.85em;
+            transition: background-color 150ms ease, color 150ms ease;
+        }
+        .compact-row {
+            min-height: 0;
+        }
+        .compact-row > box {
+            margin-top: 2px;
+            margin-bottom: 2px;
+        }
+        .install-action-btn {
+            padding: 4px 14px;
+            min-height: 0;
+            font-size: 0.9em;
+        }
+        .linked > button, .linked > menubutton > button {
+            transition: background-color 200ms ease;
         }
         .plugin-badge {
             font-size: 10px;
