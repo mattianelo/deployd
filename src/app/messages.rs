@@ -104,6 +104,8 @@ pub enum AppMsg {
     RemoveGame(String),
     /// Remove the currently selected game (fired from the headerbar "×" button).
     RemoveCurrentGame,
+    /// Confirmed removal after the dialog; delete_mods=true also wipes the mod cache.
+    RemoveGameConfirmed { game_id: String, delete_mods: bool },
     /// Emitted by SettingsDialog whenever the Nexus API key is set or cleared.
     NexusApiKeyUpdated,
     NxmLinkReceived(String),

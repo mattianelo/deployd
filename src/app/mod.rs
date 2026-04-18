@@ -81,14 +81,6 @@ impl Component for App {
                         }
                     },
 
-                    pack_start = &gtk::Image {
-                        set_icon_name: Some("emblem-important-symbolic"),
-                        #[watch]
-                        set_visible: model.needs_deploy && model.has_games() && !model.initializing,
-                        set_pixel_size: 10,
-                        set_tooltip_text: Some("Unsaved changes — redeploy to apply"),
-                    },
-
                     // Profile management MenuButton — icon-only, opens action popover
                     #[local_ref]
                     pack_start = profile_menu_btn -> gtk::MenuButton {
@@ -1142,12 +1134,15 @@ impl Component for App {
             AppMsg::WelcomeWizardSkipped => {
                 self.welcome_wizard = None;
             }
-            AppMsg::RemoveGame(id) => self.handle_remove_game(id, &sender),
+            AppMsg::RemoveGame(id) => self.confirm_remove_game(id, root, &sender),
             AppMsg::RemoveCurrentGame => {
                 if let Some(game) = self.games.get(self.selected_game_idx) {
                     let id = game.id.clone();
-                    self.handle_remove_game(id, &sender);
+                    self.confirm_remove_game(id, root, &sender);
                 }
+            }
+            AppMsg::RemoveGameConfirmed { game_id, delete_mods } => {
+                self.handle_remove_game(game_id, delete_mods, &sender)
             }
             AppMsg::NexusApiKeyUpdated => self.handle_nexus_api_key_updated(),
             AppMsg::NxmLinkReceived(link) => self.handle_nxm_link_received(link, &sender),

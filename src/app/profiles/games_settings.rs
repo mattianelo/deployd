@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use gtk::gio;
 use gtk::prelude::*;
 use relm4::prelude::*;
 
@@ -209,7 +210,44 @@ impl App {
         sender.input(AppMsg::ScanDownloadsFolder);
     }
 
-    pub(crate) fn handle_remove_game(&mut self, game_id: String, sender: &ComponentSender<Self>) {
+    pub(crate) fn confirm_remove_game(
+        &mut self,
+        game_id: String,
+        root: &adw::Window,
+        sender: &ComponentSender<Self>,
+    ) {
+        let dialog = gtk::AlertDialog::builder()
+            .message("Stop managing this game?")
+            .detail("Installed mods stay in the cache and can be kept or permanently deleted.")
+            .buttons(["Cancel", "Remove only", "Remove & delete mods"])
+            .cancel_button(0)
+            .default_button(0)
+            .modal(true)
+            .build();
+        let s = sender.input_sender().clone();
+        dialog.choose(Some(root), None::<&gio::Cancellable>, move |r| match r {
+            Ok(1) => {
+                let _ = s.send(AppMsg::RemoveGameConfirmed {
+                    game_id,
+                    delete_mods: false,
+                });
+            }
+            Ok(2) => {
+                let _ = s.send(AppMsg::RemoveGameConfirmed {
+                    game_id,
+                    delete_mods: true,
+                });
+            }
+            _ => {}
+        });
+    }
+
+    pub(crate) fn handle_remove_game(
+        &mut self,
+        game_id: String,
+        delete_mods: bool,
+        sender: &ComponentSender<Self>,
+    ) {
         let Some(idx) = self.games.iter().position(|g| g.id == game_id) else {
             return;
         };
@@ -220,6 +258,20 @@ impl App {
         if let Some(tracker) = self.tracker.clone() {
             sender.oneshot_command(async move {
                 let _ = tracker.hide_game(&game_id).await;
+                if delete_mods
+                    && let Ok(mods) = tracker.list_mods(&game_id).await
+                {
+                    for m in mods {
+                        let _ = tracker.delete_plugins_for_mod(&m.id).await;
+                        let _ = tracker.delete_mod_files(&m.id).await;
+                        let _ = tracker.delete_mod(&m.id).await;
+                        if let Ok(cache) = crate::utils::paths::mod_cache_dir(&m.id)
+                            && cache.exists()
+                        {
+                            let _ = std::fs::remove_dir_all(&cache);
+                        }
+                    }
+                }
                 AppCmdMsg::PrioritySaved(Ok(()))
             });
         }

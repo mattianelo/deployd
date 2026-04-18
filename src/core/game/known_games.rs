@@ -96,7 +96,7 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         bethesda_reg_key: "",
         nexus_domain: "witcher",
         engine: GameEngine::Aurora,
-        save_game_subpath: None,
+        save_game_subpath: Some("Documents/The Witcher/saves"),
     },
     // ── Dragon Age: Origins ───────────────────────────────────────────────────
     // data_subdir is relative to the Wine user dir; deploy_dir() resolves <wine_user>/<data_subdir>.

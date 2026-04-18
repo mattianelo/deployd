@@ -2,5 +2,6 @@
 <gresources>
   <gresource prefix="/io/mattianelo/Deployd">
     <file>kofi-logo.svg</file>
+    <file>icons/scalable/status/notification-symbolic.svg</file>
   </gresource>
 </gresources>

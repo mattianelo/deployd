@@ -366,6 +366,10 @@ impl App {
                 let dirty_count = dirty.len();
                 self.dirty_plugins = dirty;
 
+                self.needs_deploy = true;
+                self.toaster
+                    .toast("Load order sorted by LOOT — deploy to apply");
+
                 if dirty_count > 0 {
                     self.toaster.toast(&format!(
                         "{dirty_count} plugin{} ha{} dirty edits — clean with xEdit",

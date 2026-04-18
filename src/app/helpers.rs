@@ -432,14 +432,14 @@ impl App {
         self.tool_buttons_box.set_visible(has_tools);
 
         if has_tools {
-            // Prepend a vertical separator to visually divide tool buttons from
-            // the general-action buttons (search, downloads, notifications).
+            // Append a vertical separator so it sits between the tool buttons
+            // and the main action buttons (deploy, search, notifications, etc.).
             let sep = gtk::Separator::builder()
                 .orientation(gtk::Orientation::Vertical)
                 .margin_top(6)
                 .margin_bottom(6)
                 .build();
-            self.tool_buttons_box.prepend(&sep);
+            self.tool_buttons_box.append(&sep);
         }
     }
 }

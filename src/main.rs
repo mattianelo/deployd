@@ -20,6 +20,14 @@ fn main() {
     gtk::init().unwrap();
     libadwaita::init().unwrap();
 
+    // Register bundled icons so themes that lack notification-symbolic use ours.
+    // GTK looks for icons at {prefix}/{size}/{context}/{name}.svg, so the prefix
+    // must be the parent of the scalable/ directory inside the gresource.
+    if let Some(display) = gtk::gdk::Display::default() {
+        gtk::IconTheme::for_display(&display)
+            .add_resource_path("/io/mattianelo/Deployd/icons");
+    }
+
     let gtk_app = libadwaita::Application::builder()
         .application_id("app.deployd")
         .flags(gio::ApplicationFlags::HANDLES_COMMAND_LINE)
@@ -87,6 +95,15 @@ fn main() {
         }
         .linked > button, .linked > menubutton > button {
             transition: background-color 200ms ease;
+        }
+        .linked > menubutton.suggested-action {
+            background: transparent;
+            box-shadow: none;
+        }
+        .linked > menubutton.suggested-action > button {
+            background: @accent_bg_color;
+            color: @accent_fg_color;
+            border-radius: 0 9999px 9999px 0;
         }
         .plugin-badge {
             font-size: 10px;
