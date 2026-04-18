@@ -206,7 +206,16 @@ impl SimpleComponent for AbsorbDialog {
             } else {
                 // Show the original on-disk casing so the user can distinguish vanilla
                 // game files (e.g. "DLCRobot.esm") from Deployd-deployed files (lowercase).
-                row.set_title(&file.game_rel_original);
+                // Strip the "../" prefix used internally for game-root files; show a
+                // subtitle instead so the location is unambiguous.
+                let display = file
+                    .game_rel_original
+                    .strip_prefix("../")
+                    .unwrap_or(&file.game_rel_original);
+                row.set_title(display);
+                if file.game_rel_original.starts_with("../") {
+                    row.set_subtitle("Game root file");
+                }
             }
             row.add_prefix(&check);
             row.set_activatable_widget(Some(&check));
@@ -241,9 +250,15 @@ impl SimpleComponent for AbsorbDialog {
                     .map(|(ef, _)| {
                         // Use original filesystem casing for the dest path so the deployer
                         // recreates the file with its real name (e.g. "Interface/map.swf"
-                        // not "interface/map.swf"). The "../" prefix is preserved from
-                        // game_rel_original for root-level files.
-                        (ef.abs_path.clone(), PathBuf::from(&ef.game_rel_original))
+                        // not "interface/map.swf"). Strip the "../" prefix used internally
+                        // for game-root files — route_aurora_paths re-adds it via the
+                        // natural system/launcher/register routing rules, producing a clean
+                        // tracked key that matches what the external scanner generates.
+                        let dest = ef
+                            .game_rel_original
+                            .strip_prefix("../")
+                            .unwrap_or(&ef.game_rel_original);
+                        (ef.abs_path.clone(), PathBuf::from(dest))
                     })
                     .collect();
                 self.window.set_visible(false);

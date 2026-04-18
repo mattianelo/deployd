@@ -304,6 +304,12 @@ impl Tracker {
         if let Err(e) = migrations::migrate_aurora_data_system_paths(&pool).await {
             eprintln!("Aurora data-system path migration failed (non-fatal): {e}");
         }
+        if let Err(e) = migrations::migrate_aurora_external_file_paths(&pool).await {
+            eprintln!("Aurora external-file path fix failed (non-fatal): {e}");
+        }
+        if let Err(e) = migrations::migrate_aurora_vanilla_root_paths(&pool).await {
+            eprintln!("Aurora vanilla root path migration failed (non-fatal): {e}");
+        }
         if let Err(e) = migrations::migrate_eclipse_file_paths(&pool).await {
             eprintln!("Eclipse path migration failed (non-fatal): {e}");
         }

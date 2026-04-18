@@ -1166,3 +1166,156 @@ pub(super) async fn migrate_eclipse_file_paths(pool: &SqlitePool) -> Result<()> 
     dlog!("[deployd] eclipse path migration complete");
     Ok(())
 }
+
+/// One-shot migration that fixes Witcher 1 mod_files entries created by the
+/// "Create Mod from External" bug where game-root files (system/, launcher/,
+/// register/) with a `../` prefix in `game_rel_original` were passed directly
+/// to `route_aurora_paths`, causing it to produce paths like
+/// `../system/../System/Scripts/foo.ws` instead of `../System/Scripts/foo.ws`.
+///
+/// The malformed key never matched the scanner's output, so the file was
+/// reported as external on every scan even after being absorbed into a mod.
+///
+/// All corrupt rows share the prefix `"../system/../"` (13 chars) because the
+/// root branch of `route_aurora_paths` always wraps unrecognised paths in
+/// `PathBuf::from("..").join("system").join(stripped)`.
+pub(super) async fn migrate_aurora_external_file_paths(pool: &SqlitePool) -> Result<()> {
+    let done: Option<String> =
+        sqlx::query_scalar("SELECT value FROM settings WHERE key = 'aurora_root_migration_v5'")
+            .fetch_optional(pool)
+            .await
+            .unwrap_or(None);
+
+    if done.is_some() {
+        return Ok(());
+    }
+
+    // "../system/../" is 13 ASCII chars; SUBSTR is 1-indexed, so offset 14 skips it.
+    let rows: Vec<(String, String, String)> = sqlx::query_as(
+        "SELECT mf.mod_id, mf.game_rel_lowercase, mf.game_rel_original
+         FROM mod_files mf
+         JOIN mods m ON mf.mod_id = m.id
+         WHERE m.game_id = 'witcher-1'
+           AND mf.game_rel_lowercase LIKE '../system/../%'",
+    )
+    .fetch_all(pool)
+    .await
+    .context("Failed to query witcher-1 mod_files for external-file path fix")?;
+
+    let mut tx = pool
+        .begin()
+        .await
+        .context("Failed to begin aurora external-file path migration")?;
+
+    const STRIP_LEN: usize = "../system/../".len(); // 13
+    for (mod_id, old_lowercase, old_original) in &rows {
+        let new_lowercase = format!("../{}", &old_lowercase[STRIP_LEN..]);
+        let new_original = format!("../{}", &old_original[STRIP_LEN..]);
+        sqlx::query(
+            "UPDATE mod_files
+             SET game_rel_lowercase = ?,
+                 game_rel_original  = ?
+             WHERE mod_id = ? AND game_rel_lowercase = ?",
+        )
+        .bind(&new_lowercase)
+        .bind(&new_original)
+        .bind(mod_id)
+        .bind(old_lowercase)
+        .execute(&mut *tx)
+        .await
+        .with_context(|| {
+            format!("Failed to fix mod_files path {old_lowercase} for mod {mod_id}")
+        })?;
+    }
+
+    // Also fix deployed_files for consistency (rebuilt on next deploy, but clean is better).
+    sqlx::query(
+        "UPDATE deployed_files
+         SET game_rel_lowercase = '../' || SUBSTR(game_rel_lowercase, 14),
+             game_rel_original  = '../' || SUBSTR(game_rel_original,  14)
+         WHERE game_id = 'witcher-1'
+           AND game_rel_lowercase LIKE '../system/../%'",
+    )
+    .execute(&mut *tx)
+    .await
+    .context("Failed to fix deployed_files paths for external-file path migration")?;
+
+    sqlx::query(
+        "INSERT INTO settings (key, value) VALUES ('aurora_root_migration_v5', 'true')
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    )
+    .execute(&mut *tx)
+    .await
+    .context("Failed to record aurora external-file path migration")?;
+
+    tx.commit()
+        .await
+        .context("Failed to commit aurora external-file path migration")?;
+
+    dlog!(
+        "[deployd] aurora external-file path fix: {} mod_file(s) corrected",
+        rows.len()
+    );
+
+    Ok(())
+}
+
+/// One-shot migration that adds the `../` prefix to Witcher 1 vanilla_files
+/// entries for `system/`, `launcher/`, and `register/` paths.
+///
+/// These entries were stored without the prefix when the vanilla snapshot was
+/// taken while Witcher 1 still had `data_subdir = "."`. In that mode, all
+/// files (including System/) were walked as data-dir files and stored with
+/// bare paths like `"system/foo.dll"`. After the migration to
+/// `data_subdir = "Data"`, the external-file scanner generates
+/// `"../system/foo.dll"` for those same root-level files, so the vanilla
+/// lookup key no longer matched and they were always reported as external.
+pub(super) async fn migrate_aurora_vanilla_root_paths(pool: &SqlitePool) -> Result<()> {
+    let done: Option<String> = sqlx::query_scalar(
+        "SELECT value FROM settings WHERE key = 'aurora_vanilla_root_migration_v1'",
+    )
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None);
+
+    if done.is_some() {
+        return Ok(());
+    }
+
+    let mut tx = pool
+        .begin()
+        .await
+        .context("Failed to begin aurora vanilla root migration")?;
+
+    let affected = sqlx::query(
+        "UPDATE vanilla_files
+         SET game_rel_lowercase = '../' || game_rel_lowercase
+         WHERE game_id = 'witcher-1'
+           AND (  game_rel_lowercase LIKE 'system/%'
+               OR game_rel_lowercase LIKE 'launcher/%'
+               OR game_rel_lowercase LIKE 'register/%')",
+    )
+    .execute(&mut *tx)
+    .await
+    .context("Failed to update vanilla_files paths for witcher-1")?
+    .rows_affected();
+
+    sqlx::query(
+        "INSERT INTO settings (key, value) VALUES ('aurora_vanilla_root_migration_v1', 'true')
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    )
+    .execute(&mut *tx)
+    .await
+    .context("Failed to record aurora vanilla root migration")?;
+
+    tx.commit()
+        .await
+        .context("Failed to commit aurora vanilla root migration")?;
+
+    dlog!(
+        "[deployd] aurora vanilla root migration: {} vanilla_file(s) re-pathed to game root",
+        affected
+    );
+
+    Ok(())
+}
