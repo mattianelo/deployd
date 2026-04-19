@@ -20,7 +20,7 @@ pub use metadata::{
 };
 pub use tools::{archive_mod_dir, detect_tool_path, tool_presets_for};
 pub(crate) use wine::linux_path_to_wine_path;
-pub use wine::{WineConfig, WineLauncher, detect_wine_config, proton_runtime_available};
+pub use wine::{WineConfig, WineLauncher, detect_wine_config, proton_runtime_available, snap_wine_available};
 
 pub struct KnownGameOption {
     pub deployd_id: &'static str,

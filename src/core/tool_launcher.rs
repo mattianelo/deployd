@@ -9,6 +9,9 @@ use crate::models::game::Game;
 use crate::models::tool::Tool;
 use crate::utils::paths;
 
+/// Suppress Mono/Gecko installer popups and the Wine menu builder for all tool launches.
+const WINE_SILENT_DLL_OVERRIDES: &str = "mscoree,mshtml=d;winemenubuilder.exe=d";
+
 /// Launch a Windows tool via Wine/Proton.
 ///
 /// Invokes the tool directly under the Proton GE wine binary (bypassing
@@ -26,19 +29,34 @@ pub fn launch_tool(
         return Err(anyhow!("Tool executable not found: {}", tool.exe_path));
     }
 
-    let game::WineLauncher::Wine(bin) = &wine_config.launcher;
-    let wine_bin = resolve_wine64(bin);
-    ensure_bethesda_reg_key(game, wine_config, &wine_bin);
     game::ensure_ini_symlinks(game);
     ensure_bodyslide_config(tool, game, wine_config);
     ensure_named_mods_drive(wine_config);
     ensure_no_x_drive_conflict(wine_config);
-    dlog!(
-        "deployd: launching tool '{}' | wine={}",
-        tool.name,
-        wine_bin.display()
-    );
-    let cmd = build_wine_command(&wine_bin, tool, game, wine_config);
+
+    let cmd = match &wine_config.launcher {
+        game::WineLauncher::Wine(bin) => {
+            let wine_bin = resolve_wine64(bin);
+            ensure_bethesda_reg_key(game, wine_config, &wine_bin, None);
+            dlog!(
+                "deployd: launching tool '{}' | wine={}",
+                tool.name,
+                wine_bin.display()
+            );
+            build_wine_command(&wine_bin, tool, game, wine_config)
+        }
+        game::WineLauncher::SnapWine { wine_bin, wine_platform, wine_runtime } => {
+            let wine_bin = resolve_wine64(wine_bin);
+            let ld_lib = snap_ld_library_path(wine_platform, wine_runtime);
+            ensure_bethesda_reg_key(game, wine_config, &wine_bin, Some(&ld_lib));
+            dlog!(
+                "deployd: launching tool '{}' | snap-wine={}",
+                tool.name,
+                wine_bin.display()
+            );
+            build_snap_wine_command(&wine_bin, wine_platform, wine_runtime, tool, game, wine_config)
+        }
+    };
     spawn_tool(cmd, &tool.name, on_exit)
 
     // UMU: commented out — pressure-vessel/bwrap blocked on AppImage + Snap.
@@ -111,6 +129,41 @@ fn spawn_tool(
     Ok(pid)
 }
 
+/// Build a command that runs the tool via Wine from the snap content interface.
+///
+/// Does NOT call sommelier — sommelier unconditionally overrides WINEPREFIX, which conflicts
+/// with deployd's per-game prefix management. Instead, we call the wine binary directly and
+/// mirror sommelier's LD_LIBRARY_PATH setup from wine-platform and wine-runtime mounts.
+/// `$LIB` in the path is expanded by glibc's dynamic linker to the per-arch lib directory.
+fn build_snap_wine_command(
+    wine_bin: &Path,
+    wine_platform: &Path,
+    wine_runtime: &Path,
+    tool: &Tool,
+    game: &Game,
+    wine_config: &WineConfig,
+) -> Command {
+    let compat_data = strip_pfx_suffix(&wine_config.prefix);
+    let mut cmd = Command::new(wine_bin);
+    cmd.env("WINEPREFIX", &wine_config.prefix)
+        .env("WINEDEBUG", "-all")
+        .env("STEAM_COMPAT_DATA_PATH", &compat_data);
+
+    cmd.env("LD_LIBRARY_PATH", snap_ld_library_path(wine_platform, wine_runtime));
+
+    let dri_path = snap_dri_drivers_path(wine_runtime);
+    cmd.env("LIBGL_DRIVERS_PATH", &dri_path)
+        .env("LIBVA_DRIVERS_PATH", &dri_path)
+        .env("WINEDLLOVERRIDES", WINE_SILENT_DLL_OVERRIDES);
+
+    cmd.arg(&tool.exe_path);
+    for arg in tool.custom_args.split_whitespace() {
+        cmd.arg(arg);
+    }
+    cmd.current_dir(effective_cwd(tool, game));
+    cmd
+}
+
 /// Build a command that runs the tool under plain Wine.
 fn build_wine_command(
     wine_bin: &PathBuf,
@@ -124,6 +177,8 @@ fn build_wine_command(
     cmd.env("WINEPREFIX", &wine_config.prefix)
         .env("WINEDEBUG", "-all")
         .env("STEAM_COMPAT_DATA_PATH", &compat_data);
+
+    cmd.env("WINEDLLOVERRIDES", WINE_SILENT_DLL_OVERRIDES);
 
     if let Some(proton_dir) = &wine_config.proton_dir {
         let lib_dir = proton_dir.join("files/lib");
@@ -190,7 +245,25 @@ fn strip_pfx_suffix(prefix: &Path) -> PathBuf {
 ///
 /// GOG installers only create `GOG.com\Games\...` keys, but tools like xEdit look for
 /// `Bethesda Softworks\<Game>\Installed Path`. This runs `wine reg add` to create it if missing.
-fn ensure_bethesda_reg_key(game: &Game, wine_config: &WineConfig, wine_bin: &PathBuf) {
+fn snap_ld_library_path(wine_platform: &Path, wine_runtime: &Path) -> String {
+    format!(
+        "{p}/lib:{p}/lib64:{r}/lib:{r}/$LIB:{r}/usr/lib:{r}/usr/$LIB:{r}/usr/$LIB/dri:{r}/usr/$LIB/pulseaudio:{r}/usr/$LIB/samba",
+        p = wine_platform.display(),
+        r = wine_runtime.display(),
+    )
+}
+
+/// Mesa DRI driver search path for both Wine arches on amd64.
+///
+/// Mesa's DRI loader doesn't expand `$LIB` tokens — must use concrete arch dirs.
+fn snap_dri_drivers_path(wine_runtime: &Path) -> String {
+    format!(
+        "{r}/usr/lib/x86_64-linux-gnu/dri:{r}/usr/lib/i386-linux-gnu/dri",
+        r = wine_runtime.display(),
+    )
+}
+
+fn ensure_bethesda_reg_key(game: &Game, wine_config: &WineConfig, launcher_bin: &Path, ld_library_path: Option<&str>) {
     let Some((reg_key, wine_path)) = game::missing_bethesda_reg_key(game) else {
         return; // Key already exists
     };
@@ -213,11 +286,14 @@ fn ensure_bethesda_reg_key(game: &Game, wine_config: &WineConfig, wine_bin: &Pat
     .map(|s| s.to_string())
     .collect();
 
-    let result = Command::new(wine_bin)
-        .env("WINEPREFIX", &wine_config.prefix)
-        .env("WINEDEBUG", "-all")
-        .args(&reg_args)
-        .output();
+    let mut cmd = Command::new(launcher_bin);
+    cmd.env("WINEPREFIX", &wine_config.prefix)
+        .env("WINEDEBUG", "-all");
+    if let Some(ld) = ld_library_path {
+        cmd.env("LD_LIBRARY_PATH", ld);
+    }
+    cmd.args(&reg_args);
+    let result = cmd.output();
 
     match result {
         Ok(output) if output.status.success() => {

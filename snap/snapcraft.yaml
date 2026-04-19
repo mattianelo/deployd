@@ -21,11 +21,15 @@ lint:
     - library
 
 plugs:
-  bwrap-overflow-ids:
-    interface: system-files
-    read:
-      - /proc/sys/kernel/overflowuid
-      - /proc/sys/kernel/overflowgid
+  wine-runtime:
+    interface: content
+    content: wine-runtime-c22
+    target: $SNAP/wine-runtime
+    default-provider: wine-platform-runtime-core22:wine-runtime-c22
+  wine-9-staging:
+    interface: content
+    target: $SNAP/wine-platform
+    default-provider: wine-platform-9-staging-core22
 
 slots:
   dbus-deployd:
@@ -41,9 +45,8 @@ apps:
       - home              # Game directories, wine prefixes, mod archives
       - network           # Nexus Mods API and NXM downloads
       - network-bind      # Local WebSocket listener for NXM scheme handler
-      - mount-observe     # UMU Launcher reads /proc/mounts to verify tmpfs for downloads
-      - opengl            # Vulkan ICD/layer enumeration at GTK4 startup
-      - bwrap-overflow-ids  # srt-bwrap reads overflow{uid,gid} for device UID setup
+      - wine-runtime      # Wine binaries via content interface
+      - wine-9-staging    # Wine staging libraries via content interface
     slots: [dbus-deployd]
     desktop: usr/share/applications/deployd.desktop
 
@@ -71,8 +74,11 @@ parts:
       install -Dm644 data/deployd.metainfo.xml \
         "$CRAFT_PART_INSTALL/usr/share/metainfo/deployd.metainfo.xml"
 
-  umu-launcher:
-    plugin: nil
-    override-build: |
-      tar -xf "$CRAFT_PROJECT_DIR/snap/local/umu-launcher-zipapp.tar" -C "$CRAFT_PART_BUILD"
-      install -Dm755 "$CRAFT_PART_BUILD/umu/umu-run" "$CRAFT_PART_INSTALL/usr/bin/umu-run"
+  sommelier-core:
+    plugin: make
+    source: snap/local/sommelier-core
+    # source: https://github.com/snapcrafters/sommelier-core.git
+    # source-branch: "1.0"
+    build-packages:
+      - gcc-multilib
+      - libc6-dev-i386

@@ -30,6 +30,16 @@ pub(crate) fn find_wine_user_dir(game: &Game) -> Option<PathBuf> {
 pub enum WineLauncher {
     /// Plain `wine` or `wine64` binary — the tool is invoked directly.
     Wine(PathBuf),
+    /// Wine from the snap content interface — binary and library paths come from the mounted
+    /// wine-platform and wine-runtime snaps. Sommelier is NOT used as the runner because it
+    /// unconditionally overrides WINEPREFIX; we resolve wine directly instead.
+    SnapWine {
+        wine_bin: PathBuf,
+        /// `$SNAP/wine-platform/wine-{release}` directory.
+        wine_platform: PathBuf,
+        /// `$SNAP/wine-runtime` directory.
+        wine_runtime: PathBuf,
+    },
     // UMU: commented out — pressure-vessel/bwrap blocked on AppImage + Snap strict confinement.
     // Umu(PathBuf),
 }
@@ -47,21 +57,50 @@ pub struct WineConfig {
 /// Resolve the Wine/Proton configuration for a game.
 ///
 /// Priority:
-/// 1. Proton GE direct wine: use `files/bin-wow64/wine` from an installed
-///    Proton GE runtime (bypasses pressure-vessel — no user namespace needed).
-/// 2. Plain Wine: falls back to `wine64` / `wine` on `$PATH`.
+/// 1. Snap content interface (snap only): wine binary from `$SNAP/wine-platform/wine-*/bin/wine`.
+///    Sommelier is NOT used as the runner — it unconditionally overrides WINEPREFIX, which
+///    conflicts with deployd's per-game prefix management.
+/// 2. Proton GE direct wine: `files/bin-wow64/wine` from a user-installed Proton GE runtime.
+/// 3. Plain Wine: `wine64` / `wine` on `$PATH`.
 ///
-/// Returns `None` if no suitable launcher is found or if no wine prefix is
-/// configured for the game.
+/// Returns `None` if no suitable launcher is found or if no wine prefix is configured.
 pub fn detect_wine_config(game: &Game) -> Option<WineConfig> {
     let prefix = game.wine_prefix.clone()?;
+    if let Some((wine_bin, wine_platform, wine_runtime)) = find_snap_wine() {
+        return Some(WineConfig {
+            prefix,
+            launcher: WineLauncher::SnapWine { wine_bin, wine_platform, wine_runtime },
+            proton_dir: None,
+        });
+    }
     let proton_dir = find_proton_runtime();
     let launcher = resolve_launcher(proton_dir.as_deref())?;
-    Some(WineConfig {
-        prefix,
-        launcher,
-        proton_dir,
-    })
+    Some(WineConfig { prefix, launcher, proton_dir })
+}
+
+/// Find the wine binary from the snap content interface mounts.
+/// Returns `(wine_bin, wine_platform_dir, wine_runtime_dir)`.
+fn find_snap_wine() -> Option<(PathBuf, PathBuf, PathBuf)> {
+    let snap = PathBuf::from(std::env::var_os("SNAP")?);
+    let wine_runtime = snap.join("wine-runtime");
+    if !wine_runtime.is_dir() {
+        return None;
+    }
+    let wine_platform_root = snap.join("wine-platform");
+    for entry in std::fs::read_dir(&wine_platform_root).ok()?.flatten() {
+        let platform_dir = entry.path();
+        let wine_bin = platform_dir.join("bin/wine");
+        if wine_bin.is_file() {
+            return Some((wine_bin, platform_dir, wine_runtime));
+        }
+    }
+    None
+}
+
+/// Returns `true` when running in a snap with Wine provided via the content interface.
+/// In this case Wine is provided via the content interface — no Proton GE download needed.
+pub fn snap_wine_available() -> bool {
+    find_snap_wine().is_some()
 }
 
 /// Find the wine binary inside a Proton installation directory.

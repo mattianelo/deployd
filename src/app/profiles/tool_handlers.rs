@@ -26,7 +26,8 @@ impl App {
         };
 
         // If Proton GE is not yet installed, prompt to download before launching.
-        if !game::proton_runtime_available() {
+        // Skip when sommelier is active — Wine comes from the content interface, not Proton GE.
+        if !game::proton_runtime_available() && !game::snap_wine_available() {
             sender.input(AppMsg::ConfirmProtonSetup(tool_id));
             return;
         }
