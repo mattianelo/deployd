@@ -15,13 +15,22 @@ pub async fn download_proton_ge() -> Result<()> {
         .build()
         .context("build reqwest client")?;
 
-    let release: serde_json::Value = client
+    let api_response = client
         .get(RELEASES_URL)
         .send()
         .await
-        .context("fetch GitHub release")?
-        .error_for_status()
-        .context("GitHub API error")?
+        .context("fetch GitHub release")?;
+
+    if !api_response.status().is_success() {
+        let status = api_response.status();
+        let body = api_response
+            .text()
+            .await
+            .unwrap_or_else(|_| String::from("<unreadable>"));
+        anyhow::bail!("GitHub API error {status}: {body}");
+    }
+
+    let release: serde_json::Value = api_response
         .json()
         .await
         .context("parse release JSON")?;

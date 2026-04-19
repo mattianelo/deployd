@@ -235,7 +235,11 @@ pub fn find_proton_runtime() -> Option<PathBuf> {
                 continue;
             }
             // Accept any directory that looks like a valid Proton installation.
-            if path.join("proton").exists() || path.join("files/bin/wine64").exists() {
+            // WoW64 builds (Proton GE 9+) use bin-wow64/wine instead of bin/wine64.
+            if path.join("proton").exists()
+                || path.join("files/bin-wow64/wine").exists()
+                || path.join("files/bin/wine64").exists()
+            {
                 return Some(path);
             }
         }
