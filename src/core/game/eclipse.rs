@@ -10,85 +10,13 @@ use quick_xml::events::Event;
 /// Resolves to `game_data.parent().parent()` (two levels up from `Documents/BioWare/Dragon Age`).
 pub const DOCS_PREFIX: &str = "~docs~/";
 
-/// Recognised first-level subdirectories inside Dragon Age's `packages/core/override/`.
-///
-/// Any leading path component that is **not** in this set is treated as a
-/// mod-name wrapper and stripped, so that two mods shipping the same file under
-/// different wrapper directories are correctly identified as conflicting.
-///
-/// Unlike Aurora (NWN-based), Dragon Age's resource system addresses files by
-/// their full path within the virtual file system, so we preserve the structure
-/// *below* the first recognised content directory — only the outer wrappers are
-/// removed.
-const ECLIPSE_OVERRIDE_CONTENT_DIRS: &[&str] = &[
-    "2da",
-    "animationevents",
-    "animations",
-    "areas",
-    "characters",
-    "conversations",
-    "creatures",
-    "environments",
-    "gui",
-    "items",
-    "levels",
-    "lights",
-    "materials",
-    "models",
-    "movies",
-    "plots",
-    "quests",
-    "scripts",
-    "sound",
-    "sounds",
-    "spells",
-    "store",
-    "textures",
-    "triggers",
-    "vfx",
-];
-
-/// Strip leading unrecognised wrapper directories from a path destined for
-/// `packages/core/override/`.
-///
-/// Iterates path components until it finds one that is either a recognised
-/// content directory (see `ECLIPSE_OVERRIDE_CONTENT_DIRS`) or there are no
-/// more components (bare filename).  Everything before that point is dropped.
-///
-/// Examples:
-/// - `ModName/textures/armor.dds`    → `textures/armor.dds`
-/// - `Pkg/Sub/textures/armor.dds`    → `textures/armor.dds`
-/// - `textures/armor.dds`            → unchanged
-/// - `armor.gda`                     → unchanged (bare file)
-fn strip_eclipse_override_wrappers(rel: &str) -> String {
-    let mut s = rel.to_owned();
-    loop {
-        let Some(slash) = s.find('/') else {
-            break; // bare filename — nothing to strip
-        };
-        let first = &s[..slash];
-        if ECLIPSE_OVERRIDE_CONTENT_DIRS.contains(&first.to_lowercase().as_str()) {
-            break; // hit a recognised content directory — stop
-        }
-        // Unrecognised leading component — strip it and try again.
-        let rest = &s[slash + 1..];
-        if rest.is_empty() {
-            s = String::new();
-            break;
-        }
-        s = rest.to_owned();
-    }
-    s
-}
-
 /// Route a file path for Eclipse deployment.
 ///
 /// - Paths already under `addins/`, `packages/`, or `settings/` pass through
 ///   unchanged — they are DAZIP-expanded or already correctly addressed.
-/// - All other paths are routed into `packages/core/override/`.  Leading
-///   unrecognised wrapper directories (e.g. a mod-name folder) are stripped
-///   first so that conflict detection compares files by their canonical game
-///   path.
+/// - All other paths are routed into `packages/core/override/` with their
+///   full relative structure preserved. The outer mod-name wrapper is already
+///   stripped upstream by `file_list::detect_wrapper`.
 pub fn route_path(rel: &str) -> String {
     let lower = rel.to_lowercase();
     if lower.starts_with("addins/")
@@ -97,8 +25,7 @@ pub fn route_path(rel: &str) -> String {
     {
         rel.to_string()
     } else {
-        let stripped = strip_eclipse_override_wrappers(rel);
-        format!("packages/core/override/{stripped}")
+        format!("packages/core/override/{rel}")
     }
 }
 
@@ -222,18 +149,18 @@ mod tests {
     }
 
     #[test]
-    fn single_wrapper_stripped() {
+    fn subfolder_structure_preserved() {
         assert_eq!(
             route_path("ModName/textures/armor.dds"),
-            "packages/core/override/textures/armor.dds"
+            "packages/core/override/ModName/textures/armor.dds"
         );
     }
 
     #[test]
-    fn double_wrapper_stripped() {
+    fn unrecognised_subdir_preserved() {
         assert_eq!(
-            route_path("Pkg/Sub/textures/armor.dds"),
-            "packages/core/override/textures/armor.dds"
+            route_path("Portraits/human_female/face.dds"),
+            "packages/core/override/Portraits/human_female/face.dds"
         );
     }
 

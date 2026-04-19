@@ -24,8 +24,7 @@ fn main() {
     // GTK looks for icons at {prefix}/{size}/{context}/{name}.svg, so the prefix
     // must be the parent of the scalable/ directory inside the gresource.
     if let Some(display) = gtk::gdk::Display::default() {
-        gtk::IconTheme::for_display(&display)
-            .add_resource_path("/io/mattianelo/Deployd/icons");
+        gtk::IconTheme::for_display(&display).add_resource_path("/io/mattianelo/Deployd/icons");
     }
 
     let gtk_app = libadwaita::Application::builder()

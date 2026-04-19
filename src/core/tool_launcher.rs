@@ -45,7 +45,11 @@ pub fn launch_tool(
             );
             build_wine_command(&wine_bin, tool, game, wine_config)
         }
-        game::WineLauncher::SnapWine { wine_bin, wine_platform, wine_runtime } => {
+        game::WineLauncher::SnapWine {
+            wine_bin,
+            wine_platform,
+            wine_runtime,
+        } => {
             let wine_bin = resolve_wine64(wine_bin);
             let ld_lib = snap_ld_library_path(wine_platform, wine_runtime);
             ensure_bethesda_reg_key(game, wine_config, &wine_bin, Some(&ld_lib));
@@ -54,7 +58,14 @@ pub fn launch_tool(
                 tool.name,
                 wine_bin.display()
             );
-            build_snap_wine_command(&wine_bin, wine_platform, wine_runtime, tool, game, wine_config)
+            build_snap_wine_command(
+                &wine_bin,
+                wine_platform,
+                wine_runtime,
+                tool,
+                game,
+                wine_config,
+            )
         }
     };
     spawn_tool(cmd, &tool.name, on_exit)
@@ -149,7 +160,10 @@ fn build_snap_wine_command(
         .env("WINEDEBUG", "-all")
         .env("STEAM_COMPAT_DATA_PATH", &compat_data);
 
-    cmd.env("LD_LIBRARY_PATH", snap_ld_library_path(wine_platform, wine_runtime));
+    cmd.env(
+        "LD_LIBRARY_PATH",
+        snap_ld_library_path(wine_platform, wine_runtime),
+    );
 
     let dri_path = snap_dri_drivers_path(wine_runtime);
     cmd.env("LIBGL_DRIVERS_PATH", &dri_path)
@@ -263,7 +277,12 @@ fn snap_dri_drivers_path(wine_runtime: &Path) -> String {
     )
 }
 
-fn ensure_bethesda_reg_key(game: &Game, wine_config: &WineConfig, launcher_bin: &Path, ld_library_path: Option<&str>) {
+fn ensure_bethesda_reg_key(
+    game: &Game,
+    wine_config: &WineConfig,
+    launcher_bin: &Path,
+    ld_library_path: Option<&str>,
+) {
     let Some((reg_key, wine_path)) = game::missing_bethesda_reg_key(game) else {
         return; // Key already exists
     };
@@ -421,9 +440,7 @@ fn ensure_no_x_drive_conflict(wine_config: &WineConfig) {
             eprintln!("deployd: failed to remove x: drive: {e}");
             let _ = std::fs::remove_file(&new_drive);
         } else {
-            dlog!(
-                "deployd: remapped X: → {new_letter}: (Proton reserves X: for runtime)"
-            );
+            dlog!("deployd: remapped X: → {new_letter}: (Proton reserves X: for runtime)");
         }
     }
 }

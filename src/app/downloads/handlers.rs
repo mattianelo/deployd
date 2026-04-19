@@ -706,11 +706,17 @@ impl App {
             let guard = self.downloads.guard();
             guard.get(idx).map(|r| r.entry.id.clone())
         };
-        let Some(download_id) = download_id else { return };
+        let Some(download_id) = download_id else {
+            return;
+        };
         self.update_download_status(&download_id, DownloadStatus::Paused, "Paused");
     }
 
-    pub(crate) fn handle_resume_download(&mut self, index: DynamicIndex, sender: &ComponentSender<Self>) {
+    pub(crate) fn handle_resume_download(
+        &mut self,
+        index: DynamicIndex,
+        sender: &ComponentSender<Self>,
+    ) {
         let idx = index.current_index();
         let (download_id, nexus_ids) = {
             let guard = self.downloads.guard();

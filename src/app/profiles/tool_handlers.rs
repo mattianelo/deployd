@@ -100,7 +100,9 @@ impl App {
         self.status_msg = None;
         match result {
             Ok(()) => self.handle_launch_tool(tool_id, sender),
-            Err(e) => self.toaster.toast(&format!("Proton GE download failed: {e}")),
+            Err(e) => self
+                .toaster
+                .toast(&format!("Proton GE download failed: {e}")),
         }
     }
 

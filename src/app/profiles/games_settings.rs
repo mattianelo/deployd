@@ -258,9 +258,7 @@ impl App {
         if let Some(tracker) = self.tracker.clone() {
             sender.oneshot_command(async move {
                 let _ = tracker.hide_game(&game_id).await;
-                if delete_mods
-                    && let Ok(mods) = tracker.list_mods(&game_id).await
-                {
+                if delete_mods && let Ok(mods) = tracker.list_mods(&game_id).await {
                     for m in mods {
                         let _ = tracker.delete_plugins_for_mod(&m.id).await;
                         let _ = tracker.delete_mod_files(&m.id).await;

@@ -1143,9 +1143,10 @@ impl Component for App {
                     self.confirm_remove_game(id, root, &sender);
                 }
             }
-            AppMsg::RemoveGameConfirmed { game_id, delete_mods } => {
-                self.handle_remove_game(game_id, delete_mods, &sender)
-            }
+            AppMsg::RemoveGameConfirmed {
+                game_id,
+                delete_mods,
+            } => self.handle_remove_game(game_id, delete_mods, &sender),
             AppMsg::NexusApiKeyUpdated => self.handle_nexus_api_key_updated(),
             AppMsg::NxmLinkReceived(link) => self.handle_nxm_link_received(link, &sender),
             AppMsg::CheckUpdatesClicked => self.handle_check_updates(&sender),

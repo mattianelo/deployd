@@ -69,13 +69,21 @@ pub fn detect_wine_config(game: &Game) -> Option<WineConfig> {
     if let Some((wine_bin, wine_platform, wine_runtime)) = find_snap_wine() {
         return Some(WineConfig {
             prefix,
-            launcher: WineLauncher::SnapWine { wine_bin, wine_platform, wine_runtime },
+            launcher: WineLauncher::SnapWine {
+                wine_bin,
+                wine_platform,
+                wine_runtime,
+            },
             proton_dir: None,
         });
     }
     let proton_dir = find_proton_runtime();
     let launcher = resolve_launcher(proton_dir.as_deref())?;
-    Some(WineConfig { prefix, launcher, proton_dir })
+    Some(WineConfig {
+        prefix,
+        launcher,
+        proton_dir,
+    })
 }
 
 /// Find the wine binary from the snap content interface mounts.

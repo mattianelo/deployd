@@ -317,7 +317,10 @@ mod tests {
     #[test]
     fn override_subfolder_structure_is_preserved() {
         assert_eq!(
-            dests(route("Data", vec![("src", "Override/ModName/textures/foo.dds")])),
+            dests(route(
+                "Data",
+                vec![("src", "Override/ModName/textures/foo.dds")]
+            )),
             vec![PathBuf::from("Override/ModName/textures/foo.dds")]
         );
     }
@@ -325,7 +328,10 @@ mod tests {
     #[test]
     fn nested_override_subdir_is_preserved() {
         assert_eq!(
-            dests(route("Data", vec![("src", "Override/items/keys/it_key_019.uti")])),
+            dests(route(
+                "Data",
+                vec![("src", "Override/items/keys/it_key_019.uti")]
+            )),
             vec![PathBuf::from("Override/items/keys/it_key_019.uti")]
         );
     }

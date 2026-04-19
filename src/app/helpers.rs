@@ -259,7 +259,10 @@ impl App {
     }
 
     pub(crate) fn active_downloads_count(&self) -> usize {
-        self.downloads.iter().filter(|d| d.entry.is_active()).count()
+        self.downloads
+            .iter()
+            .filter(|d| d.entry.is_active())
+            .count()
     }
 
     pub(crate) fn completed_downloads_count(&self) -> usize {
@@ -303,8 +306,7 @@ impl App {
                         // Hide separators during search or when a filter chip is active.
                         row.visible = empty && matches!(mod_filter, ModFilter::All);
                     } else {
-                        let name_match =
-                            empty || row.mod_name().to_lowercase().contains(&query);
+                        let name_match = empty || row.mod_name().to_lowercase().contains(&query);
                         let filter_match = match mod_filter {
                             ModFilter::All => true,
                             ModFilter::Enabled => {
@@ -336,8 +338,7 @@ impl App {
             let mut guard = self.downloads.guard();
             for i in 0..guard.len() {
                 if let Some(row) = guard.get_mut(i) {
-                    let name_match =
-                        empty || row.entry.mod_name.to_lowercase().contains(&query);
+                    let name_match = empty || row.entry.mod_name.to_lowercase().contains(&query);
                     let filter_match = match download_filter {
                         DownloadFilter::All => true,
                         DownloadFilter::Active => row.entry.is_active(),
