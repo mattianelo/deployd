@@ -1103,10 +1103,12 @@ impl Component for App {
             AppMsg::GameFolderGranted(path) => self.handle_game_folder_granted(path, &sender),
             AppMsg::LaunchTool(name) => self.handle_launch_tool(name, &sender),
             AppMsg::ToolExited(name, error) => self.handle_tool_exited(name, error, &sender),
-            AppMsg::ConfirmUmuSetup(tool_id) => {
-                self.handle_confirm_umu_setup(tool_id, root, &sender)
+            AppMsg::ConfirmProtonSetup(tool_id) => {
+                self.handle_confirm_proton_setup(tool_id, root, &sender)
             }
-            AppMsg::UmuSetupConfirmed(tool_id) => self.handle_umu_setup_confirmed(tool_id, &sender),
+            AppMsg::ProtonSetupConfirmed(tool_id) => {
+                self.handle_proton_setup_confirmed(tool_id, &sender)
+            }
             AppMsg::ManageToolsClicked => self.handle_manage_tools_clicked(root, &sender),
             AppMsg::ToolAdded(tool) => self.handle_tool_added(tool, &sender),
             AppMsg::ToolRemoved(name) => self.handle_tool_removed(name, &sender),
@@ -1372,6 +1374,9 @@ impl Component for App {
             AppCmdMsg::SavesSynced(result) => self.handle_cmd_saves_synced(result),
             AppCmdMsg::LastDeployedProfileLoaded(id) => self.last_deployed_profile_id = id,
             AppCmdMsg::AppUpdateResult(result) => self.handle_cmd_app_update_result(result),
+            AppCmdMsg::ProtonDownloaded { result, tool_id } => {
+                self.handle_proton_downloaded(result, tool_id, &sender)
+            }
             AppCmdMsg::GamesPersisted => {
                 // Reset the selection sentinel so handle_game_selected's same-index
                 // guard does not skip the reload when the index was already 0.

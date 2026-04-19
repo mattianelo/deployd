@@ -3,19 +3,16 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, anyhow};
 
-use crate::core::game::{self, WineConfig, WineLauncher};
+use crate::core::game::{self, WineConfig};
 use crate::dlog;
 use crate::models::game::Game;
 use crate::models::tool::Tool;
 use crate::utils::paths;
 
-/// Launch a Windows tool via Wine or UMU/Proton.
+/// Launch a Windows tool via Wine/Proton.
 ///
-/// Dispatches to the appropriate launch path based on the launcher stored in
-/// `wine_config`:
-/// - `WineLauncher::Wine` — runs the tool directly under plain Wine/wine64.
-/// - `WineLauncher::Umu` — runs via `umu-run`, which selects (and downloads if
-///   absent) a Proton GE runtime automatically.
+/// Invokes the tool directly under the Proton GE wine binary (bypassing
+/// pressure-vessel/bwrap) or falls back to system wine.
 ///
 /// `on_exit` is called from a background thread once the process exits.
 pub fn launch_tool(
@@ -29,38 +26,30 @@ pub fn launch_tool(
         return Err(anyhow!("Tool executable not found: {}", tool.exe_path));
     }
 
-    match &wine_config.launcher {
-        WineLauncher::Wine(bin) => {
-            let wine_bin = resolve_wine64(bin);
-            ensure_bethesda_reg_key(game, wine_config, &wine_bin);
-            game::ensure_ini_symlinks(game);
-            ensure_bodyslide_config(tool, game, wine_config);
-            ensure_named_mods_drive(wine_config);
-            dlog!(
-                "deployd: launching tool '{}' | wine={}",
-                tool.name,
-                wine_bin.display()
-            );
-            let cmd = build_wine_command(&wine_bin, tool, game, wine_config);
-            spawn_tool(cmd, &tool.name, on_exit)
-        }
-        WineLauncher::Umu(bin) => {
-            // Registry key setup requires a bare Wine binary (wine reg add) which is
-            // not directly available through UMU — skip it.  INI symlinks and the
-            // BodySlide config are filesystem operations and work regardless.
-            game::ensure_ini_symlinks(game);
-            ensure_bodyslide_config(tool, game, wine_config);
-            ensure_named_mods_drive(wine_config);
-            ensure_no_x_drive_conflict(wine_config);
-            dlog!(
-                "deployd: launching tool '{}' | umu={}",
-                tool.name,
-                bin.display()
-            );
-            let cmd = build_umu_command(bin, tool, game, wine_config);
-            spawn_tool(cmd, &tool.name, on_exit)
-        }
-    }
+    let game::WineLauncher::Wine(bin) = &wine_config.launcher;
+    let wine_bin = resolve_wine64(bin);
+    ensure_bethesda_reg_key(game, wine_config, &wine_bin);
+    game::ensure_ini_symlinks(game);
+    ensure_bodyslide_config(tool, game, wine_config);
+    ensure_named_mods_drive(wine_config);
+    ensure_no_x_drive_conflict(wine_config);
+    dlog!(
+        "deployd: launching tool '{}' | wine={}",
+        tool.name,
+        wine_bin.display()
+    );
+    let cmd = build_wine_command(&wine_bin, tool, game, wine_config);
+    spawn_tool(cmd, &tool.name, on_exit)
+
+    // UMU: commented out — pressure-vessel/bwrap blocked on AppImage + Snap.
+    // WineLauncher::Umu(bin) => {
+    //     game::ensure_ini_symlinks(game);
+    //     ensure_bodyslide_config(tool, game, wine_config);
+    //     ensure_named_mods_drive(wine_config);
+    //     ensure_no_x_drive_conflict(wine_config);
+    //     let cmd = build_umu_command(bin, tool, game, wine_config);
+    //     spawn_tool(cmd, &tool.name, on_exit)
+    // }
 }
 
 /// Shared process-spawn logic for both Wine and UMU paths.
@@ -165,51 +154,27 @@ fn build_wine_command(
     cmd
 }
 
-/// Build a command that runs the tool via `umu-run`.
-///
-/// UMU resolves `PROTONPATH` to select the Proton runtime:
-/// - A concrete directory path → use that installation.
-/// - `"GE-Proton"` → download the latest Proton GE release on first use.
-fn build_umu_command(
-    umu_bin: &Path,
-    tool: &Tool,
-    game: &Game,
-    wine_config: &WineConfig,
-) -> Command {
-    let proton_path = game::find_proton_runtime()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "GE-Proton".to_string());
-
-    let compat_data = strip_pfx_suffix(&wine_config.prefix);
-
-    let mut cmd = Command::new(umu_bin);
-    // The snap GNOME extension injects PYTHONPATH pointing at its own stdlib,
-    // which breaks umu-run (a Python zipapp) at import time. Harmless no-op
-    // in AppImage context where these vars are never set.
-    cmd.env_remove("PYTHONPATH").env_remove("PYTHONHOME");
-    cmd.env("GAMEID", "0")
-        .env("WINEPREFIX", &wine_config.prefix)
-        .env("STEAM_COMPAT_DATA_PATH", &compat_data)
-        .env("PROTONPATH", &proton_path);
-    // In a snap, redirect UMU's data directory to SNAP_USER_COMMON so that
-    // downloaded Proton GE runtimes survive snap updates (XDG_DATA_HOME is
-    // revision-specific and is wiped on every update).
-    if let Ok(snap_common) = std::env::var("SNAP_USER_COMMON") {
-        cmd.env("XDG_DATA_HOME", snap_common);
-        // Strict snap confinement denies CLONE_NEWUSER, which pressure-vessel
-        // uses to create a user namespace. Disabling unsharing lets bwrap run
-        // without that capability.
-        cmd.env("PRESSURE_VESSEL_UNSHARE_USER", "0");
-    }
-
-    cmd.arg(&tool.exe_path);
-    for arg in tool.custom_args.split_whitespace() {
-        cmd.arg(arg);
-    }
-
-    cmd.current_dir(effective_cwd(tool, game));
-    cmd
-}
+// UMU: commented out — pressure-vessel/bwrap blocked on AppImage + Snap strict confinement.
+// fn build_umu_command(umu_bin: &Path, tool: &Tool, game: &Game, wine_config: &WineConfig) -> Command {
+//     let proton_path = game::find_proton_runtime()
+//         .map(|p| p.to_string_lossy().into_owned())
+//         .unwrap_or_else(|| "GE-Proton".to_string());
+//     let compat_data = strip_pfx_suffix(&wine_config.prefix);
+//     let mut cmd = Command::new(umu_bin);
+//     cmd.env_remove("PYTHONPATH").env_remove("PYTHONHOME");
+//     cmd.env("GAMEID", "0")
+//         .env("WINEPREFIX", &wine_config.prefix)
+//         .env("STEAM_COMPAT_DATA_PATH", &compat_data)
+//         .env("PROTONPATH", &proton_path);
+//     if let Ok(snap_common) = std::env::var("SNAP_USER_COMMON") {
+//         cmd.env("XDG_DATA_HOME", snap_common);
+//         cmd.env("PRESSURE_VESSEL_UNSHARE_USER", "0");
+//     }
+//     cmd.arg(&tool.exe_path);
+//     for arg in tool.custom_args.split_whitespace() { cmd.arg(arg); }
+//     cmd.current_dir(effective_cwd(tool, game));
+//     cmd
+// }
 
 /// If the prefix path ends with `pfx` (Proton layout), return its parent as
 /// the `STEAM_COMPAT_DATA_PATH` directory.  Otherwise return the path as-is.

@@ -30,9 +30,8 @@ pub(crate) fn find_wine_user_dir(game: &Game) -> Option<PathBuf> {
 pub enum WineLauncher {
     /// Plain `wine` or `wine64` binary — the tool is invoked directly.
     Wine(PathBuf),
-    /// UMU Launcher (`umu-run`) — manages Proton runtimes automatically and
-    /// downloads Proton GE on first use if no runtime is already present.
-    Umu(PathBuf),
+    // UMU: commented out — pressure-vessel/bwrap blocked on AppImage + Snap strict confinement.
+    // Umu(PathBuf),
 }
 
 #[derive(Debug, Clone)]
@@ -48,35 +47,63 @@ pub struct WineConfig {
 /// Resolve the Wine/Proton configuration for a game.
 ///
 /// Priority:
-/// 1. UMU Launcher: preferred when `umu-run` is available (bundled in the
-///    snap at `$SNAP/usr/bin/umu-run`, in the AppImage at
-///    `$APPDIR/usr/bin/umu-run`, or installed system-wide).
+/// 1. Proton GE direct wine: use `files/bin-wow64/wine` from an installed
+///    Proton GE runtime (bypasses pressure-vessel — no user namespace needed).
 /// 2. Plain Wine: falls back to `wine64` / `wine` on `$PATH`.
 ///
 /// Returns `None` if no suitable launcher is found or if no wine prefix is
 /// configured for the game.
 pub fn detect_wine_config(game: &Game) -> Option<WineConfig> {
     let prefix = game.wine_prefix.clone()?;
-    let launcher = resolve_launcher()?;
+    let proton_dir = find_proton_runtime();
+    let launcher = resolve_launcher(proton_dir.as_deref())?;
     Some(WineConfig {
         prefix,
         launcher,
-        proton_dir: None,
+        proton_dir,
     })
 }
 
-/// Resolve the best available launcher, preferring UMU over plain Wine.
-fn resolve_launcher() -> Option<WineLauncher> {
-    if let Some(umu) = resolve_umu_binary() {
-        return Some(WineLauncher::Umu(umu));
+/// Find the wine binary inside a Proton installation directory.
+///
+/// Prefers the WoW64 build (`files/bin-wow64/wine`) which handles both
+/// 32-bit and 64-bit Windows executables without a separate `wine64`.
+pub(crate) fn resolve_proton_wine_binary(proton_dir: &Path) -> Option<PathBuf> {
+    [
+        proton_dir.join("files/bin-wow64/wine"),
+        proton_dir.join("files/bin/wine64"),
+        proton_dir.join("files/bin/wine"),
+    ]
+    .into_iter()
+    .find(|p| p.is_file())
+}
+
+/// Resolve the best available launcher.
+///
+/// Prefers direct Proton GE wine over system wine.
+/// UMU is commented out — pressure-vessel/bwrap requires CLONE_NEWUSER which
+/// is blocked on AppImage (AppArmor) and Snap (strict confinement).
+fn resolve_launcher(proton_dir: Option<&Path>) -> Option<WineLauncher> {
+    if let Some(dir) = proton_dir
+        && let Some(wine_bin) = resolve_proton_wine_binary(dir)
+    {
+        return Some(WineLauncher::Wine(wine_bin));
     }
-    resolve_wine_binary().map(WineLauncher::Wine)
+    if let Some(bin) = resolve_wine_binary() {
+        return Some(WineLauncher::Wine(bin));
+    }
+    // UMU: commented out — pressure-vessel/bwrap blocked on AppImage + Snap.
+    // if let Some(umu) = resolve_umu_binary() {
+    //     return Some(WineLauncher::Umu(umu));
+    // }
+    None
 }
 
 /// Find the `umu-run` binary.
 ///
 /// Checks bundle locations first (snap, then AppImage), then falls back to
 /// `$PATH` for system-wide installations.
+#[allow(dead_code)] // UMU commented out; kept for future re-enable
 pub(crate) fn resolve_umu_binary() -> Option<PathBuf> {
     if let Ok(snap) = std::env::var("SNAP") {
         let p = PathBuf::from(&snap).join("usr/bin/umu-run");

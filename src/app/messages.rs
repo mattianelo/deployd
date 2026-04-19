@@ -74,10 +74,9 @@ pub enum AppMsg {
     /// The second field carries the stderr output if the process exited with a non-zero status.
     ToolExited(String, Option<String>),
     /// Show a first-run Proton GE download confirmation dialog for `tool_id`.
-    /// Sent when UMU is the active launcher but no Proton runtime is installed yet.
-    ConfirmUmuSetup(String),
-    /// User confirmed the first-run Proton GE download; proceed with the launch.
-    UmuSetupConfirmed(String),
+    ConfirmProtonSetup(String),
+    /// User confirmed the first-run Proton GE download; start the download.
+    ProtonSetupConfirmed(String),
     ManageToolsClicked,
     ToolAdded(Tool),
     ToolRemoved(String),
@@ -354,6 +353,12 @@ pub enum AppCmdMsg {
     OrderSnapshotDeleted(Result<(), String>),
     /// Result of the self-update AppImage download + replace.
     AppUpdateResult(Result<(), String>),
+    /// Result of downloading + extracting Proton GE from GitHub. Carries the
+    /// `tool_id` to re-enter the launch flow on success.
+    ProtonDownloaded {
+        result: Result<(), String>,
+        tool_id: String,
+    },
     /// All games have been persisted to DB after Manage Games; safe to select the first game now.
     GamesPersisted,
 }

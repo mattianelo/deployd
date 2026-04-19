@@ -2,7 +2,7 @@ use gtk::gio;
 use gtk::prelude::*;
 use relm4::prelude::*;
 
-use crate::core::game::{self, WineLauncher};
+use crate::core::game;
 use crate::core::tool_launcher;
 use crate::ui::tool_manager::{ToolManager, ToolManagerOutput};
 
@@ -25,36 +25,26 @@ impl App {
             return;
         };
 
-        // Detect wine/UMU config synchronously so we can check for UMU-specific
-        // first-run requirements before spawning the async command.
+        // If Proton GE is not yet installed, prompt to download before launching.
+        if !game::proton_runtime_available() {
+            sender.input(AppMsg::ConfirmProtonSetup(tool_id));
+            return;
+        }
+
         let wine_config = match game::detect_wine_config(&game) {
             Some(c) => c,
             None => {
-                self.toaster.toast(
-                    "Wine (wine64) or UMU Launcher (umu-run) not found. \
-                     Install one via your system package manager.",
-                );
+                self.toaster
+                    .toast("Wine not found. Install wine via your system package manager.");
                 return;
             }
         };
 
-        // For UMU: if no Proton runtime is installed, show a one-time confirmation
-        // dialog that warns the user about the ~300 MB first-run download before proceeding.
-        if let WineLauncher::Umu(_) = &wine_config.launcher
-            && !game::proton_runtime_available()
-        {
-            sender.input(AppMsg::ConfirmUmuSetup(tool_id));
-            return;
-        }
-
         self.do_launch_tool(tool, game, wine_config, sender);
     }
 
-    /// Show the first-run Proton GE confirmation dialog for UMU.
-    ///
-    /// If the user confirms, `UmuSetupConfirmed` is sent and the tool is launched
-    /// (UMU will download Proton GE automatically during the launch).
-    pub(crate) fn handle_confirm_umu_setup(
+    /// Show the first-run Proton GE download confirmation dialog.
+    pub(crate) fn handle_confirm_proton_setup(
         &mut self,
         tool_id: String,
         root: &adw::Window,
@@ -63,8 +53,8 @@ impl App {
         let dialog = gtk::AlertDialog::builder()
             .message("First-run Setup Required")
             .detail(
-                "UMU Launcher needs to download Proton GE (~300 MB) before \
-                 tools can run. This is a one-time download.\n\n\
+                "Proton GE (~600 MB) needs to be downloaded before tools can run. \
+                 This is a one-time download.\n\n\
                  The tool will launch automatically when the download finishes.",
             )
             .buttons(["Cancel", "Download & Launch"])
@@ -76,34 +66,41 @@ impl App {
         let s = sender.input_sender().clone();
         dialog.choose(Some(root), None::<&gio::Cancellable>, move |result| {
             if result == Ok(1) {
-                let _ = s.send(AppMsg::UmuSetupConfirmed(tool_id));
+                let _ = s.send(AppMsg::ProtonSetupConfirmed(tool_id));
             }
         });
     }
 
-    /// User confirmed the first-run Proton GE download.
-    ///
-    /// Sets the busy state with a descriptive status message, then launches the
-    /// tool via UMU.  `ToolExited` will clear the busy state when done.
-    pub(crate) fn handle_umu_setup_confirmed(
+    /// User confirmed the Proton GE download — start the async GitHub download.
+    pub(crate) fn handle_proton_setup_confirmed(
         &mut self,
         tool_id: String,
         sender: &ComponentSender<Self>,
     ) {
-        let Some(tool) = self.tools.iter().find(|t| t.id == tool_id).cloned() else {
-            return;
-        };
-        let Some(game) = self.selected_game().cloned() else {
-            return;
-        };
-        let Some(wine_config) = game::detect_wine_config(&game) else {
-            return;
-        };
-
         self.proton_setup = true;
-        self.status_msg = Some("Downloading Proton GE for first use…".to_string());
+        self.status_msg = Some("Downloading Proton GE…".to_string());
 
-        self.do_launch_tool(tool, game, wine_config, sender);
+        sender.oneshot_command(async move {
+            let result = crate::app::downloads::proton_setup::download_proton_ge()
+                .await
+                .map_err(|e| e.to_string());
+            AppCmdMsg::ProtonDownloaded { result, tool_id }
+        });
+    }
+
+    /// Proton GE download completed — re-enter the launch flow on success.
+    pub(crate) fn handle_proton_downloaded(
+        &mut self,
+        result: Result<(), String>,
+        tool_id: String,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.proton_setup = false;
+        self.status_msg = None;
+        match result {
+            Ok(()) => self.handle_launch_tool(tool_id, sender),
+            Err(e) => self.toaster.toast(&format!("Proton GE download failed: {e}")),
+        }
     }
 
     pub(crate) fn handle_tool_exited(
@@ -112,9 +109,8 @@ impl App {
         _error: Option<String>,
         sender: &ComponentSender<Self>,
     ) {
-        // Clear any Proton first-run busy state.
         self.proton_setup = false;
-        if self.status_msg.as_deref() == Some("Downloading Proton GE for first use…") {
+        if self.status_msg.as_deref() == Some("Downloading Proton GE…") {
             self.status_msg = None;
         }
 
