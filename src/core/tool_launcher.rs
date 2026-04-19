@@ -38,6 +38,7 @@ pub fn launch_tool(
         game::WineLauncher::Wine(bin) => {
             let wine_bin = resolve_wine64(bin);
             ensure_bethesda_reg_key(game, wine_config, &wine_bin, None);
+            ensure_wine_silent_setup(wine_config, &wine_bin, None);
             dlog!(
                 "deployd: launching tool '{}' | wine={}",
                 tool.name,
@@ -53,6 +54,7 @@ pub fn launch_tool(
             let wine_bin = resolve_wine64(wine_bin);
             let ld_lib = snap_ld_library_path(wine_platform, wine_runtime);
             ensure_bethesda_reg_key(game, wine_config, &wine_bin, Some(&ld_lib));
+            ensure_wine_silent_setup(wine_config, &wine_bin, Some(&ld_lib));
             dlog!(
                 "deployd: launching tool '{}' | snap-wine={}",
                 tool.name,
@@ -328,6 +330,61 @@ fn ensure_bethesda_reg_key(
         Err(e) => {
             eprintln!("deployd: failed to run wine reg add: {e}");
         }
+    }
+}
+
+/// Bake DLL overrides into the wine prefix registry so snap/wine updates don't re-show
+/// mono/winecfg dialogs even when the env var isn't inherited by wine-internal processes.
+///
+/// Runs once per prefix: after the first successful run a sentinel file is written so
+/// subsequent tool launches skip this entirely.
+fn ensure_wine_silent_setup(
+    wine_config: &WineConfig,
+    launcher_bin: &Path,
+    ld_library_path: Option<&str>,
+) {
+    let sentinel = wine_config.prefix.join(".deployd_wine_setup_v1");
+    if sentinel.exists() {
+        return;
+    }
+
+    // mscoree=disabled suppresses Mono/.NET installer
+    // mshtml=disabled suppresses Gecko/HTML renderer installer
+    // winemenubuilder.exe=disabled suppresses the wine menu builder dialog
+    let overrides = [
+        ("mscoree", ""),
+        ("mshtml", ""),
+        ("winemenubuilder.exe", ""),
+    ];
+    for (name, value) in overrides {
+        let mut cmd = Command::new(launcher_bin);
+        cmd.env("WINEPREFIX", &wine_config.prefix)
+            .env("WINEDEBUG", "-all")
+            .env_remove("LD_PRELOAD");
+        if let Some(ld) = ld_library_path {
+            cmd.env("LD_LIBRARY_PATH", ld);
+        }
+        cmd.args([
+            "reg",
+            "add",
+            r"HKCU\Software\Wine\DllOverrides",
+            "/v",
+            name,
+            "/t",
+            "REG_SZ",
+            "/d",
+            value,
+            "/f",
+        ]);
+        let result = cmd.output();
+        if let Err(e) = result {
+            eprintln!("deployd: wine silent setup reg add ({name}): {e}");
+            return;
+        }
+    }
+
+    if let Err(e) = std::fs::write(&sentinel, b"") {
+        eprintln!("deployd: failed to write wine setup sentinel: {e}");
     }
 }
 
