@@ -4,14 +4,29 @@
 
 ### Added
 
-- **Snap package** — Deployd is now available as a Snap with strict confinement. Supports all features including external tools via the bundled UMU Launcher.
-- **The Witcher 1 support** — Aurora engine (The Witcher 1, GOG and Steam) games can now be added and managed.
-- **First-run Proton GE wizard** — When launching an external tool for the first time with no Proton runtime present, a dialog prompts before UMU Launcher downloads Proton GE (~300 MB). The tool launches automatically once the download finishes.
+- **Snap package** — Deployd is now available as a Snap with strict confinement. Supports all features including external tools via the bundled Wine runtime.
+- **The Witcher 1 support** — Aurora engine (The Witcher 1, GOG and Steam) games can now be added and managed, including save path support.
+- **First-run Proton GE wizard** — When launching an external tool for the first time with no Proton runtime present, a dialog prompts before Deployd downloads Proton GE (~300 MB) from GitHub. The tool launches automatically once the download finishes.
+- **Download pause/resume** — active downloads can now be paused and resumed mid-transfer.
+- **Compact mode and color scheme picker** — new Appearance settings let you switch color scheme and enable compact rows for both the mod list and plugin list.
+- **Notification bell with badge** — the notification indicator is now a bell icon with a count badge.
+- **Remove game confirmation dialog** — removing a game now asks for confirmation and offers an option to also delete all of its managed mods.
+- **LOOT sort triggers deploy** — running LOOT sort now sets the deploy-needed flag and shows a toast so the change is not silently lost.
 
 ### Changed
 
-- **External tools now work in the Snap package** — UMU Launcher (`umu-run`) is bundled in both the Snap and AppImage. The previous "not supported in Snap" restriction is removed.
-- **External tool launching refactored** — Tool launch logic centralises around UMU Launcher (`umu-run`). `proton_manager.rs` removed; Proton runtime selection and download delegated to UMU entirely.
+- **External tool launching refactored** — tools now invoke Proton GE's `wine` binary (`files/bin-wow64/wine`) directly, bypassing pressure-vessel/bwrap entirely. Proton GE is downloaded from GitHub releases on first use. The Snap package uses `wine-platform-runtime-core22` and `wine-9-staging` content plugs in place of the previous bwrap-based approach.
+- **UI overhaul** — filter chips on the mod list, a persistent status bar, split deploy menu button, and redesigned badges throughout.
+
+### Fixed
+
+- **Eclipse engine Override deployment preserves subfolders** — the `strip_eclipse_override_wrappers` pass that was flattening unrecognised path components has been removed; subfolder structure is now retained correctly.
+- **Wine DLL settings persist across Snap/Wine updates** — DLL overrides are now baked into the Wine prefix registry during setup so Snap or Wine updates cannot re-trigger the Mono/WineCfg dialogs.
+- **AppImage detects WoW64 Proton GE** — the Proton GE detection path now handles the WoW64 layout introduced after the Snap packaging changes.
+- **Aurora engine System/ routing corrected** — external files under `System/` are now detected and routed to the correct deployment path.
+- **Group drag-and-drop moves whole blocks** — dragging a group header now moves all rows in the group together instead of only the header row.
+- **Deploy popover dismisses correctly** — the deploy menu button popover now closes as expected after selecting an action.
+- **Deploy button corner styling** — the split deploy menu button no longer renders with double-rounded corners.
 
 ---
 
