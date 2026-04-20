@@ -109,6 +109,7 @@ impl App {
         root: &adw::Window,
         sender: &ComponentSender<Self>,
     ) {
+        self.deploy_options_btn.popdown();
         self.overflow_menu_btn.popdown();
         let current_id = self
             .profiles

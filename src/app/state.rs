@@ -132,6 +132,8 @@ pub struct App {
     pub(crate) dirty_plugins: HashMap<String, PluginDirtyInfo>,
     /// MenuButton that opens the notifications popover.
     pub(crate) notifications_menu_btn: gtk::MenuButton,
+    /// MenuButton that opens the deploy options popover (Purge, Open folder).
+    pub(crate) deploy_options_btn: gtk::MenuButton,
     /// MenuButton that opens the overflow actions popover (Settings, Purge, etc.).
     pub(crate) overflow_menu_btn: gtk::MenuButton,
     /// MenuButton that opens the profile management popover.

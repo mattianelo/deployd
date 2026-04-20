@@ -230,7 +230,8 @@ impl Component for App {
                             connect_clicked => AppMsg::DeployClicked,
                         },
 
-                        gtk::MenuButton {
+                        #[local_ref]
+                        deploy_options_btn -> gtk::MenuButton {
                             set_icon_name: "pan-down-symbolic",
                             set_tooltip_text: Some("Deploy options"),
                             #[watch]
@@ -1029,6 +1030,7 @@ impl Component for App {
         let tool_buttons_box = &model.tool_buttons_box;
         let mod_scroll = &model.mod_scroll;
         let downloads_scroll = &model.downloads_scroll;
+        let deploy_options_btn = &model.deploy_options_btn;
         let notifications_menu_btn = &model.notifications_menu_btn;
         let overflow_menu_btn = &model.overflow_menu_btn;
         let profile_menu_btn = &model.profile_menu_btn;
@@ -1294,6 +1296,7 @@ impl Component for App {
                 self.apply_search_filter();
             }
             AppMsg::OpenDeploymentFolder => {
+                self.deploy_options_btn.popdown();
                 if let Some(game) = self.selected_game() {
                     let uri = format!("file://{}", game.path.display());
                     let _ = gtk::gio::AppInfo::launch_default_for_uri(

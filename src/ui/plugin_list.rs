@@ -84,8 +84,10 @@ impl FactoryComponent for PluginRow {
                 set_spacing: 6,
                 set_margin_start: 8,
                 set_margin_end: 8,
-                set_margin_top: 4,
-                set_margin_bottom: 4,
+                #[watch]
+                set_margin_top: if self.compact { 1 } else { 4 },
+                #[watch]
+                set_margin_bottom: if self.compact { 1 } else { 4 },
                 // Greys out all child widgets (checkbutton + labels) when the
                 // parent mod is disabled. GTK applies visual dimming automatically.
                 #[watch]

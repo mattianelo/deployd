@@ -83,10 +83,6 @@ fn main() {
         .compact-row {
             min-height: 0;
         }
-        .compact-row > box {
-            margin-top: 2px;
-            margin-bottom: 2px;
-        }
         .install-action-btn {
             padding: 4px 14px;
             min-height: 0;

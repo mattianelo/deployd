@@ -185,6 +185,7 @@ pub(super) fn build_model(
         downloads_scroll,
         #[cfg(feature = "loot")]
         dirty_plugins: HashMap::new(),
+        deploy_options_btn: gtk::MenuButton::new(),
         notifications_menu_btn: gtk::MenuButton::new(),
         overflow_menu_btn: gtk::MenuButton::new(),
         profile_menu_btn: gtk::MenuButton::new(),
