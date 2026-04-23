@@ -1,10 +1,75 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 
 use anyhow::Result;
 use quick_xml::Reader;
 use quick_xml::events::Event;
+
+use crate::core::tracker::Tracker;
+use crate::models::game::Game;
+use crate::models::mod_entry::InstallTarget;
+
+use super::engine_handler::EngineHandler;
+use super::known_games::KNOWN_GAMES;
+use super::wine;
+
+pub(super) struct EclipseHandler;
+
+impl EngineHandler for EclipseHandler {
+    fn route_file_list(
+        &self,
+        _game: &Game,
+        mod_name: &str,
+        _stripped_wrapper: Option<&str>,
+        file_list: Vec<(PathBuf, PathBuf)>,
+        _file_targets: &HashMap<String, InstallTarget>,
+    ) -> Vec<(PathBuf, PathBuf)> {
+        if is_tool_mod(&file_list) {
+            route_tool_paths(file_list, mod_name)
+        } else {
+            file_list
+                .into_iter()
+                .map(|(src, dest)| {
+                    let routed = route_path(&dest.to_string_lossy());
+                    (src, PathBuf::from(routed))
+                })
+                .collect()
+        }
+    }
+
+    fn deploy_dir(&self, game: &Game) -> PathBuf {
+        if KNOWN_GAMES.iter().any(|k| k.deployd_id == game.id)
+            && let Some(user_dir) = wine::find_wine_user_dir(game)
+        {
+            return user_dir.join(&game.data_subdir);
+        }
+        game.data_dir()
+    }
+
+    fn tool_search_dir(&self, game: &Game) -> Option<PathBuf> {
+        let dd = self.deploy_dir(game);
+        dd.parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.to_path_buf())
+    }
+
+    fn post_deploy<'a>(
+        &'a self,
+        game: &'a Game,
+        _tracker: &'a Tracker,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+        let deploy_dir = self.deploy_dir(game);
+        Box::pin(async move {
+            if let Err(e) = write_addins_xml(&deploy_dir) {
+                eprintln!("[deployd] WARNING: Addins.xml update failed: {e}");
+            }
+            Ok(())
+        })
+    }
+}
 
 /// Prefix for files deployed to the Wine user's Documents folder.
 /// Resolves to `game_data.parent().parent()` (two levels up from `Documents/BioWare/Dragon Age`).

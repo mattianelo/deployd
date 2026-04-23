@@ -3,6 +3,7 @@ mod file_list;
 mod paths;
 
 pub use paths::auto_detect_install_target;
+pub(crate) use paths::{apply_redengine_path_fixups, route_aurora_paths};
 
 /// Re-scan a staging directory for its current file contents, picking up any
 /// modifications the user made after initial extraction. Returns a fresh
@@ -41,6 +42,7 @@ use chrono::Utc;
 use tempfile::TempDir;
 use uuid::Uuid;
 
+use crate::core::game::engine_handler;
 use crate::core::rules;
 use crate::core::tracker::Tracker;
 use crate::dlog;
@@ -146,23 +148,9 @@ pub async fn add_mod_with_file_list(
 ) -> Result<AddResult> {
     let mod_id = Uuid::new_v4().to_string();
 
-    let file_list = if game.engine == GameEngine::REDEngine {
-        paths::apply_redengine_path_fixups(game, mod_name, stripped_wrapper.as_deref(), file_list)
-    } else {
-        file_list
-    };
-
-    let file_list = if game.engine == GameEngine::Eclipse {
-        paths::route_eclipse_paths(file_list, mod_name)
-    } else {
-        file_list
-    };
-
-    let file_list = if game.engine == GameEngine::Aurora {
-        paths::route_aurora_paths(file_list, &game.data_subdir, &file_targets)
-    } else {
-        file_list
-    };
+    let handler = engine_handler::handler_for(&game.engine);
+    let file_list =
+        handler.route_file_list(game, mod_name, stripped_wrapper.as_deref(), file_list, &file_targets);
 
     let game_rules = rules::rules_for_game(&game.id);
     let cache_dir = utils_paths::mod_cache_dir(&mod_id)?;
@@ -246,26 +234,7 @@ pub async fn add_mod_with_file_list(
         }
 
         let file_key = ruled_path.replace('\\', "/");
-        let deploy_to_root = if explicit_root {
-            file_targets
-                .get(file_key.as_str())
-                .cloned()
-                .unwrap_or(InstallTarget::Root)
-                == InstallTarget::Root
-        } else if game.engine == GameEngine::Bethesda {
-            // Only Bethesda games auto-detect Root (SKSE loaders, ASI plugins…).
-            file_targets
-                .get(file_key.as_str())
-                .cloned()
-                .unwrap_or_else(|| auto_detect_install_target(&file_key))
-                == InstallTarget::Root
-        } else {
-            file_targets
-                .get(file_key.as_str())
-                .cloned()
-                .unwrap_or(InstallTarget::Data)
-                == InstallTarget::Root
-        };
+        let deploy_to_root = handler.deploy_to_root(&file_key, &file_targets, explicit_root);
 
         let rel_str = lowercase_rel.to_string_lossy();
         let recorded_rel = if deploy_to_root {
@@ -390,23 +359,9 @@ pub async fn merge_files_into_mod(
     stripped_wrapper: Option<String>,
     on_progress: Option<Box<dyn Fn(usize, usize) + Send>>,
 ) -> Result<usize> {
-    let file_list = if game.engine == GameEngine::REDEngine {
-        paths::apply_redengine_path_fixups(game, mod_name, stripped_wrapper.as_deref(), file_list)
-    } else {
-        file_list
-    };
-
-    let file_list = if game.engine == GameEngine::Eclipse {
-        paths::route_eclipse_paths(file_list, mod_name)
-    } else {
-        file_list
-    };
-
-    let file_list = if game.engine == GameEngine::Aurora {
-        paths::route_aurora_paths(file_list, &game.data_subdir, &file_targets)
-    } else {
-        file_list
-    };
+    let handler = engine_handler::handler_for(&game.engine);
+    let file_list =
+        handler.route_file_list(game, mod_name, stripped_wrapper.as_deref(), file_list, &file_targets);
 
     let game_rules = rules::rules_for_game(&game.id);
     let cache_dir = utils_paths::mod_cache_dir(existing_mod_id)?;
@@ -483,26 +438,7 @@ pub async fn merge_files_into_mod(
         }
 
         let file_key = ruled_path.replace('\\', "/");
-        let deploy_to_root = if explicit_root {
-            file_targets
-                .get(file_key.as_str())
-                .cloned()
-                .unwrap_or(InstallTarget::Root)
-                == InstallTarget::Root
-        } else if game.engine == GameEngine::Bethesda {
-            // Only Bethesda games auto-detect Root (SKSE loaders, ASI plugins…).
-            file_targets
-                .get(file_key.as_str())
-                .cloned()
-                .unwrap_or_else(|| auto_detect_install_target(&file_key))
-                == InstallTarget::Root
-        } else {
-            file_targets
-                .get(file_key.as_str())
-                .cloned()
-                .unwrap_or(InstallTarget::Data)
-                == InstallTarget::Root
-        };
+        let deploy_to_root = handler.deploy_to_root(&file_key, &file_targets, explicit_root);
 
         let rel_str = lowercase_rel.to_string_lossy();
         let recorded_rel = if deploy_to_root {

@@ -41,7 +41,7 @@ pub fn auto_detect_install_target(rel_path: &str) -> InstallTarget {
 /// so the game's REDmod loader can find it.
 ///
 /// Both transforms are no-ops for Bethesda games.
-pub(super) fn apply_redengine_path_fixups(
+pub(crate) fn apply_redengine_path_fixups(
     game: &Game,
     mod_name: &str,
     stripped_wrapper: Option<&str>,
@@ -200,7 +200,7 @@ fn sanitize_mod_name_preserve_case(mod_name: &str) -> String {
 ///
 /// `Override/` and any required subdirectories are created at deploy time by
 /// the directory-creation pass in `deployer.rs`.
-pub(super) fn route_aurora_paths(
+pub(crate) fn route_aurora_paths(
     file_list: Vec<(PathBuf, PathBuf)>,
     data_subdir: &str,
     file_targets: &HashMap<String, InstallTarget>,
@@ -512,26 +512,3 @@ pub(super) fn strip_data_subdir_prefix_str(rel: &str, data_subdir: &str) -> Stri
     }
 }
 
-/// Route file paths for Eclipse (Dragon Age: Origins) mods.
-///
-/// If the archive contains any executable, the entire mod is treated as an
-/// external tool and every file goes to `~docs~/<mod_name>/`. Otherwise,
-/// DAZIP-expanded files keep their `AddIns/<uid>/` prefix and loose files go
-/// to `packages/core/override/`.
-pub(super) fn route_eclipse_paths(
-    file_list: Vec<(PathBuf, PathBuf)>,
-    mod_name: &str,
-) -> Vec<(PathBuf, PathBuf)> {
-    use crate::core::game::eclipse;
-    if eclipse::is_tool_mod(&file_list) {
-        eclipse::route_tool_paths(file_list, mod_name)
-    } else {
-        file_list
-            .into_iter()
-            .map(|(src, dest)| {
-                let routed = eclipse::route_path(&dest.to_string_lossy());
-                (src, PathBuf::from(routed))
-            })
-            .collect()
-    }
-}

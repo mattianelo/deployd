@@ -1,8 +1,12 @@
+mod aurora;
+mod bethesda;
 mod detection;
 pub(crate) mod eclipse;
+pub(crate) mod engine_handler;
 mod ini;
 mod known_games;
 mod metadata;
+mod redengine;
 mod tools;
 mod wine;
 
@@ -10,6 +14,8 @@ use std::path::PathBuf;
 
 use self::known_games::KNOWN_GAMES;
 use crate::models::game::{Game, GameEngine};
+
+pub(crate) use engine_handler::handler_for;
 
 pub use detection::detect_games;
 pub use eclipse::write_addins_xml;
@@ -31,27 +37,12 @@ pub struct KnownGameOption {
     pub engine: &'static GameEngine,
 }
 
-/// For Eclipse, returns the Wine user's `Documents/` folder (two levels above `deploy_dir`).
 pub fn tool_search_dir(game: &Game) -> Option<PathBuf> {
-    let dd = deploy_dir(game);
-    if game.engine == GameEngine::Eclipse {
-        dd.parent()
-            .and_then(|p| p.parent())
-            .map(|p| p.to_path_buf())
-    } else {
-        Some(dd)
-    }
+    engine_handler::handler_for(&game.engine).tool_search_dir(game)
 }
 
-/// For Eclipse, resolves inside the Wine prefix user directory instead of the game folder.
 pub fn deploy_dir(game: &Game) -> PathBuf {
-    if game.engine == GameEngine::Eclipse
-        && KNOWN_GAMES.iter().any(|k| k.deployd_id == game.id)
-        && let Some(user_dir) = wine::find_wine_user_dir(game)
-    {
-        return user_dir.join(&game.data_subdir);
-    }
-    game.data_dir()
+    engine_handler::handler_for(&game.engine).deploy_dir(game)
 }
 
 pub fn known_game_options() -> Vec<KnownGameOption> {

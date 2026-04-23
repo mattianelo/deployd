@@ -9,9 +9,9 @@ use crate::core::game::eclipse::DOCS_PREFIX;
 use crate::core::mod_folders;
 use crate::core::tracker::Tracker;
 use crate::dlog;
-use crate::models::game::{Game, GameEngine};
+use crate::models::game::Game;
 use crate::models::manifest::ModFile;
-use crate::utils::{paths, plugins_txt};
+use crate::utils::paths;
 
 #[derive(Debug)]
 pub struct DeployResult {
@@ -298,29 +298,9 @@ pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
         .record_deployed_files(&game.id, &newly_linked)
         .await?;
 
-    if game.engine == GameEngine::Eclipse
-        && let Err(e) = game::write_addins_xml(&game::deploy_dir(game))
-    {
-        eprintln!("[deployd] WARNING: Addins.xml update failed: {e}");
-    }
-    if game.engine == GameEngine::Bethesda {
-        let plugins = tracker.list_plugins(&game.id).await?;
-        let plugins_paths = game::plugins_txt_paths(game);
-        if plugins_paths.is_empty() {
-            eprintln!("deployd: WINE prefix not found, skipping Plugins.txt");
-        }
-        for plugins_path in &plugins_paths {
-            plugins_txt::write_plugins_txt(plugins_path, &plugins)?;
-        }
-
-        let ini_paths = game::custom_ini_paths(game);
-        if ini_paths.is_empty() {
-            eprintln!("deployd: WINE prefix not found, skipping custom INI");
-        }
-        for ini_path in &ini_paths {
-            plugins_txt::ensure_archive_invalidation(ini_path)?;
-        }
-    }
+    game::handler_for(&game.engine)
+        .post_deploy(game, tracker)
+        .await?;
 
     if let Err(e) = mod_folders::refresh_named_mod_folders(tracker, &game.id).await {
         eprintln!("[deployd] named_mods refresh failed: {e}");
