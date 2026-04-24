@@ -8,7 +8,7 @@
 A Linux-native mod manager for Bethesda, REDEngine, Aurora, and Eclipse games, built with GTK4 and Rust.
 Works with both **Steam** and **Heroic Launcher** out of the box.
 
-> **Public Beta — v0.9.7.** If you find bugs, please [open an issue](https://gitlab.com/mattianelo/deployd/-/issues).
+> **Public Beta — v0.9.9-beta** If you find bugs, please [open an issue](https://gitlab.com/mattianelo/deployd/-/issues).
 
 ---
 

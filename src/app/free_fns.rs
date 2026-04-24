@@ -193,7 +193,7 @@ pub(crate) async fn load_game_data(
         })
         .collect();
     let overrides = tracker
-        .compute_overrides(game_id)
+        .compute_overrides(game_id, game::handler_for(&game.engine))
         .await
         .map_err(|e| e.to_string())?;
     // Ensure a profile exists before listing (handles first-ever load of a

@@ -22,6 +22,17 @@ pub(crate) trait EngineHandler: Send + Sync {
         file_targets: &HashMap<String, InstallTarget>,
     ) -> Vec<(PathBuf, PathBuf)>;
 
+    /// Returns the conflict detection key for a deployed file path.
+    ///
+    /// Default: the full lowercase path, so conflict detection is path-exact.
+    /// Aurora overrides this to return just the filename for Override/ files,
+    /// matching how the Aurora engine resolves collisions at load time:
+    /// `override/ModA/path/foo.xml` and `override/foo.xml` both surface as
+    /// `foo.xml` and therefore conflict regardless of subfolder depth.
+    fn conflict_key<'a>(&self, game_rel_lowercase: &'a str) -> &'a str {
+        game_rel_lowercase
+    }
+
     /// Whether `file_key` should deploy to the game root (vs. the data subdir).
     ///
     /// Default: explicit-root files honour `file_targets` with a Root fallback;

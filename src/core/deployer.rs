@@ -6,6 +6,7 @@ use anyhow::{Context, Result};
 
 use crate::core::game;
 use crate::core::game::eclipse::DOCS_PREFIX;
+use crate::core::game::engine_handler::EngineHandler;
 use crate::core::mod_folders;
 use crate::core::tracker::Tracker;
 use crate::dlog;
@@ -70,7 +71,8 @@ pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
         .map(|f| (f.game_rel_lowercase.as_str(), f))
         .collect();
 
-    let (winners, conflicts_resolved) = compute_winners(tracker, &game.id).await?;
+    let (winners, conflicts_resolved) =
+        compute_winners(tracker, &game.id, game::handler_for(&game.engine)).await?;
     let winners_map: HashMap<&str, &ModFile> = winners
         .iter()
         .map(|f| (f.game_rel_lowercase.as_str(), f))
@@ -348,33 +350,47 @@ async fn bake_modified_plugins(game: &Game, tracker: &Tracker, game_data: &Path)
     }
 }
 
-async fn compute_winners(tracker: &Tracker, game_id: &str) -> Result<(Vec<ModFile>, usize)> {
+async fn compute_winners(
+    tracker: &Tracker,
+    game_id: &str,
+    handler: &dyn EngineHandler,
+) -> Result<(Vec<ModFile>, usize)> {
     let all_files = tracker.get_all_mod_files_by_priority(game_id).await?;
-    let mut winners: Vec<ModFile> = Vec::new();
-    let mut conflicts_resolved: usize = 0;
-    let mut last_path: Option<String> = None;
-    let mut current_path_count: usize = 0;
 
-    for (game_rel, mod_id, cache_path, game_rel_original, _priority) in &all_files {
-        if last_path.as_deref() == Some(game_rel.as_str()) {
-            current_path_count += 1;
-            continue;
-        }
-        if current_path_count > 1 {
+    // Group file indices by engine-specific conflict key. For most engines the
+    // key is the full path, reproducing the previous behaviour. For Aurora,
+    // Override/ files are keyed by filename so that override/ModA/path/foo.xml
+    // and override/foo.xml are treated as one conflict — only the
+    // highest-priority mod's file is deployed.
+    let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
+    for (i, (game_rel, ..)) in all_files.iter().enumerate() {
+        let key = handler.conflict_key(game_rel).to_string();
+        groups.entry(key).or_default().push(i);
+    }
+
+    let mut winners: Vec<ModFile> = Vec::with_capacity(groups.len());
+    let mut conflicts_resolved: usize = 0;
+
+    for (_, mut indices) in groups {
+        if indices.len() > 1 {
             conflicts_resolved += 1;
+            // Highest priority wins; game_rel is a stable tiebreaker.
+            indices.sort_by(|&a, &b| {
+                all_files[b]
+                    .4
+                    .cmp(&all_files[a].4)
+                    .then_with(|| all_files[a].0.cmp(&all_files[b].0))
+            });
         }
+        let (game_rel, mod_id, cache_path, game_rel_original, _) = &all_files[indices[0]];
         winners.push(ModFile {
             mod_id: mod_id.clone(),
             game_rel_lowercase: game_rel.clone(),
             game_rel_original: game_rel_original.clone(),
             cache_path: cache_path.clone(),
         });
-        last_path = Some(game_rel.clone());
-        current_path_count = 1;
     }
-    if current_path_count > 1 {
-        conflicts_resolved += 1;
-    }
+
     Ok((winners, conflicts_resolved))
 }
 

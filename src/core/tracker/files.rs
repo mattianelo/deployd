@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::{Context, Result};
 
+use crate::core::game::engine_handler::EngineHandler;
 use crate::dlog;
 use crate::models::manifest::ModFile;
 use crate::models::mod_entry::InstallTarget;
@@ -271,7 +272,15 @@ impl Tracker {
 
     /// Compute per-mod override stats for enabled mods of a game.
     /// Returns a map of mod_id -> OverrideInfo with counts and file paths.
-    pub async fn compute_overrides(&self, game_id: &str) -> Result<HashMap<String, OverrideInfo>> {
+    ///
+    /// `handler` supplies the engine-specific conflict key. For most engines
+    /// two files conflict only when their full paths match. Aurora overrides
+    /// this to detect filename collisions within Override/ regardless of depth.
+    pub async fn compute_overrides(
+        &self,
+        game_id: &str,
+        handler: &dyn EngineHandler,
+    ) -> Result<HashMap<String, OverrideInfo>> {
         let all_files = self.get_all_mod_files_by_priority(game_id).await?;
         dlog!(
             "[debug] compute_overrides: {} mod-file rows for game {}",
@@ -279,51 +288,48 @@ impl Tracker {
             game_id
         );
 
-        let mut result: HashMap<String, OverrideInfo> = HashMap::new();
-        let mut last_path: Option<&str> = None;
-        let mut group: Vec<&str> = Vec::new();
-
-        let flush = |group: &[&str], path: &str, result: &mut HashMap<String, OverrideInfo>| {
-            if group.len() > 1 {
-                let info = result
-                    .entry(group[0].to_string())
-                    .or_insert_with(|| OverrideInfo {
-                        overrides: 0,
-                        overridden_by: 0,
-                        override_files: Vec::new(),
-                        overridden_files: Vec::new(),
-                    });
-                info.overrides += 1;
-                info.override_files.push(path.to_string());
-                for loser in &group[1..] {
-                    let info = result
-                        .entry(loser.to_string())
-                        .or_insert_with(|| OverrideInfo {
-                            overrides: 0,
-                            overridden_by: 0,
-                            override_files: Vec::new(),
-                            overridden_files: Vec::new(),
-                        });
-                    info.overridden_by += 1;
-                    info.overridden_files.push(path.to_string());
-                }
-            }
-        };
-
-        for (game_rel, mod_id, _, _, _) in &all_files {
-            if last_path == Some(game_rel.as_str()) {
-                group.push(mod_id);
-            } else {
-                if let Some(prev_path) = last_path {
-                    flush(&group, prev_path, &mut result);
-                }
-                group.clear();
-                group.push(mod_id);
-                last_path = Some(game_rel);
-            }
+        // Group file indices by their engine-specific conflict key.
+        let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
+        for (i, (game_rel, ..)) in all_files.iter().enumerate() {
+            let key = handler.conflict_key(game_rel).to_string();
+            groups.entry(key).or_default().push(i);
         }
-        if let Some(prev_path) = last_path {
-            flush(&group, prev_path, &mut result);
+
+        let mut result: HashMap<String, OverrideInfo> = HashMap::new();
+
+        for (path_key, mut indices) in groups {
+            if indices.len() <= 1 {
+                continue;
+            }
+            // Highest priority wins; game_rel is a stable tiebreaker.
+            indices.sort_by(|&a, &b| {
+                all_files[b]
+                    .4
+                    .cmp(&all_files[a].4)
+                    .then_with(|| all_files[a].0.cmp(&all_files[b].0))
+            });
+
+            let winner_id = &all_files[indices[0]].1;
+            let info = result.entry(winner_id.clone()).or_insert_with(|| OverrideInfo {
+                overrides: 0,
+                overridden_by: 0,
+                override_files: Vec::new(),
+                overridden_files: Vec::new(),
+            });
+            info.overrides += 1;
+            info.override_files.push(path_key.clone());
+
+            for &idx in &indices[1..] {
+                let loser_id = &all_files[idx].1;
+                let info = result.entry(loser_id.clone()).or_insert_with(|| OverrideInfo {
+                    overrides: 0,
+                    overridden_by: 0,
+                    override_files: Vec::new(),
+                    overridden_files: Vec::new(),
+                });
+                info.overridden_by += 1;
+                info.overridden_files.push(path_key.clone());
+            }
         }
 
         Ok(result)
