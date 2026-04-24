@@ -1,5 +1,63 @@
 # Changelog
 
+## [0.9.9] — 2026-04-24
+
+### Added
+
+- **Aurora: filename-based conflict detection for Override/ files** — The Witcher 1
+  resolves Override/ files by filename alone, regardless of subfolder depth. Two mods
+  providing `override/ModA/items.xml` and `override/items.xml` are now treated as
+  conflicting. A new `conflict_key()` hook on `EngineHandler` lets Aurora return just
+  the filename; `compute_overrides` and `compute_winners` group by this key so the
+  lower-priority mod's file is excluded from deployment rather than letting filesystem
+  ordering decide.
+- **Portal folder pickers** — folder selection dialogs in the game-setup and welcome
+  wizard flows now use the XDG Desktop Portal (via `ashpd 0.13`), making them work
+  reliably on immutable distros (Bazzite, etc.) that require portal for file-dialog
+  access.
+
+### Fixed
+
+- **Aurora: four conflict detection fixes** —
+  - Mods no longer conflict with themselves when two of their Override/ files share a
+    filename under different subfolders (deduplication by `mod_id` in
+    `compute_overrides`)
+  - Readme, licence, and changelog files are excluded from conflict reporting via a new
+    `EngineHandler::is_conflict_key_ignored` default method
+  - Conflict icons reload immediately after drag-and-drop reorder (calls
+    `reload_mods` from `handle_cmd_priority_saved`)
+  - Conflict tooltips now name the conflicting mods alongside file paths (e.g.
+    "Overrides 2 file(s) — ModA, ModB")
+- **Aurora: four Witcher 1 deployment bugs** —
+  - Install Mod dialog legend corrected: D = Data/ (not just Override); R includes
+    Register
+  - Scan Cache strips the `data_subdir` prefix and marks system/launcher/register
+    paths as Root (`../`), preventing `Data/data` double-nesting
+  - `ensure_dirs_case_insensitive` resolves filenames case-insensitively so
+    `Scripts/Mod.lua` correctly replaces `Scripts/mod.lua` on Linux
+  - Mod Properties dialog now shows Data / Root toggles for Aurora mods, enabling
+    post-install target changes
+- **Download name update after post-install metadata fetch** — threads `download_id`
+  through `NexusMetadataFetched` so the resolved Nexus mod name is written back to
+  the downloads panel entry when metadata was still unresolved at install time
+
+### Internal
+
+- **EngineHandler trait** — replaces scattered `if game.engine == GameEngine::X`
+  chains in `deployer.rs` and `installer/mod.rs` with a trait implemented by four
+  zero-sized unit structs (`BethesdaHandler`, `REDEngineHandler`, `EclipseHandler`,
+  `AuroraHandler`). Each engine owns its deployment logic in a dedicated module.
+
+### Build
+
+- **AppImage: LXD-wrapped Docker build** — mirrors the snap workflow; the build
+  script launches an Ubuntu 24.04 LXD container with `security.nesting=true`, mounts
+  the repo via an idmapped disk device, installs Docker inside, then re-invokes the
+  script with `DEPLOYD_NO_LXD=1`. Falls back to direct Docker when LXC is
+  unavailable. The `DEPLOYD_NO_DOCKER=1` CI path is unaffected.
+
+---
+
 ## [0.9.8] — 2026-04-17
 
 ### Added

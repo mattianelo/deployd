@@ -1,12 +1,11 @@
 # Deployd
 
-![Version](https://img.shields.io/badge/version-0.9.8--beta-blue)
+![Version](https://img.shields.io/badge/version-0.9.9--beta-blue)
 ![Status](https://img.shields.io/badge/status-beta-orange)
 ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey?logo=linux)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 
 A Linux-native mod manager for Bethesda, REDEngine, Aurora, and Eclipse games, built with GTK4 and Rust.
-Works with both **Steam** and **Heroic Launcher** out of the box.
 
 > **Public Beta — v0.9.9-beta** If you find bugs, please [open an issue](https://gitlab.com/mattianelo/deployd/-/issues).
 
@@ -19,24 +18,25 @@ Works with both **Steam** and **Heroic Launcher** out of the box.
 | Bethesda | Skyrim Special Edition · Fallout 4 · Fallout: New Vegas · Starfield |
 | REDEngine | The Witcher 3 · Cyberpunk 2077 |
 | Aurora | The Witcher 1 |
-| Eclipse | Dragon Age: Origins *(Experimental)* |
+| Eclipse | Dragon Age: Origins |
 
 ---
 
 ## Features
 
-- **Game Detection** — Auto-detects your library from Steam and Heroic Launcher (GOG/Epic)
+- **Game Setup Wizard** — A first-run wizard guides you through selecting your games and pointing Deployd to their installation folder and Wine prefix
 - **Nexus Mods Integration** — SSO login, NXM deep links, and one-click update checking
 - **FOMOD Installer** — Full wizard with conditional steps, image previews, and DLC-aware auto-selection
 - **Mod Profiles** — Per-game profiles to switch between configurations instantly
 - **Plugin Load Order** — Drag-and-drop `.esp`/`.esm`/`.esl` management written to `plugins.txt`
-- **Conflict Detection** — Per-file visibility into which mods override each other
+- **Conflict Detection** — Per-file visibility into which mods override each other (The Witcher 1's Override/ files are matched by filename regardless of subfolder depth)
 - **Priority-Based Deployment** — Hardlink deployment; lower in the list wins conflicts
 - **Tool Launcher** — Run xEdit, LOOT, BodySlide and more through Wine/Proton
 - **Save Management** — Browse game saves associated with the active profile
 - **Mod Notes** — Attach personal notes to any mod; preview on hover from the list
 - **Notifications Panel** — External changes and alerts collected in a sidebar, with "All Caught Up" state
-- **Dragon Age: Origins (Experimental)** — Override mods and `.dazip` archives supported; enable in Settings → Games
+- **Download pause/resume** — Active downloads can be paused and resumed mid-transfer
+- **Compact mode & color scheme** — Appearance settings let you switch color scheme and enable compact rows for the mod and plugin lists
 
 ---
 
@@ -75,16 +75,20 @@ sudo apt install libgtk-4-1 libadwaita-1-0
 
 ## Getting Started
 
-### 1. Game Detection
+### 1. Game Setup
 
-Deployd reads your game library automatically from **Steam** and **Heroic Launcher**.
+On first launch, Deployd shows a **Welcome Wizard** that walks you through adding your games:
 
-- For Steam: games are detected from the default Steam library
-- For Heroic: make sure the game has been launched at least once so Heroic has written its config
+1. Select which games you want to manage from the list
+2. For each game, browse to its **Installation Folder**
+3. For each game, browse to its **Wine Prefix** (the Proton or Wine directory used to run the game)
+4. Click **Finish** — your games are saved and ready to use
 
-Supported titles: **Skyrim SE**, **Fallout 4**, **Fallout: New Vegas**, **Starfield**, **The Witcher 3**, **Cyberpunk 2077**, **The Witcher 1**, **Dragon Age: Origins** *(Experimental)*
+Both the installation folder and Wine prefix are required for each game. To add or remove games later, go to **Settings → Manage Games**.
 
-Use the game selector in the top bar to switch between detected games.
+Supported titles: **Skyrim SE**, **Fallout 4**, **Fallout: New Vegas**, **Starfield**, **The Witcher 3**, **Cyberpunk 2077**, **The Witcher 1**, **Dragon Age: Origins**
+
+Use the game selector in the top bar to switch between managed games.
 
 ### 2. Nexus Mods Login
 

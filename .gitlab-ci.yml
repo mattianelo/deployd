@@ -77,17 +77,8 @@ build-appimage:
 build-snap:
   stage: build-snap
   image: snapcore/snapcraft:latest
-  before_script:
-    # Fetch the latest UMU Launcher zipapp and place it where snapcraft.yaml expects it.
-    - |
-      UMU_TAG=$(curl -fsSL https://api.github.com/repos/Open-Wine-Components/umu-launcher/releases/latest \
-        | grep '"tag_name"' | head -1 | cut -d'"' -f4)
-      mkdir -p snap/local
-      wget -q \
-        "https://github.com/Open-Wine-Components/umu-launcher/releases/download/${UMU_TAG}/umu-launcher-${UMU_TAG}-zipapp.tar" \
-        -O snap/local/umu-launcher-zipapp.tar
   script:
-    - snapcraft pack --destructive-mode
+    - snapcraft --destructive-mode
   artifacts:
     name: "Deployd-snap-$CI_COMMIT_TAG"
     paths:

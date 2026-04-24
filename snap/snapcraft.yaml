@@ -1,11 +1,12 @@
 name: deployd
 base: core24
-version: '0.9.8-beta'
+version: '0.9.9-beta'
 summary: Mod manager for PC games on Linux
 description: |
   Deployd is a non-destructive mod manager for PC games running on Linux.
-  Supports Bethesda (Skyrim SE, Fallout 4, Starfield), REDEngine (The Witcher 3,
-  Cyberpunk 2077), and Eclipse (Dragon Age: Origins) engine games.
+  Supports Bethesda (Skyrim SE, Fallout 4, Fallout: New Vegas, Starfield),
+  REDEngine (The Witcher 3, Cyberpunk 2077), Aurora (The Witcher 1), and
+  Eclipse (Dragon Age: Origins) engine games.
 
   Mods are deployed as hardlinks — no copies, no risk of losing originals.
   Supports multiple profiles per game, FOMOD installers, load order management,
