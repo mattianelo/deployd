@@ -22,6 +22,7 @@ pub fn launch_tool(
     tool: &Tool,
     game: &Game,
     wine_config: &WineConfig,
+    cache_root: &std::path::Path,
     on_exit: Option<Box<dyn FnOnce(Option<String>) + Send + 'static>>,
 ) -> Result<u32> {
     let exe_path = PathBuf::from(&tool.exe_path);
@@ -31,7 +32,7 @@ pub fn launch_tool(
 
     game::ensure_ini_symlinks(game);
     ensure_bodyslide_config(tool, game, wine_config);
-    ensure_named_mods_drive(wine_config);
+    ensure_named_mods_drive(wine_config, cache_root);
     ensure_no_x_drive_conflict(wine_config);
 
     let cmd = match &wine_config.launcher {
@@ -418,14 +419,8 @@ fn resolve_wine64(wine_bin: &Path) -> PathBuf {
 
 /// Create (or update) `<prefix>/dosdevices/m:` → `named_mods/` so the deployd mod
 /// library is accessible as `M:\` inside any Wine/Proton process.
-fn ensure_named_mods_drive(wine_config: &WineConfig) {
-    let named_mods = match paths::named_mods_dir() {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("[deployd] named_mods_dir: {e}");
-            return;
-        }
-    };
+fn ensure_named_mods_drive(wine_config: &WineConfig, cache_root: &std::path::Path) {
+    let named_mods = paths::named_mods_dir_in(cache_root);
 
     if !named_mods.exists() {
         return;

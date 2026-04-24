@@ -108,6 +108,15 @@ pub enum AppMsg {
         game_id: String,
         delete_mods: bool,
     },
+    /// User chose a new custom cache directory for a game (from the Manage Games dialog).
+    CacheDirChangeRequested {
+        game_id: String,
+        new_dir: std::path::PathBuf,
+    },
+    /// User wants to revert a game's cache dir back to the global default.
+    CacheDirResetRequested {
+        game_id: String,
+    },
     /// Emitted by SettingsDialog whenever the Nexus API key is set or cleared.
     NexusApiKeyUpdated,
     NxmLinkReceived(String),
@@ -297,6 +306,15 @@ pub enum AppCmdMsg {
     ),
     DeployDone(Result<DeployResult, String>),
     PurgeDone(Result<usize, String>),
+    CacheDirMoved {
+        game_id: String,
+        new_dir: std::path::PathBuf,
+        result: Result<(), String>,
+    },
+    CacheDirReset {
+        game_id: String,
+        result: Result<(), String>,
+    },
     PrioritySaved(Result<(), String>),
     PluginOrderSaved(Result<(), String>),
     ProfileSwitched(Result<(LoadedData, Option<save_manager::SaveSyncResult>), String>),

@@ -32,6 +32,25 @@ pub fn cache_root() -> Result<PathBuf> {
     Ok(deployd_data_dir()?.join("cache"))
 }
 
+/// Resolve the effective cache root for a game.
+/// Returns the custom override when provided, otherwise falls back to the global cache_root().
+pub fn game_cache_root(custom: Option<&Path>) -> Result<PathBuf> {
+    match custom {
+        Some(dir) => Ok(dir.to_path_buf()),
+        None => cache_root(),
+    }
+}
+
+/// Per-mod cache directory relative to an explicit cache root.
+pub fn mod_cache_dir_in(root: &Path, mod_id: &str) -> PathBuf {
+    root.join(mod_id)
+}
+
+/// Named-mods symlink directory relative to an explicit cache root.
+pub fn named_mods_dir_in(root: &Path) -> PathBuf {
+    root.join("named_mods")
+}
+
 /// Per-profile save storage root: <data>/deployd/saves
 pub fn saves_root() -> Result<PathBuf> {
     Ok(deployd_data_dir()?.join("saves"))

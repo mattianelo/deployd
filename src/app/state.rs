@@ -1,11 +1,12 @@
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use relm4::abstractions::Toaster;
 use relm4::factory::FactoryVecDeque;
 use relm4::prelude::*;
 
 use super::types::{DownloadFilter, DownloadSort, ModFilter, PendingInstall, SearchScope};
+use crate::utils::paths;
 use crate::core::detector::ExternalFile;
 use crate::core::tracker::Tracker;
 use crate::models::download::DownloadEntry;
@@ -94,6 +95,8 @@ pub struct App {
     pub(crate) global_active_downloads: usize,
     /// Cached downloads directory path (avoids async DB reads during scan).
     pub(crate) downloads_dir: PathBuf,
+    /// Custom cache roots per game_id. Absent = use global cache_root().
+    pub(crate) game_cache_dirs: HashMap<String, PathBuf>,
     /// Whether the initial auto-scan has been performed (suppresses toast).
     pub(crate) initial_scan_done: bool,
     /// Whether the search bar is shown.

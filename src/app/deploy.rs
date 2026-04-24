@@ -5,6 +5,7 @@ use gtk::prelude::*;
 use relm4::prelude::*;
 
 use crate::core::deployer;
+use crate::utils::paths;
 
 use super::App;
 use super::messages::{AppCmdMsg, AppMsg};
@@ -90,6 +91,9 @@ impl App {
             sender.input(AppMsg::GrantGameFolderAccess);
             return;
         }
+        let cache_root = self
+            .cache_root_for(&game.id)
+            .unwrap_or_else(|_| paths::cache_root().unwrap_or_default());
 
         self.deploying = true;
         self.status_msg = Some("Deploying...".to_string());
@@ -97,7 +101,7 @@ impl App {
 
         sender.oneshot_command(async move {
             AppCmdMsg::DeployDone(
-                deployer::deploy(&game, &tracker)
+                deployer::deploy(&game, &tracker, &cache_root)
                     .await
                     .map_err(|e| e.to_string()),
             )
@@ -172,13 +176,16 @@ impl App {
             sender.input(AppMsg::GrantGameFolderAccess);
             return;
         }
+        let cache_root = self
+            .cache_root_for(&game.id)
+            .unwrap_or_else(|_| paths::cache_root().unwrap_or_default());
 
         self.deploying = true;
         self.status_msg = Some("Purging...".to_string());
 
         sender.oneshot_command(async move {
             AppCmdMsg::PurgeDone(
-                deployer::purge(&game, &tracker)
+                deployer::purge(&game, &tracker, &cache_root)
                     .await
                     .map_err(|e| e.to_string()),
             )

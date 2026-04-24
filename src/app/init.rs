@@ -167,6 +167,7 @@ pub(super) fn build_model(
         active_download_count: 0,
         global_active_downloads: 0,
         downloads_dir: paths::default_downloads_dir(),
+        game_cache_dirs: HashMap::new(),
         initial_scan_done: false,
         search_active: false,
         search_text: String::new(),
@@ -524,6 +525,8 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             .flatten()
             .map(PathBuf::from);
 
+        let game_cache_dirs = tracker.load_game_cache_dirs().await.unwrap_or_default();
+
         let download_entries = tracker
             .load_download_entries()
             .await
@@ -577,6 +580,7 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             tools,
             selected_game_idx,
             downloads_dir,
+            game_cache_dirs,
             download_entries,
             rate_limit_info,
             vanilla_plugins,

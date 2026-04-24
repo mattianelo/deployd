@@ -234,6 +234,13 @@ impl App {
         };
         let replace_info = self.pending_replace_mod_id.take();
         let was_replace = replace_info.is_some();
+        let cache_root = match self.cache_root_for(&pending.game.id) {
+            Ok(r) => r,
+            Err(e) => {
+                self.toaster.toast(&format!("Cannot resolve cache dir: {e}"));
+                return;
+            }
+        };
 
         self.installing = true;
         self.status_msg = Some(format!("Installing {}...", pending.mod_name));
@@ -255,6 +262,7 @@ impl App {
                     &pending.game,
                     &pending.mod_name,
                     &tracker,
+                    &cache_root,
                     pending.nexus_ids,
                     pending.archive_hash,
                     pending.file_targets,
@@ -279,10 +287,9 @@ impl App {
                     let _ = tracker.delete_plugins_for_mod(&old_id).await;
                     let _ = tracker.delete_mod_files(&old_id).await;
                     let _ = tracker.delete_mod(&old_id).await;
-                    if let Ok(cache) = paths::mod_cache_dir(&old_id)
-                        && cache.exists()
-                    {
-                        let _ = std::fs::remove_dir_all(&cache);
+                    let old_cache = paths::mod_cache_dir_in(&cache_root, &old_id);
+                    if old_cache.exists() {
+                        let _ = std::fs::remove_dir_all(&old_cache);
                     }
                     if !old_state.is_empty() {
                         let new_plugins = tracker
@@ -384,6 +391,13 @@ impl App {
         };
         let replace_info = self.pending_replace_mod_id.take();
         let was_replace = replace_info.is_some();
+        let cache_root = match self.cache_root_for(&pending.game.id) {
+            Ok(r) => r,
+            Err(e) => {
+                self.toaster.toast(&format!("Cannot resolve cache dir: {e}"));
+                return;
+            }
+        };
 
         self.installing = true;
         self.status_msg = Some(format!("Installing {}...", pending.mod_name));
@@ -428,6 +442,7 @@ impl App {
                     &pending.game,
                     &pending.mod_name,
                     &tracker,
+                    &cache_root,
                     pending.nexus_ids,
                     pending.archive_hash,
                     pending.file_targets,
@@ -456,10 +471,9 @@ impl App {
                     let _ = tracker.delete_plugins_for_mod(&old_id).await;
                     let _ = tracker.delete_mod_files(&old_id).await;
                     let _ = tracker.delete_mod(&old_id).await;
-                    if let Ok(cache) = paths::mod_cache_dir(&old_id)
-                        && cache.exists()
-                    {
-                        let _ = std::fs::remove_dir_all(&cache);
+                    let old_cache = paths::mod_cache_dir_in(&cache_root, &old_id);
+                    if old_cache.exists() {
+                        let _ = std::fs::remove_dir_all(&old_cache);
                     }
                     if !old_state.is_empty() {
                         let new_plugins = tracker
@@ -544,6 +558,13 @@ impl App {
             return;
         };
         let mod_name = pending.mod_name.clone();
+        let cache_root = match self.cache_root_for(&pending.game.id) {
+            Ok(r) => r,
+            Err(e) => {
+                self.toaster.toast(&format!("Cannot resolve cache dir: {e}"));
+                return;
+            }
+        };
 
         self.installing = true;
         self.status_msg = Some(format!("Merging into {}…", mod_name));
@@ -566,6 +587,7 @@ impl App {
                     &mod_name,
                     &existing_mod_id,
                     &tracker,
+                    &cache_root,
                     pending.file_targets,
                     pending.stripped_wrapper,
                     on_progress,

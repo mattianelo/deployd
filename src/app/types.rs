@@ -91,6 +91,7 @@ pub struct InitData {
     pub tools: Vec<Tool>,
     pub selected_game_idx: usize,
     pub downloads_dir: Option<PathBuf>,
+    pub game_cache_dirs: HashMap<String, PathBuf>,
     pub download_entries: Vec<DownloadEntry>,
     pub rate_limit_info: Option<crate::core::nexus_api::RateLimitInfo>,
     pub vanilla_plugins: HashSet<String>,

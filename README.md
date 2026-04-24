@@ -73,6 +73,30 @@ sudo apt install libgtk-4-1 libadwaita-1-0
 
 ---
 
+## Storage
+
+### Cache Folder
+
+By default Deployd stores all cached mod files in `~/.local/share/deployd/cache/` (or `$SNAP_USER_COMMON/deployd/cache/` in the Snap). You can relocate a game's cache to any directory via **Settings → Manage Games**, under the "Cache Folder" row for that game.
+
+**Why would you move it?**  
+If your game lives on a secondary drive, placing the cache on the same drive eliminates the copy overhead on every install: Deployd deploys mods using **hardlinks** (zero-copy, zero extra disk space).
+
+**Hardlink filesystem constraint**
+
+Hardlinks require both the cache directory and the game directory to reside on the **same filesystem** — that is, they must share the same `st_dev` value as reported by the OS. Concretely:
+
+| Storage setup | What counts as "same filesystem" |
+|---|---|
+| Standard partitions | Same partition / block device |
+| BTRFS | Same **subvolume** — hardlinks cannot cross subvolume boundaries even on the same physical disk, because each subvolume has its own inode space |
+| ZFS | Same **dataset** — hardlinks cannot cross datasets even within the same pool |
+| LVM / LUKS | Same logical volume |
+
+If you select a cache directory on a different filesystem than the game folder, Deployd will reject the selection with a clear error message. No files are moved until the check passes.
+
+---
+
 ## Getting Started
 
 ### 1. Game Setup

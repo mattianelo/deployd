@@ -18,10 +18,13 @@ pub struct ModPropertiesInit {
     /// Whether the selected game uses the Aurora engine (Witcher 1). Shows the
     /// same Data/Root toggles as Bethesda but with Aurora-specific labels.
     pub is_aurora: bool,
+    /// Resolved cache root for this game (used to locate the mod's cache folder).
+    pub cache_root: std::path::PathBuf,
 }
 
 pub struct ModPropertiesDialog {
     mod_id: String,
+    cache_root: std::path::PathBuf,
     name: String,
     notes: String,
     install_target: InstallTarget,
@@ -360,9 +363,11 @@ impl SimpleComponent for ModPropertiesDialog {
             mod_entry,
             is_bethesda,
             is_aurora,
+            cache_root,
         } = init;
         let mut model = ModPropertiesDialog {
             mod_id: mod_entry.id,
+            cache_root,
             name: mod_entry.name,
             notes: mod_entry.notes.unwrap_or_default(),
             install_target: mod_entry.install_target,
@@ -595,10 +600,10 @@ impl SimpleComponent for ModPropertiesDialog {
                 let _ = sender.output(ModPropertiesOutput::Cancelled);
             }
             ModPropertiesMsg::OpenFolder => {
-                if let Ok(cache_dir) = crate::utils::paths::mod_cache_dir(&self.mod_id) {
-                    let _ = std::fs::create_dir_all(&cache_dir);
-                    let _ = open::that(&cache_dir);
-                }
+                let cache_dir =
+                    crate::utils::paths::mod_cache_dir_in(&self.cache_root, &self.mod_id);
+                let _ = std::fs::create_dir_all(&cache_dir);
+                let _ = open::that(&cache_dir);
             }
             ModPropertiesMsg::ScanCacheClicked => {
                 let _ = sender.output(ModPropertiesOutput::ScanCache {

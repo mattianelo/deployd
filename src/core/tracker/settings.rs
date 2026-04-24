@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+
 use anyhow::{Context, Result};
 
 use crate::models::mod_entry::InstallTarget;
@@ -161,6 +164,81 @@ impl Tracker {
             .execute(&self.pool)
             .await
             .context("Failed to delete tool")?;
+        Ok(())
+    }
+
+    /// Get the custom cache directory for a specific game, if set.
+    pub async fn get_game_cache_dir(&self, game_id: &str) -> Result<Option<PathBuf>> {
+        let key = format!("cache_dir_{game_id}");
+        Ok(self.get_setting(&key).await?.map(PathBuf::from))
+    }
+
+    /// Set a custom cache directory for a specific game.
+    pub async fn set_game_cache_dir(&self, game_id: &str, dir: &Path) -> Result<()> {
+        let key = format!("cache_dir_{game_id}");
+        self.set_setting(&key, &dir.to_string_lossy()).await
+    }
+
+    /// Remove the custom cache directory for a specific game (revert to default).
+    pub async fn clear_game_cache_dir(&self, game_id: &str) -> Result<()> {
+        let key = format!("cache_dir_{game_id}");
+        sqlx::query("DELETE FROM settings WHERE key = ?")
+            .bind(&key)
+            .execute(&self.pool)
+            .await
+            .context("Failed to clear game cache dir")?;
+        Ok(())
+    }
+
+    /// Load all per-game custom cache dirs as a map of game_id → PathBuf.
+    pub async fn load_game_cache_dirs(&self) -> Result<HashMap<String, PathBuf>> {
+        let rows = sqlx::query_as::<_, (String, String)>(
+            "SELECT key, value FROM settings WHERE key LIKE 'cache_dir_%'",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("Failed to load game cache dirs")?;
+
+        Ok(rows
+            .into_iter()
+            .filter_map(|(key, value)| {
+                let game_id = key.strip_prefix("cache_dir_")?.to_string();
+                Some((game_id, PathBuf::from(value)))
+            })
+            .collect())
+    }
+
+    /// Rewrite all cache_path entries for a game's mods after a cache directory move.
+    ///
+    /// Uses SQL REPLACE() so only paths that actually start with old_prefix are touched.
+    pub async fn update_game_cache_paths(
+        &self,
+        game_id: &str,
+        old_prefix: &str,
+        new_prefix: &str,
+    ) -> Result<()> {
+        sqlx::query(
+            "UPDATE mod_files SET cache_path = REPLACE(cache_path, ?, ?)
+             WHERE mod_id IN (SELECT id FROM mods WHERE game_id = ?)",
+        )
+        .bind(old_prefix)
+        .bind(new_prefix)
+        .bind(game_id)
+        .execute(&self.pool)
+        .await
+        .context("Failed to update mod_files cache paths")?;
+
+        sqlx::query(
+            "UPDATE deployed_files SET cache_path = REPLACE(cache_path, ?, ?)
+             WHERE game_id = ?",
+        )
+        .bind(old_prefix)
+        .bind(new_prefix)
+        .bind(game_id)
+        .execute(&self.pool)
+        .await
+        .context("Failed to update deployed_files cache paths")?;
+
         Ok(())
     }
 

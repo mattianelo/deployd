@@ -40,6 +40,10 @@ impl App {
             .selected_game()
             .map(|g| g.engine == GameEngine::Aurora)
             .unwrap_or(false);
+        let cache_root = self
+            .selected_game()
+            .and_then(|g| self.cache_root_for(&g.id).ok())
+            .unwrap_or_else(|| crate::utils::paths::cache_root().unwrap_or_default());
         self.mod_properties_dialog = Some(
             ModPropertiesDialog::builder()
                 .transient_for(root)
@@ -47,6 +51,7 @@ impl App {
                     mod_entry,
                     is_bethesda,
                     is_aurora,
+                    cache_root,
                 })
                 .forward(sender.input_sender(), move |output| match output {
                     ModPropertiesOutput::Applied {
@@ -145,11 +150,14 @@ impl App {
             .selected_game()
             .map(|g| (g.data_subdir.clone(), g.engine.clone()))
             .unwrap_or_else(|| (String::new(), GameEngine::Bethesda));
+        let cache_root = self
+            .selected_game()
+            .and_then(|g| self.cache_root_for(&g.id).ok())
+            .unwrap_or_else(|| crate::utils::paths::cache_root().unwrap_or_default());
 
         sender.oneshot_command(async move {
             let result: Result<String, String> = async {
-                let cache_dir =
-                    crate::utils::paths::mod_cache_dir(&mod_id).map_err(|e| e.to_string())?;
+                let cache_dir = crate::utils::paths::mod_cache_dir_in(&cache_root, &mod_id);
                 let mut files = Vec::new();
                 if cache_dir.is_dir() {
                     for entry in walkdir::WalkDir::new(&cache_dir).min_depth(1) {

@@ -1,3 +1,6 @@
+use std::path::PathBuf;
+
+use anyhow::Result;
 use gtk::prelude::*;
 use relm4::prelude::*;
 
@@ -9,6 +12,7 @@ use crate::ui::mod_list::ModListItemKind;
 use crate::ui::pre_install_dialog::{
     PreInstallDialog, PreInstallDialogInit, PreInstallDialogOutput,
 };
+use crate::utils::paths;
 
 use super::App;
 use super::messages::AppMsg;
@@ -17,6 +21,12 @@ use super::types::{DownloadFilter, ModFilter, SearchScope};
 impl App {
     pub(crate) fn selected_game(&self) -> Option<&Game> {
         self.games.get(self.selected_game_idx)
+    }
+
+    /// Resolve the effective cache root for a game.
+    pub(crate) fn cache_root_for(&self, game_id: &str) -> Result<PathBuf> {
+        let custom = self.game_cache_dirs.get(game_id).map(PathBuf::as_path);
+        paths::game_cache_root(custom)
     }
 
     /// Find an installed mod that has the given Nexus mod ID.

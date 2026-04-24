@@ -1,9 +1,11 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use adw::prelude::*;
 use gtk::prelude::*;
 use relm4::prelude::*;
 
+use crate::app::cache;
 use crate::app::messages::GameConfig;
 use crate::core::game;
 use crate::core::tracker::PersistedGame;
@@ -19,6 +21,8 @@ struct GameEntry {
 
 pub struct GameSetupDialog {
     entries: Vec<GameEntry>,
+    /// Custom cache dirs per game_id (passed in at init, updated on change).
+    game_cache_dirs: HashMap<String, PathBuf>,
     /// Page switcher — "list" vs "add".
     stack: gtk::Stack,
     /// Whether the "add game" page is currently shown.
@@ -48,6 +52,11 @@ pub enum GameSetupMsg {
     /// Browse for a wine prefix override for entry at index.
     BrowsePrefix(usize),
     PrefixChosen(usize, PathBuf),
+    /// Browse for a custom cache folder for the game at index.
+    BrowseCacheDir(usize),
+    CacheDirChosen(usize, PathBuf),
+    /// Reset the custom cache dir for the game at index back to the default.
+    ResetCacheDir(usize),
     /// Remove a game entry.
     RemoveGame(usize),
     /// Switch to the "Add Game" form.
@@ -77,6 +86,15 @@ pub enum GameSetupOutput {
         hidden_ids: Vec<String>,
     },
     Closed,
+    /// User selected a new cache directory for a game; the App runs the move.
+    CacheDirChangeRequested {
+        game_id: String,
+        new_dir: PathBuf,
+    },
+    /// User reset a game's cache dir to the global default.
+    CacheDirResetRequested {
+        game_id: String,
+    },
 }
 
 impl GameSetupDialog {
@@ -89,8 +107,9 @@ impl GameSetupDialog {
         self.games_section.set_visible(!self.entries.is_empty());
 
         for (idx, entry) in self.entries.iter().enumerate() {
+            let cache_dir = self.game_cache_dirs.get(&entry.game.id).cloned();
             self.games_list
-                .append(&Self::build_entry_row(idx, entry, sender));
+                .append(&Self::build_entry_row(idx, entry, cache_dir, sender));
         }
     }
 
@@ -98,6 +117,7 @@ impl GameSetupDialog {
     fn build_entry_row(
         idx: usize,
         entry: &GameEntry,
+        cache_dir: Option<PathBuf>,
         sender: &ComponentSender<Self>,
     ) -> adw::ExpanderRow {
         let row = adw::ExpanderRow::new();
@@ -172,6 +192,41 @@ impl GameSetupDialog {
         prefix_row.add_suffix(&prefix_btn);
         row.add_row(&prefix_row);
 
+        // Cache folder row.
+        let cache_row = adw::ActionRow::new();
+        cache_row.set_title("Cache Folder");
+        cache_row.set_subtitle_lines(1);
+        let cache_subtitle = cache::display_cache_root(cache_dir.as_ref());
+        cache_row.set_subtitle(&cache_subtitle);
+
+        let cache_browse_btn = gtk::Button::from_icon_name("folder-symbolic");
+        cache_browse_btn.set_valign(gtk::Align::Center);
+        cache_browse_btn.add_css_class("flat");
+        cache_browse_btn.set_tooltip_text(Some("Browse…"));
+        {
+            let input = sender.input_sender().clone();
+            cache_browse_btn.connect_clicked(move |_| {
+                input.send(GameSetupMsg::BrowseCacheDir(idx)).ok();
+            });
+        }
+        cache_row.add_suffix(&cache_browse_btn);
+
+        // "Reset" button — only shown when a custom dir is set.
+        let cache_reset_btn = gtk::Button::from_icon_name("edit-clear-symbolic");
+        cache_reset_btn.set_valign(gtk::Align::Center);
+        cache_reset_btn.add_css_class("flat");
+        cache_reset_btn.set_tooltip_text(Some("Reset to default"));
+        cache_reset_btn.set_visible(cache_dir.is_some());
+        {
+            let input = sender.input_sender().clone();
+            cache_reset_btn.connect_clicked(move |_| {
+                input.send(GameSetupMsg::ResetCacheDir(idx)).ok();
+            });
+        }
+        cache_row.add_suffix(&cache_reset_btn);
+
+        row.add_row(&cache_row);
+
         row
     }
 
@@ -184,8 +239,8 @@ impl GameSetupDialog {
 
 #[relm4::component(pub)]
 impl Component for GameSetupDialog {
-    /// (detected games — always empty, persisted games)
-    type Init = (Vec<Game>, Vec<PersistedGame>);
+    /// (detected games — always empty, persisted games, custom cache dirs)
+    type Init = (Vec<Game>, Vec<PersistedGame>, HashMap<String, PathBuf>);
     type Input = GameSetupMsg;
     type Output = GameSetupOutput;
     type CommandOutput = ();
@@ -377,7 +432,7 @@ impl Component for GameSetupDialog {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let (detected_games, persisted_custom) = init;
+        let (detected_games, persisted_custom, game_cache_dirs) = init;
 
         // Merge detected (now always empty) and persisted custom games.
         let mut entries: Vec<GameEntry> = detected_games
@@ -423,6 +478,7 @@ impl Component for GameSetupDialog {
 
         let model = GameSetupDialog {
             entries,
+            game_cache_dirs,
             stack,
             add_page_visible: false,
             games_list,
@@ -510,6 +566,37 @@ impl Component for GameSetupDialog {
                     entry.game.wine_prefix = Some(path);
                 }
                 self.rebuild_games(&sender);
+            }
+
+            GameSetupMsg::BrowseCacheDir(idx) => {
+                let input = sender.input_sender().clone();
+                sender.oneshot_command(async move {
+                    if let Ok(Some(path)) =
+                        crate::utils::portal::select_folder("Select Cache Folder").await
+                    {
+                        let _ = input.send(GameSetupMsg::CacheDirChosen(idx, path));
+                    }
+                });
+            }
+
+            GameSetupMsg::CacheDirChosen(idx, path) => {
+                let Some(entry) = self.entries.get(idx) else {
+                    return;
+                };
+                let game_id = entry.game.id.clone();
+                self.game_cache_dirs.insert(game_id.clone(), path.clone());
+                self.rebuild_games(&sender);
+                let _ = sender.output(GameSetupOutput::CacheDirChangeRequested { game_id, new_dir: path });
+            }
+
+            GameSetupMsg::ResetCacheDir(idx) => {
+                let Some(entry) = self.entries.get(idx) else {
+                    return;
+                };
+                let game_id = entry.game.id.clone();
+                self.game_cache_dirs.remove(&game_id);
+                self.rebuild_games(&sender);
+                let _ = sender.output(GameSetupOutput::CacheDirResetRequested { game_id });
             }
 
             GameSetupMsg::RemoveGame(idx) => {

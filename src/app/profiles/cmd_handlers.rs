@@ -148,6 +148,7 @@ impl App {
                     self.downloads_dir = dir;
                 }
 
+                self.game_cache_dirs = data.game_cache_dirs;
                 self.all_downloads = data.download_entries;
                 self.rebuild_downloads_view();
 

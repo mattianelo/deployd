@@ -54,6 +54,10 @@ impl App {
         let Some(tracker) = self.tracker.clone() else {
             return;
         };
+        let cache_root = self
+            .selected_game()
+            .and_then(|g| self.cache_root_for(&g.id).ok())
+            .unwrap_or_else(|| paths::cache_root().unwrap_or_default());
 
         self.pending_scroll_restore = Some(self.mod_scroll.vadjustment().value());
         self.mods.guard().remove(idx);
@@ -74,9 +78,8 @@ impl App {
                     .delete_mod(&mod_id)
                     .await
                     .map_err(|e| e.to_string())?;
-                if let Ok(cache) = paths::mod_cache_dir(&mod_id)
-                    && cache.exists()
-                {
+                let cache = paths::mod_cache_dir_in(&cache_root, &mod_id);
+                if cache.exists() {
                     let _ = std::fs::remove_dir_all(&cache);
                 }
                 Ok(mod_id)
@@ -529,11 +532,13 @@ impl App {
             return;
         };
         let game_id = game.id.clone();
+        let cache_root = self
+            .cache_root_for(&game.id)
+            .unwrap_or_else(|_| paths::cache_root().unwrap_or_default());
         sender.oneshot_command(async move {
             let result: Result<(String, std::path::PathBuf), String> = async {
                 let mod_id = uuid::Uuid::new_v4().to_string();
-                let cache_dir =
-                    crate::utils::paths::mod_cache_dir(&mod_id).map_err(|e| e.to_string())?;
+                let cache_dir = crate::utils::paths::mod_cache_dir_in(&cache_root, &mod_id);
                 std::fs::create_dir_all(&cache_dir).map_err(|e| e.to_string())?;
                 let priority = tracker
                     .next_priority(&game_id)

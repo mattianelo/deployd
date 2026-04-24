@@ -22,7 +22,7 @@ pub struct DeployResult {
     pub conflicts_resolved: usize,
 }
 
-pub async fn purge(game: &Game, tracker: &Tracker) -> Result<usize> {
+pub async fn purge(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result<usize> {
     let game_data = paths::game_data_dir(game);
     bake_modified_plugins(game, tracker, &game_data).await;
 
@@ -53,14 +53,14 @@ pub async fn purge(game: &Game, tracker: &Tracker) -> Result<usize> {
         }
     }
 
-    if let Err(e) = mod_folders::refresh_named_mod_folders(tracker, &game.id).await {
+    if let Err(e) = mod_folders::refresh_named_mod_folders(tracker, &game.id, cache_root).await {
         eprintln!("[deployd] named_mods refresh failed: {e}");
     }
 
     Ok(count)
 }
 
-pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
+pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result<DeployResult> {
     let game_data = paths::game_data_dir(game);
 
     bake_modified_plugins(game, tracker, &game_data).await;
@@ -304,7 +304,7 @@ pub async fn deploy(game: &Game, tracker: &Tracker) -> Result<DeployResult> {
         .post_deploy(game, tracker)
         .await?;
 
-    if let Err(e) = mod_folders::refresh_named_mod_folders(tracker, &game.id).await {
+    if let Err(e) = mod_folders::refresh_named_mod_folders(tracker, &game.id, cache_root).await {
         eprintln!("[deployd] named_mods refresh failed: {e}");
     }
 

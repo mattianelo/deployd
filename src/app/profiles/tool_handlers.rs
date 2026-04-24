@@ -246,6 +246,9 @@ impl App {
         let tool_name = tool.name.clone();
         let exit_sender = sender.input_sender().clone();
         let exit_tool_name = tool_name.clone();
+        let cache_root = self
+            .cache_root_for(&game.id)
+            .unwrap_or_else(|_| crate::utils::paths::cache_root().unwrap_or_default());
 
         sender.oneshot_command(async move {
             let result: Result<String, String> = (move || {
@@ -253,6 +256,7 @@ impl App {
                     &tool,
                     &game,
                     &wine_config,
+                    &cache_root,
                     Some(Box::new(move |error| {
                         let _ = exit_sender.send(AppMsg::ToolExited(exit_tool_name, error));
                     })),

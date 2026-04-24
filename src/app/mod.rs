@@ -1,3 +1,5 @@
+pub mod cache;
+pub mod cache_handlers;
 pub mod deploy;
 pub mod downloads;
 pub mod external;
@@ -1149,6 +1151,12 @@ impl Component for App {
                 game_id,
                 delete_mods,
             } => self.handle_remove_game(game_id, delete_mods, &sender),
+            AppMsg::CacheDirChangeRequested { game_id, new_dir } => {
+                self.handle_cache_dir_change_requested(game_id, new_dir, &sender)
+            }
+            AppMsg::CacheDirResetRequested { game_id } => {
+                self.handle_cache_dir_reset_requested(game_id, &sender)
+            }
             AppMsg::NexusApiKeyUpdated => self.handle_nexus_api_key_updated(),
             AppMsg::NxmLinkReceived(link) => self.handle_nxm_link_received(link, &sender),
             AppMsg::CheckUpdatesClicked => self.handle_check_updates(&sender),
@@ -1329,6 +1337,14 @@ impl Component for App {
             }
             AppCmdMsg::DeployDone(result) => self.handle_cmd_deploy_done(result, &sender),
             AppCmdMsg::PurgeDone(result) => self.handle_cmd_purge_done(result),
+            AppCmdMsg::CacheDirMoved {
+                game_id,
+                new_dir,
+                result,
+            } => self.handle_cmd_cache_dir_moved(game_id, new_dir, result),
+            AppCmdMsg::CacheDirReset { game_id, result } => {
+                self.handle_cmd_cache_dir_reset(game_id, result)
+            }
             AppCmdMsg::PrioritySaved(result) => self.handle_cmd_priority_saved(result, &sender),
             AppCmdMsg::PluginOrderSaved(result) => self.handle_cmd_plugin_order_saved(result),
             AppCmdMsg::ProfileSwitched(result) => self.handle_cmd_profile_switched(result, &sender),

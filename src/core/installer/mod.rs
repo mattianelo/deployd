@@ -141,6 +141,7 @@ pub async fn add_mod_with_file_list(
     game: &Game,
     mod_name: &str,
     tracker: &Tracker,
+    cache_root: &Path,
     nexus_ids: Option<(i64, i64, String)>,
     archive_hash: Option<String>,
     file_targets: HashMap<String, InstallTarget>,
@@ -154,7 +155,7 @@ pub async fn add_mod_with_file_list(
         handler.route_file_list(game, mod_name, stripped_wrapper.as_deref(), file_list, &file_targets);
 
     let game_rules = rules::rules_for_game(&game.id);
-    let cache_dir = utils_paths::mod_cache_dir(&mod_id)?;
+    let cache_dir = utils_paths::mod_cache_dir_in(cache_root, &mod_id);
     fs::create_dir_all(&cache_dir)
         .with_context(|| format!("Cannot create cache dir: {}", cache_dir.display()))?;
 
@@ -356,6 +357,7 @@ pub async fn merge_files_into_mod(
     mod_name: &str,
     existing_mod_id: &str,
     tracker: &Tracker,
+    cache_root: &Path,
     file_targets: HashMap<String, InstallTarget>,
     stripped_wrapper: Option<String>,
     on_progress: Option<Box<dyn Fn(usize, usize) + Send>>,
@@ -365,7 +367,7 @@ pub async fn merge_files_into_mod(
         handler.route_file_list(game, mod_name, stripped_wrapper.as_deref(), file_list, &file_targets);
 
     let game_rules = rules::rules_for_game(&game.id);
-    let cache_dir = utils_paths::mod_cache_dir(existing_mod_id)?;
+    let cache_dir = utils_paths::mod_cache_dir_in(cache_root, existing_mod_id);
     fs::create_dir_all(&cache_dir)
         .with_context(|| format!("Cannot create cache dir: {}", cache_dir.display()))?;
 

@@ -65,17 +65,24 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         let detected: Vec<crate::models::game::Game> = self.games.clone();
+        let cache_dirs = self.game_cache_dirs.clone();
 
         self.game_setup_dialog = Some(
             GameSetupDialog::builder()
                 .transient_for(root)
-                .launch((detected, vec![]))
+                .launch((detected, vec![], cache_dirs))
                 .forward(sender.input_sender(), |output| match output {
                     GameSetupOutput::Confirmed {
                         enabled,
                         hidden_ids,
                     } => AppMsg::GamesConfigured(enabled, hidden_ids),
                     GameSetupOutput::Closed => AppMsg::ManageGamesClosed,
+                    GameSetupOutput::CacheDirChangeRequested { game_id, new_dir } => {
+                        AppMsg::CacheDirChangeRequested { game_id, new_dir }
+                    }
+                    GameSetupOutput::CacheDirResetRequested { game_id } => {
+                        AppMsg::CacheDirResetRequested { game_id }
+                    }
                 }),
         );
     }
@@ -256,6 +263,9 @@ impl App {
         self.game_model.remove(idx as u32);
 
         if let Some(tracker) = self.tracker.clone() {
+            let cache_root = self
+                .cache_root_for(&game_id)
+                .unwrap_or_else(|_| crate::utils::paths::cache_root().unwrap_or_default());
             sender.oneshot_command(async move {
                 let _ = tracker.hide_game(&game_id).await;
                 if delete_mods && let Ok(mods) = tracker.list_mods(&game_id).await {
@@ -263,9 +273,8 @@ impl App {
                         let _ = tracker.delete_plugins_for_mod(&m.id).await;
                         let _ = tracker.delete_mod_files(&m.id).await;
                         let _ = tracker.delete_mod(&m.id).await;
-                        if let Ok(cache) = crate::utils::paths::mod_cache_dir(&m.id)
-                            && cache.exists()
-                        {
+                        let cache = crate::utils::paths::mod_cache_dir_in(&cache_root, &m.id);
+                        if cache.exists() {
                             let _ = std::fs::remove_dir_all(&cache);
                         }
                     }

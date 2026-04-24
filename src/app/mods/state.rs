@@ -363,6 +363,10 @@ impl App {
 
         if let Some(tracker) = self.tracker.clone() {
             let game_id = self.selected_game().map(|g| g.id.clone());
+            let cache_root = self
+                .selected_game()
+                .and_then(|g| self.cache_root_for(&g.id).ok())
+                .unwrap_or_else(|| crate::utils::paths::cache_root().unwrap_or_default());
             sender.oneshot_command(async move {
                 let result = tracker
                     .update_priorities(&updates)
@@ -370,7 +374,8 @@ impl App {
                     .map_err(|e| e.to_string());
                 if result.is_ok()
                     && let Some(ref gid) = game_id
-                    && let Err(e) = mod_folders::refresh_named_mod_folders(&tracker, gid).await
+                    && let Err(e) =
+                        mod_folders::refresh_named_mod_folders(&tracker, gid, &cache_root).await
                 {
                     eprintln!("[deployd] named_mods refresh failed: {e}");
                 }
