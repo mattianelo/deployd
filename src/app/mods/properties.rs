@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use relm4::factory::DynamicIndex;
 use relm4::prelude::*;
 
+use crate::models::game::GameEngine;
 use crate::models::mod_entry::InstallTarget;
 use crate::ui::mod_properties_dialog::{
     ModPropertiesDialog, ModPropertiesInit, ModPropertiesOutput,
@@ -33,7 +34,11 @@ impl App {
         let mod_id_for_output = mod_id.clone();
         let is_bethesda = self
             .selected_game()
-            .map(|g| g.engine == crate::models::game::GameEngine::Bethesda)
+            .map(|g| g.engine == GameEngine::Bethesda)
+            .unwrap_or(false);
+        let is_aurora = self
+            .selected_game()
+            .map(|g| g.engine == GameEngine::Aurora)
             .unwrap_or(false);
         self.mod_properties_dialog = Some(
             ModPropertiesDialog::builder()
@@ -41,6 +46,7 @@ impl App {
                 .launch(ModPropertiesInit {
                     mod_entry,
                     is_bethesda,
+                    is_aurora,
                 })
                 .forward(sender.input_sender(), move |output| match output {
                     ModPropertiesOutput::Applied {
@@ -135,6 +141,11 @@ impl App {
             return;
         };
         let mod_name = self.mod_name_for_id(&mod_id);
+        let (data_subdir, engine) = self
+            .selected_game()
+            .map(|g| (g.data_subdir.clone(), g.engine.clone()))
+            .unwrap_or_else(|| (String::new(), GameEngine::Bethesda));
+
         sender.oneshot_command(async move {
             let result: Result<String, String> = async {
                 let cache_dir =
@@ -150,7 +161,37 @@ impl App {
                             .path()
                             .strip_prefix(&cache_dir)
                             .map_err(|e| e.to_string())?;
-                        let game_rel_original = rel.to_string_lossy().replace('\\', "/");
+                        let raw = rel.to_string_lossy().replace('\\', "/");
+
+                        // Strip a redundant data-subdir prefix (e.g. "Data/Override/foo" →
+                        // "Override/foo") so that renaming a cache subfolder to "data" does not
+                        // produce "Data/data/..." at deploy time.
+                        let normalized = if data_subdir.is_empty() {
+                            raw
+                        } else {
+                            crate::core::installer::strip_data_subdir_prefix_str(
+                                &raw,
+                                &data_subdir,
+                            )
+                        };
+
+                        // For Aurora, cache paths that sit inside game-root sibling dirs
+                        // (system/, launcher/, register/) should be recorded with the "../"
+                        // prefix so the deployer routes them to the game root, not Data/.
+                        let game_rel_original = if engine == GameEngine::Aurora {
+                            let lower = normalized.to_lowercase();
+                            if lower.starts_with("system/")
+                                || lower.starts_with("launcher/")
+                                || lower.starts_with("register/")
+                            {
+                                format!("../{normalized}")
+                            } else {
+                                normalized
+                            }
+                        } else {
+                            normalized
+                        };
+
                         let game_rel_lowercase = game_rel_original.to_lowercase();
                         let cache_path = entry.path().to_string_lossy().to_string();
                         files.push(crate::models::manifest::ModFile {

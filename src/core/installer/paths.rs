@@ -503,7 +503,7 @@ pub(super) fn strip_data_subdir_prefix(rel: &Path, data_subdir: &str) -> PathBuf
 
 /// Strip a leading data-subdir prefix from an original-cased path string.
 /// Case-insensitive prefix match, but preserves original casing of the remainder.
-pub(super) fn strip_data_subdir_prefix_str(rel: &str, data_subdir: &str) -> String {
+pub(crate) fn strip_data_subdir_prefix_str(rel: &str, data_subdir: &str) -> String {
     let prefix_lower = format!("{}/", data_subdir.to_lowercase());
     if rel.to_lowercase().starts_with(&prefix_lower) {
         rel[prefix_lower.len()..].to_string()

@@ -528,13 +528,26 @@ fn ensure_dirs_case_insensitive(
 ) -> Result<PathBuf> {
     let components: Vec<&str> = rel_path.split('/').collect();
     let dir_components = &components[..components.len().saturating_sub(1)];
-    let mut current = create_dirs_case_insensitive(base, dir_components, canonical, dir_cache)?;
+    let parent = create_dirs_case_insensitive(base, dir_components, canonical, dir_cache)?;
 
     if let Some(filename) = components.last() {
-        current = current.join(filename);
+        // Scan the parent directory case-insensitively so that deploying
+        // "Scripts/Mod.lua" correctly finds and reuses the existing
+        // "Scripts/mod.lua" path rather than creating a second file alongside it.
+        let fname_lower = filename.to_lowercase();
+        if let Ok(rd) = fs::read_dir(&parent) {
+            for entry in rd.flatten() {
+                if entry.file_type().map(|t| t.is_file()).unwrap_or(false)
+                    && entry.file_name().to_string_lossy().to_lowercase() == fname_lower
+                {
+                    return Ok(entry.path());
+                }
+            }
+        }
+        Ok(parent.join(filename))
+    } else {
+        Ok(parent)
     }
-
-    Ok(current)
 }
 
 fn remove_empty_parents(dir: &std::path::Path, stop_at: &PathBuf) {

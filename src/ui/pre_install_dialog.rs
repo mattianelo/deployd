@@ -272,7 +272,7 @@ impl SimpleComponent for PreInstallDialog {
         // Populate the "Set all" row (only meaningful when there are files)
         if !model.file_preview.is_empty() {
             let legend_text = if model.is_aurora {
-                "D = Override (Data/Override/) · R = game root (system, launcher)"
+                "D = Data/ directory · R = game root (System, Launcher, Register)"
             } else {
                 "D = Data directory · R = game root (script extenders, ENB)"
             };

@@ -15,6 +15,9 @@ pub struct ModPropertiesInit {
     /// REDEngine) have no Data/Root distinction, so the install-target toggles
     /// are hidden.
     pub is_bethesda: bool,
+    /// Whether the selected game uses the Aurora engine (Witcher 1). Shows the
+    /// same Data/Root toggles as Bethesda but with Aurora-specific labels.
+    pub is_aurora: bool,
 }
 
 pub struct ModPropertiesDialog {
@@ -27,6 +30,8 @@ pub struct ModPropertiesDialog {
     installed_at: Option<String>,
     /// Whether the selected game is a Bethesda game.
     is_bethesda: bool,
+    /// Whether the selected game uses the Aurora engine (Witcher 1).
+    is_aurora: bool,
     /// (game_rel_lowercase as stored in DB, display_path without leading "../")
     files: Vec<(String, String)>,
     /// Desired per-file targets, indexed parallel to `files`.
@@ -166,12 +171,12 @@ impl SimpleComponent for ModPropertiesDialog {
                             },
                         },
 
-                        // Global install target — Bethesda only (REDEngine has no Data/Root split)
+                        // Global install target — Bethesda and Aurora (REDEngine has no Data/Root split)
                         gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
                             set_spacing: 4,
                             #[watch]
-                            set_visible: model.is_bethesda,
+                            set_visible: model.is_bethesda || model.is_aurora,
 
                             gtk::Label {
                                 set_label: "Install To (all files)",
@@ -354,6 +359,7 @@ impl SimpleComponent for ModPropertiesDialog {
         let ModPropertiesInit {
             mod_entry,
             is_bethesda,
+            is_aurora,
         } = init;
         let mut model = ModPropertiesDialog {
             mod_id: mod_entry.id,
@@ -364,6 +370,7 @@ impl SimpleComponent for ModPropertiesDialog {
             author: mod_entry.author,
             installed_at: mod_entry.installed_at,
             is_bethesda,
+            is_aurora,
             files: Vec::new(),
             file_targets: Vec::new(),
             files_loading: true,
@@ -458,8 +465,8 @@ impl SimpleComponent for ModPropertiesDialog {
                     let row = adw::ActionRow::new();
                     row.set_title(display_path);
 
-                    // Per-file Data/Root toggles only make sense for Bethesda games.
-                    if self.is_bethesda {
+                    // Per-file Data/Root toggles for Bethesda and Aurora games.
+                    if self.is_bethesda || self.is_aurora {
                         let btn_data = gtk::ToggleButton::new();
                         btn_data.set_label("D");
                         btn_data.set_tooltip_text(Some("Deploy to Data directory"));
@@ -509,9 +516,14 @@ impl SimpleComponent for ModPropertiesDialog {
                     self.files_list.append(&row);
                 }
 
-                // Build the "Set all" row when there are files (Bethesda only).
-                if !self.files.is_empty() && self.is_bethesda {
-                    let legend = gtk::Label::new(Some("D = Data directory · R = game root"));
+                // Build the "Set all" row when there are files (Bethesda and Aurora).
+                if !self.files.is_empty() && (self.is_bethesda || self.is_aurora) {
+                    let legend_text = if self.is_aurora {
+                        "D = Data/ directory · R = game root (System, Launcher, Register)"
+                    } else {
+                        "D = Data directory · R = game root"
+                    };
+                    let legend = gtk::Label::new(Some(legend_text));
                     legend.add_css_class("dim-label");
                     legend.set_hexpand(true);
                     legend.set_halign(gtk::Align::Start);
