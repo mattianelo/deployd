@@ -96,6 +96,8 @@ pub struct InitData {
     pub rate_limit_info: Option<crate::core::nexus_api::RateLimitInfo>,
     pub vanilla_plugins: HashSet<String>,
     pub groups: Vec<ModGroup>,
+    pub vanilla_plugin_master_counts: HashMap<String, usize>,
+    pub vanilla_derived_plugins: HashSet<String>,
     /// Game records previously persisted to the DB (custom games + overrides).
     pub persisted_games: Vec<PersistedGame>,
     /// IDs of games the user has explicitly hidden.
@@ -117,6 +119,12 @@ pub struct LoadedData {
     pub tools: Vec<Tool>,
     pub vanilla_plugins: HashSet<String>,
     pub groups: Vec<ModGroup>,
+    /// Lowercase filename → number of masters declared in TES4 header.
+    /// Used to sort vanilla/DLC plugins by dependency depth (root masters first).
+    pub vanilla_plugin_master_counts: HashMap<String, usize>,
+    /// Lowercase filenames of managed plugins that were originally vanilla game files
+    /// (deployd backed them up before a mod overwrote them, e.g. a cleaned Fallout4.esm).
+    pub vanilla_derived_plugins: HashSet<String>,
 }
 
 pub(crate) fn download_status_sort_key(status: &crate::models::download::DownloadStatus) -> u8 {

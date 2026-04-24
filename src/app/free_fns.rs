@@ -228,21 +228,48 @@ pub(crate) async fn load_game_data(
 
     // Scan the game's Data directory for ALL plugin files (vanilla, DLC, CC, mod-managed).
     // Original casing is preserved for display; lowercasing is done at the point of comparison.
-    let vanilla_plugins: HashSet<String> = {
-        let data_dir = game::deploy_dir(game);
-        match std::fs::read_dir(&data_dir) {
-            Ok(entries) => entries
-                .flatten()
-                .filter_map(|e| {
-                    let orig = e.file_name().to_string_lossy().to_string();
-                    let lower = orig.to_lowercase();
-                    (lower.ends_with(".esp") || lower.ends_with(".esm") || lower.ends_with(".esl"))
-                        .then_some(orig) // store original casing
-                })
-                .collect(),
-            Err(_) => HashSet::new(),
-        }
+    let data_dir = game::deploy_dir(game);
+    let vanilla_plugins: HashSet<String> = match std::fs::read_dir(&data_dir) {
+        Ok(entries) => entries
+            .flatten()
+            .filter_map(|e| {
+                let orig = e.file_name().to_string_lossy().to_string();
+                let lower = orig.to_lowercase();
+                (lower.ends_with(".esp") || lower.ends_with(".esm") || lower.ends_with(".esl"))
+                    .then_some(orig) // store original casing
+            })
+            .collect(),
+        Err(_) => HashSet::new(),
     };
+
+    // Read TES4 master counts for every vanilla/on-disk plugin so they can be sorted by
+    // dependency depth (root masters with 0 declared masters first, DLCs after).
+    let vanilla_plugin_master_counts: HashMap<String, usize> = vanilla_plugins
+        .iter()
+        .map(|name| {
+            let count = crate::utils::plugin_header::read_masters(&data_dir.join(name))
+                .map(|m| m.len())
+                .unwrap_or(0);
+            (name.to_lowercase(), count)
+        })
+        .collect();
+
+    // Managed plugins whose on-disk file was originally a vanilla game file: deployd backed
+    // up the original before overwriting it (e.g. a user-cleaned Fallout4.esm installed as a mod).
+    let vanilla_derived_plugins: HashSet<String> = tracker
+        .get_all_vanilla_backups(game_id)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|(rel, _)| {
+            let lower = std::path::Path::new(&rel)
+                .file_name()?
+                .to_string_lossy()
+                .to_lowercase();
+            (lower.ends_with(".esm") || lower.ends_with(".esp") || lower.ends_with(".esl"))
+                .then_some(lower)
+        })
+        .collect();
 
     Ok(LoadedData {
         mods,
@@ -254,5 +281,7 @@ pub(crate) async fn load_game_data(
         tools,
         vanilla_plugins,
         groups,
+        vanilla_plugin_master_counts,
+        vanilla_derived_plugins,
     })
 }

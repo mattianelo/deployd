@@ -140,6 +140,8 @@ impl App {
         mods: &[ModEntry],
         plugin_masters: &HashMap<String, Vec<String>>,
         vanilla_plugins: &HashSet<String>,
+        vanilla_plugin_master_counts: &HashMap<String, usize>,
+        vanilla_derived: &HashSet<String>,
     ) {
         let managed_lower: HashSet<String> =
             plugins.iter().map(|p| p.filename.to_lowercase()).collect();
@@ -154,11 +156,32 @@ impl App {
         let mut installed = managed_lower.clone();
         installed.extend(vanilla_plugins.iter().map(|n| n.to_lowercase()));
 
+        // Collect truly-unmanaged vanilla plugins (not overwritten by any mod).
         let mut vanilla_sorted: Vec<String> = vanilla_plugins
             .iter()
             .filter(|name| !managed_lower.contains(&name.to_lowercase()))
             .cloned()
             .collect();
+
+        // Also include managed plugins that originally were vanilla game files (e.g. cleaned
+        // masters). They are rendered in the vanilla section with a "Vanilla / Modified" label
+        // and are non-draggable like ordinary vanilla plugins.
+        for p in &plugins {
+            let lower = p.filename.to_lowercase();
+            if vanilla_derived.contains(&lower) {
+                // Prefer the on-disk casing if available, otherwise use the installed filename.
+                let display_name = on_disk_name_map
+                    .get(&lower)
+                    .cloned()
+                    .unwrap_or_else(|| p.filename.clone());
+                vanilla_sorted.push(display_name);
+            }
+        }
+
+        // Sort by (extension tier, master count, alphabetical).
+        // Fewer declared masters → loads earlier → appears first within each tier.
+        // This places root masters (Fallout4.esm, Skyrim.esm) before DLC/CC plugins
+        // without relying on hardcoded name lists.
         vanilla_sorted.sort_by(|a, b| {
             let tier = |n: &str| {
                 let lower = n.to_lowercase();
@@ -170,11 +193,19 @@ impl App {
                     2
                 }
             };
+            let mc = |n: &str| {
+                vanilla_plugin_master_counts
+                    .get(n.to_lowercase().as_str())
+                    .copied()
+                    .unwrap_or(0)
+            };
             tier(a)
                 .cmp(&tier(b))
+                .then_with(|| mc(a).cmp(&mc(b)))
                 .then_with(|| a.to_lowercase().cmp(&b.to_lowercase()))
         });
         self.vanilla_plugin_names = vanilla_sorted;
+        self.vanilla_derived_plugins = vanilla_derived.clone();
 
         let mut guard = self.plugins.guard();
         guard.clear();
@@ -186,6 +217,11 @@ impl App {
                 #[cfg(not(feature = "loot"))]
                 let dirty_info: Option<PluginDirtyInfo> = None;
 
+                let mod_name = if vanilla_derived.contains(&filename.to_lowercase()) {
+                    "Vanilla / Modified".to_string()
+                } else {
+                    "Vanilla / DLC".to_string()
+                };
                 guard.push_back(PluginRowInit {
                     plugin: Plugin {
                         id: format!("vanilla:{filename}"),
@@ -195,7 +231,7 @@ impl App {
                         enabled: true,
                     },
                     display_filename: filename.clone(),
-                    mod_name: "Vanilla / DLC".to_string(),
+                    mod_name,
                     order_label: String::new(),
                     missing_masters: vec![],
                     mod_enabled: true,
@@ -205,7 +241,12 @@ impl App {
             }
         }
 
-        for (i, p) in plugins.into_iter().enumerate() {
+        let mut managed_display_idx = 0usize;
+        for p in plugins {
+            // Vanilla-derived plugins are rendered in the vanilla section above; skip them here.
+            if vanilla_derived.contains(&p.filename.to_lowercase()) {
+                continue;
+            }
             let mod_name = mods
                 .iter()
                 .find(|m| m.id == p.mod_id)
@@ -239,12 +280,13 @@ impl App {
                 plugin: p,
                 display_filename,
                 mod_name,
-                order_label: format!("#{}", i + 1),
+                order_label: format!("#{}", managed_display_idx + 1),
                 missing_masters,
                 mod_enabled,
                 dirty_info,
                 is_vanilla: false,
             });
+            managed_display_idx += 1;
         }
 
         self.managed_plugins_count = guard.len()
@@ -298,6 +340,8 @@ impl App {
             &data.mods,
             &data.plugin_masters,
             &data.vanilla_plugins,
+            &data.vanilla_plugin_master_counts,
+            &data.vanilla_derived_plugins,
         );
         self.populate_mods(data.mods, &data.groups, &data.overrides);
         self.update_profile_list(data.profiles, data.active_profile_idx);

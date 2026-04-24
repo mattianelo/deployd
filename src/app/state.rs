@@ -150,7 +150,12 @@ pub struct App {
     /// Number of Deployd-managed plugin rows (vanilla rows come after this index).
     pub(crate) managed_plugins_count: usize,
     /// Sorted vanilla/DLC plugin filenames for the current game (used when toggling visibility).
+    /// Also includes vanilla-derived filenames (managed mods that replaced a vanilla file).
     pub(crate) vanilla_plugin_names: Vec<String>,
+    /// Lowercase filenames of managed plugins that originally were vanilla game files
+    /// (e.g. a user-cleaned Fallout4.esm installed as a mod). Used to render them in the
+    /// vanilla section with a "Vanilla / Modified" label instead of as a movable managed plugin.
+    pub(crate) vanilla_derived_plugins: HashSet<String>,
     /// Master dependency map: plugin_id → list of master filenames (from TES4 header).
     /// Used to block drag-and-drop moves that would place a plugin before its masters.
     pub(crate) plugin_masters: HashMap<String, Vec<String>>,

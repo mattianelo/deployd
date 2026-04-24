@@ -140,6 +140,8 @@ impl App {
                     tools: data.tools,
                     vanilla_plugins: data.vanilla_plugins,
                     groups: data.groups,
+                    vanilla_plugin_master_counts: data.vanilla_plugin_master_counts,
+                    vanilla_derived_plugins: data.vanilla_derived_plugins,
                 };
                 self.apply_loaded_data(loaded, sender);
                 self.last_deployed_profile_id = data.last_deployed_profile_id;

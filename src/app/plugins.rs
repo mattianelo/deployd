@@ -266,6 +266,14 @@ impl App {
                 #[cfg(not(feature = "loot"))]
                 let dirty_info: Option<PluginDirtyInfo> = None;
 
+                let mod_name = if self
+                    .vanilla_derived_plugins
+                    .contains(&filename.to_lowercase())
+                {
+                    "Vanilla / Modified".to_string()
+                } else {
+                    "Vanilla / DLC".to_string()
+                };
                 guard.insert(
                     i,
                     PluginRowInit {
@@ -277,7 +285,7 @@ impl App {
                             enabled: true,
                         },
                         display_filename: filename.clone(),
-                        mod_name: "Vanilla / DLC".to_string(),
+                        mod_name,
                         order_label: String::new(),
                         missing_masters: vec![],
                         mod_enabled: true,

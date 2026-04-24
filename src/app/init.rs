@@ -195,6 +195,7 @@ pub(super) fn build_model(
         show_vanilla_plugins: false,
         managed_plugins_count: 0,
         vanilla_plugin_names: Vec::new(),
+        vanilla_derived_plugins: HashSet::new(),
         plugin_masters: HashMap::new(),
         app_update_version: None,
         app_update_url: None,
@@ -490,6 +491,8 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             tools,
             vanilla_plugins,
             groups,
+            vanilla_plugin_master_counts,
+            vanilla_derived_plugins,
         ) = if let Some(game) = &init_game {
             // sync_txt = true: honour any LOOT edits made while the app was closed.
             let loaded = load_game_data(&tracker, game, true).await?;
@@ -503,6 +506,8 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
                 loaded.tools,
                 loaded.vanilla_plugins,
                 loaded.groups,
+                loaded.vanilla_plugin_master_counts,
+                loaded.vanilla_derived_plugins,
             )
         } else {
             (
@@ -515,6 +520,8 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
                 vec![],
                 HashSet::new(),
                 vec![],
+                Default::default(),
+                Default::default(),
             )
         };
 
@@ -585,6 +592,8 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             rate_limit_info,
             vanilla_plugins,
             groups,
+            vanilla_plugin_master_counts,
+            vanilla_derived_plugins,
             persisted_games,
             hidden_game_ids,
             last_deployed_profile_id,
