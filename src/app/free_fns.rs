@@ -192,8 +192,12 @@ pub(crate) async fn load_game_data(
             )
         })
         .collect();
+    let mod_names: HashMap<String, String> = mods
+        .iter()
+        .map(|m| (m.id.clone(), m.name.clone()))
+        .collect();
     let overrides = tracker
-        .compute_overrides(game_id, game::handler_for(&game.engine))
+        .compute_overrides(game_id, game::handler_for(&game.engine), &mod_names)
         .await
         .map_err(|e| e.to_string())?;
     // Ensure a profile exists before listing (handles first-ever load of a

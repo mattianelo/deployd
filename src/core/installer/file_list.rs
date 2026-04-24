@@ -232,7 +232,7 @@ fn is_known_content_dir(name_lower: &str) -> bool {
     )
 }
 
-fn is_ignorable_file(name_lower: &str) -> bool {
+pub(crate) fn is_ignorable_file(name_lower: &str) -> bool {
     matches!(
         name_lower,
         "readme.txt"

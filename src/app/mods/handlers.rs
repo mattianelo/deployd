@@ -250,6 +250,8 @@ impl App {
                                 overridden_by: init.overridden_by,
                                 override_files: init.override_files.clone(),
                                 overridden_files: init.overridden_files.clone(),
+                                conflicting_mod_names: init.conflicting_mod_names.clone(),
+                                conflicted_by_mod_names: init.conflicted_by_mod_names.clone(),
                             })),
                         })
                 })

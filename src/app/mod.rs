@@ -1329,7 +1329,7 @@ impl Component for App {
             }
             AppCmdMsg::DeployDone(result) => self.handle_cmd_deploy_done(result, &sender),
             AppCmdMsg::PurgeDone(result) => self.handle_cmd_purge_done(result),
-            AppCmdMsg::PrioritySaved(result) => self.handle_cmd_priority_saved(result),
+            AppCmdMsg::PrioritySaved(result) => self.handle_cmd_priority_saved(result, &sender),
             AppCmdMsg::PluginOrderSaved(result) => self.handle_cmd_plugin_order_saved(result),
             AppCmdMsg::ProfileSwitched(result) => self.handle_cmd_profile_switched(result, &sender),
             AppCmdMsg::ProfileCreated(result) => self.handle_cmd_profile_created(result, &sender),

@@ -3,6 +3,7 @@ mod file_list;
 mod paths;
 
 pub use paths::auto_detect_install_target;
+pub(crate) use file_list::is_ignorable_file;
 pub(crate) use paths::{apply_redengine_path_fixups, route_aurora_paths, strip_data_subdir_prefix_str};
 
 /// Re-scan a staging directory for its current file contents, picking up any

@@ -43,6 +43,8 @@ pub struct OverrideInfo {
     pub overridden_by: usize,
     pub override_files: Vec<String>,
     pub overridden_files: Vec<String>,
+    pub conflicting_mod_names: Vec<String>,
+    pub conflicted_by_mod_names: Vec<String>,
 }
 
 impl Tracker {

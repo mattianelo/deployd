@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::{Context, Result};
 
@@ -280,6 +280,7 @@ impl Tracker {
         &self,
         game_id: &str,
         handler: &dyn EngineHandler,
+        mod_names: &HashMap<String, String>,
     ) -> Result<HashMap<String, OverrideInfo>> {
         let all_files = self.get_all_mod_files_by_priority(game_id).await?;
         dlog!(
@@ -301,6 +302,10 @@ impl Tracker {
             if indices.len() <= 1 {
                 continue;
             }
+            // Skip common files that are meaningless as conflicts (readme, license, etc.).
+            if handler.is_conflict_key_ignored(&path_key) {
+                continue;
+            }
             // Highest priority wins; game_rel is a stable tiebreaker.
             indices.sort_by(|&a, &b| {
                 all_files[b]
@@ -309,29 +314,176 @@ impl Tracker {
                     .then_with(|| all_files[a].0.cmp(&all_files[b].0))
             });
 
-            let winner_id = &all_files[indices[0]].1;
-            let info = result.entry(winner_id.clone()).or_insert_with(|| OverrideInfo {
-                overrides: 0,
-                overridden_by: 0,
-                override_files: Vec::new(),
-                overridden_files: Vec::new(),
-            });
-            info.overrides += 1;
-            info.override_files.push(path_key.clone());
+            // Deduplicate by mod_id: keep only the highest-priority file per mod.
+            // This prevents a mod from conflicting with itself when two of its own
+            // files share the same conflict key (e.g. two Override/ files with the
+            // same filename but different subfolders on the Aurora engine).
+            let mut seen_mods: HashSet<&str> = HashSet::new();
+            let deduped: Vec<usize> = indices
+                .iter()
+                .copied()
+                .filter(|&i| seen_mods.insert(&all_files[i].1))
+                .collect();
 
-            for &idx in &indices[1..] {
+            if deduped.len() <= 1 {
+                continue;
+            }
+
+            let winner_id = &all_files[deduped[0]].1;
+            let winner_name = mod_names
+                .get(winner_id.as_str())
+                .cloned()
+                .unwrap_or_else(|| winner_id.clone());
+
+            let winner_info = result.entry(winner_id.clone()).or_default();
+            winner_info.overrides += 1;
+            winner_info.override_files.push(path_key.clone());
+
+            for &idx in &deduped[1..] {
                 let loser_id = &all_files[idx].1;
-                let info = result.entry(loser_id.clone()).or_insert_with(|| OverrideInfo {
-                    overrides: 0,
-                    overridden_by: 0,
-                    override_files: Vec::new(),
-                    overridden_files: Vec::new(),
-                });
-                info.overridden_by += 1;
-                info.overridden_files.push(path_key.clone());
+                let loser_name = mod_names
+                    .get(loser_id.as_str())
+                    .cloned()
+                    .unwrap_or_else(|| loser_id.clone());
+
+                // Record that the winner overrides this particular mod.
+                let winner_info = result.entry(winner_id.clone()).or_default();
+                if !winner_info.conflicting_mod_names.contains(&loser_name) {
+                    winner_info.conflicting_mod_names.push(loser_name.clone());
+                }
+
+                let loser_info = result.entry(loser_id.clone()).or_default();
+                loser_info.overridden_by += 1;
+                loser_info.overridden_files.push(path_key.clone());
+                if !loser_info.conflicted_by_mod_names.contains(&winner_name) {
+                    loser_info.conflicted_by_mod_names.push(winner_name.clone());
+                }
             }
         }
 
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::game::engine_handler::handler_for;
+    use crate::models::game::GameEngine;
+    use crate::models::mod_entry::{InstallTarget, ModEntry};
+
+    async fn make_tracker() -> Tracker {
+        let tracker = Tracker::open("sqlite::memory:")
+            .await
+            .expect("in-memory DB");
+        sqlx::query("INSERT INTO games (id, title, path, data_subdir) VALUES ('g', 'Test', '/tmp/g', 'Data')")
+            .execute(&tracker.pool)
+            .await
+            .unwrap();
+        tracker
+    }
+
+    fn mod_entry(id: &str, name: &str, priority: i32) -> ModEntry {
+        ModEntry {
+            id: id.to_string(),
+            game_id: "g".to_string(),
+            name: name.to_string(),
+            archive_hash: None,
+            installed_at: None,
+            enabled: true,
+            priority,
+            nexus_mod_id: None,
+            nexus_file_id: None,
+            nexus_domain: None,
+            version: None,
+            author: None,
+            nexus_description: None,
+            latest_version: None,
+            install_target: InstallTarget::Data,
+            notes: None,
+        }
+    }
+
+    async fn insert_file(tracker: &Tracker, mod_id: &str, path: &str) {
+        sqlx::query(
+            "INSERT INTO mod_files (mod_id, game_rel_lowercase, game_rel_original, cache_path) VALUES (?, ?, ?, '')",
+        )
+        .bind(mod_id)
+        .bind(path)
+        .bind(path)
+        .execute(&tracker.pool)
+        .await
+        .unwrap();
+    }
+
+    /// A single mod whose two Override/ files share a filename must not produce
+    /// a self-conflict entry.
+    #[tokio::test]
+    async fn single_mod_same_filename_no_self_conflict() {
+        let tracker = make_tracker().await;
+        tracker.insert_mod(&mod_entry("a", "ModA", 1)).await.unwrap();
+        insert_file(&tracker, "a", "override/readme.xml").await;
+        insert_file(&tracker, "a", "override/sub/readme.xml").await;
+
+        let handler = handler_for(&GameEngine::Aurora);
+        let mod_names = HashMap::from([("a".to_string(), "ModA".to_string())]);
+        let result = tracker
+            .compute_overrides("g", handler, &mod_names)
+            .await
+            .unwrap();
+
+        assert!(result.is_empty(), "single mod must not conflict with itself");
+    }
+
+    /// Two distinct mods sharing an Override/ filename must produce a conflict
+    /// for both the winner and the loser.
+    #[tokio::test]
+    async fn two_mods_same_filename_conflict_reported() {
+        let tracker = make_tracker().await;
+        tracker.insert_mod(&mod_entry("a", "ModA", 2)).await.unwrap();
+        tracker.insert_mod(&mod_entry("b", "ModB", 1)).await.unwrap();
+        insert_file(&tracker, "a", "override/items.xml").await;
+        insert_file(&tracker, "b", "override/sub/items.xml").await;
+
+        let handler = handler_for(&GameEngine::Aurora);
+        let mod_names = HashMap::from([
+            ("a".to_string(), "ModA".to_string()),
+            ("b".to_string(), "ModB".to_string()),
+        ]);
+        let result = tracker
+            .compute_overrides("g", handler, &mod_names)
+            .await
+            .unwrap();
+
+        let winner = result.get("a").expect("winner entry");
+        assert_eq!(winner.overrides, 1);
+        assert!(winner.conflicting_mod_names.contains(&"ModB".to_string()));
+
+        let loser = result.get("b").expect("loser entry");
+        assert_eq!(loser.overridden_by, 1);
+        assert!(loser.conflicted_by_mod_names.contains(&"ModA".to_string()));
+    }
+
+    /// Override/ files named readme.txt must be silently ignored regardless of
+    /// how many mods contain them.
+    #[tokio::test]
+    async fn ignored_filename_not_reported_as_conflict() {
+        let tracker = make_tracker().await;
+        tracker.insert_mod(&mod_entry("a", "ModA", 2)).await.unwrap();
+        tracker.insert_mod(&mod_entry("b", "ModB", 1)).await.unwrap();
+        insert_file(&tracker, "a", "override/readme.txt").await;
+        insert_file(&tracker, "b", "override/readme.txt").await;
+
+        let handler = handler_for(&GameEngine::Aurora);
+        let mod_names = HashMap::from([
+            ("a".to_string(), "ModA".to_string()),
+            ("b".to_string(), "ModB".to_string()),
+        ]);
+        let result = tracker
+            .compute_overrides("g", handler, &mod_names)
+            .await
+            .unwrap();
+
+        assert!(result.is_empty(), "readme.txt must not appear as a conflict");
     }
 }

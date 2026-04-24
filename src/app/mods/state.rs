@@ -103,6 +103,10 @@ impl App {
                     overridden_by: info.map_or(0, |i| i.overridden_by),
                     override_files: info.map_or_else(Vec::new, |i| i.override_files.clone()),
                     overridden_files: info.map_or_else(Vec::new, |i| i.overridden_files.clone()),
+                    conflicting_mod_names: info
+                        .map_or_else(Vec::new, |i| i.conflicting_mod_names.clone()),
+                    conflicted_by_mod_names: info
+                        .map_or_else(Vec::new, |i| i.conflicted_by_mod_names.clone()),
                 })),
             });
             let last = guard.len() - 1;

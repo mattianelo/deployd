@@ -16,6 +16,8 @@ pub struct ModRowInit {
     pub overridden_by: usize,
     pub override_files: Vec<String>,
     pub overridden_files: Vec<String>,
+    pub conflicting_mod_names: Vec<String>,
+    pub conflicted_by_mod_names: Vec<String>,
 }
 
 /// What kind of list item this is.
@@ -276,7 +278,7 @@ impl FactoryComponent for ModListItem {
                         set_icon_name: Some("media-playlist-shuffle-symbolic"),
                         #[watch]
                         set_tooltip_text: Some(&if let ModListItemKind::Mod(r) = &self.kind {
-                            format_conflict_tooltip("Overrides", r.overrides, &r.override_files)
+                            format_conflict_tooltip("Overrides", r.overrides, &r.override_files, &r.conflicting_mod_names)
                         } else {
                             String::new()
                         }),
@@ -289,7 +291,7 @@ impl FactoryComponent for ModListItem {
                         set_icon_name: Some("dialog-warning-symbolic"),
                         #[watch]
                         set_tooltip_text: Some(&if let ModListItemKind::Mod(r) = &self.kind {
-                            format_conflict_tooltip("Overridden in", r.overridden_by, &r.overridden_files)
+                            format_conflict_tooltip("Overridden in", r.overridden_by, &r.overridden_files, &r.conflicted_by_mod_names)
                         } else {
                             String::new()
                         }),
@@ -554,9 +556,18 @@ fn format_mod_tooltip(entry: &ModEntry) -> String {
     parts.join("\n")
 }
 
-fn format_conflict_tooltip(label: &str, count: usize, files: &[String]) -> String {
+fn format_conflict_tooltip(
+    label: &str,
+    count: usize,
+    files: &[String],
+    mod_names: &[String],
+) -> String {
     const MAX_FILES: usize = 10;
     let mut tooltip = format!("{label} {count} file(s)");
+    if !mod_names.is_empty() {
+        tooltip.push_str(" \u{2014} ");
+        tooltip.push_str(&mod_names.join(", "));
+    }
     if !files.is_empty() {
         tooltip.push(':');
         for f in files.iter().take(MAX_FILES) {

@@ -74,9 +74,14 @@ impl App {
         }
     }
 
-    pub(crate) fn handle_cmd_priority_saved(&mut self, result: Result<(), String>) {
-        if let Err(e) = result {
-            self.toaster.toast(&format!("Failed to save order: {e}"));
+    pub(crate) fn handle_cmd_priority_saved(
+        &mut self,
+        result: Result<(), String>,
+        sender: &ComponentSender<Self>,
+    ) {
+        match result {
+            Ok(()) => self.reload_mods(sender),
+            Err(e) => self.toaster.toast(&format!("Failed to save order: {e}")),
         }
     }
 

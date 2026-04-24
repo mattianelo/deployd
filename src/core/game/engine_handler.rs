@@ -33,6 +33,15 @@ pub(crate) trait EngineHandler: Send + Sync {
         game_rel_lowercase
     }
 
+    /// Whether this conflict key should be excluded from conflict reporting.
+    ///
+    /// Filters out common non-meaningful files (readme, license, changelog, etc.)
+    /// that are present in many mods and would produce noise in conflict indicators.
+    fn is_conflict_key_ignored(&self, conflict_key: &str) -> bool {
+        let basename = conflict_key.rsplit('/').next().unwrap_or(conflict_key);
+        crate::core::installer::is_ignorable_file(basename)
+    }
+
     /// Whether `file_key` should deploy to the game root (vs. the data subdir).
     ///
     /// Default: explicit-root files honour `file_targets` with a Root fallback;
