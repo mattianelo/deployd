@@ -167,12 +167,6 @@ impl Tracker {
         Ok(())
     }
 
-    /// Get the custom cache directory for a specific game, if set.
-    pub async fn get_game_cache_dir(&self, game_id: &str) -> Result<Option<PathBuf>> {
-        let key = format!("cache_dir_{game_id}");
-        Ok(self.get_setting(&key).await?.map(PathBuf::from))
-    }
-
     /// Set a custom cache directory for a specific game.
     pub async fn set_game_cache_dir(&self, game_id: &str, dir: &Path) -> Result<()> {
         let key = format!("cache_dir_{game_id}");

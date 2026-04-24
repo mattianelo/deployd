@@ -56,20 +56,9 @@ pub fn saves_root() -> Result<PathBuf> {
     Ok(deployd_data_dir()?.join("saves"))
 }
 
-/// Per-mod cache directory: cache_root/<mod_id>/
-pub fn mod_cache_dir(mod_id: &str) -> Result<PathBuf> {
-    Ok(cache_root()?.join(mod_id))
-}
-
 /// Database path: <data>/deployd/deployd.db
 pub fn db_path() -> Result<PathBuf> {
     Ok(deployd_data_dir()?.join("deployd.db"))
-}
-
-/// Named mod folders directory: cache_root/named_mods/
-/// Contains human-readable symlinks for each enabled mod, used for tool compatibility.
-pub fn named_mods_dir() -> Result<PathBuf> {
-    Ok(cache_root()?.join("named_mods"))
 }
 
 /// The target deployment directory for a game.

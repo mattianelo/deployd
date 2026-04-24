@@ -1,12 +1,11 @@
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use relm4::abstractions::Toaster;
 use relm4::factory::FactoryVecDeque;
 use relm4::prelude::*;
 
 use super::types::{DownloadFilter, DownloadSort, ModFilter, PendingInstall, SearchScope};
-use crate::utils::paths;
 use crate::core::detector::ExternalFile;
 use crate::core::tracker::Tracker;
 use crate::models::download::DownloadEntry;
