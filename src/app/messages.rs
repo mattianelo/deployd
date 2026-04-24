@@ -311,7 +311,7 @@ pub enum AppCmdMsg {
     /// Files were merged into an existing mod. Carries `(mod_name, files_merged)`.
     ModMerged(Result<(String, usize), String>),
     NxmDownloadComplete(String, Result<NxmDownloadResult, String>),
-    NexusMetadataFetched(Result<(String, String, String, String), String>),
+    NexusMetadataFetched(Option<String>, Result<(String, String, String, String), String>),
     UpdatesChecked(Result<Vec<(String, String, String)>, String>),
     DownloadsDirUpdated(Option<PathBuf>),
     ExternalScanDone(Result<Vec<ExternalFile>, String>),

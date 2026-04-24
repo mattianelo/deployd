@@ -12,11 +12,48 @@ use super::super::types::NxmDownloadResult;
 impl App {
     pub(crate) fn handle_cmd_nexus_metadata_fetched(
         &mut self,
+        dl_id: Option<String>,
         result: Result<(String, String, String, String), String>,
         sender: &ComponentSender<Self>,
     ) {
         match result {
             Ok((_mod_id, version, author, nexus_name)) => {
+                // Propagate the fetched name back to the download entry if it was
+                // not already resolved by an earlier mechanism (e.g. NXM auto-fetch).
+                if let Some(ref id) = dl_id {
+                    let needs_update = self
+                        .all_downloads
+                        .iter()
+                        .find(|e| &e.id == id)
+                        .is_some_and(|e| !e.metadata_fetched);
+                    if needs_update {
+                        if let Some(entry) = self.all_downloads.iter_mut().find(|e| &e.id == id) {
+                            entry.mod_name = nexus_name.clone();
+                            entry.metadata_fetched = true;
+                        }
+                        {
+                            let mut guard = self.downloads.guard();
+                            for i in 0..guard.len() {
+                                if let Some(row) = guard.get_mut(i)
+                                    && row.entry.id == *id
+                                {
+                                    row.entry.mod_name = nexus_name.clone();
+                                    row.entry.metadata_fetched = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if let Some(tracker) = self.tracker.clone()
+                            && let Some(entry) =
+                                self.all_downloads.iter().find(|e| &e.id == id).cloned()
+                        {
+                            sender.oneshot_command(async move {
+                                let _ = tracker.save_download_entry(&entry).await;
+                                AppCmdMsg::PrioritySaved(Ok(()))
+                            });
+                        }
+                    }
+                }
                 // Reload mods to show updated metadata
                 self.reload_mods(sender);
                 self.toaster

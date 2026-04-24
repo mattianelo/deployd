@@ -693,9 +693,12 @@ impl App {
             .await;
             match result {
                 Ok((name, version, author)) => {
-                    AppCmdMsg::NexusMetadataFetched(Ok((String::new(), version, author, name)))
+                    AppCmdMsg::NexusMetadataFetched(
+                        None,
+                        Ok((String::new(), version, author, name)),
+                    )
                 }
-                Err(e) => AppCmdMsg::NexusMetadataFetched(Err(e)),
+                Err(e) => AppCmdMsg::NexusMetadataFetched(None, Err(e)),
             }
         });
     }

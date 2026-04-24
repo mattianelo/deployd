@@ -4,6 +4,7 @@ pub mod nxm_handler;
 pub mod paths;
 pub mod plugin_header;
 pub mod plugins_txt;
+pub mod portal;
 
 /// Debug-only log macro. Compiles to a no-op in release builds (`--release`).
 /// `cfg!(debug_assertions)` is a compile-time constant; the optimizer eliminates the dead branch.

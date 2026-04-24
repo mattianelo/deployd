@@ -1346,8 +1346,8 @@ impl Component for App {
             AppCmdMsg::NxmDownloadComplete(id, result) => {
                 self.handle_cmd_nxm_download_complete(id, result, &sender)
             }
-            AppCmdMsg::NexusMetadataFetched(result) => {
-                self.handle_cmd_nexus_metadata_fetched(result, &sender)
+            AppCmdMsg::NexusMetadataFetched(dl_id, result) => {
+                self.handle_cmd_nexus_metadata_fetched(dl_id, result, &sender)
             }
             AppCmdMsg::UpdatesChecked(result) => self.handle_cmd_updates_checked(result, &sender),
             AppCmdMsg::DownloadsDirUpdated(dir) => self.handle_cmd_downloads_dir_updated(dir),

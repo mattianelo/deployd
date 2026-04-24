@@ -18,8 +18,7 @@ use crate::models::game::{Game, GameEngine};
 pub(crate) use engine_handler::handler_for;
 
 pub use detection::detect_games;
-pub use eclipse::write_addins_xml;
-pub use ini::{custom_ini_paths, ensure_ini_symlinks, missing_bethesda_reg_key, plugins_txt_paths};
+pub use ini::{ensure_ini_symlinks, missing_bethesda_reg_key, plugins_txt_paths};
 pub use metadata::{
     all_nexus_domains, detect_save_dir, game_id_for_nexus_domain, has_save_management,
     known_data_subdir, nexus_domain,

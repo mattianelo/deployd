@@ -477,24 +477,12 @@ impl Component for GameSetupDialog {
             }
 
             GameSetupMsg::BrowsePath(idx) => {
-                let initial = self
-                    .entries
-                    .get(idx)
-                    .map(|e| e.game.path.clone())
-                    .unwrap_or_default();
-                let dialog = gtk::FileDialog::builder()
-                    .title("Select Game Folder")
-                    .modal(true)
-                    .build();
-                if initial.is_dir() {
-                    dialog.set_initial_folder(Some(&gio::File::for_path(&initial)));
-                }
                 let input = sender.input_sender().clone();
-                dialog.select_folder(Some(root), None::<&gio::Cancellable>, move |result| {
-                    if let Ok(file) = result
-                        && let Some(path) = file.path()
+                sender.oneshot_command(async move {
+                    if let Ok(Some(path)) =
+                        crate::utils::portal::select_folder("Select Game Folder").await
                     {
-                        input.send(GameSetupMsg::PathChosen(idx, path)).ok();
+                        let _ = input.send(GameSetupMsg::PathChosen(idx, path));
                     }
                 });
             }
@@ -507,21 +495,12 @@ impl Component for GameSetupDialog {
             }
 
             GameSetupMsg::BrowsePrefix(idx) => {
-                let dialog = gtk::FileDialog::builder()
-                    .title("Select Wine Prefix Folder")
-                    .modal(true)
-                    .build();
-                if let Some(entry) = self.entries.get(idx)
-                    && let Some(ref pfx) = entry.game.wine_prefix
-                {
-                    dialog.set_initial_folder(Some(&gio::File::for_path(pfx)));
-                }
                 let input = sender.input_sender().clone();
-                dialog.select_folder(Some(root), None::<&gio::Cancellable>, move |result| {
-                    if let Ok(file) = result
-                        && let Some(path) = file.path()
+                sender.oneshot_command(async move {
+                    if let Ok(Some(path)) =
+                        crate::utils::portal::select_folder("Select Wine Prefix Folder").await
                     {
-                        input.send(GameSetupMsg::PrefixChosen(idx, path)).ok();
+                        let _ = input.send(GameSetupMsg::PrefixChosen(idx, path));
                     }
                 });
             }
@@ -559,16 +538,13 @@ impl Component for GameSetupDialog {
             }
 
             GameSetupMsg::BrowseNewPath => {
-                let dialog = gtk::FileDialog::builder()
-                    .title("Select Game Installation Folder")
-                    .modal(true)
-                    .build();
                 let input = sender.input_sender().clone();
-                dialog.select_folder(Some(root), None::<&gio::Cancellable>, move |result| {
-                    if let Ok(file) = result
-                        && let Some(path) = file.path()
+                sender.oneshot_command(async move {
+                    if let Ok(Some(path)) =
+                        crate::utils::portal::select_folder("Select Game Installation Folder")
+                            .await
                     {
-                        input.send(GameSetupMsg::NewPathChosen(path)).ok();
+                        let _ = input.send(GameSetupMsg::NewPathChosen(path));
                     }
                 });
             }
@@ -580,16 +556,12 @@ impl Component for GameSetupDialog {
             }
 
             GameSetupMsg::BrowseNewPrefix => {
-                let dialog = gtk::FileDialog::builder()
-                    .title("Select Wine Prefix Folder")
-                    .modal(true)
-                    .build();
                 let input = sender.input_sender().clone();
-                dialog.select_folder(Some(root), None::<&gio::Cancellable>, move |result| {
-                    if let Ok(file) = result
-                        && let Some(path) = file.path()
+                sender.oneshot_command(async move {
+                    if let Ok(Some(path)) =
+                        crate::utils::portal::select_folder("Select Wine Prefix Folder").await
                     {
-                        input.send(GameSetupMsg::NewPrefixChosen(path)).ok();
+                        let _ = input.send(GameSetupMsg::NewPrefixChosen(path));
                     }
                 });
             }

@@ -774,6 +774,7 @@ impl App {
             Ok(add_result) => add_result.mod_entry.archive_hash.clone(),
             Err(_) => None,
         };
+        let metadata_dl_id = self.active_download_id.clone();
 
         if let Some(dl_id) = self.active_download_id.take() {
             let (status, msg) = if result.is_ok() {
@@ -834,6 +835,7 @@ impl App {
                     let mod_id = add_result.mod_entry.id.clone();
                     let domain = nexus_domain.to_string();
                     let nexus_file_id = add_result.mod_entry.nexus_file_id;
+                    let dl_id_for_metadata = metadata_dl_id;
                     sender.oneshot_command(async move {
                         let result: Result<(String, String, String, String), String> = async {
                             let api_key = tracker
@@ -877,7 +879,7 @@ impl App {
                             Ok((mod_id, installed_version, info.author, info.name))
                         }
                         .await;
-                        AppCmdMsg::NexusMetadataFetched(result)
+                        AppCmdMsg::NexusMetadataFetched(dl_id_for_metadata, result)
                     });
                 }
             }

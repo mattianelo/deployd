@@ -424,23 +424,12 @@ impl Component for WelcomeWizard {
             }
 
             WelcomeWizardMsg::BrowseInstallPath(idx) => {
-                let dialog = gtk::FileDialog::builder()
-                    .title("Select Installation Folder")
-                    .modal(true)
-                    .build();
-                if let Some(Some(p)) = self.install_paths.get(idx)
-                    && p.is_dir()
-                {
-                    dialog.set_initial_folder(Some(&gio::File::for_path(p)));
-                }
                 let input = sender.input_sender().clone();
-                dialog.select_folder(Some(root), None::<&gio::Cancellable>, move |result| {
-                    if let Ok(file) = result
-                        && let Some(path) = file.path()
+                sender.oneshot_command(async move {
+                    if let Ok(Some(path)) =
+                        crate::utils::portal::select_folder("Select Installation Folder").await
                     {
-                        input
-                            .send(WelcomeWizardMsg::InstallPathChosen(idx, path))
-                            .ok();
+                        let _ = input.send(WelcomeWizardMsg::InstallPathChosen(idx, path));
                     }
                 });
             }
@@ -453,23 +442,12 @@ impl Component for WelcomeWizard {
             }
 
             WelcomeWizardMsg::BrowseWinePrefix(idx) => {
-                let dialog = gtk::FileDialog::builder()
-                    .title("Select Wine Prefix Folder")
-                    .modal(true)
-                    .build();
-                if let Some(Some(p)) = self.wine_prefixes.get(idx)
-                    && p.is_dir()
-                {
-                    dialog.set_initial_folder(Some(&gio::File::for_path(p)));
-                }
                 let input = sender.input_sender().clone();
-                dialog.select_folder(Some(root), None::<&gio::Cancellable>, move |result| {
-                    if let Ok(file) = result
-                        && let Some(path) = file.path()
+                sender.oneshot_command(async move {
+                    if let Ok(Some(path)) =
+                        crate::utils::portal::select_folder("Select Wine Prefix Folder").await
                     {
-                        input
-                            .send(WelcomeWizardMsg::WinePrefixChosen(idx, path))
-                            .ok();
+                        let _ = input.send(WelcomeWizardMsg::WinePrefixChosen(idx, path));
                     }
                 });
             }
