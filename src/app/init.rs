@@ -215,6 +215,8 @@ pub(super) fn build_model(
         plugin_snapshots_list: gtk::ListBox::new(),
         proton_setup: false,
         compact_plugin_rows: false,
+        color_scheme_idx: 0,
+        pending_fetched_name: None,
     };
 
     // Profile rename popover
@@ -600,6 +602,22 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             None
         };
 
+        let compact_plugin_rows = tracker
+            .get_setting("compact_plugin_rows")
+            .await
+            .ok()
+            .flatten()
+            .map(|v| v == "1")
+            .unwrap_or(false);
+
+        let color_scheme_idx = tracker
+            .get_setting("color_scheme")
+            .await
+            .ok()
+            .flatten()
+            .and_then(|v| v.parse::<u32>().ok())
+            .unwrap_or(0);
+
         Ok::<_, String>(InitData {
             tracker,
             mods,
@@ -625,6 +643,8 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             nexus_username,
             nexus_avatar_url,
             nexus_is_premium,
+            compact_plugin_rows,
+            color_scheme_idx,
         })
     };
     AppCmdMsg::Initialized(init.await)

@@ -22,19 +22,19 @@ impl App {
     /// In-session reload: recomputes conflict overrides and refreshes the mod/plugin
     /// lists from DB without re-syncing Plugins.txt.
     pub(crate) fn reload_mods(&self, sender: &ComponentSender<Self>) {
-        self.reload_mods_impl(sender, false);
+        self.reload_mods_impl(sender, false, true);
     }
 
     /// Full reload including a Plugins.txt sync. Use only on initial game select.
     pub(crate) fn reload_mods_full(&self, sender: &ComponentSender<Self>) {
-        self.reload_mods_impl(sender, true);
+        self.reload_mods_impl(sender, true, false);
     }
 
-    fn reload_mods_impl(&self, sender: &ComponentSender<Self>, sync_txt: bool) {
+    fn reload_mods_impl(&self, sender: &ComponentSender<Self>, sync_txt: bool, preserve_collapsed: bool) {
         if let (Some(tracker), Some(game)) = (self.tracker.clone(), self.selected_game().cloned()) {
             sender.oneshot_command(async move {
                 let result = async { load_game_data(&tracker, &game, sync_txt).await };
-                AppCmdMsg::ModsLoaded(result.await)
+                AppCmdMsg::ModsLoaded(result.await, preserve_collapsed)
             });
         }
     }

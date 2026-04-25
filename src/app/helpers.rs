@@ -86,6 +86,13 @@ impl App {
         root: &adw::Window,
         sender: &ComponentSender<Self>,
     ) {
+        // If a background Nexus fetch completed during extraction, apply it before
+        // reading pending.mod_name so the dialog proposes the real mod name.
+        if let Some(fetched) = self.pending_fetched_name.take() {
+            if let Some(pending) = &mut self.pending_install {
+                pending.mod_name = fetched;
+            }
+        }
         let Some(pending) = &self.pending_install else {
             return;
         };

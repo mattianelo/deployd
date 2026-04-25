@@ -196,7 +196,7 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         let idx = index.current_index();
-        let (archive_path, nexus_ids, download_id, suggested_name) = {
+        let (archive_path, nexus_ids, download_id, suggested_name, metadata_fetched) = {
             let guard = self.downloads.guard();
             let Some(row) = guard.get(idx) else {
                 return;
@@ -231,6 +231,7 @@ impl App {
                 row.entry.nexus_ids.clone(),
                 row.entry.id.clone(),
                 suggested,
+                row.entry.metadata_fetched,
             )
         };
 
@@ -245,8 +246,38 @@ impl App {
         }
 
         // Store nexus_ids for the PendingInstall handoff
-        self.pending_nexus_ids = nexus_ids;
+        self.pending_nexus_ids = nexus_ids.clone();
         self.active_download_id = Some(download_id.clone());
+        self.pending_fetched_name = None;
+
+        // If nexus IDs are known but metadata hasn't been fetched yet, fetch the
+        // mod name from Nexus in parallel with archive extraction so the pre-install
+        // dialog can propose the real name instead of the archive filename.
+        if !metadata_fetched
+            && let Some((nexus_mod_id, _, ref domain)) = nexus_ids
+            && let Some(tracker) = self.tracker.clone()
+        {
+            let domain = domain.clone();
+            sender.oneshot_command(async move {
+                let name: Option<String> = async {
+                    let api_key = tracker
+                        .get_setting("nexus_api_key")
+                        .await
+                        .ok()
+                        .flatten()
+                        .filter(|k| !k.is_empty())?;
+                    let client = crate::core::nexus_api::NexusClient::new(api_key);
+                    let (info, _) = client.get_mod_info(&domain, nexus_mod_id).await.ok()?;
+                    Some(info.name)
+                }
+                .await;
+                if let Some(name) = name {
+                    AppCmdMsg::PendingMetadataFetched(name)
+                } else {
+                    AppCmdMsg::PrioritySaved(Ok(()))
+                }
+            });
+        }
 
         // Update status to Extracting
         self.update_download_status(&download_id, DownloadStatus::Extracting, "Extracting...");
@@ -339,6 +370,7 @@ impl App {
         game_domain: Option<String>,
         nexus_file_name: Option<String>,
         nexus_is_primary: bool,
+        resolved_file_id: Option<i64>,
         sender: &ComponentSender<Self>,
     ) {
         // Capture old domain before mutation to detect filtering changes
@@ -353,6 +385,12 @@ impl App {
             entry.metadata_fetched = true;
             entry.nexus_file_name = nexus_file_name.clone();
             entry.nexus_is_primary = nexus_is_primary;
+            if let Some(fid) = resolved_file_id
+                && let Some((_, ref mut stored_fid, _)) = entry.nexus_ids
+                && *stored_fid == 0
+            {
+                *stored_fid = fid;
+            }
             if let Some(ref domain) = game_domain {
                 entry.game_domain = Some(domain.clone());
                 if let Some((_, _, ref mut dom)) = entry.nexus_ids {
@@ -394,6 +432,12 @@ impl App {
                     row.entry.metadata_fetched = true;
                     row.entry.nexus_file_name = nexus_file_name;
                     row.entry.nexus_is_primary = nexus_is_primary;
+                    if let Some(fid) = resolved_file_id
+                        && let Some((_, ref mut stored_fid, _)) = row.entry.nexus_ids
+                        && *stored_fid == 0
+                    {
+                        *stored_fid = fid;
+                    }
                     if let Some(ref domain) = game_domain {
                         row.entry.game_domain = Some(domain.clone());
                         if let Some((_, _, ref mut dom)) = row.entry.nexus_ids {
@@ -660,6 +704,7 @@ impl App {
                 };
                 let nexus_file_name = file_info.as_ref().map(|f| f.name.clone());
                 let file_version = file_info.as_ref().and_then(|f| f.version.clone());
+                let resolved_file_id = file_info.as_ref().map(|f| f.file_id);
                 let nexus_is_primary = file_info.map(|f| f.is_primary).unwrap_or(false);
                 // Capture before DownloadNameResolved moves info.name
                 let mod_version = info.version.clone();
@@ -670,6 +715,7 @@ impl App {
                     Some(domain),
                     nexus_file_name,
                     nexus_is_primary,
+                    resolved_file_id,
                 ));
                 // Mirror NXM auto-path: write metadata back to the installed mod row.
                 if let Some(ref mod_id) = installed_mod_id {

@@ -197,4 +197,9 @@ pub struct App {
     pub(crate) proton_setup: bool,
     /// Whether plugin list rows should use compact (reduced height) display.
     pub(crate) compact_plugin_rows: bool,
+    /// Persisted color scheme index: 0=System, 1=Light, 2=Dark.
+    pub(crate) color_scheme_idx: u32,
+    /// Mod name fetched from Nexus in parallel with archive extraction. Used to
+    /// override the archive-stem name in the pre-install dialog when available.
+    pub(crate) pending_fetched_name: Option<String>,
 }

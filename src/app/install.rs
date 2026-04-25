@@ -346,6 +346,8 @@ impl App {
             pending.mod_name = old_name;
         }
         self.pending_replace_mod_id = Some((old_mod_id, old_priority));
+        // Drop any fetched name; replacements keep the existing mod's name.
+        self.pending_fetched_name = None;
         self.open_pre_install_dialog(root, sender);
     }
 
@@ -359,6 +361,7 @@ impl App {
         self.pending_install = None;
         self.pending_nexus_ids = None;
         self.pending_replace_mod_id = None;
+        self.pending_fetched_name = None;
         self.reinstall_mode = false;
         self.installing = false;
         self.status_msg = None;
@@ -507,6 +510,7 @@ impl App {
         self.pending_install = None;
         self.pending_nexus_ids = None;
         self.pending_replace_mod_id = None;
+        self.pending_fetched_name = None;
         self.reinstall_mode = false;
         self.installing = false;
         self.status_msg = None;

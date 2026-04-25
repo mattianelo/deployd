@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use adw;
 use relm4::factory::DynamicIndex;
 use relm4::prelude::*;
 
@@ -415,13 +416,29 @@ impl App {
                         {
                             return AppCmdMsg::PluginOrderSaved(Err(e.to_string()));
                         }
-                        AppCmdMsg::ModsLoaded(load_game_data(&tracker, &game, false).await)
+                        AppCmdMsg::ModsLoaded(load_game_data(&tracker, &game, false).await, true)
                     });
                 }
             }
             Err(e) => {
                 self.toaster.toast(&format!("LOOT sort failed: {e}"));
             }
+        }
+    }
+
+    pub(crate) fn handle_set_color_scheme(&mut self, idx: u32) {
+        self.color_scheme_idx = idx;
+        let scheme = match idx {
+            1 => adw::ColorScheme::ForceLight,
+            2 => adw::ColorScheme::ForceDark,
+            _ => adw::ColorScheme::Default,
+        };
+        adw::StyleManager::default().set_color_scheme(scheme);
+        if let Some(tracker) = self.tracker.clone() {
+            let val = idx.to_string();
+            tokio::spawn(async move {
+                let _ = tracker.set_setting("color_scheme", &val).await;
+            });
         }
     }
 
@@ -432,6 +449,13 @@ impl App {
             if let Some(row) = guard.get_mut(i) {
                 row.compact = compact;
             }
+        }
+        drop(guard);
+        if let Some(tracker) = self.tracker.clone() {
+            let val = if compact { "1" } else { "0" };
+            tokio::spawn(async move {
+                let _ = tracker.set_setting("compact_plugin_rows", val).await;
+            });
         }
     }
 }

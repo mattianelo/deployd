@@ -134,7 +134,7 @@ pub enum AppMsg {
     ConfirmNexusIdEntry(String, i64, String),
     DownloadProgress(String, f64, String),
     /// (download_id, mod_name, game_domain, nexus_file_name, nexus_is_primary)
-    DownloadNameResolved(String, String, Option<String>, Option<String>, bool),
+    DownloadNameResolved(String, String, Option<String>, Option<String>, bool, Option<i64>),
     FetchDownloadMetadata(DynamicIndex),
     ScanDownloadsFolder,
     DownloadSortChanged(u32),
@@ -258,6 +258,8 @@ pub enum AppMsg {
     ResumeDownload(DynamicIndex),
     /// Set compact plugin row display mode.
     SetCompactPluginRows(bool),
+    /// Set and persist the color scheme (0=System, 1=Light, 2=Dark).
+    SetColorScheme(u32),
     /// User clicked "Login with Nexus" in the headerbar avatar popover.
     NexusLoginClicked,
     /// User clicked "Log Out" in the headerbar avatar popover.
@@ -299,7 +301,9 @@ impl std::fmt::Debug for PrepareResultMsg {
 #[derive(Debug)]
 pub enum AppCmdMsg {
     Initialized(Result<InitData, String>),
-    ModsLoaded(Result<LoadedData, String>),
+    ModsLoaded(Result<LoadedData, String>, bool),
+    /// Nexus mod name fetched in background during archive extraction.
+    PendingMetadataFetched(String),
     ModAdded(Result<AddResult, String>, bool),
     ModPrepared(Result<PrepareResultMsg, String>),
     ModRemoved(

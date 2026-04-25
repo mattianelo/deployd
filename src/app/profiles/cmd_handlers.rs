@@ -175,6 +175,9 @@ impl App {
 
                 self.rate_limit_info = data.rate_limit_info;
 
+                self.handle_set_compact_plugin_rows(data.compact_plugin_rows);
+                self.handle_set_color_scheme(data.color_scheme_idx);
+
                 if let Some(nxm) = self.pending_nxm.take() {
                     sender.input(AppMsg::NxmLinkReceived(nxm));
                 }
@@ -381,7 +384,7 @@ impl App {
                     && let Some(game) = self.selected_game().cloned()
                 {
                     sender.oneshot_command(async move {
-                        AppCmdMsg::ModsLoaded(load_game_data(&tracker, &game, false).await)
+                        AppCmdMsg::ModsLoaded(load_game_data(&tracker, &game, false).await, true)
                     });
                 }
             }

@@ -112,6 +112,8 @@ pub struct InitData {
     pub nexus_avatar_url: Option<String>,
     /// Whether the logged-in Nexus user is premium.
     pub nexus_is_premium: bool,
+    pub compact_plugin_rows: bool,
+    pub color_scheme_idx: u32,
 }
 
 #[derive(Debug)]

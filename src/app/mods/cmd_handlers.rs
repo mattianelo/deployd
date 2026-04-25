@@ -8,16 +8,19 @@ impl App {
     pub(crate) fn handle_cmd_mods_loaded(
         &mut self,
         result: Result<LoadedData, String>,
+        preserve_collapsed: bool,
         sender: &ComponentSender<Self>,
     ) {
         match result {
             Ok(data) => {
-                self.collapsed_groups = data
-                    .groups
-                    .iter()
-                    .filter(|g| g.collapsed)
-                    .map(|g| g.id.clone())
-                    .collect();
+                if !preserve_collapsed {
+                    self.collapsed_groups = data
+                        .groups
+                        .iter()
+                        .filter(|g| g.collapsed)
+                        .map(|g| g.id.clone())
+                        .collect();
+                }
                 self.apply_loaded_data(data, sender);
                 sender.input(AppMsg::ScanExternalFiles);
                 // Reload last-deployed profile for the newly selected game.

@@ -26,7 +26,12 @@ impl App {
         self.settings_dialog = Some(
             SettingsDialog::builder()
                 .transient_for(root)
-                .launch((tracker, self.nexus_username.is_some()))
+                .launch((
+                    tracker,
+                    self.nexus_username.is_some(),
+                    self.compact_plugin_rows,
+                    self.color_scheme_idx,
+                ))
                 .forward(sender.input_sender(), |output| match output {
                     SettingsDialogOutput::Closed => AppMsg::SettingsClosed,
                     SettingsDialogOutput::ApiKeyChanged => AppMsg::NexusApiKeyUpdated,
@@ -34,6 +39,7 @@ impl App {
                     SettingsDialogOutput::SetCompactPluginRows(compact) => {
                         AppMsg::SetCompactPluginRows(compact)
                     }
+                    SettingsDialogOutput::ColorSchemeChanged(idx) => AppMsg::SetColorScheme(idx),
                 }),
         );
     }

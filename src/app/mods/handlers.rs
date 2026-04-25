@@ -474,7 +474,7 @@ impl App {
                 if let Err(e) = tracker.delete_group(&group_id).await {
                     eprintln!("Failed to delete group: {e}");
                 }
-                AppCmdMsg::ModsLoaded(load_game_data(&tracker, &game, false).await)
+                AppCmdMsg::ModsLoaded(load_game_data(&tracker, &game, false).await, true)
             });
         }
     }
@@ -489,7 +489,7 @@ impl App {
                 if let Err(e) = tracker.create_group(&game.id, &name, position).await {
                     eprintln!("Failed to create group: {e}");
                 }
-                AppCmdMsg::ModsLoaded(load_game_data(&tracker, &game, false).await)
+                AppCmdMsg::ModsLoaded(load_game_data(&tracker, &game, false).await, true)
             });
         }
     }

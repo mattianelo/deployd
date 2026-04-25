@@ -49,11 +49,14 @@ pub enum SettingsDialogOutput {
     ManageGames,
     /// User toggled compact plugin row mode.
     SetCompactPluginRows(bool),
+    /// User changed the color scheme (0=System, 1=Light, 2=Dark).
+    ColorSchemeChanged(u32),
 }
 
 #[relm4::component(pub)]
 impl Component for SettingsDialog {
-    type Init = (Tracker, bool);
+    /// (tracker, is_logged_in, compact_plugin_rows, color_scheme_idx)
+    type Init = (Tracker, bool, bool, u32);
     type Input = SettingsMsg;
     type Output = SettingsDialogOutput;
     type CommandOutput = SettingsCmdMsg;
@@ -150,6 +153,7 @@ impl Component for SettingsDialog {
                 add = &adw::PreferencesGroup {
                     set_title: "Appearance",
 
+                    #[name = "color_scheme_combo"]
                     add = &adw::ComboRow {
                         set_title: "Color Scheme",
                         set_model: Some(&gtk::StringList::new(&["System", "Light", "Dark"])),
@@ -158,6 +162,7 @@ impl Component for SettingsDialog {
                         },
                     },
 
+                    #[name = "compact_switch_row"]
                     add = &adw::SwitchRow {
                         set_title: "Compact Plugin List",
                         set_subtitle: "Reduce row height in the Plugin Order panel",
@@ -192,7 +197,7 @@ impl Component for SettingsDialog {
     }
 
     fn init(
-        (tracker, is_logged_in): Self::Init,
+        (tracker, is_logged_in, compact_plugin_rows, color_scheme_idx): Self::Init,
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
@@ -265,6 +270,10 @@ impl Component for SettingsDialog {
             let dir = t2.get_setting("downloads_dir").await.ok().flatten();
             SettingsCmdMsg::DownloadsDirLoaded(dir)
         });
+
+        // Initialise appearance controls with persisted values.
+        widgets.color_scheme_combo.set_selected(color_scheme_idx);
+        widgets.compact_switch_row.set_active(compact_plugin_rows);
 
         root.present();
 
@@ -366,12 +375,7 @@ impl Component for SettingsDialog {
                 root.close();
             }
             SettingsMsg::SetColorScheme(idx) => {
-                let scheme = match idx {
-                    1 => adw::ColorScheme::ForceLight,
-                    2 => adw::ColorScheme::ForceDark,
-                    _ => adw::ColorScheme::Default,
-                };
-                adw::StyleManager::default().set_color_scheme(scheme);
+                let _ = sender.output(SettingsDialogOutput::ColorSchemeChanged(idx));
             }
             SettingsMsg::ToggleCompactPlugins(compact) => {
                 let _ = sender.output(SettingsDialogOutput::SetCompactPluginRows(compact));

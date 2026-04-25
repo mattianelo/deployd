@@ -1254,8 +1254,10 @@ impl Component for App {
                 self.handle_confirm_nexus_id_entry(dl_id, mod_id, domain, &sender)
             }
             AppMsg::DownloadProgress(id, frac, msg) => self.handle_download_progress(id, frac, msg),
-            AppMsg::DownloadNameResolved(id, name, domain, fname, is_primary) => {
-                self.handle_download_name_resolved(id, name, domain, fname, is_primary, &sender)
+            AppMsg::DownloadNameResolved(id, name, domain, fname, is_primary, file_id) => {
+                self.handle_download_name_resolved(
+                    id, name, domain, fname, is_primary, file_id, &sender,
+                )
             }
             AppMsg::FetchDownloadMetadata(idx) => {
                 self.handle_fetch_download_metadata(idx, root, &sender)
@@ -1397,6 +1399,7 @@ impl Component for App {
             AppMsg::PauseDownload(idx) => self.handle_pause_download(idx),
             AppMsg::ResumeDownload(idx) => self.handle_resume_download(idx, &sender),
             AppMsg::SetCompactPluginRows(compact) => self.handle_set_compact_plugin_rows(compact),
+            AppMsg::SetColorScheme(idx) => self.handle_set_color_scheme(idx),
             AppMsg::NexusLoginClicked => self.handle_nexus_login_clicked(&sender),
             AppMsg::NexusLogoutClicked => self.handle_nexus_logout_clicked(&sender),
         }
@@ -1410,7 +1413,12 @@ impl Component for App {
     ) {
         match msg {
             AppCmdMsg::Initialized(result) => self.handle_cmd_initialized(result, &sender),
-            AppCmdMsg::ModsLoaded(result) => self.handle_cmd_mods_loaded(result, &sender),
+            AppCmdMsg::PendingMetadataFetched(name) => {
+                self.pending_fetched_name = Some(name);
+            }
+            AppCmdMsg::ModsLoaded(result, preserve) => {
+                self.handle_cmd_mods_loaded(result, preserve, &sender)
+            }
             AppCmdMsg::ModAdded(result, was_replace) => {
                 self.handle_cmd_mod_added(result, was_replace, &sender)
             }
