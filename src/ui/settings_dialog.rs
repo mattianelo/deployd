@@ -11,6 +11,7 @@ use crate::utils::paths;
 
 pub struct SettingsDialog {
     tracker: Tracker,
+    is_logged_in: bool,
     api_key_entry: gtk::Entry,
     status_label: gtk::Label,
     test_button: gtk::Button,
@@ -52,7 +53,7 @@ pub enum SettingsDialogOutput {
 
 #[relm4::component(pub)]
 impl Component for SettingsDialog {
-    type Init = Tracker;
+    type Init = (Tracker, bool);
     type Input = SettingsMsg;
     type Output = SettingsDialogOutput;
     type CommandOutput = SettingsCmdMsg;
@@ -65,9 +66,11 @@ impl Component for SettingsDialog {
 
             add = &adw::PreferencesPage {
 
-                // Nexus Mods section — manual API key entry for power users
+                // Nexus Mods section — manual API key entry for power users (hidden when logged in)
                 add = &adw::PreferencesGroup {
                     set_title: "Nexus Mods",
+                    #[watch]
+                    set_visible: !model.is_logged_in,
                     set_description: Some("Use the account button in the title bar to log in or out via SSO. To use a manual API key instead, enter it below."),
 
                     // Manual API key entry (hidden when using SSO; suffix added imperatively)
@@ -189,7 +192,7 @@ impl Component for SettingsDialog {
     }
 
     fn init(
-        tracker: Self::Init,
+        (tracker, is_logged_in): Self::Init,
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
@@ -207,6 +210,7 @@ impl Component for SettingsDialog {
 
         let model = SettingsDialog {
             tracker,
+            is_logged_in,
             api_key_entry,
             status_label,
             test_button,

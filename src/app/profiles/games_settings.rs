@@ -26,7 +26,7 @@ impl App {
         self.settings_dialog = Some(
             SettingsDialog::builder()
                 .transient_for(root)
-                .launch(tracker)
+                .launch((tracker, self.nexus_username.is_some()))
                 .forward(sender.input_sender(), |output| match output {
                     SettingsDialogOutput::Closed => AppMsg::SettingsClosed,
                     SettingsDialogOutput::ApiKeyChanged => AppMsg::NexusApiKeyUpdated,
