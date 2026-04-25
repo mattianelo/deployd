@@ -13,11 +13,11 @@ impl App {
     pub(crate) fn handle_cmd_nexus_metadata_fetched(
         &mut self,
         dl_id: Option<String>,
-        result: Result<(String, String, String, String), String>,
+        result: Result<(String, String, String, String, Option<String>), String>,
         sender: &ComponentSender<Self>,
     ) {
         match result {
-            Ok((_mod_id, version, author, nexus_name)) => {
+            Ok((_mod_id, version, author, nexus_name, nexus_file_name)) => {
                 // Propagate the fetched name back to the download entry if it was
                 // not already resolved by an earlier mechanism (e.g. NXM auto-fetch).
                 if let Some(ref id) = dl_id {
@@ -29,6 +29,9 @@ impl App {
                     if needs_update {
                         if let Some(entry) = self.all_downloads.iter_mut().find(|e| &e.id == id) {
                             entry.mod_name = nexus_name.clone();
+                            if entry.nexus_file_name.is_none() {
+                                entry.nexus_file_name = nexus_file_name.clone();
+                            }
                             entry.metadata_fetched = true;
                         }
                         {
@@ -38,6 +41,9 @@ impl App {
                                     && row.entry.id == *id
                                 {
                                     row.entry.mod_name = nexus_name.clone();
+                                    if row.entry.nexus_file_name.is_none() {
+                                        row.entry.nexus_file_name = nexus_file_name.clone();
+                                    }
                                     row.entry.metadata_fetched = true;
                                     break;
                                 }

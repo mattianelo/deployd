@@ -466,9 +466,7 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             .and_then(|id| persisted_games.iter().find(|g| g.id == id))
             .or_else(|| persisted_games.first());
 
-        let selected_game_idx = selected_persisted
-            .and_then(|g| persisted_games.iter().position(|p| p.id == g.id))
-            .unwrap_or(0);
+        let init_game_id = selected_persisted.map(|g| g.id.clone());
 
         let init_game: Option<Game> = selected_persisted.map(|p| Game {
             id: p.id.clone(),
@@ -627,7 +625,7 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             profiles,
             active_profile_idx: active_idx,
             tools,
-            selected_game_idx,
+            init_game_id,
             downloads_dir,
             game_cache_dirs,
             download_entries,

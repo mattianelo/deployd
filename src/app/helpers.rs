@@ -316,13 +316,20 @@ impl App {
 
         if self.search_scope == SearchScope::All || self.search_scope == SearchScope::ModOrder {
             let mod_filter = self.mod_filter;
+            let no_filter = empty && matches!(mod_filter, ModFilter::All);
+            let mut in_collapsed_group = false;
             let mut guard = self.mods.guard();
             for i in 0..guard.len() {
                 if let Some(row) = guard.get_mut(i) {
                     if row.is_separator() {
-                        // Hide separators during search or when a filter chip is active.
-                        row.visible = empty && matches!(mod_filter, ModFilter::All);
+                        in_collapsed_group = row.is_collapsed();
+                        // Hide separators when search or filter chip is active.
+                        row.visible = no_filter;
+                    } else if no_filter {
+                        // No active search/filter: respect group collapse state.
+                        row.visible = !in_collapsed_group;
                     } else {
+                        // Search or filter active: show all matching mods regardless of group.
                         let name_match = empty || row.mod_name().to_lowercase().contains(&query);
                         let filter_match = match mod_filter {
                             ModFilter::All => true,

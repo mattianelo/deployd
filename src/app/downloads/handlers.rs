@@ -251,10 +251,10 @@ impl App {
         self.pending_fetched_name = None;
 
         // If nexus IDs are known but metadata hasn't been fetched yet, fetch the
-        // mod name from Nexus in parallel with archive extraction so the pre-install
-        // dialog can propose the real name instead of the archive filename.
+        // mod name (and file name when a file ID is known) from Nexus in parallel
+        // with archive extraction so the pre-install dialog can propose the real name.
         if !metadata_fetched
-            && let Some((nexus_mod_id, _, ref domain)) = nexus_ids
+            && let Some((nexus_mod_id, nexus_file_id, ref domain)) = nexus_ids
             && let Some(tracker) = self.tracker.clone()
         {
             let domain = domain.clone();
@@ -268,7 +268,32 @@ impl App {
                         .filter(|k| !k.is_empty())?;
                     let client = crate::core::nexus_api::NexusClient::new(api_key);
                     let (info, _) = client.get_mod_info(&domain, nexus_mod_id).await.ok()?;
-                    Some(info.name)
+                    let mod_name = info.name;
+                    // If we have a file ID, also fetch the file title and combine.
+                    let combined = if nexus_file_id != 0 {
+                        let file_name = client
+                            .get_mod_files(&domain, nexus_mod_id)
+                            .await
+                            .ok()
+                            .and_then(|(resp, _)| {
+                                resp.files
+                                    .into_iter()
+                                    .find(|f| f.file_id == nexus_file_id)
+                                    .map(|f| f.name)
+                            });
+                        if let Some(ref fname) = file_name {
+                            if fname.to_lowercase().contains(&mod_name.to_lowercase()) {
+                                fname.clone()
+                            } else {
+                                format!("{mod_name} - {fname}")
+                            }
+                        } else {
+                            mod_name
+                        }
+                    } else {
+                        mod_name
+                    };
+                    Some(combined)
                 }
                 .await;
                 if let Some(name) = name {
@@ -741,7 +766,7 @@ impl App {
                 Ok((name, version, author)) => {
                     AppCmdMsg::NexusMetadataFetched(
                         None,
-                        Ok((String::new(), version, author, name)),
+                        Ok((String::new(), version, author, name, None)),
                     )
                 }
                 Err(e) => AppCmdMsg::NexusMetadataFetched(None, Err(e)),

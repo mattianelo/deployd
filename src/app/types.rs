@@ -89,7 +89,9 @@ pub struct InitData {
     pub profiles: Vec<Profile>,
     pub active_profile_idx: usize,
     pub tools: Vec<Tool>,
-    pub selected_game_idx: usize,
+    /// ID of the game that should be selected on startup. Resolved to a list index
+    /// in handle_cmd_initialized after self.games is fully merged and pruned.
+    pub init_game_id: Option<String>,
     pub downloads_dir: Option<PathBuf>,
     pub game_cache_dirs: HashMap<String, PathBuf>,
     pub download_entries: Vec<DownloadEntry>,

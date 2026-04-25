@@ -863,7 +863,7 @@ impl App {
                     let nexus_file_id = add_result.mod_entry.nexus_file_id;
                     let dl_id_for_metadata = metadata_dl_id;
                     sender.oneshot_command(async move {
-                        let result: Result<(String, String, String, String), String> = async {
+                        let result: Result<(String, String, String, String, Option<String>), String> = async {
                             let api_key = tracker
                                 .get_setting("nexus_api_key")
                                 .await
@@ -883,26 +883,30 @@ impl App {
                                 )
                                 .await
                                 .map_err(|e| e.to_string())?;
-                            let installed_version =
+                            let (installed_version, nexus_file_name) =
                                 if let Some(fid) = nexus_file_id.filter(|&f| f != 0) {
                                     let (files_resp, _) = client
                                         .get_mod_files(&domain, nexus_mod_id)
                                         .await
                                         .map_err(|e| e.to_string())?;
-                                    files_resp
+                                    let matched = files_resp
                                         .files
                                         .into_iter()
-                                        .find(|f| f.file_id == fid)
-                                        .and_then(|f| f.version)
-                                        .unwrap_or_else(|| info.version.clone())
+                                        .find(|f| f.file_id == fid);
+                                    let version = matched
+                                        .as_ref()
+                                        .and_then(|f| f.version.clone())
+                                        .unwrap_or_else(|| info.version.clone());
+                                    let file_name = matched.map(|f| f.name);
+                                    (version, file_name)
                                 } else {
-                                    info.version.clone()
+                                    (info.version.clone(), None)
                                 };
                             tracker
                                 .set_mod_installed_version(&mod_id, &installed_version)
                                 .await
                                 .map_err(|e| e.to_string())?;
-                            Ok((mod_id, installed_version, info.author, info.name))
+                            Ok((mod_id, installed_version, info.author, info.name, nexus_file_name))
                         }
                         .await;
                         AppCmdMsg::NexusMetadataFetched(dl_id_for_metadata, result)

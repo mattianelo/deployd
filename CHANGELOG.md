@@ -1,10 +1,10 @@
 # Changelog
 
-## [0.9.9] — 2026-04-24
+## [0.9.9]
 
 ### Added
 
-- **Aurora: filename-based conflict detection for Override/ files** — The Witcher 1
+**Aurora: filename-based conflict detection for Override/ files** — The Witcher 1
   resolves Override/ files by filename alone, regardless of subfolder depth. Two mods
   providing `override/ModA/items.xml` and `override/items.xml` are now treated as
   conflicting. A new `conflict_key()` hook on `EngineHandler` lets Aurora return just
@@ -15,6 +15,14 @@
   wizard flows now use the XDG Desktop Portal (via `ashpd 0.13`), making them work
   reliably on immutable distros (Bazzite, etc.) that require portal for file-dialog
   access.
+- **The Witcher 2: Assassins of Kings support** — REDEngine game (GOG and Steam). Mod files deploy under `CookedPC/` inside the game directory.
+- **Per-game configurable cache folder** — relocate a game's mod cache to any directory via Settings → Manage Games. The chosen path is validated against the game folder's device before moving anything; a clear error is shown if hardlinks would cross a BTRFS subvolume or ZFS dataset boundary. Cache moves use `rename(2)` when on the same device and fall back to recursive copy + delete otherwise.
+- **Nexus avatar button in headerbar** — when logged in, a circular avatar button shows your Nexus profile picture (with initials fallback). Clicking it opens a popover with Login / Logout actions, replacing the Settings-panel login flow.
+
+### Changed
+
+- **Settings panel hides login controls when authenticated** — the Nexus Mods SSO section (and manual API key entry) is no longer shown in Settings when you are already logged in. Login and logout live exclusively in the headerbar avatar popover.
+- **"Create mod group" button moved to Mod Order panel** — the button now sits in the Mod Order toolbar alongside "Add mod from file", where it conceptually belongs, rather than in the main headerbar.
 
 ### Fixed
 
@@ -40,6 +48,13 @@
 - **Download name update after post-install metadata fetch** — threads `download_id`
   through `NexusMetadataFetched` so the resolved Nexus mod name is written back to
   the downloads panel entry when metadata was still unresolved at install time
+- **Group collapse state preserved** — mod groups no longer unexpectedly expand when installing a new mod, reordering, or creating a group. In-session collapse state is retained across all list reloads.
+- **Compact Plugin List and Color Scheme settings persisted** — both appearance preferences are now saved to the database and restored on startup; they no longer reset to defaults after restarting the app.
+- **Vanilla plugins sorted by dependency depth** — root masters (e.g. `Fallout4.esm`, `Skyrim.esm`) now appear first in the vanilla section, sorted by (tier, master count, name) instead of alphabetically last.
+- **Cleaned vanilla plugins shown as locked** — a managed plugin that replaces a vanilla game file (detected via `vanilla_backups`) is displayed in the vanilla section as "Vanilla / Modified" with a read-only checkbox and no drag handle, rather than as a freely-movable managed plugin.
+- **`nexus_file_id` written back after manual metadata fetch** — the file ID resolved during a manual metadata fetch is now persisted to the download entry so subsequent installs carry the correct ID.
+- **Mod name proposed from Nexus when metadata unresolved** — when installing a download that has Nexus IDs but no fetched metadata, the mod name is fetched from Nexus in the background and pre-filled in the pre-install dialog instead of showing the raw archive filename.
+- **Nexus WebP avatars display correctly in AppImage** — the avatar fetch now sends a `User-Agent` header and the AppImage bundles `webp-pixbuf-loader`, so Nexus profile pictures in WebP format decode and render properly.
 
 ### Internal
 
@@ -58,7 +73,7 @@
 
 ---
 
-## [0.9.8] — 2026-04-17
+## [0.9.8]
 
 ### Added
 
@@ -88,7 +103,7 @@
 
 ---
 
-## [0.9.7] — 2026-04-02
+## [0.9.7]
 
 ### Fixed
 
@@ -101,7 +116,7 @@
 
 ---
 
-## [0.9.6] — 2026-03-20 · Public Beta
+## [0.9.6]
 
 ### Added
 
@@ -147,7 +162,7 @@
 
 ---
 
-## [0.9.5] — 2026-03-14 · Public Beta
+## [0.9.5]
 
 ### Fixed
 
@@ -174,7 +189,7 @@
 
 ---
 
-## [0.9.4] — 2026-03-12 · Public Beta
+## [0.9.4]
 
 ### Added
 
@@ -192,7 +207,7 @@
 
 ---
 
-## [0.9.3] — 2026-03-10 · Public Beta
+## [0.9.3]
 
 ### Added
 
@@ -208,7 +223,7 @@
 
 ---
 
-## [0.9.2] — 2026-03-09 · Public Beta
+## [0.9.2]
 
 ### Added
 
@@ -226,7 +241,7 @@
 
 ---
 
-## [0.9.1] — 2026-03-08 · Public Beta
+## [0.9.1]
 
 First public release on Nexus Mods.
 
@@ -245,7 +260,7 @@ First public release on Nexus Mods.
 
 ---
 
-## [0.9.0] — 2025-03-03 · Internal Beta
+## [0.9.0]
 
 - Nexus Mods integration (API key, NXM links, update checking)
 - FOMOD installer wizard with conditional steps and visibility rules
@@ -260,6 +275,6 @@ First public release on Nexus Mods.
 
 ---
 
-## [0.1.0] — 2025-02-10
+## [0.1.0]
 
 - Initial internal release

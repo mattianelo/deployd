@@ -15,9 +15,6 @@ impl App {
         match result {
             Ok(data) => {
                 self.tracker = Some(data.tracker);
-                self.selected_game_idx = data.selected_game_idx;
-                self.game_dropdown
-                    .set_selected(data.selected_game_idx as u32);
 
                 for game in &mut self.games {
                     if let Some(persisted) = data.persisted_games.iter().find(|p| p.id == game.id) {
@@ -117,6 +114,17 @@ impl App {
                         self.game_model.append(&g.title);
                     }
                 }
+
+                // Resolve the correct game index now that self.games is fully merged
+                // and pruned. Computing this from persisted_games order (as init.rs did)
+                // was wrong because self.games uses the detected-games order.
+                let target_idx = data
+                    .init_game_id
+                    .as_deref()
+                    .and_then(|id| self.games.iter().position(|g| g.id == id))
+                    .unwrap_or(0);
+                self.selected_game_idx = target_idx;
+                self.game_dropdown.set_selected(target_idx as u32);
 
                 self.nexus_username = data.nexus_username.clone();
                 self.nexus_avatar_url = data.nexus_avatar_url.clone();
