@@ -198,7 +198,7 @@ impl App {
         let mut block = Vec::with_capacity(block_size);
         for _ in 0..block_size {
             if let Some(item) = guard.remove(from) {
-                block.push(crate::ui::mod_list::ModListItemInit { kind: item.kind });
+                block.push(crate::ui::mod_list::ModListItemInit { kind: item.kind, visible: item.visible });
             }
         }
 
@@ -256,6 +256,7 @@ impl App {
                                 conflicting_mod_names: init.conflicting_mod_names.clone(),
                                 conflicted_by_mod_names: init.conflicted_by_mod_names.clone(),
                             })),
+                            visible: true,
                         })
                 })
                 .collect()

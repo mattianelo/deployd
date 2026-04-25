@@ -34,6 +34,7 @@ pub enum ModListItemKind {
 
 pub struct ModListItemInit {
     pub kind: ModListItemKind,
+    pub visible: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -332,7 +333,7 @@ impl FactoryComponent for ModListItem {
     fn init_model(init: Self::Init, _index: &DynamicIndex, _sender: FactorySender<Self>) -> Self {
         Self {
             kind: init.kind,
-            visible: true,
+            visible: init.visible,
         }
     }
 

@@ -75,6 +75,7 @@ impl App {
                         name: g.name.clone(),
                         collapsed,
                     },
+                    visible: true,
                 });
                 group_idx += 1;
             }
@@ -108,11 +109,8 @@ impl App {
                     conflicted_by_mod_names: info
                         .map_or_else(Vec::new, |i| i.conflicted_by_mod_names.clone()),
                 })),
+                visible,
             });
-            let last = guard.len() - 1;
-            if let Some(item) = guard.get_mut(last) {
-                item.visible = visible;
-            }
         }
 
         while group_idx < sorted_groups.len() {
@@ -124,6 +122,7 @@ impl App {
                     name: g.name.clone(),
                     collapsed,
                 },
+                visible: true,
             });
             group_idx += 1;
         }
