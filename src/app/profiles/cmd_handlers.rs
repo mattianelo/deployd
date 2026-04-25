@@ -121,6 +121,11 @@ impl App {
                 self.nexus_username = data.nexus_username.clone();
                 self.nexus_avatar_url = data.nexus_avatar_url.clone();
                 self.nexus_is_premium = data.nexus_is_premium;
+                crate::dlog!(
+                    "[avatar] init: username={:?} avatar_url={:?}",
+                    self.nexus_username,
+                    self.nexus_avatar_url,
+                );
                 if let Some(username) = data.nexus_username.as_deref() {
                     self.nexus_avatar_widget.set_text(Some(username));
                 }
@@ -128,6 +133,8 @@ impl App {
                     sender.oneshot_command(async move {
                         AppCmdMsg::NexusAvatarLoaded(fetch_avatar_bytes(&url).await)
                     });
+                } else {
+                    crate::dlog!("[avatar] init: no avatar URL, showing initials");
                 }
 
                 if data.first_launch {
@@ -357,7 +364,7 @@ impl App {
                 self.toaster.toast(&format!("Launched {name}"));
             }
             Err(e) => {
-                eprintln!("deployd: tool launch error: {e}");
+                crate::dlog!("deployd: tool launch error: {e}");
                 self.toaster.toast(&format!("Launch failed: {e}"));
             }
         }

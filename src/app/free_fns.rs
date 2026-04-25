@@ -289,13 +289,29 @@ pub(crate) async fn load_game_data(
 /// Fetch avatar image bytes from a URL. Returns None on any error so the caller
 /// silently falls back to the initials display.
 pub(crate) async fn fetch_avatar_bytes(url: &str) -> Option<Vec<u8>> {
+    crate::dlog!("[avatar] fetching: {url}");
     let client = reqwest::Client::builder()
         .user_agent(concat!("Deployd/", env!("CARGO_PKG_VERSION")))
         .build()
+        .map_err(|e| crate::dlog!("[avatar] failed to build client: {e}"))
         .ok()?;
-    let resp = client.get(url).send().await.ok()?;
-    if !resp.status().is_success() {
+    let resp = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| crate::dlog!("[avatar] request failed: {e}"))
+        .ok()?;
+    let status = resp.status();
+    crate::dlog!("[avatar] HTTP {status}");
+    if !status.is_success() {
         return None;
     }
-    resp.bytes().await.ok().map(|b| b.to_vec())
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| crate::dlog!("[avatar] failed to read body: {e}"))
+        .ok()
+        .map(|b| b.to_vec());
+    crate::dlog!("[avatar] got {} bytes", bytes.as_ref().map_or(0, |b| b.len()));
+    bytes
 }

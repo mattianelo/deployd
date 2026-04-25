@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libunrar-dev \
     librsvg2-common \
     libgdk-pixbuf2.0-bin \
+    webp-pixbuf-loader \
     patchelf file desktop-file-utils librsvg2-bin fuse \
     wget \
     && rm -rf /var/lib/apt/lists/*

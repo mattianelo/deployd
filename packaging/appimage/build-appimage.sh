@@ -27,10 +27,12 @@ LXD_CONTAINER="deployd-appimage-build"
 
 REBUILD=0
 CLEAN=0
+DEBUG=0
 for arg in "$@"; do
     case "$arg" in
         --rebuild) REBUILD=1 ;;
         --clean)   CLEAN=1 ;;
+        --debug)   DEBUG=1 ;;
         *) echo "Unknown option: $arg"; exit 1 ;;
     esac
 done
@@ -80,14 +82,15 @@ if _lxd_available; then
         lxc start "$LXD_CONTAINER" 2>/dev/null || true
     fi
 
-    REBUILD_FLAG=""
-    [ "$REBUILD" = "1" ] && REBUILD_FLAG="--rebuild"
+    EXTRA_FLAGS=""
+    [ "$REBUILD" = "1" ] && EXTRA_FLAGS="$EXTRA_FLAGS --rebuild"
+    [ "$DEBUG" = "1" ]   && EXTRA_FLAGS="$EXTRA_FLAGS --debug"
 
     echo "==> Running build inside LXD container $LXD_CONTAINER"
     # shellcheck disable=SC2086
     lxc exec "$LXD_CONTAINER" -- \
         env DEPLOYD_NO_LXD=1 \
-        bash /workspace/packaging/appimage/build-appimage.sh $REBUILD_FLAG
+        bash /workspace/packaging/appimage/build-appimage.sh $EXTRA_FLAGS
 
     if [ "$CLEAN" = "1" ]; then
         echo "==> Cleaning up LXD container $LXD_CONTAINER (--clean)"
@@ -127,12 +130,15 @@ fi
 VERSION=$(grep '^version' "$REPO_ROOT/Cargo.toml" | head -1 | sed 's/.*= *"\(.*\)"/\1/')
 echo "==> Running build inside container (Deployd $VERSION)"
 
+INNER_FLAGS=""
+[ "$DEBUG" = "1" ] && INNER_FLAGS="--debug"
+
 docker run --rm \
     -v "$REPO_ROOT:/workspace:z" \
     -e VERSION="$VERSION" \
     --workdir /workspace \
     "$IMAGE_TAG" \
-    bash "$INNER_SCRIPT"
+    bash "$INNER_SCRIPT" $INNER_FLAGS
 
 echo ""
 echo "Build complete: $REPO_ROOT/Deployd-x86_64.AppImage"

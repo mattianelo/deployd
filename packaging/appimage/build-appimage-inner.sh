@@ -9,6 +9,13 @@ APPDIR="$REPO_ROOT/AppDir"
 APP_ID="deployd"
 OUTPUT="$REPO_ROOT/Deployd-x86_64.AppImage"
 
+DEBUG=0
+for arg in "$@"; do
+    case "$arg" in
+        --debug) DEBUG=1 ;;
+    esac
+done
+
 cd "$REPO_ROOT"
 
 VERSION=${VERSION:-$(grep '^version' Cargo.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')}
@@ -16,15 +23,22 @@ VERSION=${VERSION:-$(grep '^version' Cargo.toml | head -1 | sed 's/.*= *"\(.*\)"
 echo "==> Building Deployd $VERSION AppImage (inner)"
 
 # 1. Compile
-echo "==> Compiling (release, features: loot libarchive-fallback)"
-cargo build --release --features loot,libarchive-fallback
+if [ "$DEBUG" = "1" ]; then
+    echo "==> Compiling (debug, features: loot libarchive-fallback)"
+    cargo build --features loot,libarchive-fallback
+    CARGO_TARGET_DIR="target/debug"
+else
+    echo "==> Compiling (release, features: loot libarchive-fallback)"
+    cargo build --release --features loot,libarchive-fallback
+    CARGO_TARGET_DIR="target/release"
+fi
 
 # 2. Assemble AppDir
 echo "==> Assembling AppDir with linuxdeploy"
 rm -rf "$APPDIR"
 linuxdeploy \
     --appdir "$APPDIR" \
-    --executable "target/release/$APP_ID" \
+    --executable "$CARGO_TARGET_DIR/$APP_ID" \
     --desktop-file "data/$APP_ID.desktop" \
     --icon-file "data/icons/hicolor/scalable/apps/$APP_ID.svg" \
     --plugin gtk

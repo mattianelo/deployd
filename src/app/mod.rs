@@ -1533,15 +1533,25 @@ impl Component for App {
                 self.reload_order_snapshots(&sender);
             }
             AppCmdMsg::NexusAvatarLoaded(bytes) => {
+                crate::dlog!("[avatar] NexusAvatarLoaded: {:?}", bytes.as_ref().map(|b| b.len()));
                 if let Some(bytes) = bytes {
-                    if let Ok(texture) = gtk::gdk::Texture::from_bytes(
-                        &gtk::glib::Bytes::from_owned(bytes),
-                    ) {
-                        self.nexus_avatar_widget.set_custom_image(Some(&texture));
+                    match gtk::gdk::Texture::from_bytes(&gtk::glib::Bytes::from_owned(bytes)) {
+                        Ok(texture) => {
+                            crate::dlog!("[avatar] texture created, setting custom image");
+                            self.nexus_avatar_widget.set_custom_image(Some(&texture));
+                        }
+                        Err(e) => {
+                            crate::dlog!("[avatar] Texture::from_bytes failed: {e}");
+                        }
                     }
                 }
             }
             AppCmdMsg::NexusUserRefreshed(username, avatar_url, is_premium) => {
+                crate::dlog!(
+                    "[avatar] NexusUserRefreshed: username={:?} avatar_url={:?}",
+                    username,
+                    avatar_url,
+                );
                 self.nexus_username = username.clone();
                 self.nexus_avatar_url = avatar_url.clone();
                 self.nexus_is_premium = is_premium;
@@ -1553,6 +1563,8 @@ impl Component for App {
                             crate::app::free_fns::fetch_avatar_bytes(&url).await,
                         )
                     });
+                } else {
+                    crate::dlog!("[avatar] NexusUserRefreshed: no avatar URL, showing initials");
                 }
             }
         }
