@@ -166,7 +166,7 @@ pub(crate) fn apply_redengine_path_fixups(
 fn is_witcher3(game: &Game) -> bool {
     matches!(
         game.id.as_str(),
-        "witcher3" | "witcher3-goty" | "witcher3-steam"
+        "witcher-3" | "witcher3" | "witcher3-goty" | "witcher3-steam"
     )
 }
 

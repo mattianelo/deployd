@@ -86,6 +86,17 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         engine: GameEngine::REDEngine,
         save_game_subpath: Some("Saved Games/CD Projekt Red/Cyberpunk 2077"),
     },
+    KnownGame {
+        deployd_id: "witcher-2",
+        title: "The Witcher 2: Assassins of Kings",
+        data_subdir: "CookedPC",
+        appdata_folders: &[],
+        custom_ini_name: "",
+        bethesda_reg_key: "",
+        nexus_domain: "witcher2",
+        engine: GameEngine::REDEngine,
+        save_game_subpath: Some("Documents/The Witcher 2/gamesaves"),
+    },
     // ── The Witcher (Aurora engine) ───────────────────────────────────────────
     KnownGame {
         deployd_id: "witcher-1",

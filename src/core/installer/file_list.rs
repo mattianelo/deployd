@@ -221,6 +221,8 @@ fn is_known_content_dir(name_lower: &str) -> bool {
             | "bin"       // CP2077 binary plugins (CET: bin/x64/plugins/…)
             | "content"   // W3 content subdirectories
             | "dlc" // W3 DLC-style mods
+            // REDEngine 2 (The Witcher 2)
+            | "cookedpc" // W2 primary data directory
             // Aurora (The Witcher)
             | "override" // Witcher 1 primary mod folder
             | "system" // Witcher 1 system data folder
