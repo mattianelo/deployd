@@ -55,8 +55,75 @@ impl App {
         }
     }
 
-    pub(crate) fn handle_nexus_api_key_updated(&mut self) {
+    pub(crate) fn handle_nexus_api_key_updated(&mut self, sender: &ComponentSender<Self>) {
         self.toaster.toast("Nexus Mods key updated.");
+        // Re-validate to refresh username and avatar displayed in the headerbar.
+        if let Some(tracker) = self.tracker.clone() {
+            sender.oneshot_command(async move {
+                let api_key = tracker
+                    .get_setting("nexus_api_key")
+                    .await
+                    .ok()
+                    .flatten()
+                    .filter(|k| !k.is_empty());
+                match api_key {
+                    Some(key) => {
+                        let client = crate::core::nexus_api::NexusClient::new(key);
+                        match client.validate_key().await {
+                            Ok((user, _)) => {
+                                let _ = tracker.save_nexus_user(&user).await;
+                                AppCmdMsg::NexusUserRefreshed(
+                                    Some(user.name),
+                                    user.profile_url,
+                                    user.is_premium,
+                                )
+                            }
+                            Err(_) => AppCmdMsg::NexusUserRefreshed(None, None, false),
+                        }
+                    }
+                    None => AppCmdMsg::NexusUserRefreshed(None, None, false),
+                }
+            });
+        }
+    }
+
+    pub(crate) fn handle_nexus_login_clicked(&mut self, sender: &ComponentSender<Self>) {
+        self.nexus_user_btn.popdown();
+        let Some(tracker) = self.tracker.clone() else {
+            self.toaster.toast("Database not ready yet");
+            return;
+        };
+        let input = sender.input_sender().clone();
+        relm4::spawn(async move {
+            match crate::core::nexus_api::sso_login().await {
+                Ok(api_key) => {
+                    if let Err(e) = tracker.set_setting("nexus_api_key", &api_key).await {
+                        let _ = input.send(AppMsg::ShowToast(format!("Login error: {e}")));
+                        return;
+                    }
+                    if let Err(e) = tracker.set_setting("nexus_login_source", "sso").await {
+                        let _ = input.send(AppMsg::ShowToast(format!("Login error: {e}")));
+                        return;
+                    }
+                    let _ = input.send(AppMsg::NexusApiKeyUpdated);
+                }
+                Err(e) => {
+                    let _ = input.send(AppMsg::ShowToast(format!("Nexus login failed: {e}")));
+                }
+            }
+        });
+    }
+
+    pub(crate) fn handle_nexus_logout_clicked(&mut self, sender: &ComponentSender<Self>) {
+        self.nexus_user_btn.popdown();
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        sender.oneshot_command(async move {
+            let _ = tracker.clear_nexus_user().await;
+            AppCmdMsg::NexusUserRefreshed(None, None, false)
+        });
+        self.toaster.toast("Logged out of Nexus Mods");
     }
 
     pub(crate) fn handle_manage_games_clicked(

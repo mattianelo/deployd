@@ -32,6 +32,29 @@ impl Tracker {
         Ok(())
     }
 
+    /// Persist Nexus user info (username and avatar URL) to DB settings.
+    pub async fn save_nexus_user(&self, user: &crate::models::nexus::NexusUser) -> Result<()> {
+        self.set_setting("nexus_username", &user.name).await?;
+        let avatar = user.profile_url.as_deref().unwrap_or("");
+        self.set_setting("nexus_avatar_url", avatar).await
+    }
+
+    /// Load cached Nexus user info: (username, avatar_url).
+    pub async fn load_nexus_user(&self) -> Result<(Option<String>, Option<String>)> {
+        let name = self.get_setting("nexus_username").await?.filter(|s| !s.is_empty());
+        let avatar = self.get_setting("nexus_avatar_url").await?.filter(|s| !s.is_empty());
+        Ok((name, avatar))
+    }
+
+    /// Clear persisted Nexus user info on logout.
+    pub async fn clear_nexus_user(&self) -> Result<()> {
+        sqlx::query("DELETE FROM settings WHERE key IN ('nexus_username', 'nexus_avatar_url', 'nexus_api_key', 'nexus_login_source', 'nexus_is_premium')")
+            .execute(&self.pool)
+            .await
+            .context("Failed to clear Nexus user settings")?;
+        Ok(())
+    }
+
     /// Persist rate limit info as JSON under key "nexus_rate_limits".
     pub async fn save_rate_limits(
         &self,

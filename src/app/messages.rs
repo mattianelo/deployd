@@ -258,6 +258,10 @@ pub enum AppMsg {
     ResumeDownload(DynamicIndex),
     /// Set compact plugin row display mode.
     SetCompactPluginRows(bool),
+    /// User clicked "Login with Nexus" in the headerbar avatar popover.
+    NexusLoginClicked,
+    /// User clicked "Log Out" in the headerbar avatar popover.
+    NexusLogoutClicked,
 }
 
 pub(crate) enum PrepareResultMsg {
@@ -382,4 +386,8 @@ pub enum AppCmdMsg {
     },
     /// All games have been persisted to DB after Manage Games; safe to select the first game now.
     GamesPersisted,
+    /// Avatar image bytes fetched from Nexus (None = fetch failed, use initials).
+    NexusAvatarLoaded(Option<Vec<u8>>),
+    /// Nexus user data refreshed after key validation (username, avatar_url, is_premium).
+    NexusUserRefreshed(Option<String>, Option<String>, bool),
 }

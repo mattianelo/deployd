@@ -285,3 +285,13 @@ pub(crate) async fn load_game_data(
         vanilla_derived_plugins,
     })
 }
+
+/// Fetch avatar image bytes from a URL. Returns None on any error so the caller
+/// silently falls back to the initials display.
+pub(crate) async fn fetch_avatar_bytes(url: &str) -> Option<Vec<u8>> {
+    let resp = reqwest::get(url).await.ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    resp.bytes().await.ok().map(|b| b.to_vec())
+}

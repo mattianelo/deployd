@@ -106,6 +106,12 @@ pub struct InitData {
     pub last_deployed_profile_id: Option<String>,
     /// True when this is the very first launch (no games persisted, wizard not yet shown).
     pub first_launch: bool,
+    /// Nexus username from the last successful API key validation.
+    pub nexus_username: Option<String>,
+    /// Nexus avatar image URL from the last successful API key validation.
+    pub nexus_avatar_url: Option<String>,
+    /// Whether the logged-in Nexus user is premium.
+    pub nexus_is_premium: bool,
 }
 
 #[derive(Debug)]

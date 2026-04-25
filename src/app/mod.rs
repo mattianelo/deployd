@@ -53,6 +53,88 @@ impl Component for App {
                     },
 
                     #[local_ref]
+                    pack_start = nexus_user_btn -> gtk::MenuButton {
+                        add_css_class: "flat",
+                        set_always_show_arrow: false,
+                        set_tooltip_text: Some("Nexus Mods account"),
+                        #[wrap(Some)]
+                        set_child = &gtk::Box {
+                            #[local_ref]
+                            nexus_avatar_widget -> adw::Avatar {
+                                set_size: 24,
+                                set_show_initials: true,
+                                #[watch]
+                                set_text: model.nexus_username.as_deref(),
+                            },
+                        },
+                        #[wrap(Some)]
+                        set_popover = &gtk::Popover {
+                            #[wrap(Some)]
+                            set_child = &gtk::Box {
+                                set_orientation: gtk::Orientation::Vertical,
+                                set_spacing: 8,
+                                set_margin_all: 12,
+                                set_width_request: 200,
+
+                                // Logged-in state
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Vertical,
+                                    set_spacing: 4,
+                                    #[watch]
+                                    set_visible: model.nexus_username.is_some(),
+
+                                    gtk::Label {
+                                        #[watch]
+                                        set_label: model.nexus_username.as_deref().unwrap_or(""),
+                                        add_css_class: "title-4",
+                                        set_halign: gtk::Align::Start,
+                                        set_ellipsize: gtk::pango::EllipsizeMode::End,
+                                    },
+
+                                    gtk::Label {
+                                        #[watch]
+                                        set_label: if model.nexus_is_premium { "Premium" } else { "Free" },
+                                        add_css_class: "caption",
+                                        set_halign: gtk::Align::Start,
+                                    },
+
+                                    gtk::Separator {},
+
+                                    gtk::Button {
+                                        set_label: "Log Out",
+                                        add_css_class: "destructive-action",
+                                        connect_clicked[sender] => move |_| {
+                                            sender.input(AppMsg::NexusLogoutClicked);
+                                        },
+                                    },
+                                },
+
+                                // Logged-out state
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Vertical,
+                                    set_spacing: 4,
+                                    #[watch]
+                                    set_visible: model.nexus_username.is_none(),
+
+                                    gtk::Label {
+                                        set_label: "Not connected",
+                                        add_css_class: "dim-label",
+                                        set_halign: gtk::Align::Start,
+                                    },
+
+                                    gtk::Button {
+                                        set_label: "Login with Nexus",
+                                        add_css_class: "suggested-action",
+                                        connect_clicked[sender] => move |_| {
+                                            sender.input(AppMsg::NexusLoginClicked);
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+
+                    #[local_ref]
                     pack_start = game_dropdown -> gtk::DropDown {
                         set_selected: 0,
                         #[watch]
@@ -178,21 +260,7 @@ impl Component for App {
                     pack_start = &gtk::Box {
                         set_orientation: gtk::Orientation::Horizontal,
                         #[watch]
-                        set_visible: model.has_games() && !model.initializing,
-
-                        // Create mod group — moved here from the mod panel header
-                        gtk::Button {
-                            set_icon_name: "folder-new-symbolic",
-                            set_tooltip_text: Some("Create mod group"),
-                            add_css_class: "flat",
-                            #[watch]
-                            set_visible: !model.is_busy(),
-                            #[watch]
-                            set_sensitive: !model.is_busy(),
-                            connect_clicked[sender] => move |_| {
-                                sender.input(AppMsg::CreateGroup("New Group".to_string()));
-                            },
-                        },
+                        set_visible: model.has_games() && !model.initializing && model.is_busy(),
 
                         gtk::Box {
                             set_orientation: gtk::Orientation::Horizontal,
@@ -200,8 +268,6 @@ impl Component for App {
                             set_margin_start: 8,
                             set_margin_end: 8,
                             set_valign: gtk::Align::Center,
-                            #[watch]
-                            set_visible: model.is_busy(),
 
                             gtk::Spinner {
                                 set_spinning: true,
@@ -331,9 +397,9 @@ impl Component for App {
                         set_always_show_arrow: false,
                         #[watch]
                         set_css_classes: if model.notifications_count() > 0 {
-                            &["notification-active"]
+                            &["flat", "notification-active"]
                         } else {
-                            &[]
+                            &["flat"]
                         },
                         #[wrap(Some)]
                         set_child = &gtk::Box {
@@ -730,6 +796,19 @@ impl Component for App {
                                     set_visible: !model.is_busy(),
                                     connect_clicked => AppMsg::InstallClicked,
                                 },
+
+                                gtk::Button {
+                                    set_icon_name: "folder-new-symbolic",
+                                    set_tooltip_text: Some("Create mod group"),
+                                    add_css_class: "flat",
+                                    #[watch]
+                                    set_sensitive: !model.is_busy(),
+                                    #[watch]
+                                    set_visible: !model.is_busy(),
+                                    connect_clicked[sender] => move |_| {
+                                        sender.input(AppMsg::CreateGroup("New Group".to_string()));
+                                    },
+                                },
                             },
 
                             gtk::Box {
@@ -1042,6 +1121,8 @@ impl Component for App {
         let plugin_snapshot_save_entry = &model.plugin_snapshot_save_entry;
         let mod_snapshots_list = &model.mod_snapshots_list;
         let plugin_snapshots_list = &model.plugin_snapshots_list;
+        let nexus_user_btn = &model.nexus_user_btn;
+        let nexus_avatar_widget = &model.nexus_avatar_widget;
 
         let widgets = view_output!();
 
@@ -1157,7 +1238,7 @@ impl Component for App {
             AppMsg::CacheDirResetRequested { game_id } => {
                 self.handle_cache_dir_reset_requested(game_id, &sender)
             }
-            AppMsg::NexusApiKeyUpdated => self.handle_nexus_api_key_updated(),
+            AppMsg::NexusApiKeyUpdated => self.handle_nexus_api_key_updated(&sender),
             AppMsg::NxmLinkReceived(link) => self.handle_nxm_link_received(link, &sender),
             AppMsg::CheckUpdatesClicked => self.handle_check_updates(&sender),
             AppMsg::ToggleDownloads => self.handle_toggle_downloads(),
@@ -1316,6 +1397,8 @@ impl Component for App {
             AppMsg::PauseDownload(idx) => self.handle_pause_download(idx),
             AppMsg::ResumeDownload(idx) => self.handle_resume_download(idx, &sender),
             AppMsg::SetCompactPluginRows(compact) => self.handle_set_compact_plugin_rows(compact),
+            AppMsg::NexusLoginClicked => self.handle_nexus_login_clicked(&sender),
+            AppMsg::NexusLogoutClicked => self.handle_nexus_logout_clicked(&sender),
         }
     }
 
@@ -1448,6 +1531,29 @@ impl Component for App {
                         .toast(&format!("Failed to delete snapshot: {e}"));
                 }
                 self.reload_order_snapshots(&sender);
+            }
+            AppCmdMsg::NexusAvatarLoaded(bytes) => {
+                if let Some(bytes) = bytes {
+                    if let Ok(texture) = gtk::gdk::Texture::from_bytes(
+                        &gtk::glib::Bytes::from_owned(bytes),
+                    ) {
+                        self.nexus_avatar_widget.set_custom_image(Some(&texture));
+                    }
+                }
+            }
+            AppCmdMsg::NexusUserRefreshed(username, avatar_url, is_premium) => {
+                self.nexus_username = username.clone();
+                self.nexus_avatar_url = avatar_url.clone();
+                self.nexus_is_premium = is_premium;
+                self.nexus_avatar_widget.set_text(username.as_deref());
+                self.nexus_avatar_widget.set_custom_image(None::<&gtk::gdk::Texture>);
+                if let Some(url) = avatar_url {
+                    sender.oneshot_command(async move {
+                        AppCmdMsg::NexusAvatarLoaded(
+                            crate::app::free_fns::fetch_avatar_bytes(&url).await,
+                        )
+                    });
+                }
             }
         }
     }

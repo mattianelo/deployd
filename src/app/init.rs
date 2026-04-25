@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
+use adw;
 use gtk::glib;
 use gtk::prelude::*;
 use relm4::abstractions::Toaster;
@@ -197,6 +198,11 @@ pub(super) fn build_model(
         vanilla_plugin_names: Vec::new(),
         vanilla_derived_plugins: HashSet::new(),
         plugin_masters: HashMap::new(),
+        nexus_username: None,
+        nexus_avatar_url: None,
+        nexus_is_premium: false,
+        nexus_user_btn: gtk::MenuButton::new(),
+        nexus_avatar_widget: adw::Avatar::new(24, None, true),
         app_update_version: None,
         app_update_url: None,
         running_as_appimage: std::env::var("APPIMAGE").is_ok(),
@@ -539,22 +545,40 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             .await
             .map_err(|e| e.to_string())?;
 
-        // Fetch fresh rate limits from the API; fall back to DB-cached values
-        let rate_limit_info = if let Some(api_key) = tracker
-            .get_setting("nexus_api_key")
-            .await
-            .ok()
-            .flatten()
-            .filter(|k| !k.is_empty())
-        {
-            let client = crate::core::nexus_api::NexusClient::new(api_key);
-            match client.validate_key().await {
-                Ok((_, Some(rl))) => Some(rl),
-                _ => tracker.load_rate_limits().await.unwrap_or(None),
-            }
-        } else {
-            tracker.load_rate_limits().await.unwrap_or(None)
-        };
+        // Fetch fresh rate limits and user info from the API; fall back to DB-cached values
+        let (rate_limit_info, nexus_username, nexus_avatar_url, nexus_is_premium) =
+            if let Some(api_key) = tracker
+                .get_setting("nexus_api_key")
+                .await
+                .ok()
+                .flatten()
+                .filter(|k| !k.is_empty())
+            {
+                let client = crate::core::nexus_api::NexusClient::new(api_key);
+                match client.validate_key().await {
+                    Ok((user, rl)) => {
+                        let _ = tracker.save_nexus_user(&user).await;
+                        let premium = user.is_premium;
+                        let avatar = user.profile_url.clone();
+                        (rl, Some(user.name), avatar, premium)
+                    }
+                    _ => {
+                        let rl = tracker.load_rate_limits().await.unwrap_or(None);
+                        let (name, avatar) = tracker.load_nexus_user().await.unwrap_or((None, None));
+                        let premium = tracker
+                            .get_setting("nexus_is_premium")
+                            .await
+                            .ok()
+                            .flatten()
+                            .map(|v| v == "true")
+                            .unwrap_or(false);
+                        (rl, name, avatar, premium)
+                    }
+                }
+            } else {
+                let rl = tracker.load_rate_limits().await.unwrap_or(None);
+                (rl, None, None, false)
+            };
 
         let hidden_game_ids = tracker.load_hidden_game_ids().await.unwrap_or_default();
 
@@ -598,6 +622,9 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             hidden_game_ids,
             last_deployed_profile_id,
             first_launch,
+            nexus_username,
+            nexus_avatar_url,
+            nexus_is_premium,
         })
     };
     AppCmdMsg::Initialized(init.await)

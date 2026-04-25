@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
+use adw;
 use relm4::abstractions::Toaster;
 use relm4::factory::FactoryVecDeque;
 use relm4::prelude::*;
@@ -158,6 +159,16 @@ pub struct App {
     /// Master dependency map: plugin_id → list of master filenames (from TES4 header).
     /// Used to block drag-and-drop moves that would place a plugin before its masters.
     pub(crate) plugin_masters: HashMap<String, Vec<String>>,
+    /// Nexus username of the logged-in user (cached from last successful validate_key).
+    pub(crate) nexus_username: Option<String>,
+    /// Avatar image URL for the logged-in Nexus user.
+    pub(crate) nexus_avatar_url: Option<String>,
+    /// Whether the logged-in Nexus user is a premium member.
+    pub(crate) nexus_is_premium: bool,
+    /// MenuButton holding the Nexus user avatar in the headerbar.
+    pub(crate) nexus_user_btn: gtk::MenuButton,
+    /// Avatar widget inside the nexus_user_btn child box.
+    pub(crate) nexus_avatar_widget: adw::Avatar,
     /// Version string of available app update, if any.
     pub(crate) app_update_version: Option<String>,
     /// URL for the available app update (Nexus page or download link).

@@ -9,23 +9,12 @@ use crate::core::nexus_api::NexusClient;
 use crate::core::tracker::Tracker;
 use crate::utils::paths;
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum LoginSource {
-    Sso,
-    Manual,
-}
-
 pub struct SettingsDialog {
     tracker: Tracker,
     api_key_entry: gtk::Entry,
     status_label: gtk::Label,
     test_button: gtk::Button,
     save_button: gtk::Button,
-    login_button: gtk::Button,
-    logout_button: gtk::Button,
-    sso_in_progress: bool,
-    has_key: bool,
-    login_source: Option<LoginSource>,
     downloads_dir: String,
 }
 
@@ -33,8 +22,6 @@ pub struct SettingsDialog {
 pub enum SettingsMsg {
     TestKey,
     Save,
-    NexusLogin,
-    Logout,
     Close,
     BrowseDownloadsDir,
     DownloadsDirChosen(PathBuf),
@@ -47,9 +34,7 @@ pub enum SettingsMsg {
 pub enum SettingsCmdMsg {
     KeyValidated(Result<String, String>),
     KeySaved(Result<(), String>),
-    KeyLoaded(Option<String>, Option<LoginSource>),
-    SsoResult(Result<String, String>),
-    LoggedOut(Result<(), String>),
+    KeyLoaded(Option<String>),
     DownloadsDirLoaded(Option<String>),
     DownloadsDirSaved(Result<(), String>),
 }
@@ -57,7 +42,7 @@ pub enum SettingsCmdMsg {
 #[derive(Debug)]
 pub enum SettingsDialogOutput {
     Closed,
-    /// Emitted whenever the active API key changes (login, logout, manual save).
+    /// Emitted whenever the active API key changes (manual save).
     ApiKeyChanged,
     /// User wants to open the game setup dialog.
     ManageGames,
@@ -76,55 +61,24 @@ impl Component for SettingsDialog {
         adw::PreferencesWindow {
             set_title: Some("Settings"),
             set_search_enabled: false,
-            set_default_size: (550, 720),
+            set_default_size: (550, 660),
 
             add = &adw::PreferencesPage {
 
-                // Nexus Mods section
+                // Nexus Mods section — manual API key entry for power users
                 add = &adw::PreferencesGroup {
                     set_title: "Nexus Mods",
-
-                    // Login / logout row
-                    add = &gtk::Box {
-                        set_orientation: gtk::Orientation::Horizontal,
-                        set_spacing: 8,
-                        set_margin_top: 8,
-                        set_margin_bottom: 4,
-
-                        #[local_ref]
-                        login_button -> gtk::Button {
-                            set_label: "Login with Nexus",
-                            add_css_class: "suggested-action",
-                            set_hexpand: true,
-                            #[watch]
-                            set_sensitive: !model.has_key && !model.sso_in_progress,
-                            connect_clicked => SettingsMsg::NexusLogin,
-                        },
-
-                        #[local_ref]
-                        logout_button -> gtk::Button {
-                            set_label: "Log Out",
-                            add_css_class: "destructive-action",
-                            set_hexpand: true,
-                            #[watch]
-                            set_visible: model.has_key,
-                            connect_clicked => SettingsMsg::Logout,
-                        },
-                    },
+                    set_description: Some("Use the account button in the title bar to log in or out via SSO. To use a manual API key instead, enter it below."),
 
                     // Manual API key entry (hidden when using SSO; suffix added imperatively)
                     #[name = "api_key_row"]
                     add = &adw::ActionRow {
-                        set_title: "API Key",
-                        #[watch]
-                        set_visible: model.login_source != Some(LoginSource::Sso),
+                        set_title: "Manual API Key",
                     },
 
                     add = &gtk::Box {
                         set_spacing: 8,
                         set_margin_bottom: 4,
-                        #[watch]
-                        set_visible: model.login_source != Some(LoginSource::Sso),
 
                         #[local_ref]
                         test_button -> gtk::Button {
@@ -248,8 +202,6 @@ impl Component for SettingsDialog {
         let status_label = gtk::Label::new(None);
         let test_button = gtk::Button::new();
         let save_button = gtk::Button::new();
-        let login_button = gtk::Button::new();
-        let logout_button = gtk::Button::new();
 
         let default_dir = paths::default_downloads_dir().to_string_lossy().to_string();
 
@@ -259,19 +211,12 @@ impl Component for SettingsDialog {
             status_label,
             test_button,
             save_button,
-            login_button,
-            logout_button,
-            sso_in_progress: false,
-            has_key: false,
-            login_source: None,
             downloads_dir: default_dir,
         };
 
         let status_label = &model.status_label;
         let test_button = &model.test_button;
         let save_button = &model.save_button;
-        let login_button = &model.login_button;
-        let logout_button = &model.logout_button;
         let widgets = view_output!();
 
         // API key entry suffix
@@ -297,22 +242,17 @@ impl Component for SettingsDialog {
 
         widgets.about_kofi_row.add_suffix(&kofi_box);
 
-        // Load existing API key + login source together
+        // Load existing API key (manual keys only; SSO keys are not shown here)
         let t = model.tracker.clone();
         sender.oneshot_command(async move {
             let key = t.get_setting("nexus_api_key").await.ok().flatten();
-            let source = t
-                .get_setting("nexus_login_source")
-                .await
-                .ok()
-                .flatten()
-                .as_deref()
-                .and_then(|s| match s {
-                    "sso" => Some(LoginSource::Sso),
-                    "manual" => Some(LoginSource::Manual),
-                    _ => None,
-                });
-            SettingsCmdMsg::KeyLoaded(key, source)
+            let source = t.get_setting("nexus_login_source").await.ok().flatten();
+            // Don't populate the entry for SSO keys — they were obtained via the headerbar flow
+            if source.as_deref() == Some("sso") {
+                SettingsCmdMsg::KeyLoaded(None)
+            } else {
+                SettingsCmdMsg::KeyLoaded(key)
+            }
         });
 
         // Load existing downloads dir
@@ -380,7 +320,7 @@ impl Component for SettingsDialog {
                         )
                         .await;
 
-                    // Validate and cache premium status
+                    // Validate and cache premium status + user info
                     if !key.is_empty() {
                         let client = NexusClient::new(key);
                         if let Ok((user, _)) = client.validate_key().await {
@@ -390,57 +330,11 @@ impl Component for SettingsDialog {
                                     if user.is_premium { "true" } else { "false" },
                                 )
                                 .await;
+                            let _ = tracker.save_nexus_user(&user).await;
                         }
                     }
 
                     SettingsCmdMsg::KeySaved(Ok(()))
-                });
-            }
-            SettingsMsg::NexusLogin => {
-                if self.sso_in_progress {
-                    return;
-                }
-                self.sso_in_progress = true;
-                self.status_label
-                    .set_label("Opening browser for Nexus login…");
-                self.status_label.remove_css_class("error");
-                self.status_label.remove_css_class("success");
-                self.status_label.set_visible(true);
-
-                let tracker = self.tracker.clone();
-                sender.oneshot_command(async move {
-                    match crate::core::nexus_api::sso_login().await {
-                        Ok(api_key) => {
-                            let _ = tracker.set_setting("nexus_api_key", &api_key).await;
-                            let _ = tracker.set_setting("nexus_login_source", "sso").await;
-
-                            let client = NexusClient::new(api_key.clone());
-                            if let Ok((user, _)) = client.validate_key().await {
-                                let _ = tracker
-                                    .set_setting(
-                                        "nexus_is_premium",
-                                        if user.is_premium { "true" } else { "false" },
-                                    )
-                                    .await;
-                            }
-
-                            SettingsCmdMsg::SsoResult(Ok(api_key))
-                        }
-                        Err(e) => SettingsCmdMsg::SsoResult(Err(e.to_string())),
-                    }
-                });
-            }
-            SettingsMsg::Logout => {
-                let tracker = self.tracker.clone();
-                self.logout_button.set_sensitive(false);
-                sender.oneshot_command(async move {
-                    let r = tracker
-                        .set_setting("nexus_api_key", "")
-                        .await
-                        .and(tracker.set_setting("nexus_login_source", "").await)
-                        .and(tracker.set_setting("nexus_is_premium", "false").await)
-                        .map_err(|e| e.to_string());
-                    SettingsCmdMsg::LoggedOut(r)
                 });
             }
             SettingsMsg::Close => {
@@ -453,7 +347,7 @@ impl Component for SettingsDialog {
                     .build();
 
                 let input_sender = sender.input_sender().clone();
-                dialog.select_folder(Some(root), None::<&gio::Cancellable>, move |result| {
+                dialog.select_folder(Some(root), None::<&gtk::gio::Cancellable>, move |result| {
                     if let Ok(file) = result
                         && let Some(path) = file.path()
                     {
@@ -522,13 +416,6 @@ impl Component for SettingsDialog {
                 self.save_button.set_sensitive(true);
                 match result {
                     Ok(()) => {
-                        let key = self.api_key_entry.text().to_string();
-                        self.has_key = !key.is_empty();
-                        self.login_source = if self.has_key {
-                            Some(LoginSource::Manual)
-                        } else {
-                            None
-                        };
                         self.status_label.set_label("Saved.");
                         self.status_label.remove_css_class("error");
                         self.status_label.add_css_class("success");
@@ -542,51 +429,9 @@ impl Component for SettingsDialog {
                 }
                 self.status_label.set_visible(true);
             }
-            SettingsCmdMsg::SsoResult(result) => {
-                self.sso_in_progress = false;
-                match result {
-                    Ok(_api_key) => {
-                        self.has_key = true;
-                        self.login_source = Some(LoginSource::Sso);
-                        self.status_label
-                            .set_label("Logged in via Nexus SSO — key saved.");
-                        self.status_label.remove_css_class("error");
-                        self.status_label.add_css_class("success");
-                        let _ = sender.output(SettingsDialogOutput::ApiKeyChanged);
-                    }
-                    Err(e) => {
-                        self.status_label.set_label(&format!("Login failed: {e}"));
-                        self.status_label.remove_css_class("success");
-                        self.status_label.add_css_class("error");
-                    }
-                }
-                self.status_label.set_visible(true);
-            }
-            SettingsCmdMsg::LoggedOut(result) => {
-                self.logout_button.set_sensitive(true);
-                match result {
-                    Ok(()) => {
-                        self.api_key_entry.set_text("");
-                        self.has_key = false;
-                        self.login_source = None;
-                        self.status_label.set_label("Logged out.");
-                        self.status_label.remove_css_class("error");
-                        self.status_label.add_css_class("success");
-                        let _ = sender.output(SettingsDialogOutput::ApiKeyChanged);
-                    }
-                    Err(e) => {
-                        self.status_label.set_label(&format!("Logout failed: {e}"));
-                        self.status_label.remove_css_class("success");
-                        self.status_label.add_css_class("error");
-                    }
-                }
-                self.status_label.set_visible(true);
-            }
-            SettingsCmdMsg::KeyLoaded(key, source) => {
-                self.login_source = source;
+            SettingsCmdMsg::KeyLoaded(key) => {
                 if let Some(ref key) = key {
-                    self.has_key = !key.is_empty();
-                    if self.login_source != Some(LoginSource::Sso) {
+                    if !key.is_empty() {
                         self.api_key_entry.set_text(key);
                     }
                 }

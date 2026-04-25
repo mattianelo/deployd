@@ -2,7 +2,7 @@ use gtk::prelude::*;
 use relm4::prelude::*;
 
 use super::super::App;
-use super::super::free_fns::load_game_data;
+use super::super::free_fns::{fetch_avatar_bytes, load_game_data};
 use super::super::messages::{AppCmdMsg, AppMsg};
 use super::super::types::{InitData, LoadedData};
 
@@ -116,6 +116,18 @@ impl App {
                     for g in &self.games {
                         self.game_model.append(&g.title);
                     }
+                }
+
+                self.nexus_username = data.nexus_username.clone();
+                self.nexus_avatar_url = data.nexus_avatar_url.clone();
+                self.nexus_is_premium = data.nexus_is_premium;
+                if let Some(username) = data.nexus_username.as_deref() {
+                    self.nexus_avatar_widget.set_text(Some(username));
+                }
+                if let Some(url) = data.nexus_avatar_url.clone() {
+                    sender.oneshot_command(async move {
+                        AppCmdMsg::NexusAvatarLoaded(fetch_avatar_bytes(&url).await)
+                    });
                 }
 
                 if data.first_launch {

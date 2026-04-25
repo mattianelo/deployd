@@ -7,6 +7,8 @@ pub struct NexusUser {
     pub name: String,
     pub is_premium: bool,
     pub is_supporter: bool,
+    #[serde(default)]
+    pub profile_url: Option<String>,
 }
 
 #[allow(dead_code)]
