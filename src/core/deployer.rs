@@ -369,8 +369,8 @@ async fn compute_winners(
     let mut winners: Vec<ModFile> = Vec::with_capacity(groups.len());
     let mut conflicts_resolved: usize = 0;
 
-    for (_, mut indices) in groups {
-        if indices.len() > 1 {
+    for (path_key, mut indices) in groups {
+        if indices.len() > 1 && !path_key.ends_with('/') {
             conflicts_resolved += 1;
             // Highest priority wins; game_rel is a stable tiebreaker.
             indices.sort_by(|&a, &b| {

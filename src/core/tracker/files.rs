@@ -299,6 +299,11 @@ impl Tracker {
         let mut result: HashMap<String, OverrideInfo> = HashMap::new();
 
         for (path_key, mut indices) in groups {
+            // Directory sentinels are not real files; two mods sharing an empty folder
+            // is not a conflict.
+            if path_key.ends_with('/') {
+                continue;
+            }
             if indices.len() <= 1 {
                 continue;
             }
