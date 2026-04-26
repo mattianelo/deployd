@@ -91,6 +91,7 @@ pub(super) async fn migrate_download_columns(pool: &SqlitePool) -> Result<()> {
         ("nexus_is_primary", "BOOLEAN DEFAULT FALSE"),
         ("status", "TEXT DEFAULT 'downloaded'"),
         ("archive_hash", "TEXT"),
+        ("version", "TEXT"),
     ];
 
     for (col, col_type) in &new_columns {

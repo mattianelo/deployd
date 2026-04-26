@@ -72,6 +72,8 @@ pub struct DownloadEntry {
     /// Used as a tiebreaker when nexus_file_id == 0 (disk-scanned, file ID unknown)
     /// so we can reset exactly the right download entry on mod removal.
     pub archive_hash: Option<String>,
+    /// Version string resolved from Nexus (file version, or mod version as fallback).
+    pub version: Option<String>,
 }
 
 impl DownloadEntry {
@@ -91,6 +93,7 @@ impl DownloadEntry {
             nexus_file_name: None,
             nexus_is_primary: false,
             archive_hash: None,
+            version: None,
         }
     }
 

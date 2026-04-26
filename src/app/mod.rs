@@ -1258,7 +1258,10 @@ impl Component for App {
                     download_id, file_id, mod_id, domain, &sender,
                 )
             }
-            AppMsg::ShowFileIdDialog { download_id, mod_id, domain } => {
+            AppMsg::ShowFileIdDialog { download_id, mod_id, domain, partial_name } => {
+                if let Some(name) = partial_name {
+                    self.pending_fetched_name = Some(name);
+                }
                 self.pending_file_id_needed = Some(crate::app::types::FileIdNeeded {
                     download_id,
                     mod_id,
@@ -1267,9 +1270,9 @@ impl Component for App {
                 self.show_file_id_dialog(root, &sender);
             }
             AppMsg::DownloadProgress(id, frac, msg) => self.handle_download_progress(id, frac, msg),
-            AppMsg::DownloadNameResolved(id, name, domain, fname, is_primary, file_id) => {
+            AppMsg::DownloadNameResolved(id, name, domain, fname, is_primary, file_id, version) => {
                 self.handle_download_name_resolved(
-                    id, name, domain, fname, is_primary, file_id, &sender,
+                    id, name, domain, fname, is_primary, file_id, version, &sender,
                 )
             }
             AppMsg::FetchDownloadMetadata(idx) => {
@@ -1434,13 +1437,13 @@ impl Component for App {
                 self.pending_file_id_needed =
                     Some(crate::app::types::FileIdNeeded { download_id, mod_id, domain });
             }
-            AppCmdMsg::FileIdFetched { combined_name, download_id } => {
+            AppCmdMsg::FileIdFetched { combined_name, download_id, version } => {
                 self.pending_file_id_needed = None;
                 if let Some(dl_id) = download_id {
                     // Standalone (right-click) path: update the download entry directly.
                     if let Some(name) = combined_name {
                         self.handle_download_name_resolved(
-                            dl_id, name, None, None, false, None, &sender,
+                            dl_id, name, None, None, false, None, version, &sender,
                         );
                     }
                     self.toaster.toast("Metadata updated");

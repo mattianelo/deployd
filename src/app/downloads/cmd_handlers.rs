@@ -6,7 +6,7 @@ use crate::models::download::{DownloadStatus, NexusIds};
 use crate::utils::paths;
 
 use super::super::App;
-use super::super::messages::AppCmdMsg;
+use super::super::messages::{AppCmdMsg, AppMsg};
 use super::super::types::NxmDownloadResult;
 
 impl App {
@@ -68,6 +68,20 @@ impl App {
             Err(e) => {
                 eprintln!("deployd: failed to fetch Nexus metadata: {e}");
                 self.toaster.toast(&format!("Metadata fetch failed: {e}"));
+                // For disk-scanned entries with a known mod_id but unresolved file_id,
+                // offer the dialog so the user can at least store the file_id for the next retry.
+                if let Some(ref id) = dl_id {
+                    if let Some(entry) = self.all_downloads.iter().find(|e| &e.id == id)
+                        && let Some(NexusIds { mod_id, file_id: 0, ref domain }) = entry.nexus_ids
+                    {
+                        let _ = sender.input_sender().send(AppMsg::ShowFileIdDialog {
+                            download_id: id.clone(),
+                            mod_id,
+                            domain: domain.clone(),
+                            partial_name: None,
+                        });
+                    }
+                }
             }
         }
     }
@@ -123,6 +137,7 @@ impl App {
                     entry.nexus_ids = new_nexus_ids.clone();
                     entry.nexus_file_name = nxm_result.nexus_file_name.clone();
                     entry.nexus_is_primary = nxm_result.nexus_is_primary;
+                    entry.version = nxm_result.version.clone();
                     entry.metadata_fetched = true;
                 }
                 // Update factory
@@ -137,6 +152,7 @@ impl App {
                         row.entry.nexus_ids = new_nexus_ids;
                         row.entry.nexus_file_name = nxm_result.nexus_file_name.clone();
                         row.entry.nexus_is_primary = nxm_result.nexus_is_primary;
+                        row.entry.version = nxm_result.version.clone();
                         row.entry.metadata_fetched = true;
                         break;
                     }

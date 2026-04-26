@@ -145,10 +145,11 @@ pub enum AppMsg {
         download_id: String,
         mod_id: i64,
         domain: String,
+        partial_name: Option<String>,
     },
     DownloadProgress(String, f64, String),
-    /// (download_id, mod_name, game_domain, nexus_file_name, nexus_is_primary)
-    DownloadNameResolved(String, String, Option<String>, Option<String>, bool, Option<i64>),
+    /// (download_id, mod_name, game_domain, nexus_file_name, nexus_is_primary, resolved_file_id, version)
+    DownloadNameResolved(String, String, Option<String>, Option<String>, bool, Option<i64>, Option<String>),
     FetchDownloadMetadata(DynamicIndex),
     ScanDownloadsFolder,
     DownloadSortChanged(u32),
@@ -369,6 +370,7 @@ pub enum AppCmdMsg {
     FileIdFetched {
         combined_name: Option<String>,
         download_id: Option<String>,
+        version: Option<String>,
     },
     NxmDownloadComplete(String, Result<NxmDownloadResult, String>),
     /// (dl_id, Result<(mod_id, version, author, mod_name, nexus_file_name), err>)

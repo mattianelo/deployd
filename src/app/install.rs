@@ -1075,7 +1075,7 @@ impl App {
                 .flatten()
                 .filter(|k| !k.is_empty())
             else {
-                return AppCmdMsg::FileIdFetched { combined_name: None, download_id: download_id_for_result };
+                return AppCmdMsg::FileIdFetched { combined_name: None, download_id: download_id_for_result, version: None };
             };
             let client = crate::core::nexus_api::NexusClient::new(api_key);
             let file_entry = client
@@ -1091,9 +1091,17 @@ impl App {
                 } else {
                     format!("{mod_name} - {fname}")
                 };
-                AppCmdMsg::FileIdFetched { combined_name: Some(combined), download_id: download_id_for_result }
+                AppCmdMsg::FileIdFetched {
+                    combined_name: Some(combined),
+                    download_id: download_id_for_result,
+                    version: entry.version.clone(),
+                }
             } else {
-                AppCmdMsg::FileIdFetched { combined_name: None, download_id: download_id_for_result }
+                AppCmdMsg::FileIdFetched {
+                    combined_name: None,
+                    download_id: download_id_for_result,
+                    version: None,
+                }
             }
         });
     }

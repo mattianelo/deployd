@@ -86,6 +86,7 @@ pub struct NxmDownloadResult {
     pub file_name: String,
     pub nexus_file_name: Option<String>,
     pub nexus_is_primary: bool,
+    pub version: Option<String>,
 }
 
 #[derive(Debug)]

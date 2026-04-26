@@ -66,10 +66,11 @@ impl FactoryComponent for DownloadRow {
 
                     gtk::Label {
                         #[watch]
-                        set_label: self.entry.nexus_file_name.as_deref().unwrap_or(""),
+                        set_label: &self.secondary_label(),
                         #[watch]
                         set_visible: self.entry.metadata_fetched
-                            && self.entry.nexus_file_name.is_some(),
+                            && (self.entry.nexus_file_name.is_some()
+                                || self.entry.version.is_some()),
                         set_halign: gtk::Align::Start,
                         set_ellipsize: gtk::pango::EllipsizeMode::End,
                         add_css_class: "dim-label",
@@ -270,6 +271,17 @@ impl FactoryComponent for DownloadRow {
 impl DownloadRow {
     fn display_name(&self) -> String {
         self.entry.mod_name.clone()
+    }
+
+    fn secondary_label(&self) -> String {
+        match (&self.entry.nexus_file_name, &self.entry.version) {
+            (Some(fname), Some(ver)) if !fname.contains(ver.as_str()) => {
+                format!("{fname}  •  v{ver}")
+            }
+            (Some(fname), _) => fname.clone(),
+            (None, Some(ver)) => format!("v{ver}"),
+            (None, None) => String::new(),
+        }
     }
 }
 

@@ -13,8 +13,8 @@ impl Tracker {
             None => (None, None, None),
         };
         sqlx::query(
-            "INSERT INTO download_entries (id, mod_name, archive_path, nexus_mod_id, nexus_file_id, nexus_domain, game_domain, metadata_fetched, nexus_file_name, nexus_is_primary, status, archive_hash)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "INSERT INTO download_entries (id, mod_name, archive_path, nexus_mod_id, nexus_file_id, nexus_domain, game_domain, metadata_fetched, nexus_file_name, nexus_is_primary, status, archive_hash, version)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                 mod_name = excluded.mod_name,
                 archive_path = excluded.archive_path,
@@ -26,7 +26,8 @@ impl Tracker {
                 nexus_file_name = excluded.nexus_file_name,
                 nexus_is_primary = excluded.nexus_is_primary,
                 status = excluded.status,
-                archive_hash = excluded.archive_hash",
+                archive_hash = excluded.archive_hash,
+                version = excluded.version",
         )
         .bind(&entry.id)
         .bind(&entry.mod_name)
@@ -40,6 +41,7 @@ impl Tracker {
         .bind(entry.nexus_is_primary)
         .bind(entry.status.as_db_str())
         .bind(entry.archive_hash.as_deref())
+        .bind(entry.version.as_deref())
         .execute(&self.pool)
         .await
         .context("Failed to save download entry")?;
@@ -69,9 +71,9 @@ impl Tracker {
     ) -> Result<Vec<crate::models::download::DownloadEntry>> {
         use crate::models::download::{DownloadEntry, DownloadStatus, NexusIds};
         #[allow(clippy::type_complexity)] // Flat SQLx row tuple — a struct would need manual FromRow impl with no real gain.
-        let rows: Vec<(String, String, Option<String>, Option<i64>, Option<i64>, Option<String>, Option<String>, bool, Option<String>, bool, Option<String>, Option<String>)> =
+        let rows: Vec<(String, String, Option<String>, Option<i64>, Option<i64>, Option<String>, Option<String>, bool, Option<String>, bool, Option<String>, Option<String>, Option<String>)> =
             sqlx::query_as(
-                "SELECT id, mod_name, archive_path, nexus_mod_id, nexus_file_id, nexus_domain, game_domain, metadata_fetched, nexus_file_name, nexus_is_primary, status, archive_hash
+                "SELECT id, mod_name, archive_path, nexus_mod_id, nexus_file_id, nexus_domain, game_domain, metadata_fetched, nexus_file_name, nexus_is_primary, status, archive_hash, version
                  FROM download_entries"
             )
             .fetch_all(&self.pool)
@@ -94,6 +96,7 @@ impl Tracker {
                     nexus_is_primary,
                     status_str,
                     archive_hash,
+                    version,
                 )| {
                     let path = archive_path.map(std::path::PathBuf::from);
                     let is_installed = status_str.as_deref().unwrap_or("downloaded") == "installed";
@@ -127,6 +130,7 @@ impl Tracker {
                         nexus_file_name,
                         nexus_is_primary,
                         archive_hash,
+                        version: version.filter(|v| !v.is_empty()),
                     })
                 },
             )

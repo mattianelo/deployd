@@ -416,6 +416,7 @@ impl App {
         nexus_file_name: Option<String>,
         nexus_is_primary: bool,
         resolved_file_id: Option<i64>,
+        version: Option<String>,
         sender: &ComponentSender<Self>,
     ) {
         // Capture old domain before mutation to detect filtering changes
@@ -430,6 +431,9 @@ impl App {
             entry.metadata_fetched = true;
             entry.nexus_file_name = nexus_file_name.clone();
             entry.nexus_is_primary = nexus_is_primary;
+            if version.is_some() {
+                entry.version = version.clone();
+            }
             if let Some(fid) = resolved_file_id
                 && let Some(NexusIds { file_id: ref mut stored_fid, .. }) = entry.nexus_ids
                 && *stored_fid == 0
@@ -477,6 +481,9 @@ impl App {
                     row.entry.metadata_fetched = true;
                     row.entry.nexus_file_name = nexus_file_name;
                     row.entry.nexus_is_primary = nexus_is_primary;
+                    if version.is_some() {
+                        row.entry.version = version.clone();
+                    }
                     if let Some(fid) = resolved_file_id
                         && let Some(NexusIds { file_id: ref mut stored_fid, .. }) = row.entry.nexus_ids
                         && *stored_fid == 0
@@ -758,6 +765,7 @@ impl App {
                 // Capture before DownloadNameResolved moves info.name
                 let mod_version = info.version.clone();
                 let mod_author = info.author.clone();
+                let resolved_version = file_version.or(Some(mod_version.clone()));
                 let _ = input_sender.send(AppMsg::DownloadNameResolved(
                     download_id.clone(),
                     info.name.clone(),
@@ -765,12 +773,14 @@ impl App {
                     nexus_file_name,
                     nexus_is_primary,
                     resolved_file_id,
+                    if unresolved { None } else { resolved_version.clone() },
                 ));
                 if unresolved {
                     let _ = input_sender.send(AppMsg::ShowFileIdDialog {
                         download_id: download_id.clone(),
                         mod_id: nexus_mod_id,
                         domain: domain.clone(),
+                        partial_name: Some(info.name.clone()),
                     });
                 } else {
                     // Toast for user-triggered fetches; install-path results are silent since
@@ -791,7 +801,7 @@ impl App {
                         )
                         .await
                         .map_err(|e| e.to_string())?;
-                    let installed_version = file_version.unwrap_or_else(|| mod_version.clone());
+                    let installed_version = resolved_version.unwrap_or_else(|| mod_version.clone());
                     tracker
                         .set_mod_installed_version(mod_id, &installed_version)
                         .await
