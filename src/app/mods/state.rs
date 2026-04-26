@@ -236,6 +236,7 @@ impl App {
                     mod_enabled: true,
                     dirty_info,
                     is_vanilla: true,
+                    compact: self.compact_plugin_rows,
                 });
             }
         }
@@ -284,6 +285,7 @@ impl App {
                 mod_enabled,
                 dirty_info,
                 is_vanilla: false,
+                compact: self.compact_plugin_rows,
             });
             managed_display_idx += 1;
         }

@@ -23,6 +23,8 @@ pub struct PluginRowInit {
     /// Whether this is a vanilla/DLC plugin not managed by Deployd.
     /// Vanilla rows are shown as read-only (checkbox insensitive).
     pub is_vanilla: bool,
+    /// Whether compact (reduced height) display is active when the row is created.
+    pub compact: bool,
 }
 
 #[derive(Debug)]
@@ -187,7 +189,7 @@ impl FactoryComponent for PluginRow {
             is_vanilla: init.is_vanilla,
             plugin_type_label,
             plugin_type_css,
-            compact: false,
+            compact: init.compact,
         }
     }
 

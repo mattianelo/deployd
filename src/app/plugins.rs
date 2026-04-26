@@ -128,6 +128,7 @@ impl App {
                         mod_enabled: row.mod_enabled,
                         dirty_info: row.dirty_info.clone(),
                         is_vanilla: row.is_vanilla,
+                        compact: row.compact,
                     })
                 })
                 .collect()
@@ -292,6 +293,7 @@ impl App {
                         mod_enabled: true,
                         dirty_info,
                         is_vanilla: true,
+                        compact: self.compact_plugin_rows,
                     },
                 );
             }
