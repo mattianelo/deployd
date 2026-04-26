@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 use crate::core::tracker::{OverrideInfo, PersistedGame, Tracker};
-use crate::models::download::DownloadEntry;
+use crate::models::download::{DownloadEntry, NexusIds};
 use crate::models::game::Game;
 use crate::models::group::ModGroup;
 use crate::models::mod_entry::{InstallTarget, ModEntry};
@@ -59,7 +59,7 @@ pub(crate) struct PendingInstall {
     /// For FOMOD mods: parsed UI config for the wizard.
     pub(crate) fomod_config: Option<fomod_resolver::FomodUiConfig>,
     /// Nexus IDs from NXM download (mod_id, file_id, domain).
-    pub(crate) nexus_ids: Option<(i64, i64, String)>,
+    pub(crate) nexus_ids: Option<NexusIds>,
     /// SHA-256 hex digest of the source archive, used for duplicate detection.
     pub(crate) archive_hash: Option<String>,
     /// Per-file install targets keyed by dest_rel path string.

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use relm4::prelude::*;
 
-use crate::models::download::DownloadStatus;
+use crate::models::download::{DownloadStatus, NexusIds};
 use crate::utils::paths;
 
 use super::super::App;
@@ -106,11 +106,11 @@ impl App {
     ) {
         match result {
             Ok(nxm_result) => {
-                let new_nexus_ids = Some((
-                    nxm_result.mod_id,
-                    nxm_result.file_id,
-                    nxm_result.domain.clone(),
-                ));
+                let new_nexus_ids = Some(NexusIds {
+                    mod_id: nxm_result.mod_id,
+                    file_id: nxm_result.file_id,
+                    domain: nxm_result.domain.clone(),
+                });
                 // Update backing store
                 if let Some(entry) = self
                     .all_downloads

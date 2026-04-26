@@ -298,6 +298,10 @@ impl std::fmt::Debug for PrepareResultMsg {
     }
 }
 
+// AppCmdMsg variants carry one-shot result types (InitData, LoadedData, etc.) that are large
+// by design — they transfer all loaded state in a single dispatch. Boxing would add a heap
+// allocation per message for no meaningful benefit given the infrequent dispatch rate.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum AppCmdMsg {
     Initialized(Result<InitData, String>),

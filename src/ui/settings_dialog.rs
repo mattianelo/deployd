@@ -438,10 +438,10 @@ impl Component for SettingsDialog {
                 self.status_label.set_visible(true);
             }
             SettingsCmdMsg::KeyLoaded(key) => {
-                if let Some(ref key) = key {
-                    if !key.is_empty() {
-                        self.api_key_entry.set_text(key);
-                    }
+                if let Some(ref key) = key
+                    && !key.is_empty()
+                {
+                    self.api_key_entry.set_text(key);
                 }
             }
             SettingsCmdMsg::DownloadsDirLoaded(dir) => {

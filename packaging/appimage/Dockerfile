@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
     | sh -s -- -y --default-toolchain stable --profile minimal \
-    && /root/.cargo/bin/rustup component add rust-std
+    && /root/.cargo/bin/rustup component add rust-std clippy
 ENV PATH="/root/.cargo/bin:$PATH"
 
 # UMU Launcher — Python zipapp bundling all dependencies; needs python3 at runtime.

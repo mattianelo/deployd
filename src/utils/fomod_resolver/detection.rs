@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 use crate::dlog;
+use crate::utils::paths::lowercase_path_str;
 
 /// Look for fomod/ModuleConfig.xml (case-insensitive) in the extracted directory.
 /// Searches up to depth 5 to handle mods with extra wrapper directories.
@@ -20,7 +21,7 @@ pub fn detect_fomod(extracted_root: &Path) -> Option<PathBuf> {
                 .path()
                 .strip_prefix(extracted_root)
                 .unwrap_or(entry.path());
-            let rel_lower = rel.to_string_lossy().to_lowercase().replace('\\', "/");
+            let rel_lower = lowercase_path_str(rel);
             if rel_lower.ends_with("fomod/moduleconfig.xml") {
                 return Some(entry.path().to_path_buf());
             }

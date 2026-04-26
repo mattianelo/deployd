@@ -1,5 +1,5 @@
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
+#[allow(dead_code)] // fields read via UI list models; not all accessed in Rust code directly
 pub struct OrderSnapshot {
     pub id: String,
     pub name: String,

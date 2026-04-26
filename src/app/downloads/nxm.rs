@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use relm4::prelude::*;
 
 use crate::core::game;
-use crate::models::download::DownloadEntry;
+use crate::models::download::{DownloadEntry, NexusIds};
 use crate::utils::paths;
 
 use super::super::App;
@@ -39,7 +39,7 @@ impl App {
         // Create download entry and add to sidebar
         let download_id = uuid::Uuid::new_v4().to_string();
         let mod_name = format!("Mod {} (file {})", link.mod_id, link.file_id);
-        let nexus_ids = Some((link.mod_id, link.file_id, link.domain.clone()));
+        let nexus_ids = Some(NexusIds { mod_id: link.mod_id, file_id: link.file_id, domain: link.domain.clone() });
         let entry = DownloadEntry::new(download_id.clone(), mod_name, nexus_ids);
         self.all_downloads.push(entry.clone());
         // Push directly to the factory instead of calling rebuild_downloads_view().

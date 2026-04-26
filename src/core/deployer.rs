@@ -121,8 +121,7 @@ pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result
         }
     }
 
-    // Pre-build lowercase path set from all previously deployed files,
-    // used to distinguish stale case-variant files from vanilla game files.
+    // Distinguish stale case-variant paths from vanilla game files during removal.
     let deployed_lower: HashSet<String> = deployed
         .iter()
         .map(|d| {
@@ -132,8 +131,7 @@ pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result
         })
         .collect();
 
-    // Collect game_rel_original values for files being removed, so we can
-    // restore vanilla backups after the removal loop.
+    // Needed to restore vanilla backups after the removal loop.
     let removed_rels: Vec<String> = to_remove
         .iter()
         .map(|f| f.game_rel_original.clone())

@@ -5,6 +5,7 @@ use anyhow::Result;
 use walkdir::WalkDir;
 
 use crate::dlog;
+use crate::utils::paths::lowercase_path_str;
 
 use super::types::FomodFileMapping;
 
@@ -31,7 +32,7 @@ pub(super) fn build_path_index(
 
         // Key relative to extracted_root (archive root)
         if let Ok(rel) = entry.path().strip_prefix(extracted_root) {
-            let key = rel.to_string_lossy().to_lowercase().replace('\\', "/");
+            let key = lowercase_path_str(rel);
             if !key.is_empty() {
                 index.insert(key, abs.clone());
             }
@@ -41,7 +42,7 @@ pub(super) fn build_path_index(
         if content_root != extracted_root
             && let Ok(rel) = entry.path().strip_prefix(content_root)
         {
-            let key = rel.to_string_lossy().to_lowercase().replace('\\', "/");
+            let key = lowercase_path_str(rel);
             if !key.is_empty() {
                 index.entry(key).or_insert(abs);
             }

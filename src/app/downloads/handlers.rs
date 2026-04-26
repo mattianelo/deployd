@@ -5,7 +5,7 @@ use relm4::prelude::*;
 
 use crate::core::installer::PrepareResult;
 use crate::core::{game, installer};
-use crate::models::download::DownloadStatus;
+use crate::models::download::{DownloadStatus, NexusIds};
 use crate::ui::mod_list::ModListItemKind;
 
 use super::super::App;
@@ -236,7 +236,7 @@ impl App {
         };
 
         // Switch to correct game based on nexus domain
-        if let Some((_, _, ref domain)) = nexus_ids
+        if let Some(NexusIds { ref domain, .. }) = nexus_ids
             && let Some(target_game_id) = game::game_id_for_nexus_domain(domain)
             && let Some(game_idx) = self.games.iter().position(|g| g.id == target_game_id)
             && game_idx != self.selected_game_idx
@@ -254,7 +254,7 @@ impl App {
         // mod name (and file name when a file ID is known) from Nexus in parallel
         // with archive extraction so the pre-install dialog can propose the real name.
         if !metadata_fetched
-            && let Some((nexus_mod_id, nexus_file_id, ref domain)) = nexus_ids
+            && let Some(NexusIds { mod_id: nexus_mod_id, file_id: nexus_file_id, ref domain }) = nexus_ids
             && let Some(tracker) = self.tracker.clone()
         {
             let domain = domain.clone();
@@ -388,6 +388,9 @@ impl App {
         }
     }
 
+    // All arguments come from a single NxmResolved message variant; a wrapper struct
+    // would add indirection without improving clarity.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn handle_download_name_resolved(
         &mut self,
         download_id: String,
@@ -411,14 +414,14 @@ impl App {
             entry.nexus_file_name = nexus_file_name.clone();
             entry.nexus_is_primary = nexus_is_primary;
             if let Some(fid) = resolved_file_id
-                && let Some((_, ref mut stored_fid, _)) = entry.nexus_ids
+                && let Some(NexusIds { file_id: ref mut stored_fid, .. }) = entry.nexus_ids
                 && *stored_fid == 0
             {
                 *stored_fid = fid;
             }
             if let Some(ref domain) = game_domain {
                 entry.game_domain = Some(domain.clone());
-                if let Some((_, _, ref mut dom)) = entry.nexus_ids {
+                if let Some(NexusIds { domain: ref mut dom, .. }) = entry.nexus_ids {
                     *dom = domain.clone();
                 }
                 // Auto-move archive from flat root to per-game subfolder
@@ -458,14 +461,14 @@ impl App {
                     row.entry.nexus_file_name = nexus_file_name;
                     row.entry.nexus_is_primary = nexus_is_primary;
                     if let Some(fid) = resolved_file_id
-                        && let Some((_, ref mut stored_fid, _)) = row.entry.nexus_ids
+                        && let Some(NexusIds { file_id: ref mut stored_fid, .. }) = row.entry.nexus_ids
                         && *stored_fid == 0
                     {
                         *stored_fid = fid;
                     }
                     if let Some(ref domain) = game_domain {
                         row.entry.game_domain = Some(domain.clone());
-                        if let Some((_, _, ref mut dom)) = row.entry.nexus_ids {
+                        if let Some(NexusIds { domain: ref mut dom, .. }) = row.entry.nexus_ids {
                             *dom = domain.clone();
                         }
                     }
@@ -567,7 +570,7 @@ impl App {
         domain: String,
         sender: &ComponentSender<Self>,
     ) {
-        let new_nexus_ids = Some((mod_id, 0i64, domain));
+        let new_nexus_ids = Some(NexusIds { mod_id, file_id: 0, domain });
 
         // Update backing store
         if let Some(entry) = self.all_downloads.iter_mut().find(|e| e.id == download_id) {
@@ -613,7 +616,7 @@ impl App {
             let Some(entry) = self.all_downloads.iter().find(|e| e.id == download_id) else {
                 return;
             };
-            let Some((nexus_mod_id, nexus_file_id, ref domain)) = entry.nexus_ids else {
+            let Some(NexusIds { mod_id: nexus_mod_id, file_id: nexus_file_id, ref domain }) = entry.nexus_ids else {
                 return;
             };
             let archive_filename = entry
@@ -806,7 +809,7 @@ impl App {
             return;
         }
         // Re-request the NXM download URL from Nexus and re-enqueue
-        if let Some((mod_id, file_id, ref domain)) = nexus_ids {
+        if let Some(NexusIds { mod_id, file_id, ref domain }) = nexus_ids {
             let uri = format!("nxm://{domain}/mods/{mod_id}/files/{file_id}");
             sender.input(AppMsg::NxmLinkReceived(uri));
         }

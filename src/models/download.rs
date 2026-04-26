@@ -1,5 +1,13 @@
 use std::path::PathBuf;
 
+/// Nexus Mods identity triple for a download: mod ID, file ID, and game domain.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NexusIds {
+    pub mod_id: i64,
+    pub file_id: i64,
+    pub domain: String,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum DownloadStatus {
     Downloading,
@@ -51,7 +59,7 @@ pub struct DownloadEntry {
     pub progress: f64,
     pub status_msg: String,
     pub error_msg: Option<String>,
-    pub nexus_ids: Option<(i64, i64, String)>,
+    pub nexus_ids: Option<NexusIds>,
     pub archive_path: Option<PathBuf>,
     pub metadata_fetched: bool,
     /// Game domain for filtering (e.g., "skyrimspecialedition"). None = show for all games.
@@ -67,8 +75,8 @@ pub struct DownloadEntry {
 }
 
 impl DownloadEntry {
-    pub fn new(id: String, mod_name: String, nexus_ids: Option<(i64, i64, String)>) -> Self {
-        let game_domain = nexus_ids.as_ref().map(|(_, _, d)| d.clone());
+    pub fn new(id: String, mod_name: String, nexus_ids: Option<NexusIds>) -> Self {
+        let game_domain = nexus_ids.as_ref().map(|n| n.domain.clone());
         Self {
             id,
             mod_name,

@@ -1,6 +1,6 @@
 use gtk::prelude::*;
 
-use crate::models::download::{DownloadEntry, DownloadStatus};
+use crate::models::download::{DownloadEntry, DownloadStatus, NexusIds};
 
 use super::super::App;
 
@@ -46,7 +46,7 @@ impl App {
             .collect();
         match self.download_sort {
             crate::app::types::DownloadSort::Name => {
-                entries.sort_by(|a, b| a.mod_name.to_lowercase().cmp(&b.mod_name.to_lowercase()))
+                entries.sort_by_key(|a| a.mod_name.to_lowercase())
             }
             crate::app::types::DownloadSort::Status => {
                 entries.sort_by_key(|e| crate::app::types::download_status_sort_key(&e.status))
@@ -95,18 +95,18 @@ impl App {
         // from the same Nexus mod page all share (mod_id, 0). When a mod_archive_hash is
         // available we use it as an exact tiebreaker. Without a hash we fall back to
         // counting installed entries: reset only when there is exactly one (unambiguous).
-        let fid_zero_ambiguous = if matches!(nexus_ids, Some((_, 0))) && mod_archive_hash.is_none()
-        {
-            let mid = nexus_ids.unwrap().0;
-            self.all_downloads
-                .iter()
-                .filter(|e| {
-                    e.status == DownloadStatus::Installed
-                        && e.archive_path.as_ref().map(|p| p.exists()).unwrap_or(false)
-                        && matches!(&e.nexus_ids, Some((m, 0, _)) if *m == mid)
-                })
-                .count()
-                > 1
+        let fid_zero_ambiguous = if let Some((mid, 0)) = nexus_ids {
+            mod_archive_hash.is_none()
+                && self
+                    .all_downloads
+                    .iter()
+                    .filter(|e| {
+                        e.status == DownloadStatus::Installed
+                            && e.archive_path.as_ref().map(|p| p.exists()).unwrap_or(false)
+                            && matches!(&e.nexus_ids, Some(NexusIds { mod_id: m, file_id: 0, .. }) if *m == mid)
+                    })
+                    .count()
+                    > 1
         } else {
             false
         };
@@ -128,7 +128,7 @@ impl App {
                 // fid == 0 is the disk-scan sentinel (file ID unknown).
                 // Prefer an exact archive_hash match; fall back to the count heuristic
                 // when no hash is available.
-                (Some((mid, 0)), Some((emid, 0, _))) => {
+                (Some((mid, 0)), Some(NexusIds { mod_id: emid, file_id: 0, .. })) => {
                     mid == *emid
                         && if let Some(mod_hash) = mod_archive_hash {
                             entry.archive_hash.as_deref() == Some(mod_hash)
@@ -136,7 +136,9 @@ impl App {
                             !fid_zero_ambiguous
                         }
                 }
-                (Some((mid, fid)), Some((emid, efid, _))) => mid == *emid && fid == *efid,
+                (Some((mid, fid)), Some(NexusIds { mod_id: emid, file_id: efid, .. })) => {
+                    mid == *emid && fid == *efid
+                }
                 // For non-Nexus mods match by name (case-insensitive)
                 (None, None) => entry.mod_name.to_lowercase() == mod_name.to_lowercase(),
                 _ => false,

@@ -9,7 +9,7 @@ impl Tracker {
         entry: &crate::models::download::DownloadEntry,
     ) -> Result<()> {
         let (nexus_mod_id, nexus_file_id, nexus_domain) = match &entry.nexus_ids {
-            Some((mid, fid, dom)) => (Some(*mid), Some(*fid), Some(dom.as_str())),
+            Some(n) => (Some(n.mod_id), Some(n.file_id), Some(n.domain.as_str())),
             None => (None, None, None),
         };
         sqlx::query(
@@ -67,7 +67,7 @@ impl Tracker {
     pub async fn load_download_entries(
         &self,
     ) -> Result<Vec<crate::models::download::DownloadEntry>> {
-        use crate::models::download::{DownloadEntry, DownloadStatus};
+        use crate::models::download::{DownloadEntry, DownloadStatus, NexusIds};
         #[allow(clippy::type_complexity)] // Flat SQLx row tuple — a struct would need manual FromRow impl with no real gain.
         let rows: Vec<(String, String, Option<String>, Option<i64>, Option<i64>, Option<String>, Option<String>, bool, Option<String>, bool, Option<String>, Option<String>)> =
             sqlx::query_as(
@@ -109,7 +109,7 @@ impl Tracker {
                     let nexus_ids = nexus_mod_id
                         .zip(nexus_file_id)
                         .zip(nexus_domain)
-                        .map(|((mid, fid), dom)| (mid, fid, dom));
+                        .map(|((mod_id, file_id), domain)| NexusIds { mod_id, file_id, domain });
                     let status =
                         DownloadStatus::from_db_str(status_str.as_deref().unwrap_or("downloaded"));
                     let status_msg = status.default_status_msg().to_string();

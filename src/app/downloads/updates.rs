@@ -40,7 +40,7 @@ impl App {
 
                 let mut updates = Vec::new();
                 for m in &mods {
-                    let nexus_mod_id = m.nexus_mod_id.unwrap();
+                    let Some(nexus_mod_id) = m.nexus_mod_id else { continue };
                     match client.get_mod_files(domain, nexus_mod_id).await {
                         Ok((files_resp, rate_limits)) => {
                             if let Some(rl) = rate_limits {

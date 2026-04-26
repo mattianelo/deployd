@@ -631,7 +631,10 @@ impl App {
                 mod_name,
                 archive_hash,
             }) => {
-                let game = self.selected_game().cloned().unwrap();
+                let game = self
+                    .selected_game()
+                    .cloned()
+                    .expect("PrepareResult received without a selected game — UI invariant violated");
                 self.pending_install = Some(PendingInstall {
                     tmp_dir,
                     mod_name: mod_name.clone(),
@@ -653,7 +656,7 @@ impl App {
                     .pending_install
                     .as_ref()
                     .and_then(|p| p.nexus_ids.as_ref())
-                    .map(|(mid, fid, _)| (*mid, *fid));
+                    .map(|n| (n.mod_id, n.file_id));
                 let existing = hash_existing.or_else(|| {
                     nexus_ids.and_then(|(mid, fid)| self.find_installed_mod_by_nexus_id(mid, fid))
                 });
@@ -701,7 +704,10 @@ impl App {
                 mod_name,
                 archive_hash,
             }) => {
-                let game = self.selected_game().cloned().unwrap();
+                let game = self
+                    .selected_game()
+                    .cloned()
+                    .expect("PrepareResult received without a selected game — UI invariant violated");
                 self.pending_install = Some(PendingInstall {
                     tmp_dir,
                     mod_name: mod_name.clone(),
@@ -723,7 +729,7 @@ impl App {
                     .pending_install
                     .as_ref()
                     .and_then(|p| p.nexus_ids.as_ref())
-                    .map(|(mid, fid, _)| (*mid, *fid));
+                    .map(|n| (n.mod_id, n.file_id));
                 let existing = hash_existing.or_else(|| {
                     nexus_ids.and_then(|(mid, fid)| self.find_installed_mod_by_nexus_id(mid, fid))
                 });
@@ -857,7 +863,7 @@ impl App {
                     add_result.mod_entry.nexus_mod_id,
                     add_result.mod_entry.nexus_domain.as_deref(),
                 ) {
-                    let tracker = self.tracker.clone().unwrap();
+                    let tracker = self.tracker.clone().expect("tracker not initialized at absorb result handling");
                     let mod_id = add_result.mod_entry.id.clone();
                     let domain = nexus_domain.to_string();
                     let nexus_file_id = add_result.mod_entry.nexus_file_id;

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::core::game;
-use crate::models::download::{DownloadEntry, DownloadStatus};
+use crate::models::download::{DownloadEntry, DownloadStatus, NexusIds};
 
 use super::super::App;
 use super::super::free_fns::parse_nexus_mod_id;
@@ -127,8 +127,8 @@ impl App {
                     .to_string_lossy()
                     .to_string();
 
-                let nexus_ids =
-                    parse_nexus_mod_id(&file_name).map(|mod_id| (mod_id, 0i64, domain.to_string()));
+                let nexus_ids = parse_nexus_mod_id(&file_name)
+                    .map(|mod_id| NexusIds { mod_id, file_id: 0, domain: domain.to_string() });
 
                 let download_id = uuid::Uuid::new_v4().to_string();
                 let entry = DownloadEntry {
@@ -196,8 +196,8 @@ impl App {
                     .to_string_lossy()
                     .to_string();
 
-                let nexus_ids =
-                    parse_nexus_mod_id(&file_name).map(|mod_id| (mod_id, 0i64, String::new()));
+                let nexus_ids = parse_nexus_mod_id(&file_name)
+                    .map(|mod_id| NexusIds { mod_id, file_id: 0, domain: String::new() });
 
                 let download_id = uuid::Uuid::new_v4().to_string();
                 let entry = DownloadEntry {

@@ -49,6 +49,7 @@ use crate::core::tracker::Tracker;
 use crate::dlog;
 use crate::models::game::{Game, GameEngine};
 use crate::models::manifest::ModFile;
+use crate::models::download::NexusIds;
 use crate::models::mod_entry::{InstallTarget, ModEntry};
 use crate::models::plugin::Plugin;
 use crate::utils::paths as utils_paths;
@@ -142,7 +143,7 @@ pub async fn add_mod_with_file_list(
     mod_name: &str,
     tracker: &Tracker,
     cache_root: &Path,
-    nexus_ids: Option<(i64, i64, String)>,
+    nexus_ids: Option<NexusIds>,
     archive_hash: Option<String>,
     file_targets: HashMap<String, InstallTarget>,
     stripped_wrapper: Option<String>,
@@ -282,7 +283,7 @@ pub async fn add_mod_with_file_list(
     let priority = tracker.next_priority(&game.id).await?;
 
     let (nexus_mod_id, nexus_file_id, nexus_domain) = match nexus_ids {
-        Some((mid, fid, dom)) => (Some(mid), Some(fid), Some(dom)),
+        Some(n) => (Some(n.mod_id), Some(n.file_id), Some(n.domain)),
         None => (None, None, None),
     };
 

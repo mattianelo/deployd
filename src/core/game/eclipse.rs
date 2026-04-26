@@ -331,42 +331,34 @@ fn extract_addin_block_with_uid(data: &[u8]) -> Option<(String, String)> {
                     block.push('>');
                 }
             }
-            Ok(Event::End(ref e)) => {
-                if capturing {
-                    depth -= 1;
-                    let name_bytes = e.name().as_ref().to_vec();
-                    let name = String::from_utf8_lossy(&name_bytes);
-                    block.push_str("</");
-                    block.push_str(&name);
-                    block.push('>');
-                    if depth == 0 {
-                        if uid.is_empty() {
-                            return None;
-                        }
-                        return Some((uid, block));
+            Ok(Event::End(ref e)) if capturing => {
+                depth -= 1;
+                let name_bytes = e.name().as_ref().to_vec();
+                let name = String::from_utf8_lossy(&name_bytes);
+                block.push_str("</");
+                block.push_str(&name);
+                block.push('>');
+                if depth == 0 {
+                    if uid.is_empty() {
+                        return None;
                     }
+                    return Some((uid, block));
                 }
             }
-            Ok(Event::Empty(ref e)) => {
-                if capturing {
-                    let tag = std::str::from_utf8(e.as_ref()).unwrap_or("");
-                    block.push('<');
-                    block.push_str(tag);
-                    block.push_str("/>");
-                }
+            Ok(Event::Empty(ref e)) if capturing => {
+                let tag = std::str::from_utf8(e.as_ref()).unwrap_or("");
+                block.push('<');
+                block.push_str(tag);
+                block.push_str("/>");
             }
-            Ok(Event::Text(ref e)) => {
-                if capturing {
-                    block.push_str(e.unescape().unwrap_or_default().as_ref());
-                }
+            Ok(Event::Text(ref e)) if capturing => {
+                block.push_str(e.unescape().unwrap_or_default().as_ref());
             }
-            Ok(Event::CData(ref e)) => {
-                if capturing {
-                    let content = std::str::from_utf8(e.as_ref()).unwrap_or("");
-                    block.push_str("<![CDATA[");
-                    block.push_str(content);
-                    block.push_str("]]>");
-                }
+            Ok(Event::CData(ref e)) if capturing => {
+                let content = std::str::from_utf8(e.as_ref()).unwrap_or("");
+                block.push_str("<![CDATA[");
+                block.push_str(content);
+                block.push_str("]]>");
             }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}

@@ -7,6 +7,7 @@ use gtk::prelude::*;
 use relm4::prelude::*;
 use walkdir::WalkDir;
 
+use crate::utils::paths::lowercase_path_str;
 use crate::utils::fomod_resolver::{
     FomodGroupType, FomodSelections, FomodUiConfig, FomodUiGroup, FomodUiPlugin,
 };
@@ -257,7 +258,7 @@ fn resolve_image_path(extracted_root: &Path, image_path: &str) -> Option<PathBuf
             continue;
         }
         if let Ok(rel) = entry.path().strip_prefix(extracted_root) {
-            let rel_lower = rel.to_string_lossy().to_lowercase().replace('\\', "/");
+            let rel_lower = lowercase_path_str(rel);
             if rel_lower == normalized {
                 return Some(entry.path().to_path_buf());
             }

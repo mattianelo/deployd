@@ -998,10 +998,7 @@ fn restrip_eclipse_path(path: &str) -> Option<String> {
     let after_prefix = &path[OVERRIDE_PREFIX.len()..];
     // Strip leading unrecognised wrappers (same loop as `strip_eclipse_override_wrappers`).
     let mut s = after_prefix.to_owned();
-    loop {
-        let Some(slash) = s.find('/') else {
-            break; // bare filename
-        };
+    while let Some(slash) = s.find('/') {
         let first = &s[..slash];
         if ECLIPSE_CONTENT_DIRS.contains(&first.to_lowercase().as_str()) {
             break; // recognised content dir — stop

@@ -1,5 +1,7 @@
 use serde::Deserialize;
 
+// Structs below are Nexus Mods API response shapes. All fields are kept for
+// complete deserialization even when only a subset is read by the application.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct NexusUser {
@@ -11,7 +13,7 @@ pub struct NexusUser {
     pub profile_url: Option<String>,
 }
 
-#[allow(dead_code)]
+#[allow(dead_code)] // see module-level comment above
 #[derive(Debug, Clone, Deserialize)]
 pub struct NexusModInfo {
     pub mod_id: i64,
@@ -39,7 +41,7 @@ pub struct NexusFilesResponse {
     pub files: Vec<NexusFileEntry>,
 }
 
-#[allow(dead_code)]
+#[allow(dead_code)] // see module-level comment above
 #[derive(Debug, Clone, Deserialize)]
 pub struct NexusFileEntry {
     pub file_id: i64,
@@ -64,7 +66,7 @@ pub struct NexusFileEntry {
     pub uploaded_timestamp: Option<i64>,
 }
 
-#[allow(dead_code)]
+#[allow(dead_code)] // see module-level comment above
 #[derive(Debug, Clone, Deserialize)]
 pub struct DownloadLink {
     #[serde(rename = "URI")]

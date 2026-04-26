@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use adw;
 use relm4::abstractions::Toaster;
 use relm4::factory::FactoryVecDeque;
 use relm4::prelude::*;
@@ -9,7 +8,7 @@ use relm4::prelude::*;
 use super::types::{DownloadFilter, DownloadSort, ModFilter, PendingInstall, SearchScope};
 use crate::core::detector::ExternalFile;
 use crate::core::tracker::Tracker;
-use crate::models::download::DownloadEntry;
+use crate::models::download::{DownloadEntry, NexusIds};
 use crate::models::game::Game;
 use crate::models::order_snapshot::OrderSnapshot;
 use crate::models::plugin::PluginDirtyInfo;
@@ -80,7 +79,7 @@ pub struct App {
     /// Pending NXM link received at startup (processed after initialization).
     pub(crate) pending_nxm: Option<String>,
     /// Nexus IDs to attach to the next PendingInstall (handoff from NXM download).
-    pub(crate) pending_nexus_ids: Option<(i64, i64, String)>,
+    pub(crate) pending_nexus_ids: Option<NexusIds>,
     /// Downloads sidebar entries (game-filtered view).
     pub(crate) downloads: FactoryVecDeque<DownloadRow>,
     /// All downloads across all games (backing store).

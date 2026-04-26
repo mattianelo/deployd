@@ -469,6 +469,9 @@ fn strip_zip_unicode_extra_fields(data: &mut [u8]) -> bool {
     // EOCD layout (offsets relative to signature):
     //  +12  size of central directory (4 bytes LE)
     //  +16  offset of central directory from start of disk (4 bytes LE)
+    if eocd_pos + 20 > data.len() {
+        return false;
+    }
     let cd_size =
         u32::from_le_bytes(data[eocd_pos + 12..eocd_pos + 16].try_into().unwrap()) as usize;
     let cd_offset =

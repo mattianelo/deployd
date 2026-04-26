@@ -76,12 +76,10 @@ pub async fn download_proton_ge() -> Result<()> {
     }
 
     let status = tokio::process::Command::new("tar")
-        .args([
-            "-xzf",
-            tmp_path.to_str().unwrap(),
-            "-C",
-            dest_dir.to_str().unwrap(),
-        ])
+        .arg("-xzf")
+        .arg(&tmp_path)
+        .arg("-C")
+        .arg(&dest_dir)
         .status()
         .await
         .context("run tar")?;

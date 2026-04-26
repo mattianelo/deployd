@@ -8,8 +8,12 @@ use crate::models::game::Game;
 /// Lowercase all path components and normalize backslashes to forward slashes.
 /// "Data/Textures/Foo.DDS" → "data/textures/foo.dds"
 pub fn lowercase_path(rel: &Path) -> PathBuf {
-    let s = rel.to_string_lossy().to_lowercase().replace('\\', "/");
-    PathBuf::from(s)
+    PathBuf::from(lowercase_path_str(rel))
+}
+
+/// Like [`lowercase_path`] but returns a [`String`] instead of a [`PathBuf`].
+pub fn lowercase_path_str(rel: &Path) -> String {
+    rel.to_string_lossy().to_lowercase().replace('\\', "/")
 }
 
 /// Return the data directory for Deployd.

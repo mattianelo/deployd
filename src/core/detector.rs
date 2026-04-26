@@ -5,6 +5,7 @@ use std::time::UNIX_EPOCH;
 use walkdir::WalkDir;
 
 use crate::models::game::Game;
+use crate::utils::paths::lowercase_path_str;
 
 /// A file found in the game folder that is not tracked by any installed mod.
 #[derive(Debug, Clone)]
@@ -160,7 +161,7 @@ pub fn snapshot_game_files(game: &Game) -> Vec<(String, u64, i64)> {
             let Ok(rel) = entry.path().strip_prefix(&data_dir) else {
                 continue;
             };
-            let game_rel = rel.to_string_lossy().to_lowercase().replace('\\', "/");
+            let game_rel = lowercase_path_str(rel);
             let (size, mtime) = file_attrs(&entry);
             entries.push((game_rel, size, mtime));
         }
@@ -182,10 +183,7 @@ pub fn snapshot_game_files(game: &Game) -> Vec<(String, u64, i64)> {
             let Ok(rel) = entry.path().strip_prefix(&game.path) else {
                 continue;
             };
-            let game_rel = format!(
-                "../{}",
-                rel.to_string_lossy().to_lowercase().replace('\\', "/")
-            );
+            let game_rel = format!("../{}", lowercase_path_str(rel));
             let (size, mtime) = file_attrs(&entry);
             entries.push((game_rel, size, mtime));
         }
