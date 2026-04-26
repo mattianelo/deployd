@@ -1258,6 +1258,14 @@ impl Component for App {
                     download_id, file_id, mod_id, domain, &sender,
                 )
             }
+            AppMsg::ShowFileIdDialog { download_id, mod_id, domain } => {
+                self.pending_file_id_needed = Some(crate::app::types::FileIdNeeded {
+                    download_id,
+                    mod_id,
+                    domain,
+                });
+                self.show_file_id_dialog(root, &sender);
+            }
             AppMsg::DownloadProgress(id, frac, msg) => self.handle_download_progress(id, frac, msg),
             AppMsg::DownloadNameResolved(id, name, domain, fname, is_primary, file_id) => {
                 self.handle_download_name_resolved(
@@ -1426,12 +1434,23 @@ impl Component for App {
                 self.pending_file_id_needed =
                     Some(crate::app::types::FileIdNeeded { download_id, mod_id, domain });
             }
-            AppCmdMsg::FileIdFetched(combined_name) => {
-                if let Some(name) = combined_name {
-                    self.pending_fetched_name = Some(name);
-                }
+            AppCmdMsg::FileIdFetched { combined_name, download_id } => {
                 self.pending_file_id_needed = None;
-                let _ = sender.input_sender().send(AppMsg::OpenPreInstallDialog);
+                if let Some(dl_id) = download_id {
+                    // Standalone (right-click) path: update the download entry directly.
+                    if let Some(name) = combined_name {
+                        self.handle_download_name_resolved(
+                            dl_id, name, None, None, false, None, &sender,
+                        );
+                    }
+                    self.toaster.toast("Metadata updated");
+                } else {
+                    // Install path: hand off to the pre-install dialog flow.
+                    if let Some(name) = combined_name {
+                        self.pending_fetched_name = Some(name);
+                    }
+                    let _ = sender.input_sender().send(AppMsg::OpenPreInstallDialog);
+                }
             }
             AppCmdMsg::ModsLoaded(result, preserve) => {
                 self.handle_cmd_mods_loaded(result, preserve, &sender)

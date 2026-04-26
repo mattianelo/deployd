@@ -1052,18 +1052,21 @@ impl App {
         domain: String,
         sender: &ComponentSender<Self>,
     ) {
+        let is_install = self.pending_install.is_some();
         let Some(tracker) = self.tracker.clone() else {
-            let _ = sender.input_sender().send(AppMsg::OpenPreInstallDialog);
+            if is_install {
+                let _ = sender.input_sender().send(AppMsg::OpenPreInstallDialog);
+            }
             return;
         };
-        // Also persist the resolved file_id on the download entry so future installs
-        // can skip this dialog.
+        // Persist the resolved file_id on the download entry so future installs skip this dialog.
         if let Some(entry) = self.all_downloads.iter_mut().find(|e| e.id == download_id)
             && let Some(ref mut ids) = entry.nexus_ids
         {
             ids.file_id = file_id;
         }
         let partial_name = self.pending_fetched_name.clone();
+        let download_id_for_result = (!is_install).then(|| download_id.clone());
         sender.oneshot_command(async move {
             let Some(api_key) = tracker
                 .get_setting("nexus_api_key")
@@ -1072,7 +1075,7 @@ impl App {
                 .flatten()
                 .filter(|k| !k.is_empty())
             else {
-                return AppCmdMsg::FileIdFetched(None);
+                return AppCmdMsg::FileIdFetched { combined_name: None, download_id: download_id_for_result };
             };
             let client = crate::core::nexus_api::NexusClient::new(api_key);
             let file_entry = client
@@ -1088,9 +1091,9 @@ impl App {
                 } else {
                     format!("{mod_name} - {fname}")
                 };
-                AppCmdMsg::FileIdFetched(Some(combined))
+                AppCmdMsg::FileIdFetched { combined_name: Some(combined), download_id: download_id_for_result }
             } else {
-                AppCmdMsg::FileIdFetched(None)
+                AppCmdMsg::FileIdFetched { combined_name: None, download_id: download_id_for_result }
             }
         });
     }

@@ -750,18 +750,36 @@ impl App {
                 let nexus_file_name = file_info.as_ref().map(|f| f.name.clone());
                 let file_version = file_info.as_ref().and_then(|f| f.version.clone());
                 let resolved_file_id = file_info.as_ref().map(|f| f.file_id);
-                let nexus_is_primary = file_info.map(|f| f.is_primary).unwrap_or(false);
+                let nexus_is_primary = file_info.as_ref().map(|f| f.is_primary).unwrap_or(false);
+                // When we tried to match by filename but got nothing, ask the user for the file ID.
+                let unresolved = nexus_file_id == 0
+                    && archive_filename.is_some()
+                    && file_info.is_none();
                 // Capture before DownloadNameResolved moves info.name
                 let mod_version = info.version.clone();
                 let mod_author = info.author.clone();
                 let _ = input_sender.send(AppMsg::DownloadNameResolved(
-                    download_id,
+                    download_id.clone(),
                     info.name.clone(),
-                    Some(domain),
+                    Some(domain.clone()),
                     nexus_file_name,
                     nexus_is_primary,
                     resolved_file_id,
                 ));
+                if unresolved {
+                    let _ = input_sender.send(AppMsg::ShowFileIdDialog {
+                        download_id: download_id.clone(),
+                        mod_id: nexus_mod_id,
+                        domain: domain.clone(),
+                    });
+                } else {
+                    // Toast for user-triggered fetches; install-path results are silent since
+                    // the install completion toast already ran.
+                    let _ = input_sender.send(AppMsg::ShowToast(format!(
+                        "{} v{mod_version} by {mod_author}",
+                        info.name
+                    )));
+                }
                 // Mirror NXM auto-path: write metadata back to the installed mod row.
                 if let Some(ref mod_id) = installed_mod_id {
                     tracker
@@ -785,11 +803,11 @@ impl App {
             match result {
                 Ok((name, version, author)) => {
                     AppCmdMsg::NexusMetadataFetched(
-                        None,
+                        Some(download_id),
                         Ok((String::new(), version, author, name, None)),
                     )
                 }
-                Err(e) => AppCmdMsg::NexusMetadataFetched(None, Err(e)),
+                Err(e) => AppCmdMsg::NexusMetadataFetched(Some(download_id), Err(e)),
             }
         });
     }

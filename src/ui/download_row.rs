@@ -229,7 +229,9 @@ impl FactoryComponent for DownloadRow {
 
         let fetch_idx = index.clone();
         let fetch_sender = sender.clone();
+        let fetch_pop = popover.clone();
         fetch_btn.connect_clicked(move |_| {
+            fetch_pop.popdown();
             fetch_sender
                 .output(DownloadRowOutput::FetchMetadata(fetch_idx.clone()))
                 .ok();
@@ -237,7 +239,9 @@ impl FactoryComponent for DownloadRow {
 
         let clear_idx = index.clone();
         let clear_sender = sender.clone();
+        let clear_pop = popover.clone();
         clear_btn.connect_clicked(move |_| {
+            clear_pop.popdown();
             clear_sender
                 .output(DownloadRowOutput::ClearMetadata(clear_idx.clone()))
                 .ok();

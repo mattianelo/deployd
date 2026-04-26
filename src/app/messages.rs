@@ -139,6 +139,13 @@ pub enum AppMsg {
         mod_id: i64,
         domain: String,
     },
+    /// File entry couldn't be matched by filename during a standalone metadata fetch.
+    /// Triggers the file ID entry dialog outside of the install flow.
+    ShowFileIdDialog {
+        download_id: String,
+        mod_id: i64,
+        domain: String,
+    },
     DownloadProgress(String, f64, String),
     /// (download_id, mod_name, game_domain, nexus_file_name, nexus_is_primary)
     DownloadNameResolved(String, String, Option<String>, Option<String>, bool, Option<i64>),
@@ -356,8 +363,13 @@ pub enum AppCmdMsg {
     ToolLaunched(Result<String, String>),
     /// Files were merged into an existing mod. Carries `(mod_name, files_merged)`.
     ModMerged(Result<(String, usize), String>),
-    /// Combined mod+file name fetched after the user supplied a file ID. None = fetch failed.
-    FileIdFetched(Option<String>),
+    /// Combined mod+file name fetched after the user supplied a file ID.
+    /// `combined_name` is None if the fetch failed.
+    /// `download_id` is Some only for the standalone (right-click) path; None during install.
+    FileIdFetched {
+        combined_name: Option<String>,
+        download_id: Option<String>,
+    },
     NxmDownloadComplete(String, Result<NxmDownloadResult, String>),
     /// (dl_id, Result<(mod_id, version, author, mod_name, nexus_file_name), err>)
     NexusMetadataFetched(Option<String>, Result<(String, String, String, String, Option<String>), String>),
