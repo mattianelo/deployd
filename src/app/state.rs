@@ -201,4 +201,8 @@ pub struct App {
     /// Mod name fetched from Nexus in parallel with archive extraction. Used to
     /// override the archive-stem name in the pre-install dialog when available.
     pub(crate) pending_fetched_name: Option<String>,
+    /// Set when the install-time fetch resolved a mod name but could not match any
+    /// Nexus file entry. The pre-install dialog is deferred until the user either
+    /// provides a file ID or skips.
+    pub(crate) pending_file_id_needed: Option<crate::app::types::FileIdNeeded>,
 }

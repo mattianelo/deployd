@@ -217,6 +217,7 @@ pub(super) fn build_model(
         compact_plugin_rows: false,
         color_scheme_idx: 0,
         pending_fetched_name: None,
+        pending_file_id_needed: None,
     };
 
     // Profile rename popover

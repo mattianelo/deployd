@@ -1253,6 +1253,11 @@ impl Component for App {
             AppMsg::ConfirmNexusIdEntry(dl_id, mod_id, domain) => {
                 self.handle_confirm_nexus_id_entry(dl_id, mod_id, domain, &sender)
             }
+            AppMsg::FileIdDialogConfirmed { download_id, file_id, mod_id, domain } => {
+                self.handle_file_id_dialog_confirmed(
+                    download_id, file_id, mod_id, domain, &sender,
+                )
+            }
             AppMsg::DownloadProgress(id, frac, msg) => self.handle_download_progress(id, frac, msg),
             AppMsg::DownloadNameResolved(id, name, domain, fname, is_primary, file_id) => {
                 self.handle_download_name_resolved(
@@ -1415,6 +1420,18 @@ impl Component for App {
             AppCmdMsg::Initialized(result) => self.handle_cmd_initialized(result, &sender),
             AppCmdMsg::PendingMetadataFetched(name) => {
                 self.pending_fetched_name = Some(name);
+            }
+            AppCmdMsg::PendingFileNameUnresolved { partial_name, download_id, mod_id, domain } => {
+                self.pending_fetched_name = Some(partial_name);
+                self.pending_file_id_needed =
+                    Some(crate::app::types::FileIdNeeded { download_id, mod_id, domain });
+            }
+            AppCmdMsg::FileIdFetched(combined_name) => {
+                if let Some(name) = combined_name {
+                    self.pending_fetched_name = Some(name);
+                }
+                self.pending_file_id_needed = None;
+                let _ = sender.input_sender().send(AppMsg::OpenPreInstallDialog);
             }
             AppCmdMsg::ModsLoaded(result, preserve) => {
                 self.handle_cmd_mods_loaded(result, preserve, &sender)

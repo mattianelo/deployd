@@ -251,55 +251,72 @@ impl App {
         self.pending_fetched_name = None;
 
         // If nexus IDs are known but metadata hasn't been fetched yet, fetch the
-        // mod name (and file name when a file ID is known) from Nexus in parallel
-        // with archive extraction so the pre-install dialog can propose the real name.
+        // mod name (and file name) from Nexus in parallel with archive extraction
+        // so the pre-install dialog can propose the real name.
         if !metadata_fetched
             && let Some(NexusIds { mod_id: nexus_mod_id, file_id: nexus_file_id, ref domain }) = nexus_ids
             && let Some(tracker) = self.tracker.clone()
         {
             let domain = domain.clone();
+            // Derive archive filename for disk-scan entries (file_id == 0).
+            let archive_filename: Option<String> = archive_path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned());
+            let download_id_for_cmd = download_id.clone();
             sender.oneshot_command(async move {
-                let name: Option<String> = async {
-                    let api_key = tracker
-                        .get_setting("nexus_api_key")
+                let Some(api_key) = tracker
+                    .get_setting("nexus_api_key")
+                    .await
+                    .ok()
+                    .flatten()
+                    .filter(|k| !k.is_empty())
+                else {
+                    return AppCmdMsg::PrioritySaved(Ok(()));
+                };
+                let client = crate::core::nexus_api::NexusClient::new(api_key);
+                let Ok((info, _)) = client.get_mod_info(&domain, nexus_mod_id).await else {
+                    return AppCmdMsg::PrioritySaved(Ok(()));
+                };
+                let mod_name = info.name;
+
+                // Fetch file list when we have a file_id (NXM path) or an archive
+                // filename (disk-scan path). Mirror start_nexus_metadata_fetch logic.
+                if nexus_file_id != 0 || archive_filename.is_some() {
+                    let file_entry = client
+                        .get_mod_files(&domain, nexus_mod_id)
                         .await
                         .ok()
-                        .flatten()
-                        .filter(|k| !k.is_empty())?;
-                    let client = crate::core::nexus_api::NexusClient::new(api_key);
-                    let (info, _) = client.get_mod_info(&domain, nexus_mod_id).await.ok()?;
-                    let mod_name = info.name;
-                    // If we have a file ID, also fetch the file title and combine.
-                    let combined = if nexus_file_id != 0 {
-                        let file_name = client
-                            .get_mod_files(&domain, nexus_mod_id)
-                            .await
-                            .ok()
-                            .and_then(|(resp, _)| {
-                                resp.files
-                                    .into_iter()
-                                    .find(|f| f.file_id == nexus_file_id)
-                                    .map(|f| f.name)
-                            });
-                        if let Some(ref fname) = file_name {
-                            if fname.to_lowercase().contains(&mod_name.to_lowercase()) {
-                                fname.clone()
+                        .and_then(|(resp, _)| {
+                            if nexus_file_id != 0 {
+                                resp.files.into_iter().find(|f| f.file_id == nexus_file_id)
                             } else {
-                                format!("{mod_name} - {fname}")
+                                let fname = archive_filename.as_deref().unwrap_or("");
+                                resp.files.into_iter().find(|f| f.file_name == fname)
                             }
+                        });
+                    if let Some(ref entry) = file_entry {
+                        let fname = &entry.name;
+                        let combined = if fname.to_lowercase().contains(&mod_name.to_lowercase()) {
+                            fname.clone()
                         } else {
-                            mod_name
+                            format!("{mod_name} - {fname}")
+                        };
+                        AppCmdMsg::PendingMetadataFetched(combined)
+                    } else if nexus_file_id == 0 {
+                        // Archive filename didn't match any Nexus file — ask the user
+                        // to supply a file ID so the label can be completed.
+                        AppCmdMsg::PendingFileNameUnresolved {
+                            partial_name: mod_name,
+                            download_id: download_id_for_cmd,
+                            mod_id: nexus_mod_id,
+                            domain,
                         }
                     } else {
-                        mod_name
-                    };
-                    Some(combined)
-                }
-                .await;
-                if let Some(name) = name {
-                    AppCmdMsg::PendingMetadataFetched(name)
+                        // Had a file_id but Nexus returned no matching entry.
+                        AppCmdMsg::PendingMetadataFetched(mod_name)
+                    }
                 } else {
-                    AppCmdMsg::PrioritySaved(Ok(()))
+                    AppCmdMsg::PendingMetadataFetched(mod_name)
                 }
             });
         }

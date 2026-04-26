@@ -67,6 +67,15 @@ pub(crate) struct PendingInstall {
     pub(crate) file_targets: HashMap<String, InstallTarget>,
 }
 
+/// Carried when the install-time Nexus fetch resolved the mod name but
+/// could not match any file entry (neither by file_id nor by archive filename).
+#[derive(Debug)]
+pub(crate) struct FileIdNeeded {
+    pub(crate) download_id: String,
+    pub(crate) mod_id: i64,
+    pub(crate) domain: String,
+}
+
 #[derive(Debug)]
 pub struct NxmDownloadResult {
     pub download_id: String,
