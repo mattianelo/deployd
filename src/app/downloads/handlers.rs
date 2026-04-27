@@ -656,7 +656,7 @@ impl App {
     /// Looks up the entry in `self.all_downloads` to collect the required fields,
     /// then dispatches the oneshot command that calls the API.
     pub(crate) fn start_nexus_metadata_fetch(&mut self, download_id: String, sender: &ComponentSender<Self>) {
-        let (nexus_mod_id, nexus_file_id, stored_domain, archive_filename, archive_hash) = {
+        let (nexus_mod_id, nexus_file_id, stored_domain, archive_filename, archive_hash, archive_md5, archive_path) = {
             let Some(entry) = self.all_downloads.iter().find(|e| e.id == download_id) else {
                 return;
             };
@@ -669,12 +669,16 @@ impl App {
                 .and_then(|p| p.file_name())
                 .map(|n| n.to_string_lossy().into_owned());
             let archive_hash = entry.archive_hash.clone();
+            let archive_md5 = entry.archive_md5.clone();
+            let archive_path = entry.archive_path.clone();
             (
                 nexus_mod_id,
                 nexus_file_id,
                 domain.clone(),
                 archive_filename,
                 archive_hash,
+                archive_md5,
+                archive_path,
             )
         };
 
@@ -734,6 +738,86 @@ impl App {
                     .filter(|k| !k.is_empty())
                     .ok_or("No API key configured. Set it in Settings.")?;
                 let client = crate::core::nexus_api::NexusClient::new(api_key);
+
+                // ── MD5 path: single API call resolves mod + file ─────────────────
+                // Lazily compute MD5 when not yet cached (archive_md5 is None).
+                // The result is persisted via ArchiveMd5Computed so subsequent
+                // fetches skip the file read.
+                let effective_md5: Option<String> = if archive_md5.is_some() {
+                    archive_md5
+                } else if let Some(ref path) = archive_path {
+                    let p = path.clone();
+                    let md5 = tokio::task::spawn_blocking(move || {
+                        crate::utils::archive::compute_md5(&p).ok()
+                    })
+                    .await
+                    .unwrap_or(None);
+                    if let Some(ref m) = md5 {
+                        let _ = input_sender
+                            .send(AppMsg::ArchiveMd5Computed(download_id.clone(), m.clone()));
+                    }
+                    md5
+                } else {
+                    None
+                };
+
+                if let Some(ref md5) = effective_md5 {
+                    match client.md5_search(&domain, md5).await {
+                        Ok((results, rl)) => {
+                            if let Some(rl) = rl {
+                                let _ = input_sender.send(AppMsg::RateLimitUpdated(rl));
+                            }
+                            if let Some(hit) = results.into_iter().next() {
+                                let file_entry = hit.file_details;
+                                let mod_info = hit.r#mod;
+                                let file_version = file_entry.version.clone();
+                                let mod_version = mod_info.version.clone();
+                                let mod_author = mod_info.author.clone();
+                                let resolved_version =
+                                    file_version.or_else(|| Some(mod_version.clone()));
+                                let correct_domain = mod_info.domain_name.clone();
+                                let _ = input_sender.send(AppMsg::DownloadNameResolved(
+                                    download_id.clone(),
+                                    mod_info.name.clone(),
+                                    Some(correct_domain),
+                                    Some(file_entry.name.clone()),
+                                    file_entry.is_primary,
+                                    Some(file_entry.file_id),
+                                    resolved_version.clone(),
+                                ));
+                                let _ = input_sender.send(AppMsg::ShowToast(format!(
+                                    "{} v{mod_version} by {mod_author}",
+                                    mod_info.name
+                                )));
+                                if let Some(ref mod_id) = installed_mod_id {
+                                    tracker
+                                        .update_mod_nexus_metadata(
+                                            mod_id,
+                                            &mod_version,
+                                            &mod_author,
+                                            mod_info.summary.as_deref().unwrap_or(""),
+                                        )
+                                        .await
+                                        .map_err(|e| e.to_string())?;
+                                    let iv = resolved_version
+                                        .unwrap_or_else(|| mod_version.clone());
+                                    tracker
+                                        .set_mod_installed_version(mod_id, &iv)
+                                        .await
+                                        .map_err(|e| e.to_string())?;
+                                }
+                                return Ok((mod_info.name, mod_version, mod_author));
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!(
+                                "deployd: md5_search failed (non-fatal, falling back): {e}"
+                            );
+                        }
+                    }
+                }
+                // ─────────────────────────────────────────────────────────────────
+
                 let (info, rate_limits) = client
                     .get_mod_info(&domain, nexus_mod_id)
                     .await

@@ -145,6 +145,7 @@ impl App {
                     nexus_file_name: None,
                     nexus_is_primary: false,
                     archive_hash: None,
+                    archive_md5: None,
                     version: None,
                 };
                 self.all_downloads.push(entry);
@@ -215,6 +216,7 @@ impl App {
                     nexus_file_name: None,
                     nexus_is_primary: false,
                     archive_hash: None,
+                    archive_md5: None,
                     version: None,
                 };
                 self.all_downloads.push(entry);

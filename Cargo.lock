@@ -479,6 +479,7 @@ dependencies = [
  "gtk4",
  "libadwaita",
  "libloot",
+ "md-5",
  "open",
  "quick-xml",
  "regex",

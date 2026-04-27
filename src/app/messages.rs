@@ -150,6 +150,9 @@ pub enum AppMsg {
     DownloadProgress(String, f64, String),
     /// (download_id, mod_name, game_domain, nexus_file_name, nexus_is_primary, resolved_file_id, version)
     DownloadNameResolved(String, String, Option<String>, Option<String>, bool, Option<i64>, Option<String>),
+    /// Notifies that the MD5 of an archive was computed (lazily, during metadata fetch).
+    /// Persisted so subsequent fetches skip recomputation.
+    ArchiveMd5Computed(String, String),
     FetchDownloadMetadata(DynamicIndex),
     ScanDownloadsFolder,
     DownloadSortChanged(u32),

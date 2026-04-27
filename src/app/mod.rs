@@ -1275,6 +1275,19 @@ impl Component for App {
                     id, name, domain, fname, is_primary, file_id, version, &sender,
                 )
             }
+            AppMsg::ArchiveMd5Computed(dl_id, md5) => {
+                if let Some(entry) = self.all_downloads.iter_mut().find(|e| e.id == dl_id) {
+                    entry.archive_md5 = Some(md5);
+                }
+                if let Some(tracker) = self.tracker.clone()
+                    && let Some(entry) = self.all_downloads.iter().find(|e| e.id == dl_id).cloned()
+                {
+                    sender.oneshot_command(async move {
+                        let _ = tracker.save_download_entry(&entry).await;
+                        AppCmdMsg::PrioritySaved(Ok(()))
+                    });
+                }
+            }
             AppMsg::FetchDownloadMetadata(idx) => {
                 self.handle_fetch_download_metadata(idx, root, &sender)
             }

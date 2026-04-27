@@ -133,6 +133,38 @@ impl NexusClient {
         Ok((files, rate_limits))
     }
 
+    /// Look up a file by its MD5 hash.
+    ///
+    /// Returns every `(mod, file_details)` pair on Nexus that matches the hash.
+    /// In practice the list has exactly one entry.  An empty list means the hash
+    /// is not indexed (very new upload, private file, or non-Nexus archive).
+    pub async fn md5_search(
+        &self,
+        domain: &str,
+        md5: &str,
+    ) -> Result<(Vec<crate::models::nexus::Md5SearchResult>, Option<RateLimitInfo>)> {
+        let resp = self
+            .client
+            .get(format!(
+                "{BASE_URL}/games/{domain}/mods/md5_search/{md5}.json"
+            ))
+            .header("apikey", &self.api_key)
+            .send()
+            .await
+            .context("network error during MD5 search")?;
+
+        if !resp.status().is_success() {
+            bail!("Nexus API error: {}", resp.status());
+        }
+
+        let rate_limits = parse_rate_limits(resp.headers());
+        let results = resp
+            .json::<Vec<crate::models::nexus::Md5SearchResult>>()
+            .await
+            .context("failed to parse MD5 search response")?;
+        Ok((results, rate_limits))
+    }
+
     /// Get download links for a specific file.
     ///
     /// For free users, `key` and `expires` must be provided (from the NXM link).
