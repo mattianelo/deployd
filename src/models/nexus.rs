@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 // Structs below are Nexus Mods API response shapes. All fields are kept for
 // complete deserialization even when only a subset is read by the application.
@@ -61,8 +61,9 @@ pub struct NexusFileEntry {
     /// Absent for some file categories — defaults to false.
     #[serde(default)]
     pub is_primary: bool,
-    /// Never read; skipped to avoid float/int type mismatch on older mod entries.
-    #[serde(skip_deserializing, default)]
+    /// Nexus sometimes returns this as a float (e.g. `1604483725.0`) on old entries,
+    /// which serde rejects when targeting i64.  The custom deserializer accepts both.
+    #[serde(default, deserialize_with = "de_opt_number_as_i64")]
     pub uploaded_timestamp: Option<i64>,
 }
 
@@ -73,4 +74,38 @@ pub struct DownloadLink {
     pub uri: String,
     pub name: String,
     pub short_name: String,
+}
+
+/// Deserializes an optional JSON number (integer or float) into `Option<i64>`.
+/// Needed because the Nexus API sometimes encodes timestamps as floats on older entries.
+fn de_opt_number_as_i64<'de, D>(de: D) -> Result<Option<i64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct V;
+    impl<'de> serde::de::Visitor<'de> for V {
+        type Value = Option<i64>;
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            write!(f, "an integer, float, or null")
+        }
+        fn visit_none<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+        fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+        fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<Self::Value, E> {
+            Ok(Some(v))
+        }
+        fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<Self::Value, E> {
+            Ok(Some(v as i64))
+        }
+        fn visit_f64<E: serde::de::Error>(self, v: f64) -> Result<Self::Value, E> {
+            Ok(Some(v as i64))
+        }
+        fn visit_some<D2: Deserializer<'de>>(self, de: D2) -> Result<Self::Value, D2::Error> {
+            de.deserialize_any(Self)
+        }
+    }
+    de.deserialize_option(V)
 }

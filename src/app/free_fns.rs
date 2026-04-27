@@ -9,6 +9,19 @@ use crate::models::profile::SaveMode;
 
 use super::types::LoadedData;
 
+/// Extracts the 10-digit Nexus CDN timestamp appended to downloaded filenames
+/// (e.g. `ModName-12345-1.0-1604483725.7z` → `Some(1604483725)`).
+/// This timestamp corresponds to `NexusFileEntry::uploaded_timestamp` and is used
+/// as a tiebreaker when multiple Nexus files normalize to the same base name.
+pub(crate) fn extract_nexus_timestamp(filename: &str) -> Option<i64> {
+    let stem = filename.rsplit_once('.').map(|(l, _)| l).unwrap_or(filename);
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = RE.get_or_init(|| regex::Regex::new(r"-(\d{10})$").unwrap());
+    re.captures(stem)
+        .and_then(|c| c.get(1))
+        .and_then(|m| m.as_str().parse().ok())
+}
+
 /// Normalizes a Nexus filename for comparison against `NexusFileEntry.file_name`.
 ///
 /// Strips the file extension and then the 10-digit Unix timestamp that the Nexus CDN

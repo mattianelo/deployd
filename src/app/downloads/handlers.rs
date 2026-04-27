@@ -290,13 +290,28 @@ impl App {
                             if nexus_file_id != 0 {
                                 resp.files.into_iter().find(|f| f.file_id == nexus_file_id)
                             } else {
-                                let fname_norm = crate::app::free_fns::normalize_nexus_filename(
-                                    archive_filename.as_deref().unwrap_or(""),
-                                );
-                                resp.files.into_iter().find(|f| {
-                                    crate::app::free_fns::normalize_nexus_filename(&f.file_name)
-                                        == fname_norm
-                                })
+                                let raw = archive_filename.as_deref().unwrap_or("");
+                                let fname_norm =
+                                    crate::app::free_fns::normalize_nexus_filename(raw);
+                                let local_ts =
+                                    crate::app::free_fns::extract_nexus_timestamp(raw);
+                                let candidates: Vec<_> = resp
+                                    .files
+                                    .into_iter()
+                                    .filter(|f| {
+                                        crate::app::free_fns::normalize_nexus_filename(
+                                            &f.file_name,
+                                        ) == fname_norm
+                                    })
+                                    .collect();
+                                local_ts
+                                    .and_then(|ts| {
+                                        candidates
+                                            .iter()
+                                            .find(|f| f.uploaded_timestamp == Some(ts))
+                                            .cloned()
+                                    })
+                                    .or_else(|| candidates.into_iter().next())
                             }
                         });
                     if let Some(ref entry) = file_entry {
@@ -740,15 +755,32 @@ impl App {
                                 // NXM path: exact match by file ID
                                 files.files.into_iter().find(|f| f.file_id == nexus_file_id)
                             } else {
-                                // Disk-scan path: match by archive filename, normalizing away
-                                // the 10-digit Nexus CDN timestamp and extension differences.
-                                let fname_norm = crate::app::free_fns::normalize_nexus_filename(
-                                    archive_filename.as_deref().unwrap_or(""),
-                                );
-                                files.files.into_iter().find(|f| {
-                                    crate::app::free_fns::normalize_nexus_filename(&f.file_name)
-                                        == fname_norm
-                                })
+                                // Disk-scan path: match by normalized archive filename (strips
+                                // extension and 10-digit CDN timestamp).  When multiple Nexus
+                                // files share the same base name, prefer the one whose
+                                // uploaded_timestamp matches the timestamp in the local filename.
+                                let raw = archive_filename.as_deref().unwrap_or("");
+                                let fname_norm =
+                                    crate::app::free_fns::normalize_nexus_filename(raw);
+                                let local_ts =
+                                    crate::app::free_fns::extract_nexus_timestamp(raw);
+                                let candidates: Vec<_> = files
+                                    .files
+                                    .into_iter()
+                                    .filter(|f| {
+                                        crate::app::free_fns::normalize_nexus_filename(
+                                            &f.file_name,
+                                        ) == fname_norm
+                                    })
+                                    .collect();
+                                local_ts
+                                    .and_then(|ts| {
+                                        candidates
+                                            .iter()
+                                            .find(|f| f.uploaded_timestamp == Some(ts))
+                                            .cloned()
+                                    })
+                                    .or_else(|| candidates.into_iter().next())
                             }
                         }
                         Err(e) => {
