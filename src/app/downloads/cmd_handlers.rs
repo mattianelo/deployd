@@ -70,17 +70,16 @@ impl App {
                 self.toaster.toast(&format!("Metadata fetch failed: {e}"));
                 // For disk-scanned entries with a known mod_id but unresolved file_id,
                 // offer the dialog so the user can at least store the file_id for the next retry.
-                if let Some(ref id) = dl_id {
-                    if let Some(entry) = self.all_downloads.iter().find(|e| &e.id == id)
-                        && let Some(NexusIds { mod_id, file_id: 0, ref domain }) = entry.nexus_ids
-                    {
-                        let _ = sender.input_sender().send(AppMsg::ShowFileIdDialog {
-                            download_id: id.clone(),
-                            mod_id,
-                            domain: domain.clone(),
-                            partial_name: None,
-                        });
-                    }
+                if let Some(ref id) = dl_id
+                    && let Some(entry) = self.all_downloads.iter().find(|e| &e.id == id)
+                    && let Some(NexusIds { mod_id, file_id: 0, ref domain }) = entry.nexus_ids
+                {
+                    let _ = sender.input_sender().send(AppMsg::ShowFileIdDialog {
+                        download_id: id.clone(),
+                        mod_id,
+                        domain: domain.clone(),
+                        partial_name: None,
+                    });
                 }
             }
         }

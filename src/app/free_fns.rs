@@ -9,6 +9,19 @@ use crate::models::profile::SaveMode;
 
 use super::types::LoadedData;
 
+/// Normalizes a Nexus filename for comparison against `NexusFileEntry.file_name`.
+///
+/// Strips the file extension and then the 10-digit Unix timestamp that the Nexus CDN
+/// appends during browser/manager downloads (e.g. `foo-1.0-1756684569.7z` → `foo-1.0`).
+/// The API stores the canonical name without the timestamp, so both sides must be
+/// normalized before comparing.
+pub(crate) fn normalize_nexus_filename(s: &str) -> String {
+    let stem = s.rsplit_once('.').map(|(l, _)| l).unwrap_or(s);
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = RE.get_or_init(|| regex::Regex::new(r"-\d{10}$").unwrap());
+    re.replace(stem, "").into_owned()
+}
+
 /// Parse a Nexus mod ID from a filename following the convention `ModName-MODID-VERSION.ext`.
 ///
 /// Primary strategy: first 3+ digit number between dashes (skips 1-2 digit version segments).

@@ -1437,16 +1437,41 @@ impl Component for App {
                 self.pending_file_id_needed =
                     Some(crate::app::types::FileIdNeeded { download_id, mod_id, domain });
             }
-            AppCmdMsg::FileIdFetched { combined_name, download_id, version } => {
+            AppCmdMsg::FileIdFetched { combined_name, download_id, version, file_id } => {
                 self.pending_file_id_needed = None;
                 if let Some(dl_id) = download_id {
                     // Standalone (right-click) path: update the download entry directly.
                     if let Some(name) = combined_name {
                         self.handle_download_name_resolved(
-                            dl_id, name, None, None, false, None, version, &sender,
+                            dl_id.clone(), name, None, None, false, file_id, version, &sender,
                         );
                     }
                     self.toaster.toast("Metadata updated");
+                    // Auto-trigger the next unresolved download for the same mod so the
+                    // user doesn't have to manually right-click each one.
+                    let resolved_mod_id = self
+                        .all_downloads
+                        .iter()
+                        .find(|e| e.id == dl_id)
+                        .and_then(|e| e.nexus_ids.as_ref())
+                        .map(|ids| ids.mod_id);
+                    if let Some(mod_id) = resolved_mod_id {
+                        let sibling = self
+                            .all_downloads
+                            .iter()
+                            .find(|e| {
+                                e.id != dl_id
+                                    && e.nexus_ids.as_ref().map(|ids| ids.mod_id) == Some(mod_id)
+                                    && e.nexus_ids
+                                        .as_ref()
+                                        .is_some_and(|ids| ids.file_id == 0)
+                                    && !e.metadata_fetched
+                            })
+                            .map(|e| e.id.clone());
+                        if let Some(next_id) = sibling {
+                            self.start_nexus_metadata_fetch(next_id, &sender);
+                        }
+                    }
                 } else {
                     // Install path: hand off to the pre-install dialog flow.
                     if let Some(name) = combined_name {

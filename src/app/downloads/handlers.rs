@@ -290,8 +290,13 @@ impl App {
                             if nexus_file_id != 0 {
                                 resp.files.into_iter().find(|f| f.file_id == nexus_file_id)
                             } else {
-                                let fname = archive_filename.as_deref().unwrap_or("");
-                                resp.files.into_iter().find(|f| f.file_name == fname)
+                                let fname_norm = crate::app::free_fns::normalize_nexus_filename(
+                                    archive_filename.as_deref().unwrap_or(""),
+                                );
+                                resp.files.into_iter().find(|f| {
+                                    crate::app::free_fns::normalize_nexus_filename(&f.file_name)
+                                        == fname_norm
+                                })
                             }
                         });
                     if let Some(ref entry) = file_entry {
@@ -635,7 +640,7 @@ impl App {
     ///
     /// Looks up the entry in `self.all_downloads` to collect the required fields,
     /// then dispatches the oneshot command that calls the API.
-    fn start_nexus_metadata_fetch(&mut self, download_id: String, sender: &ComponentSender<Self>) {
+    pub(crate) fn start_nexus_metadata_fetch(&mut self, download_id: String, sender: &ComponentSender<Self>) {
         let (nexus_mod_id, nexus_file_id, stored_domain, archive_filename, archive_hash) = {
             let Some(entry) = self.all_downloads.iter().find(|e| e.id == download_id) else {
                 return;
@@ -735,9 +740,15 @@ impl App {
                                 // NXM path: exact match by file ID
                                 files.files.into_iter().find(|f| f.file_id == nexus_file_id)
                             } else {
-                                // Disk-scan path: match by archive filename
-                                let fname = archive_filename.as_deref().unwrap_or("");
-                                files.files.into_iter().find(|f| f.file_name == fname)
+                                // Disk-scan path: match by archive filename, normalizing away
+                                // the 10-digit Nexus CDN timestamp and extension differences.
+                                let fname_norm = crate::app::free_fns::normalize_nexus_filename(
+                                    archive_filename.as_deref().unwrap_or(""),
+                                );
+                                files.files.into_iter().find(|f| {
+                                    crate::app::free_fns::normalize_nexus_filename(&f.file_name)
+                                        == fname_norm
+                                })
                             }
                         }
                         Err(e) => {

@@ -367,10 +367,12 @@ pub enum AppCmdMsg {
     /// Combined mod+file name fetched after the user supplied a file ID.
     /// `combined_name` is None if the fetch failed.
     /// `download_id` is Some only for the standalone (right-click) path; None during install.
+    /// `file_id` carries the resolved Nexus file ID so the factory row can be updated immediately.
     FileIdFetched {
         combined_name: Option<String>,
         download_id: Option<String>,
         version: Option<String>,
+        file_id: Option<i64>,
     },
     NxmDownloadComplete(String, Result<NxmDownloadResult, String>),
     /// (dl_id, Result<(mod_id, version, author, mod_name, nexus_file_name), err>)
