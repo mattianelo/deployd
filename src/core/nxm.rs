@@ -1,5 +1,13 @@
 use anyhow::{Context, Result, bail};
 
+fn validate_domain(domain: &str) -> Result<()> {
+    if domain.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        Ok(())
+    } else {
+        bail!("invalid game domain in NXM link: {domain:?}")
+    }
+}
+
 /// Parsed NXM link from the Nexus Mods "Download with Mod Manager" button.
 ///
 /// Format: `nxm://<domain>/mods/<mod_id>/files/<file_id>?key=<key>&expires=<expires>`
@@ -31,6 +39,7 @@ impl NxmLink {
         }
 
         let domain = parts[0].to_string();
+        validate_domain(&domain)?;
         let mod_id: i64 = parts[2].parse().context("invalid mod ID in NXM link")?;
         let file_id: i64 = parts[4].parse().context("invalid file ID in NXM link")?;
 
@@ -89,5 +98,16 @@ mod tests {
     fn parse_invalid_link() {
         assert!(NxmLink::parse("https://nexusmods.com/foo").is_err());
         assert!(NxmLink::parse("nxm://domain/bad/format").is_err());
+    }
+
+    #[test]
+    fn rejects_domain_with_path_traversal() {
+        assert!(NxmLink::parse("nxm://../../evil/mods/1/files/1").is_err());
+    }
+
+    #[test]
+    fn rejects_domain_with_special_chars() {
+        assert!(NxmLink::parse("nxm://bad domain/mods/1/files/1").is_err());
+        assert!(NxmLink::parse("nxm://bad%20domain/mods/1/files/1").is_err());
     }
 }

@@ -493,6 +493,7 @@ fn strip_zip_unicode_extra_fields(data: &mut [u8]) -> bool {
     if eocd_pos + 20 > data.len() {
         return false;
     }
+    // Both slices are exactly 4 bytes: guaranteed by the bounds check above.
     let cd_size =
         u32::from_le_bytes(data[eocd_pos + 12..eocd_pos + 16].try_into().unwrap()) as usize;
     let cd_offset =

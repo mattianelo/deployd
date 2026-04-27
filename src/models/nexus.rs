@@ -109,10 +109,14 @@ where
             Ok(Some(v))
         }
         fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<Self::Value, E> {
-            Ok(Some(v as i64))
+            i64::try_from(v).map(Some).map_err(|_| E::custom("timestamp out of i64 range"))
         }
         fn visit_f64<E: serde::de::Error>(self, v: f64) -> Result<Self::Value, E> {
-            Ok(Some(v as i64))
+            if v >= i64::MIN as f64 && v <= i64::MAX as f64 {
+                Ok(Some(v as i64))
+            } else {
+                Err(E::custom("timestamp out of i64 range"))
+            }
         }
         fn visit_some<D2: Deserializer<'de>>(self, de: D2) -> Result<Self::Value, D2::Error> {
             de.deserialize_any(Self)

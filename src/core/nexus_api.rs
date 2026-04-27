@@ -177,16 +177,18 @@ impl NexusClient {
         key: Option<&str>,
         expires: Option<&str>,
     ) -> Result<(Vec<DownloadLink>, Option<RateLimitInfo>)> {
-        let mut url =
-            format!("{BASE_URL}/games/{domain}/mods/{mod_id}/files/{file_id}/download_link.json");
+        let mut url = reqwest::Url::parse(&format!(
+            "{BASE_URL}/games/{domain}/mods/{mod_id}/files/{file_id}/download_link.json"
+        ))
+        .context("failed to construct download URL")?;
 
         if let (Some(k), Some(e)) = (key, expires) {
-            url.push_str(&format!("?key={k}&expires={e}"));
+            url.query_pairs_mut().append_pair("key", k).append_pair("expires", e);
         }
 
         let resp = self
             .client
-            .get(&url)
+            .get(url)
             .header("apikey", &self.api_key)
             .send()
             .await
