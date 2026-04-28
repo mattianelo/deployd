@@ -159,6 +159,9 @@ fn build_snap_wine_command(
 ) -> Command {
     let compat_data = strip_pfx_suffix(&wine_config.prefix);
     let mut cmd = Command::new(wine_bin);
+    // The GNOME Snap extension injects LD_PRELOAD with a gnome-platform path that
+    // wine's own loader cannot resolve, causing memory corruption (stack smashing).
+    cmd.env_remove("LD_PRELOAD");
     cmd.env("WINEPREFIX", &wine_config.prefix)
         .env("WINEDEBUG", "-all")
         .env("STEAM_COMPAT_DATA_PATH", &compat_data);
@@ -172,6 +175,10 @@ fn build_snap_wine_command(
     cmd.env("LIBGL_DRIVERS_PATH", &dri_path)
         .env("LIBVA_DRIVERS_PATH", &dri_path)
         .env("WINEDLLOVERRIDES", WINE_SILENT_DLL_OVERRIDES);
+
+    if let Some(ids_path) = snap_amdgpu_ids_path(wine_runtime) {
+        cmd.env("LIBDRM_AMDGPU_IDS", ids_path);
+    }
 
     cmd.arg(&tool.exe_path);
     for arg in tool.custom_args.split_whitespace() {
@@ -191,6 +198,9 @@ fn build_wine_command(
     let compat_data = strip_pfx_suffix(&wine_config.prefix);
 
     let mut cmd = Command::new(wine_bin);
+    // Defensive: GTK accessibility layers or AppImage runtimes may inject LD_PRELOAD
+    // entries that wine's loader cannot handle, causing spurious crashes.
+    cmd.env_remove("LD_PRELOAD");
     cmd.env("WINEPREFIX", &wine_config.prefix)
         .env("WINEDEBUG", "-all")
         .env("STEAM_COMPAT_DATA_PATH", &compat_data);
@@ -280,6 +290,16 @@ fn snap_dri_drivers_path(wine_runtime: &Path) -> String {
     )
 }
 
+/// Path to `amdgpu.ids` inside the wine-runtime content mount, or `None` if absent.
+///
+/// Mesa's libdrm looks for this file at the hardcoded host path `/usr/share/libdrm/amdgpu.ids`,
+/// which does not exist inside the Snap sandbox. Setting `LIBDRM_AMDGPU_IDS` redirects it.
+/// Returns `None` on non-AMD systems so no env var is set unnecessarily.
+fn snap_amdgpu_ids_path(wine_runtime: &Path) -> Option<String> {
+    let path = wine_runtime.join("usr/share/libdrm/amdgpu.ids");
+    path.exists().then(|| path.to_string_lossy().into_owned())
+}
+
 fn ensure_bethesda_reg_key(
     game: &Game,
     wine_config: &WineConfig,
@@ -361,6 +381,8 @@ fn ensure_wine_silent_setup(
         let mut cmd = Command::new(launcher_bin);
         cmd.env("WINEPREFIX", &wine_config.prefix)
             .env("WINEDEBUG", "-all")
+            // Suppress Mono/Gecko popups if wine needs to create the prefix on first run.
+            .env("WINEDLLOVERRIDES", WINE_SILENT_DLL_OVERRIDES)
             .env_remove("LD_PRELOAD");
         if let Some(ld) = ld_library_path {
             cmd.env("LD_LIBRARY_PATH", ld);

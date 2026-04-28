@@ -68,7 +68,7 @@ impl App {
             })
             .collect();
 
-        let archive_extensions = ["zip", "7z", "rar"];
+        let archive_extensions = ["zip", "7z", "rar", "dazip"];
         let mut new_count = 0usize;
         let mut domain_updated_ids: Vec<String> = Vec::new();
 

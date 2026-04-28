@@ -4,7 +4,10 @@
 #
 # Requires the deployd-appimage-build LXD container (preferred) or the
 # deployd-build-env Docker image.  Run build-appimage.sh first if neither exists.
-set -euo pipefail
+set -eu
+# Ignore SIGPIPE so piping output through `tail` doesn't kill the script
+# prematurely when the reader closes early (e.g. `./check.sh clippy 2>&1 | tail -40`).
+trap '' PIPE
 
 REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
 DOCKERFILE="$REPO_ROOT/packaging/appimage/Dockerfile"
