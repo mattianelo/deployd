@@ -217,6 +217,11 @@ impl FactoryComponent for DownloadRow {
             .margin_end(4)
             .build();
 
+        let reinstall_btn = gtk::Button::builder()
+            .label("Reinstall")
+            .css_classes(["flat"])
+            .halign(gtk::Align::Fill)
+            .build();
         let fetch_btn = gtk::Button::builder()
             .label("Fetch Nexus metadata")
             .css_classes(["flat"])
@@ -227,6 +232,16 @@ impl FactoryComponent for DownloadRow {
             .css_classes(["flat"])
             .halign(gtk::Align::Fill)
             .build();
+
+        let reinstall_idx = index.clone();
+        let reinstall_sender = sender.clone();
+        let reinstall_pop = popover.clone();
+        reinstall_btn.connect_clicked(move |_| {
+            reinstall_pop.popdown();
+            reinstall_sender
+                .output(DownloadRowOutput::Reinstall(reinstall_idx.clone()))
+                .ok();
+        });
 
         let fetch_idx = index.clone();
         let fetch_sender = sender.clone();
@@ -248,6 +263,7 @@ impl FactoryComponent for DownloadRow {
                 .ok();
         });
 
+        menu_box.append(&reinstall_btn);
         menu_box.append(&fetch_btn);
         menu_box.append(&clear_btn);
         popover.set_child(Some(&menu_box));

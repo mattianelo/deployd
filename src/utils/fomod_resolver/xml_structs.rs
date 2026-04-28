@@ -182,20 +182,61 @@ pub(super) struct XmlConditionalPattern {
     pub(super) files: Option<XmlFileList>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub(super) struct XmlDependencies {
-    #[serde(rename = "@operator", default = "default_operator_and")]
     pub(super) operator: String,
-
-    #[serde(rename = "flagDependency", default)]
     pub(super) flag_dependencies: Vec<XmlFlagDependency>,
-
-    #[serde(rename = "fileDependency", default)]
     pub(super) file_dependencies: Vec<XmlFileDependency>,
-
     /// Nested composite dependencies (recursive AND/OR).
-    #[serde(rename = "dependencies", default)]
     pub(super) nested: Vec<XmlDependencies>,
+}
+
+// Manual Deserialize: serde's derived map visitor errors on repeated keys, but FOMOD
+// <dependencies> blocks routinely interleave multiple <flagDependency> and
+// <fileDependency> siblings. We accumulate each occurrence into the appropriate Vec.
+impl<'de> serde::Deserialize<'de> for XmlDependencies {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct V;
+
+        impl<'de> serde::de::Visitor<'de> for V {
+            type Value = XmlDependencies;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a <dependencies> element")
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<XmlDependencies, A::Error> {
+                let mut operator = None::<String>;
+                let mut flag_dependencies: Vec<XmlFlagDependency> = Vec::new();
+                let mut file_dependencies: Vec<XmlFileDependency> = Vec::new();
+                let mut nested: Vec<XmlDependencies> = Vec::new();
+
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "@operator" => operator = Some(map.next_value()?),
+                        "flagDependency" => flag_dependencies.push(map.next_value()?),
+                        "fileDependency" => file_dependencies.push(map.next_value()?),
+                        "dependencies" => nested.push(map.next_value()?),
+                        _ => {
+                            map.next_value::<serde::de::IgnoredAny>()?;
+                        }
+                    }
+                }
+
+                Ok(XmlDependencies {
+                    operator: operator.unwrap_or_else(default_operator_and),
+                    flag_dependencies,
+                    file_dependencies,
+                    nested,
+                })
+            }
+        }
+
+        deserializer.deserialize_map(V)
+    }
 }
 
 pub(super) fn default_operator_and() -> String {

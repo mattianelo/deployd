@@ -32,14 +32,21 @@ impl App {
             .filter(|e| {
                 !e.is_active()
                     && e.status != DownloadStatus::Installed
-                    && !e.archive_path.as_ref().map(|p| p.exists()).unwrap_or(false)
+                    && !e
+                        .archive_path
+                        .as_ref()
+                        .map(|p| p.exists() && p.starts_with(base_dir))
+                        .unwrap_or(false)
             })
             .map(|e| e.id.clone())
             .collect();
         self.all_downloads.retain(|e| {
             e.is_active()
                 || e.status == DownloadStatus::Installed
-                || e.archive_path.as_ref().map(|p| p.exists()).unwrap_or(false)
+                || e.archive_path
+                    .as_ref()
+                    .map(|p| p.exists() && p.starts_with(base_dir))
+                    .unwrap_or(false)
         });
         if !removed_ids.is_empty()
             && let Some(tracker) = self.tracker.clone()
