@@ -1,6 +1,13 @@
 #!/bin/bash
 # Host-side wrapper — runs inside LXD (preferred) or directly via Docker.
-# Usage: bash packaging/appimage/build-appimage.sh [--rebuild] [--clean] [--debug]
+# Usage: bash packaging/appimage/build-appimage.sh [--rebuild] [--clean] [--debug] [--experimental]
+#
+# Flags:
+#   --rebuild       Destroy and recreate the LXD container / rebuild the Docker image.
+#   --clean         Delete the LXD container after a successful build.
+#   --debug         Compile in debug mode (faster build, larger binary, no optimisations).
+#   --experimental  Enable experimental features (script extender launcher, profile
+#                   export/import, backup & restore UI).  Never set for stable releases.
 #
 # Prerequisites (LXD — preferred):
 #   sudo snap install lxd
@@ -30,11 +37,13 @@ LXD_CONTAINER="deployd-appimage-build"
 REBUILD=0
 CLEAN=0
 DEBUG=0
+EXPERIMENTAL=0
 for arg in "$@"; do
     case "$arg" in
-        --rebuild) REBUILD=1 ;;
-        --clean)   CLEAN=1 ;;
-        --debug)   DEBUG=1 ;;
+        --rebuild)      REBUILD=1 ;;
+        --clean)        CLEAN=1 ;;
+        --debug)        DEBUG=1 ;;
+        --experimental) EXPERIMENTAL=1 ;;
         *) echo "Unknown option: $arg"; exit 1 ;;
     esac
 done
@@ -69,7 +78,8 @@ if _lxd_available; then
     fi
 
     INNER_FLAGS=""
-    [ "$DEBUG" = "1" ] && INNER_FLAGS="--debug"
+    [ "$DEBUG"        = "1" ] && INNER_FLAGS="$INNER_FLAGS --debug"
+    [ "$EXPERIMENTAL" = "1" ] && INNER_FLAGS="$INNER_FLAGS --experimental"
 
     echo "==> Running build inside LXD container $LXD_CONTAINER"
     # shellcheck disable=SC2086
@@ -117,7 +127,8 @@ VERSION=$(grep '^version' "$REPO_ROOT/Cargo.toml" | head -1 | sed 's/.*= *"\(.*\
 echo "==> Running build inside container (Deployd $VERSION)"
 
 INNER_FLAGS=""
-[ "$DEBUG" = "1" ] && INNER_FLAGS="--debug"
+[ "$DEBUG"        = "1" ] && INNER_FLAGS="$INNER_FLAGS --debug"
+[ "$EXPERIMENTAL" = "1" ] && INNER_FLAGS="$INNER_FLAGS --experimental"
 
 docker run --rm \
     -v "$REPO_ROOT:/workspace:z" \

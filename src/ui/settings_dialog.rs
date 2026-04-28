@@ -178,10 +178,11 @@ impl Component for SettingsDialog {
                     },
                 },
 
-                // Backup & Restore section
+                // Backup & Restore section — hidden in stable builds
                 add = &adw::PreferencesGroup {
                     set_title: "Backup & Restore",
                     set_description: Some("Back up the database and all profiles for migration to a new machine or OS reinstall."),
+                    set_visible: cfg!(feature = "experimental"),
 
                     add = &adw::ActionRow {
                         set_title: "Create Full Backup",

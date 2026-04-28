@@ -14,6 +14,7 @@ DOCKERFILE="$REPO_ROOT/packaging/appimage/Dockerfile"
 LXD_CONTAINER="deployd-appimage-build"
 CMD="${1:-check}"
 FEATURES="loot,libarchive-fallback"
+[ "${DEPLOYD_EXPERIMENTAL:-0}" = "1" ] && FEATURES="$FEATURES,experimental"
 
 # ── LXD path (host) ──────────────────────────────────────────────────────────
 if [ "${DEPLOYD_NO_LXD:-0}" != "1" ] \
@@ -23,6 +24,7 @@ then
     lxc start "$LXD_CONTAINER" 2>/dev/null || true
     lxc exec --force-noninteractive "$LXD_CONTAINER" -- \
         env DEPLOYD_NO_LXD=1 DEPLOYD_NO_DOCKER=1 \
+            DEPLOYD_EXPERIMENTAL="${DEPLOYD_EXPERIMENTAL:-0}" \
             APPIMAGE_EXTRACT_AND_RUN=1 \
             PATH="/root/.cargo/bin:/opt/appimage-tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
             CARGO_TARGET_DIR=/build/target \

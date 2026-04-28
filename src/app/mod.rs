@@ -222,6 +222,7 @@ impl Component for App {
                                         set_icon_name: "document-save-symbolic",
                                         set_tooltip_text: Some("Export active profile to file"),
                                         add_css_class: "flat",
+                                        set_visible: cfg!(feature = "experimental"),
                                         connect_clicked => AppMsg::ExportProfileClicked,
                                     },
 
@@ -229,6 +230,7 @@ impl Component for App {
                                         set_icon_name: "document-open-symbolic",
                                         set_tooltip_text: Some("Import profile from file"),
                                         add_css_class: "flat",
+                                        set_visible: cfg!(feature = "experimental"),
                                         connect_clicked => AppMsg::ImportProfileClicked,
                                     },
                                 },
@@ -287,7 +289,7 @@ impl Component for App {
                         set_icon_name: "media-playback-start-symbolic",
                         set_tooltip_text: Some("Launch game via script extender"),
                         #[watch]
-                        set_visible: model.script_extender_present(),
+                        set_visible: cfg!(feature = "experimental") && model.script_extender_present(),
                         #[watch]
                         set_sensitive: !model.is_busy(),
                         connect_clicked => AppMsg::LaunchGameClicked,

@@ -15,9 +15,11 @@ APP_ID="deployd"
 OUTPUT="$REPO_ROOT/Deployd-x86_64.AppImage"
 
 DEBUG=0
+EXPERIMENTAL=0
 for arg in "$@"; do
     case "$arg" in
-        --debug) DEBUG=1 ;;
+        --debug)        DEBUG=1 ;;
+        --experimental) EXPERIMENTAL=1 ;;
     esac
 done
 
@@ -28,13 +30,16 @@ VERSION=${VERSION:-$(grep '^version' Cargo.toml | head -1 | sed 's/.*= *"\(.*\)"
 echo "==> Building Deployd $VERSION AppImage (inner)"
 
 # 1. Compile
+FEATURES="loot,libarchive-fallback"
+[ "$EXPERIMENTAL" = "1" ] && FEATURES="$FEATURES,experimental"
+
 if [ "$DEBUG" = "1" ]; then
-    echo "==> Compiling (debug, features: loot libarchive-fallback)"
-    cargo build --features loot,libarchive-fallback
+    echo "==> Compiling (debug, features: $FEATURES)"
+    cargo build --features "$FEATURES"
     BINARY="$CARGO_TARGET_DIR/debug/$APP_ID"
 else
-    echo "==> Compiling (release, features: loot libarchive-fallback)"
-    cargo build --release --features loot,libarchive-fallback
+    echo "==> Compiling (release, features: $FEATURES)"
+    cargo build --release --features "$FEATURES"
     BINARY="$CARGO_TARGET_DIR/release/$APP_ID"
 fi
 

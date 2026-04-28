@@ -54,6 +54,9 @@ loot = ["dep:libloot", "dep:crc32fast"]
 # Requires libarchive to be available (available in org.gnome.Platform 49+).
 # Enable with: cargo build --features libarchive-fallback
 libarchive-fallback = ["dep:compress-tools"]
+# Exposes in-progress features not ready for stable release: script extender
+# launcher, profile export/import, and backup & restore UI.
+experimental = []
 
 [profile.release]
 lto = "thin"
