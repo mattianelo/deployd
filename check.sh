@@ -2,8 +2,8 @@
 # Run cargo commands inside the deployd build environment (mirrors build-appimage.sh flow).
 # Usage: ./check.sh [check|clippy|test|...] [extra cargo flags]
 #
-# Requires the deployd-appimage-build LXD container and deployd-build-env Docker image.
-# If the Docker image doesn't exist yet: ./packaging/appimage/build-appimage.sh
+# Requires the deployd-appimage-build LXD container (preferred) or the
+# deployd-build-env Docker image.  Run build-appimage.sh first if neither exists.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -19,12 +19,21 @@ if [ "${DEPLOYD_NO_LXD:-0}" != "1" ] \
 then
     lxc start "$LXD_CONTAINER" 2>/dev/null || true
     lxc exec --force-noninteractive "$LXD_CONTAINER" -- \
-        env DEPLOYD_NO_LXD=1 \
+        env DEPLOYD_NO_LXD=1 DEPLOYD_NO_DOCKER=1 \
+            APPIMAGE_EXTRACT_AND_RUN=1 \
+            PATH="/root/.cargo/bin:/opt/appimage-tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+            CARGO_TARGET_DIR=/build/target \
         bash /workspace/check.sh "$@"
     exit $?
 fi
 
-# ── Docker path (inside LXD) ─────────────────────────────────────────────────
+# ── Direct path (inside LXD container) ───────────────────────────────────────
+if [ "${DEPLOYD_NO_DOCKER:-0}" = "1" ]; then
+    cd "$REPO_ROOT"
+    exec cargo "$CMD" --features "$FEATURES" "${@:2}"
+fi
+
+# ── Docker path (fallback: Docker without LXD) ───────────────────────────────
 DOCKERFILE_HASH=$(sha256sum "$DOCKERFILE" | cut -c1-12)
 IMAGE_TAG="deployd-build-env:${DOCKERFILE_HASH}"
 

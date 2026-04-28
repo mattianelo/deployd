@@ -1,18 +1,28 @@
 # GitLab CI — Deployd
 #
 # Jobs:
-#   sast            — Static Application Security Testing (GitLab template)
+#   sast             — Static Application Security Testing (GitLab template)
 #   secret_detection — Secret Detection (GitLab template)
-#   build-appimage  — Build and publish the Deployd AppImage
+#   build-env-image  — Build and push the deployd build-env image to the registry
+#   build-appimage   — Build and publish the Deployd AppImage
+#   build-snap       — Build and publish the Deployd Snap package
 #
-# AppImage build uses Docker-in-Docker (dind).
-# The deployd-build-env image is built from packaging/appimage/Dockerfile
-# (ubuntu:24.04 + GTK4/libadwaita dev stack + Rust + linuxdeploy tooling).
-# The inner build script runs directly inside that image (DEPLOYD_NO_DOCKER=1).
+# Build environment image
+# -----------------------
+# The AppImage build runs directly inside $CI_REGISTRY_IMAGE/build-env:latest,
+# which is built from packaging/appimage/Dockerfile.  The image is published to
+# the project's GitLab Container Registry and only rebuilt when the Dockerfile
+# changes (or via manual trigger).
+#
+# Bootstrap: on first use, trigger build-env-image manually from the GitLab UI
+# before running a release pipeline.
+#
+# Local builds use LXD (preferred) or Docker — see build-appimage.sh.
 
 stages:
   - test
   - secret-detection
+  - build-env
   - build
 
 # ── Security scanning ────────────────────────────────────────────────────────
@@ -29,37 +39,41 @@ sast:
 secret_detection:
   stage: secret-detection
 
-# ── AppImage build ───────────────────────────────────────────────────────────
-build-appimage:
-  stage: build
+# ── Build environment image ──────────────────────────────────────────────────
+build-env-image:
+  stage: build-env
   image: docker:28
   services:
     - docker:28-dind
   variables:
     DOCKER_TLS_CERTDIR: "/certs"
-    # Tell Docker to use the dind daemon's socket.
     DOCKER_HOST: tcp://docker:2376
     DOCKER_TLS_VERIFY: 1
     DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
   before_script:
-    # Build the deployd build-environment image from our Dockerfile.
-    # Layer caching is not configured here; the image is small enough that
-    # rebuilding it per pipeline is acceptable. Add registry caching if needed.
-    - docker build
-        --tag deployd-build-env
-        --file packaging/appimage/Dockerfile
-        .
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
   script:
-    # Run the inner build script inside the container.
-    # DEPLOYD_NO_DOCKER=1 skips the host-side Docker wrapper entirely.
-    - |
-      docker run --rm \
-        -v "$CI_PROJECT_DIR:/workspace:z" \
-        -e VERSION="$(grep '^version' Cargo.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')" \
-        -e DEPLOYD_NO_DOCKER=1 \
-        --workdir /workspace \
-        deployd-build-env \
-        bash packaging/appimage/build-appimage-inner.sh
+    - docker build
+        --tag "$CI_REGISTRY_IMAGE/build-env:latest"
+        --file packaging/appimage/Dockerfile
+        packaging/appimage/
+    - docker push "$CI_REGISTRY_IMAGE/build-env:latest"
+  rules:
+    - changes:
+        - packaging/appimage/Dockerfile
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+
+# ── AppImage build ───────────────────────────────────────────────────────────
+# Runs directly inside the pre-built registry image — no Docker daemon needed.
+build-appimage:
+  stage: build
+  image: $CI_REGISTRY_IMAGE/build-env:latest
+  needs:
+    - job: build-env-image
+      optional: true
+  script:
+    - bash packaging/appimage/build-appimage-inner.sh
   artifacts:
     name: "Deployd-$CI_COMMIT_TAG"
     paths:
@@ -79,7 +93,7 @@ build-snap:
   stage: build
   image: snapcore/snapcraft:latest
   script:
-    - snapcraft --destructive-mode
+    - snapcraft pack --destructive-mode
   artifacts:
     name: "Deployd-snap-$CI_COMMIT_TAG"
     paths:

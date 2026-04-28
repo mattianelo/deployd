@@ -1,7 +1,14 @@
 name: deployd
 base: core24
 version: '0.9.9-beta'
+title: Deployd
 summary: Mod manager for PC games on Linux
+license: GPL-3.0
+contact: https://gitlab.com/mattianelo/deployd/-/issues
+issues: https://gitlab.com/mattianelo/deployd/-/issues
+source-code: https://gitlab.com/mattianelo/deployd
+website: https://www.nexusmods.com/site/mods/174218
+donation: https://ko-fi.com/mattianelo
 description: |
   Deployd is a non-destructive mod manager for PC games running on Linux.
   Supports Bethesda (Skyrim SE, Fallout 4, Fallout: New Vegas, Starfield),

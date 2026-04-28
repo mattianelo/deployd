@@ -1,21 +1,22 @@
 #!/bin/bash
 # Host-side wrapper — runs inside LXD (preferred) or directly via Docker.
-# Usage: bash packaging/appimage/build-appimage.sh [--rebuild] [--clean]
+# Usage: bash packaging/appimage/build-appimage.sh [--rebuild] [--clean] [--debug]
 #
 # Prerequisites (LXD — preferred):
 #   sudo snap install lxd
 #   sudo lxd init --minimal
 #   sudo adduser "$USER" lxd && newgrp lxd
 #
+#   On first run the container is created and provisioned automatically via
+#   setup-lxd.sh (apt packages + Rust + AppImage tools).  Subsequent builds
+#   reuse the container without re-downloading anything.  Use --rebuild to
+#   recreate the container from scratch.
+#
 # Prerequisites (Docker fallback, if LXD not available):
 #   sudo snap install docker
 #   sudo addgroup --system docker && sudo adduser "$USER" docker
 #   sudo snap disable docker && sudo snap enable docker
 #   newgrp docker
-#
-# Environment variables:
-#   DEPLOYD_NO_LXD=1    skip LXD, run Docker directly (set automatically inside LXD)
-#   DEPLOYD_NO_DOCKER=1 skip Docker, run inner script directly (CI / Docker-in-Docker)
 
 set -euo pipefail
 
@@ -23,6 +24,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 DOCKERFILE="$REPO_ROOT/packaging/appimage/Dockerfile"
 IMAGE_NAME="deployd-build-env"
 INNER_SCRIPT="packaging/appimage/build-appimage-inner.sh"
+SETUP_SCRIPT="packaging/appimage/setup-lxd.sh"
 LXD_CONTAINER="deployd-appimage-build"
 
 REBUILD=0
@@ -36,10 +38,6 @@ for arg in "$@"; do
         *) echo "Unknown option: $arg"; exit 1 ;;
     esac
 done
-
-if [ "${DEPLOYD_NO_DOCKER:-0}" = "1" ]; then
-    exec bash "$REPO_ROOT/$INNER_SCRIPT"
-fi
 
 # ── LXD path ────────────────────────────────────────────────────────────────
 _lxd_available() {
@@ -57,40 +55,28 @@ if _lxd_available; then
     if ! lxc info "$LXD_CONTAINER" &>/dev/null 2>&1; then
         echo "==> Creating LXD container $LXD_CONTAINER"
         lxc launch ubuntu:24.04 "$LXD_CONTAINER" \
-            -c security.nesting=true \
             -c security.syscalls.intercept.mknod=true \
             -c security.syscalls.intercept.setxattr=true
 
         lxc config device add "$LXD_CONTAINER" workspace disk \
             source="$REPO_ROOT" path=/workspace shift=true
 
-        echo "==> Installing Docker inside $LXD_CONTAINER"
-        lxc exec "$LXD_CONTAINER" -- bash -euo pipefail -c '
-            apt-get update -qq
-            apt-get install -y docker.io
-        '
-
-        echo "==> Waiting for Docker daemon inside $LXD_CONTAINER"
-        lxc exec "$LXD_CONTAINER" -- bash -c '
-            for i in $(seq 1 30); do
-                docker info &>/dev/null && exit 0
-                sleep 2
-            done
-            echo "ERROR: Docker daemon not ready after 60s" >&2; exit 1
-        '
+        echo "==> Provisioning $LXD_CONTAINER (first-time setup, takes a few minutes)"
+        lxc exec "$LXD_CONTAINER" -- \
+            bash /workspace/$SETUP_SCRIPT
     else
         lxc start "$LXD_CONTAINER" 2>/dev/null || true
     fi
 
-    EXTRA_FLAGS=""
-    [ "$REBUILD" = "1" ] && EXTRA_FLAGS="$EXTRA_FLAGS --rebuild"
-    [ "$DEBUG" = "1" ]   && EXTRA_FLAGS="$EXTRA_FLAGS --debug"
+    INNER_FLAGS=""
+    [ "$DEBUG" = "1" ] && INNER_FLAGS="--debug"
 
     echo "==> Running build inside LXD container $LXD_CONTAINER"
     # shellcheck disable=SC2086
     lxc exec "$LXD_CONTAINER" -- \
-        env DEPLOYD_NO_LXD=1 \
-        bash /workspace/packaging/appimage/build-appimage.sh $EXTRA_FLAGS
+        env APPIMAGE_EXTRACT_AND_RUN=1 \
+            PATH="/root/.cargo/bin:/opt/appimage-tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+        bash /workspace/$INNER_SCRIPT $INNER_FLAGS
 
     if [ "$CLEAN" = "1" ]; then
         echo "==> Cleaning up LXD container $LXD_CONTAINER (--clean)"
