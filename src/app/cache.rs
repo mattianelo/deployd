@@ -199,6 +199,12 @@ pub fn display_cache_root(custom: Option<&PathBuf>) -> String {
         Some(p) => p.to_string_lossy().into_owned(),
         None => paths::cache_root()
             .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_else(|_| "~/.local/share/deployd/cache".to_string()),
+            .unwrap_or_else(|_| {
+                if std::env::var_os("SNAP_USER_COMMON").is_some() {
+                    "$SNAP_USER_COMMON/deployd/cache".to_string()
+                } else {
+                    "~/.local/share/deployd/cache".to_string()
+                }
+            }),
     }
 }

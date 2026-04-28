@@ -13,9 +13,14 @@ use crate::utils::paths;
 pub fn deployd_save_dir(game_id: &str, profile_id: &str) -> PathBuf {
     paths::saves_root()
         .unwrap_or_else(|_| {
-            dirs::home_dir()
-                .unwrap_or_else(|| PathBuf::from("~"))
-                .join(".local/share/deployd/saves")
+            if let Some(common) = std::env::var_os("SNAP_USER_COMMON") {
+                PathBuf::from(common).join("deployd").join("saves")
+            } else {
+                dirs::data_dir()
+                    .unwrap_or_else(|| PathBuf::from("."))
+                    .join("deployd")
+                    .join("saves")
+            }
         })
         .join(game_id)
         .join(profile_id)

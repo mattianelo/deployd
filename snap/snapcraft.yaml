@@ -14,7 +14,7 @@ description: |
 
 icon: data/icons/hicolor/scalable/apps/deployd.svg
 
-grade: devel
+grade: stable
 confinement: strict
 
 lint:
@@ -44,8 +44,7 @@ apps:
     extensions: [gnome]
     plugs:
       - home              # Game directories, wine prefixes, mod archives
-      - network           # Nexus Mods API and NXM downloads
-      - network-bind      # Local WebSocket listener for NXM scheme handler
+      - network           # Nexus Mods API, NXM downloads, and SSO WebSocket (outbound)
       - wine-runtime      # Wine binaries via content interface
       - wine-9-staging    # Wine staging libraries via content interface
     slots: [dbus-deployd]
@@ -75,11 +74,3 @@ parts:
       install -Dm644 data/deployd.metainfo.xml \
         "$CRAFT_PART_INSTALL/usr/share/metainfo/deployd.metainfo.xml"
 
-  sommelier-core:
-    plugin: make
-    source: snap/local/sommelier-core
-    # source: https://github.com/snapcrafters/sommelier-core.git
-    # source-branch: "1.0"
-    build-packages:
-      - gcc-multilib
-      - libc6-dev-i386
