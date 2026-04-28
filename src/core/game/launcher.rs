@@ -12,10 +12,15 @@ const WINE_SILENT_DLL_OVERRIDES: &str = "mshtml=d;winemenubuilder.exe=d";
 /// Launch the given Windows executable (typically a script extender loader) via
 /// Wine or Proton GE using the game's existing Wine prefix.
 ///
-/// Sets `STEAM_COMPAT_CLIENT_INSTALL_PATH` when the Steam root is detectable, so
-/// the Steam overlay and achievement notifications work as expected. This is
-/// best-effort: if Steam cannot be found the variable is simply omitted and the
-/// game still launches.
+/// `steam_app_id` should be the Steam App ID of the game (e.g. 1716740 for
+/// Starfield). It is set as `SteamAppId` and `SteamGameId` so that
+/// `SteamAPI_Init()` inside the game executable can connect to the running
+/// Steam daemon and pass DRM validation.
+///
+/// `STEAM_COMPAT_CLIENT_INSTALL_PATH` is also set when a Steam installation is
+/// detectable, enabling the Steam overlay and achievement notifications.
+/// Both are best-effort: the game will still be launched if they cannot be
+/// determined, but Steam features may be unavailable.
 ///
 /// `on_exit` is called from a background thread once the process exits. Receives
 /// `Some(error_string)` on non-zero exit or wait failure, `None` on clean exit.
@@ -23,6 +28,7 @@ pub(crate) fn launch_game(
     exe: &Path,
     game: &Game,
     wine_config: &WineConfig,
+    steam_app_id: Option<u32>,
     on_exit: Option<Box<dyn FnOnce(Option<String>) + Send + 'static>>,
 ) -> Result<u32> {
     if !exe.exists() {
@@ -40,7 +46,7 @@ pub(crate) fn launch_game(
                 exe.display(),
                 wine_bin.display()
             );
-            build_wine_cmd(&wine_bin, exe, game, wine_config)
+            build_wine_cmd(&wine_bin, exe, game, wine_config, steam_app_id)
         }
         WineLauncher::SnapWine {
             wine_bin,
@@ -53,7 +59,15 @@ pub(crate) fn launch_game(
                 exe.display(),
                 wine_bin.display()
             );
-            build_snap_wine_cmd(&wine_bin, wine_platform, wine_runtime, exe, game, wine_config)
+            build_snap_wine_cmd(
+                &wine_bin,
+                wine_platform,
+                wine_runtime,
+                exe,
+                game,
+                wine_config,
+                steam_app_id,
+            )
         }
     };
 
@@ -65,6 +79,7 @@ fn build_wine_cmd(
     exe: &Path,
     game: &Game,
     wine_config: &WineConfig,
+    steam_app_id: Option<u32>,
 ) -> Command {
     let compat_data = strip_pfx(wine_config);
     let mut cmd = Command::new(wine_bin);
@@ -98,6 +113,11 @@ fn build_wine_cmd(
         cmd.env("STEAM_COMPAT_CLIENT_INSTALL_PATH", steam_root);
     }
 
+    if let Some(appid) = steam_app_id {
+        let id_str = appid.to_string();
+        cmd.env("SteamAppId", &id_str).env("SteamGameId", &id_str);
+    }
+
     cmd.arg(exe).current_dir(&game.path);
     cmd
 }
@@ -109,6 +129,7 @@ fn build_snap_wine_cmd(
     exe: &Path,
     game: &Game,
     wine_config: &WineConfig,
+    steam_app_id: Option<u32>,
 ) -> Command {
     let compat_data = strip_pfx(wine_config);
     let mut cmd = Command::new(wine_bin);
@@ -132,6 +153,11 @@ fn build_snap_wine_cmd(
 
     if let Some(steam_root) = super::steam::find_steam_root() {
         cmd.env("STEAM_COMPAT_CLIENT_INSTALL_PATH", steam_root);
+    }
+
+    if let Some(appid) = steam_app_id {
+        let id_str = appid.to_string();
+        cmd.env("SteamAppId", &id_str).env("SteamGameId", &id_str);
     }
 
     cmd.arg(exe).current_dir(&game.path);

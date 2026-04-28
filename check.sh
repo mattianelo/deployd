@@ -33,6 +33,10 @@ fi
 # ── Direct path (inside LXD container) ───────────────────────────────────────
 if [ "${DEPLOYD_NO_DOCKER:-0}" = "1" ]; then
     cd "$REPO_ROOT"
+    if [ "$CMD" = "nextest" ]; then
+        NEXTEST_SUBCMD="${2:-run}"
+        exec cargo nextest "$NEXTEST_SUBCMD" --features "$FEATURES" "${@:3}"
+    fi
     exec cargo "$CMD" --features "$FEATURES" "${@:2}"
 fi
 
@@ -44,7 +48,12 @@ if ! docker image inspect "$IMAGE_TAG" &>/dev/null 2>&1; then
     IMAGE_TAG="deployd-build-env:latest"
 fi
 
-CARGO_CMD="cargo $CMD --features $FEATURES ${*:2}"
+if [ "$CMD" = "nextest" ]; then
+    NEXTEST_SUBCMD="${2:-run}"
+    CARGO_CMD="cargo nextest $NEXTEST_SUBCMD --features $FEATURES ${*:3}"
+else
+    CARGO_CMD="cargo $CMD --features $FEATURES ${*:2}"
+fi
 if [ "$CMD" = "clippy" ]; then
     CARGO_CMD="rustup component add clippy 2>/dev/null; $CARGO_CMD"
 fi

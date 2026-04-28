@@ -70,3 +70,11 @@ pub fn script_extender_loader_path(game: &Game) -> Option<PathBuf> {
     let path = game.path.join(loader);
     path.exists().then_some(path)
 }
+
+/// Return the Steam App ID for the game, if known.
+pub(crate) fn game_steam_app_id(game: &Game) -> Option<u32> {
+    KNOWN_GAMES
+        .iter()
+        .find(|k| k.deployd_id == game.id)?
+        .steam_app_id
+}

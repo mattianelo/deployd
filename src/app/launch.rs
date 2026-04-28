@@ -24,12 +24,14 @@ impl App {
             }
         };
 
+        let steam_app_id = game::game_steam_app_id(&game);
         let exit_sender = sender.input_sender().clone();
         sender.oneshot_command(async move {
             let result: Result<(), String> = game::launch_game(
                 &loader_path,
                 &game,
                 &wine_config,
+                steam_app_id,
                 Some(Box::new(move |error| {
                     let _ = exit_sender.send(AppMsg::GameExited(error));
                 })),
