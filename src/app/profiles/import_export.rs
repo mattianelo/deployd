@@ -98,7 +98,7 @@ impl App {
                     let json = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
                     let export: crate::models::profile_export::ProfileExport =
                         serde_json::from_str(&json).map_err(|e| e.to_string())?;
-                    let new_profile_id = tracker
+                    let (new_profile_id, _) = tracker
                         .import_profile(&game.id, &export)
                         .await
                         .map_err(|e| e.to_string())?;

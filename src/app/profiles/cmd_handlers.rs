@@ -192,6 +192,13 @@ impl App {
 
                 self.initializing = false;
 
+                if data.restored_from_backup {
+                    self.toaster.toast(
+                        "Database restored from backup. \
+                         Re-install your mods from archives to restore a deployable state.",
+                    );
+                }
+
                 sender.input(AppMsg::ScanDownloadsFolder);
                 sender.input(AppMsg::ScanExternalFiles);
 

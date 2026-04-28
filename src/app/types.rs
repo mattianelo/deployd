@@ -126,6 +126,8 @@ pub struct InitData {
     pub nexus_is_premium: bool,
     pub compact_plugin_rows: bool,
     pub color_scheme_idx: u32,
+    /// True when this launch follows a full-backup DB restore (marker file was present).
+    pub restored_from_backup: bool,
 }
 
 #[derive(Debug)]

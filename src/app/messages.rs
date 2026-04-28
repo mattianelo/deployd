@@ -436,8 +436,8 @@ pub enum AppCmdMsg {
     OrderSnapshotDeleted(Result<(), String>),
     /// Full DB restore staged; carries the manifest on success.
     FullRestoreStaged(Result<crate::models::backup::BackupManifest, String>),
-    /// Profiles imported from a backup archive; carries reloaded game data.
-    ProfilesImportedFromBackup(Result<crate::app::types::LoadedData, String>),
+    /// Profiles imported from a backup archive; carries (imported_count, skipped_mod_count, reloaded data).
+    ProfilesImportedFromBackup(Result<(usize, usize, crate::app::types::LoadedData), String>),
     /// Result of the self-update AppImage download + replace.
     AppUpdateResult(Result<(), String>),
     /// Result of downloading + extracting Proton GE from GitHub. Carries the

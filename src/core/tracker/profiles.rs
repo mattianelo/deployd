@@ -414,12 +414,13 @@ impl Tracker {
     /// Matches exported names against live mods/plugins for `game_id`.
     /// Entries that don't match any installed mod/plugin are silently skipped.
     /// If a profile with the exported name already exists, a numeric suffix is appended.
-    /// Returns the new profile's ID.
+    /// Returns `(profile_id, skipped_mod_count)` — the count of exported mods
+    /// that had no matching installed mod and were therefore not imported.
     pub async fn import_profile(
         &self,
         game_id: &str,
         export: &crate::models::profile_export::ProfileExport,
-    ) -> Result<String> {
+    ) -> Result<(String, usize)> {
         let mut final_name = export.profile_name.clone();
         let mut counter = 2u32;
         loop {
@@ -445,6 +446,7 @@ impl Tracker {
             .context("Failed to create profile for import")?;
 
         let mut tx = self.pool.begin().await?;
+        let mut skipped_mods: usize = 0;
 
         for mod_export in &export.mods {
             let row: Option<(String,)> =
@@ -454,17 +456,20 @@ impl Tracker {
                     .fetch_optional(&mut *tx)
                     .await?;
 
-            if let Some((mod_id,)) = row {
-                sqlx::query(
-                    "INSERT OR IGNORE INTO profile_mods (profile_id, mod_id, enabled, priority)
-                     VALUES (?, ?, ?, ?)",
-                )
-                .bind(&profile_id)
-                .bind(&mod_id)
-                .bind(mod_export.enabled)
-                .bind(mod_export.priority)
-                .execute(&mut *tx)
-                .await?;
+            match row {
+                Some((mod_id,)) => {
+                    sqlx::query(
+                        "INSERT OR IGNORE INTO profile_mods (profile_id, mod_id, enabled, priority)
+                         VALUES (?, ?, ?, ?)",
+                    )
+                    .bind(&profile_id)
+                    .bind(&mod_id)
+                    .bind(mod_export.enabled)
+                    .bind(mod_export.priority)
+                    .execute(&mut *tx)
+                    .await?;
+                }
+                None => skipped_mods += 1,
             }
         }
 
@@ -498,6 +503,6 @@ impl Tracker {
             .await
             .context("Failed to commit imported profile")?;
 
-        Ok(profile_id)
+        Ok((profile_id, skipped_mods))
     }
 }

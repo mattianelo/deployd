@@ -89,6 +89,14 @@ pub fn pending_restore_path() -> Result<PathBuf> {
     Ok(deployd_data_dir()?.join("deployd.db.restore-pending"))
 }
 
+/// Marker written after a pending restore is applied, consumed during init.
+///
+/// When this file exists, `load_init_data` sets `InitData::restored_from_backup`
+/// and shows a banner prompting the user to reinstall their mods.
+pub fn post_restore_marker_path() -> Result<PathBuf> {
+    Ok(deployd_data_dir()?.join("deployd.db.restore-applied"))
+}
+
 /// Default downloads directory (~/Downloads or fallback to $HOME/Downloads).
 pub fn default_downloads_dir() -> PathBuf {
     glib::user_special_dir(glib::UserDirectory::Downloads).unwrap_or_else(|| {

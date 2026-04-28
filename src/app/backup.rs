@@ -160,8 +160,10 @@ impl App {
                 let dialog = gtk::AlertDialog::builder()
                     .message("Restart Required")
                     .detail(
-                        "The backup will be applied on the next launch. \
-                         Close Deployd to complete the restore.",
+                        "The backup will be applied on the next launch.\n\n\
+                         Note: mod files are not included in the backup. \
+                         After restarting, re-install your mods from archives \
+                         to restore a deployable state.",
                     )
                     .buttons(["OK"])
                     .default_button(0)
@@ -189,30 +191,37 @@ impl App {
         sender.oneshot_command(async move {
             AppCmdMsg::ProfilesImportedFromBackup(
                 async {
-                    crate::core::backup::import_profiles_from_backup(&path, &game.id, &tracker)
+                    let summary =
+                        crate::core::backup::import_profiles_from_backup(&path, &game.id, &tracker)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                    let data = load_game_data(&tracker, &game, false)
                         .await
                         .map_err(|e| e.to_string())?;
-                    load_game_data(&tracker, &game, false)
-                        .await
-                        .map_err(|e| e.to_string())
+                    Ok((summary.imported.len(), summary.skipped_mods, data))
                 }
-                .await
-                .map_err(|e: String| e),
+                .await,
             )
         });
     }
 
     pub(crate) fn handle_cmd_profiles_imported_from_backup(
         &mut self,
-        result: Result<crate::app::types::LoadedData, String>,
+        result: Result<(usize, usize, crate::app::types::LoadedData), String>,
         sender: &ComponentSender<Self>,
     ) {
         match result {
-            Ok(data) => {
-                let count = data.profiles.len();
+            Ok((imported, skipped_mods, data)) => {
                 self.apply_loaded_data(data, sender);
-                self.toaster
-                    .toast(&format!("Imported {count} profile(s) from backup"));
+                if skipped_mods > 0 {
+                    self.toaster.toast(&format!(
+                        "Imported {imported} profile(s) from backup — \
+                         {skipped_mods} mod(s) not matched (install them first, then re-import)"
+                    ));
+                } else {
+                    self.toaster
+                        .toast(&format!("Imported {imported} profile(s) from backup"));
+                }
             }
             Err(e) => self.toaster.toast(&format!("Profile import failed: {e}")),
         }

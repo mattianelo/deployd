@@ -1580,7 +1580,7 @@ impl Component for App {
                 self.handle_cmd_full_restore_staged(result, root)
             }
             AppCmdMsg::ProfilesImportedFromBackup(result) => {
-                self.handle_cmd_profiles_imported_from_backup(result, &sender)
+                self.handle_cmd_profiles_imported_from_backup(result, &sender);
             }
             AppCmdMsg::AppUpdateResult(result) => self.handle_cmd_app_update_result(result),
             AppCmdMsg::ProtonDownloaded { result, tool_id } => {

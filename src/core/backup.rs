@@ -152,14 +152,22 @@ pub fn stage_full_restore(src: &Path) -> Result<BackupManifest> {
     Ok(manifest)
 }
 
+/// Summary of a profile-only import from a backup archive.
+pub struct ProfileImportSummary {
+    /// Names of profiles that were successfully created.
+    pub imported: Vec<String>,
+    /// Total number of mod entries across all profiles that had no matching
+    /// installed mod and were skipped.
+    pub skipped_mods: usize,
+}
+
 /// Import all profiles for `game_id` from a `.deployd-backup` archive into the
 /// current install. Uses the existing `import_profile()` logic (name-matching).
-/// Returns the names of successfully imported profiles.
 pub async fn import_profiles_from_backup(
     src: &Path,
     game_id: &str,
     tracker: &Tracker,
-) -> Result<Vec<String>> {
+) -> Result<ProfileImportSummary> {
     let src = src.to_path_buf();
     let game_id = game_id.to_string();
     let game_id_for_closure = game_id.clone();
@@ -194,16 +202,19 @@ pub async fn import_profiles_from_backup(
     .context("Profile extraction task panicked")??;
 
     let mut imported = Vec::with_capacity(profile_jsons.len());
+    let mut skipped_mods: usize = 0;
+
     for json in &profile_jsons {
         let export: crate::models::profile_export::ProfileExport =
             serde_json::from_str(json).context("Malformed profile JSON in backup")?;
         let name = export.profile_name.clone();
-        tracker
+        let (_, skipped) = tracker
             .import_profile(&game_id, &export)
             .await
             .with_context(|| format!("Failed to import profile \"{name}\""))?;
         imported.push(name);
+        skipped_mods += skipped;
     }
 
-    Ok(imported)
+    Ok(ProfileImportSummary { imported, skipped_mods })
 }

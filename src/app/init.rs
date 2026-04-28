@@ -460,6 +460,9 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             std::fs::rename(&pending, &db_path).map_err(|e| {
                 format!("Failed to apply pending restore: {e}")
             })?;
+            // Write a marker so load_init_data can show the post-restore banner.
+            let marker = paths::post_restore_marker_path().map_err(|e| e.to_string())?;
+            let _ = std::fs::File::create(&marker);
         }
 
         let db_url = format!("sqlite://{}?mode=rwc", db_path.display());
@@ -626,6 +629,13 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             .and_then(|v| v.parse::<u32>().ok())
             .unwrap_or(0);
 
+        // Consume the post-restore marker if present.
+        let restored_from_backup = paths::post_restore_marker_path()
+            .ok()
+            .filter(|p| p.exists())
+            .map(|p| { let _ = std::fs::remove_file(&p); true })
+            .unwrap_or(false);
+
         Ok::<_, String>(InitData {
             tracker,
             mods,
@@ -653,6 +663,7 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             nexus_is_premium,
             compact_plugin_rows,
             color_scheme_idx,
+            restored_from_backup,
         })
     };
     AppCmdMsg::Initialized(init.await)
