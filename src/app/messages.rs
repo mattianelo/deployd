@@ -77,6 +77,9 @@ pub enum AppMsg {
     ConfirmProtonSetup(String),
     /// User confirmed the first-run Proton GE download; start the download.
     ProtonSetupConfirmed(String),
+    /// Show a one-time Mono install info dialog for Eclipse/Snap tool launches.
+    /// Carries `tool_id` and the wine prefix path (used to write the sentinel on confirm).
+    ConfirmMonoPrompt(String, std::path::PathBuf),
     ManageToolsClicked,
     ToolAdded(Tool),
     ToolRemoved(String),

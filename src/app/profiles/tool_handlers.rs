@@ -1,9 +1,12 @@
+use std::path::PathBuf;
+
 use gtk::gio;
 use gtk::prelude::*;
 use relm4::prelude::*;
 
 use crate::core::game;
 use crate::core::tool_launcher;
+use crate::models::game::GameEngine;
 use crate::ui::tool_manager::{ToolManager, ToolManagerOutput};
 
 use super::super::App;
@@ -41,6 +44,16 @@ impl App {
             }
         };
 
+        // For Eclipse games under the Snap wine-runtime, wine-mono is not bundled.
+        // Show a one-time blocking dialog so the user knows to accept the Mono install prompt.
+        if game.engine == GameEngine::Eclipse && game::snap_wine_available() {
+            let sentinel = wine_config.prefix.join(".deployd_mono_prompt_v1");
+            if !sentinel.exists() {
+                sender.input(AppMsg::ConfirmMonoPrompt(tool_id, wine_config.prefix.clone()));
+                return;
+            }
+        }
+
         self.do_launch_tool(tool, game, wine_config, sender);
     }
 
@@ -68,6 +81,41 @@ impl App {
         dialog.choose(Some(root), None::<&gio::Cancellable>, move |result| {
             if result == Ok(1) {
                 let _ = s.send(AppMsg::ProtonSetupConfirmed(tool_id));
+            }
+        });
+    }
+
+    /// Show a one-time Mono install info dialog for Eclipse tools under the Snap wine-runtime.
+    ///
+    /// wine-mono is not bundled with the Snap's wine-platform content snap. Wine will offer to
+    /// install it when a .NET tool (e.g. CharGenMorph Compiler) is first launched. This dialog
+    /// tells the user to accept that prompt. After the user acknowledges, a sentinel file is
+    /// written to the prefix so the dialog never appears again.
+    pub(crate) fn handle_confirm_mono_prompt(
+        &mut self,
+        tool_id: String,
+        prefix: PathBuf,
+        root: &adw::Window,
+        sender: &ComponentSender<Self>,
+    ) {
+        let dialog = gtk::AlertDialog::builder()
+            .message("Mono Required for This Tool")
+            .detail(
+                "Wine will ask to install Mono — a .NET runtime required by tools like \
+                 CharGenMorph Compiler.\n\n\
+                 Accept the installation when prompted. This message will not appear again.",
+            )
+            .buttons(["Cancel", "Launch"])
+            .cancel_button(0)
+            .default_button(1)
+            .modal(true)
+            .build();
+
+        let s = sender.input_sender().clone();
+        dialog.choose(Some(root), None::<&gio::Cancellable>, move |result| {
+            if result == Ok(1) {
+                let _ = std::fs::write(prefix.join(".deployd_mono_prompt_v1"), b"");
+                let _ = s.send(AppMsg::LaunchTool(tool_id));
             }
         });
     }

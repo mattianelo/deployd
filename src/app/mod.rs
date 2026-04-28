@@ -1195,6 +1195,9 @@ impl Component for App {
             AppMsg::ProtonSetupConfirmed(tool_id) => {
                 self.handle_proton_setup_confirmed(tool_id, &sender)
             }
+            AppMsg::ConfirmMonoPrompt(tool_id, prefix) => {
+                self.handle_confirm_mono_prompt(tool_id, prefix, root, &sender)
+            }
             AppMsg::ManageToolsClicked => self.handle_manage_tools_clicked(root, &sender),
             AppMsg::ToolAdded(tool) => self.handle_tool_added(tool, &sender),
             AppMsg::ToolRemoved(name) => self.handle_tool_removed(name, &sender),

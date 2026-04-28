@@ -9,8 +9,11 @@ use crate::models::game::Game;
 use crate::models::tool::Tool;
 use crate::utils::paths;
 
-/// Suppress Mono/Gecko installer popups and the Wine menu builder for all tool launches.
-const WINE_SILENT_DLL_OVERRIDES: &str = "mscoree,mshtml=d;winemenubuilder.exe=d";
+/// Suppress Gecko installer popup and the Wine menu builder for all tool launches.
+/// mscoree (Mono/.NET) is intentionally NOT suppressed here — Eclipse (DAO) tools such as
+/// CharGenMorph Compiler require .NET, and wine-mono is not bundled with the Snap wine-runtime.
+/// The user is informed via a blocking dialog before launch so they can accept the install prompt.
+const WINE_SILENT_DLL_OVERRIDES: &str = "mshtml=d;winemenubuilder.exe=d";
 
 /// Launch a Windows tool via Wine/Proton.
 ///
@@ -355,7 +358,10 @@ fn ensure_bethesda_reg_key(
 }
 
 /// Bake DLL overrides into the wine prefix registry so snap/wine updates don't re-show
-/// mono/winecfg dialogs even when the env var isn't inherited by wine-internal processes.
+/// dialogs even when the env var isn't inherited by wine-internal processes.
+///
+/// v1 → v2 migration: removes the stale mscoree registry override written by v1 so wine can
+/// show the Mono install dialog again (required for .NET tools like CharGenMorph Compiler).
 ///
 /// Runs once per prefix: after the first successful run a sentinel file is written so
 /// subsequent tool launches skip this entirely.
@@ -364,24 +370,42 @@ fn ensure_wine_silent_setup(
     launcher_bin: &Path,
     ld_library_path: Option<&str>,
 ) {
-    let sentinel = wine_config.prefix.join(".deployd_wine_setup_v1");
-    if sentinel.exists() {
+    let sentinel_v2 = wine_config.prefix.join(".deployd_wine_setup_v2");
+    if sentinel_v2.exists() {
         return;
     }
 
-    // mscoree=disabled suppresses Mono/.NET installer
+    // Migrate from v1: delete the stale mscoree=disabled registry key so wine can offer to
+    // install Mono again. Failure is non-fatal — the key may simply not exist yet.
+    let sentinel_v1 = wine_config.prefix.join(".deployd_wine_setup_v1");
+    if sentinel_v1.exists() {
+        let mut cmd = Command::new(launcher_bin);
+        cmd.env("WINEPREFIX", &wine_config.prefix)
+            .env("WINEDEBUG", "-all")
+            .env("WINEDLLOVERRIDES", WINE_SILENT_DLL_OVERRIDES)
+            .env_remove("LD_PRELOAD");
+        if let Some(ld) = ld_library_path {
+            cmd.env("LD_LIBRARY_PATH", ld);
+        }
+        cmd.args([
+            "reg",
+            "delete",
+            r"HKCU\Software\Wine\DllOverrides",
+            "/v",
+            "mscoree",
+            "/f",
+        ]);
+        let _ = cmd.output();
+        let _ = std::fs::remove_file(&sentinel_v1);
+    }
+
     // mshtml=disabled suppresses Gecko/HTML renderer installer
     // winemenubuilder.exe=disabled suppresses the wine menu builder dialog
-    let overrides = [
-        ("mscoree", ""),
-        ("mshtml", ""),
-        ("winemenubuilder.exe", ""),
-    ];
+    let overrides = [("mshtml", ""), ("winemenubuilder.exe", "")];
     for (name, value) in overrides {
         let mut cmd = Command::new(launcher_bin);
         cmd.env("WINEPREFIX", &wine_config.prefix)
             .env("WINEDEBUG", "-all")
-            // Suppress Mono/Gecko popups if wine needs to create the prefix on first run.
             .env("WINEDLLOVERRIDES", WINE_SILENT_DLL_OVERRIDES)
             .env_remove("LD_PRELOAD");
         if let Some(ld) = ld_library_path {
@@ -406,7 +430,7 @@ fn ensure_wine_silent_setup(
         }
     }
 
-    if let Err(e) = std::fs::write(&sentinel, b"") {
+    if let Err(e) = std::fs::write(&sentinel_v2, b"") {
         eprintln!("deployd: failed to write wine setup sentinel: {e}");
     }
 }
