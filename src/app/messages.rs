@@ -73,6 +73,10 @@ pub enum AppMsg {
     /// Fired from the background wait-thread when a launched tool's Wine process exits.
     /// The second field carries the stderr output if the process exited with a non-zero status.
     ToolExited(String, Option<String>),
+    LaunchGameClicked,
+    /// Fired from the background wait-thread when the game process exits.
+    /// `Some(msg)` carries a user-facing error string; `None` means clean exit.
+    GameExited(Option<String>),
     /// Show a first-run Proton GE download confirmation dialog for `tool_id`.
     ConfirmProtonSetup(String),
     /// User confirmed the first-run Proton GE download; start the download.
@@ -380,6 +384,7 @@ pub enum AppCmdMsg {
     ToolDeleted(Result<String, String>),
     ToolWorkingDirSaved(Result<(), String>),
     ToolLaunched(Result<String, String>),
+    GameLaunched(Result<(), String>),
     /// Files were merged into an existing mod. Carries `(mod_name, files_merged)`.
     ModMerged(Result<(String, usize), String>),
     /// Combined mod+file name fetched after the user supplied a file ID.

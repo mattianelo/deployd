@@ -8,6 +8,7 @@ pub mod free_fns;
 pub mod helpers;
 pub mod init;
 pub mod install;
+mod launch;
 pub mod messages;
 pub mod mods;
 pub mod order_snapshots;
@@ -279,6 +280,17 @@ impl Component for App {
                                 set_label: model.status_msg.as_deref().unwrap_or("Extracting..."),
                             },
                         },
+                    },
+
+                    pack_end = &gtk::Button {
+                        set_label: "Launch",
+                        set_icon_name: "media-playback-start-symbolic",
+                        set_tooltip_text: Some("Launch game via script extender"),
+                        #[watch]
+                        set_visible: model.script_extender_present(),
+                        #[watch]
+                        set_sensitive: !model.is_busy(),
+                        connect_clicked => AppMsg::LaunchGameClicked,
                     },
 
                     pack_end = &gtk::Box {
@@ -1189,6 +1201,8 @@ impl Component for App {
             AppMsg::GameFolderGranted(path) => self.handle_game_folder_granted(path, &sender),
             AppMsg::LaunchTool(name) => self.handle_launch_tool(name, &sender),
             AppMsg::ToolExited(name, error) => self.handle_tool_exited(name, error, &sender),
+            AppMsg::LaunchGameClicked => self.handle_launch_game_clicked(&sender),
+            AppMsg::GameExited(error) => self.handle_game_exited(error),
             AppMsg::ConfirmProtonSetup(tool_id) => {
                 self.handle_confirm_proton_setup(tool_id, root, &sender)
             }
@@ -1544,6 +1558,7 @@ impl Component for App {
                 self.handle_cmd_tool_working_dir_saved(result)
             }
             AppCmdMsg::ToolLaunched(result) => self.handle_cmd_tool_launched(result),
+            AppCmdMsg::GameLaunched(result) => self.handle_cmd_game_launched(result),
             AppCmdMsg::ModMerged(result) => self.handle_cmd_mod_merged(result, &sender),
             AppCmdMsg::NxmDownloadComplete(id, result) => {
                 self.handle_cmd_nxm_download_complete(id, result, &sender)
