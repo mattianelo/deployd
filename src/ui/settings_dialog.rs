@@ -29,6 +29,8 @@ pub enum SettingsMsg {
     ManageGames,
     SetColorScheme(u32),
     ToggleCompactPlugins(bool),
+    CreateFullBackup,
+    RestoreFromBackup,
 }
 
 #[derive(Debug)]
@@ -51,6 +53,10 @@ pub enum SettingsDialogOutput {
     SetCompactPluginRows(bool),
     /// User changed the color scheme (0=System, 1=Light, 2=Dark).
     ColorSchemeChanged(u32),
+    /// User wants to create a full backup archive.
+    CreateFullBackup,
+    /// User wants to restore from a backup archive.
+    RestoreFromBackup,
 }
 
 #[relm4::component(pub)]
@@ -168,6 +174,34 @@ impl Component for SettingsDialog {
                         set_subtitle: "Reduce row height in the Plugin Order panel",
                         connect_active_notify[sender] => move |row| {
                             sender.input(SettingsMsg::ToggleCompactPlugins(row.is_active()));
+                        },
+                    },
+                },
+
+                // Backup & Restore section
+                add = &adw::PreferencesGroup {
+                    set_title: "Backup & Restore",
+                    set_description: Some("Back up the database and all profiles for migration to a new machine or OS reinstall."),
+
+                    add = &adw::ActionRow {
+                        set_title: "Create Full Backup",
+                        set_subtitle: "Save database and profiles to a .deployd-backup file",
+                        set_activatable: true,
+                        connect_activated => SettingsMsg::CreateFullBackup,
+
+                        add_suffix = &gtk::Image::from_icon_name("document-save-symbolic") {
+                            set_valign: gtk::Align::Center,
+                        },
+                    },
+
+                    add = &adw::ActionRow {
+                        set_title: "Restore from Backup",
+                        set_subtitle: "Replace database or import profiles from a backup file",
+                        set_activatable: true,
+                        connect_activated => SettingsMsg::RestoreFromBackup,
+
+                        add_suffix = &gtk::Image::from_icon_name("document-revert-symbolic") {
+                            set_valign: gtk::Align::Center,
                         },
                     },
                 },
@@ -393,6 +427,14 @@ impl Component for SettingsDialog {
                             .map_err(|e| e.to_string()),
                     )
                 });
+            }
+            SettingsMsg::CreateFullBackup => {
+                let _ = sender.output(SettingsDialogOutput::CreateFullBackup);
+                root.close();
+            }
+            SettingsMsg::RestoreFromBackup => {
+                let _ = sender.output(SettingsDialogOutput::RestoreFromBackup);
+                root.close();
             }
         }
     }

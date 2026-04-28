@@ -1,3 +1,4 @@
+pub mod backup;
 pub mod cache;
 pub mod cache_handlers;
 pub mod deploy;
@@ -1431,6 +1432,20 @@ impl Component for App {
             AppMsg::SetColorScheme(idx) => self.handle_set_color_scheme(idx),
             AppMsg::NexusLoginClicked => self.handle_nexus_login_clicked(&sender),
             AppMsg::NexusLogoutClicked => self.handle_nexus_logout_clicked(&sender),
+            AppMsg::CreateFullBackupClicked => {
+                self.handle_create_full_backup_clicked(root, &sender)
+            }
+            AppMsg::RestoreFromBackupClicked => {
+                self.handle_restore_from_backup_clicked(root, &sender)
+            }
+            AppMsg::RestoreBackupFileChosen(path) => {
+                self.handle_restore_backup_file_chosen(path, root, &sender)
+            }
+            AppMsg::StageFullRestore(path) => self.handle_stage_full_restore(path, &sender),
+            AppMsg::ImportProfilesFromBackup(path) => {
+                self.handle_import_profiles_from_backup(path, &sender)
+            }
+            AppMsg::FullBackupCreated(result) => self.handle_full_backup_created(result),
         }
     }
 
@@ -1561,6 +1576,12 @@ impl Component for App {
             }
             AppCmdMsg::SavesSynced(result) => self.handle_cmd_saves_synced(result),
             AppCmdMsg::LastDeployedProfileLoaded(id) => self.last_deployed_profile_id = id,
+            AppCmdMsg::FullRestoreStaged(result) => {
+                self.handle_cmd_full_restore_staged(result, root)
+            }
+            AppCmdMsg::ProfilesImportedFromBackup(result) => {
+                self.handle_cmd_profiles_imported_from_backup(result, &sender)
+            }
             AppCmdMsg::AppUpdateResult(result) => self.handle_cmd_app_update_result(result),
             AppCmdMsg::ProtonDownloaded { result, tool_id } => {
                 self.handle_proton_downloaded(result, tool_id, &sender)

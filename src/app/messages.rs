@@ -282,6 +282,18 @@ pub enum AppMsg {
     NexusLoginClicked,
     /// User clicked "Log Out" in the headerbar avatar popover.
     NexusLogoutClicked,
+    /// Open the file-save dialog to create a full backup archive.
+    CreateFullBackupClicked,
+    /// Open the file-open dialog to restore from a backup archive.
+    RestoreFromBackupClicked,
+    /// Backup archive chosen for restore — read the manifest and present options.
+    RestoreBackupFileChosen(std::path::PathBuf),
+    /// Stage a full DB restore from the given backup archive.
+    StageFullRestore(std::path::PathBuf),
+    /// Import all profiles for the current game from the given backup archive.
+    ImportProfilesFromBackup(std::path::PathBuf),
+    /// Full backup archive created; carries the manifest on success.
+    FullBackupCreated(Result<crate::models::backup::BackupManifest, String>),
 }
 
 pub(crate) enum PrepareResultMsg {
@@ -422,6 +434,10 @@ pub enum AppCmdMsg {
     PluginOrderSnapshotRestored(Result<crate::app::types::LoadedData, String>),
     /// Mod or plugin order snapshot deleted; carries updated snapshot list (game_id, kind).
     OrderSnapshotDeleted(Result<(), String>),
+    /// Full DB restore staged; carries the manifest on success.
+    FullRestoreStaged(Result<crate::models::backup::BackupManifest, String>),
+    /// Profiles imported from a backup archive; carries reloaded game data.
+    ProfilesImportedFromBackup(Result<crate::app::types::LoadedData, String>),
     /// Result of the self-update AppImage download + replace.
     AppUpdateResult(Result<(), String>),
     /// Result of downloading + extracting Proton GE from GitHub. Carries the

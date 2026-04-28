@@ -81,6 +81,14 @@ pub fn vanilla_backup_dir(game_id: &str) -> Result<PathBuf> {
     Ok(deployd_data_dir()?.join(game_id).join("vanilla-backup"))
 }
 
+/// Pending DB restore path: written by the restore flow, consumed on next launch.
+///
+/// When this file exists at startup, `init.rs` renames it over `deployd.db`
+/// before opening the tracker, completing a full-DB migration restore.
+pub fn pending_restore_path() -> Result<PathBuf> {
+    Ok(deployd_data_dir()?.join("deployd.db.restore-pending"))
+}
+
 /// Default downloads directory (~/Downloads or fallback to $HOME/Downloads).
 pub fn default_downloads_dir() -> PathBuf {
     glib::user_special_dir(glib::UserDirectory::Downloads).unwrap_or_else(|| {

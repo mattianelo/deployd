@@ -1,3 +1,4 @@
+pub mod backup;
 pub mod download;
 pub mod game;
 pub mod group;

@@ -453,6 +453,15 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
         if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
+
+        // Apply a staged full-backup restore if one was queued on the previous run.
+        let pending = paths::pending_restore_path().map_err(|e| e.to_string())?;
+        if pending.exists() {
+            std::fs::rename(&pending, &db_path).map_err(|e| {
+                format!("Failed to apply pending restore: {e}")
+            })?;
+        }
+
         let db_url = format!("sqlite://{}?mode=rwc", db_path.display());
         let tracker = Tracker::open(&db_url).await.map_err(|e| e.to_string())?;
 

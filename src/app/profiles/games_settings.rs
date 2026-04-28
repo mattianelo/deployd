@@ -40,6 +40,8 @@ impl App {
                         AppMsg::SetCompactPluginRows(compact)
                     }
                     SettingsDialogOutput::ColorSchemeChanged(idx) => AppMsg::SetColorScheme(idx),
+                    SettingsDialogOutput::CreateFullBackup => AppMsg::CreateFullBackupClicked,
+                    SettingsDialogOutput::RestoreFromBackup => AppMsg::RestoreFromBackupClicked,
                 }),
         );
     }
