@@ -5,7 +5,12 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-APPDIR="$REPO_ROOT/AppDir"
+# Intermediate artifacts go to a container-internal path so they are never
+# written to the bind-mounted workspace.  Only the final AppImage reaches
+# /workspace, avoiding root-owned files that would block Snap builds.
+mkdir -p /build
+export CARGO_TARGET_DIR=/build/target
+APPDIR=/build/AppDir
 APP_ID="deployd"
 OUTPUT="$REPO_ROOT/Deployd-x86_64.AppImage"
 
@@ -26,11 +31,11 @@ echo "==> Building Deployd $VERSION AppImage (inner)"
 if [ "$DEBUG" = "1" ]; then
     echo "==> Compiling (debug, features: loot libarchive-fallback)"
     cargo build --features loot,libarchive-fallback
-    CARGO_TARGET_DIR="target/debug"
+    BINARY="$CARGO_TARGET_DIR/debug/$APP_ID"
 else
     echo "==> Compiling (release, features: loot libarchive-fallback)"
     cargo build --release --features loot,libarchive-fallback
-    CARGO_TARGET_DIR="target/release"
+    BINARY="$CARGO_TARGET_DIR/release/$APP_ID"
 fi
 
 # 2. Assemble AppDir
@@ -38,7 +43,7 @@ echo "==> Assembling AppDir with linuxdeploy"
 rm -rf "$APPDIR"
 linuxdeploy \
     --appdir "$APPDIR" \
-    --executable "$CARGO_TARGET_DIR/$APP_ID" \
+    --executable "$BINARY" \
     --desktop-file "data/$APP_ID.desktop" \
     --icon-file "data/icons/hicolor/scalable/apps/$APP_ID.svg" \
     --plugin gtk
@@ -100,6 +105,7 @@ VERSION="$VERSION" ARCH=x86_64 appimagetool \
     --comp zstd \
     "$APPDIR" \
     "$OUTPUT"
+chmod a+rx "$OUTPUT"
 
 echo ""
 echo "Done: $OUTPUT"

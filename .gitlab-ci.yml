@@ -14,7 +14,6 @@ stages:
   - test
   - secret-detection
   - build
-  - build-snap
 
 # ── Security scanning ────────────────────────────────────────────────────────
 include:
@@ -74,8 +73,10 @@ build-appimage:
       when: manual
 
 # ── Snap build ───────────────────────────────────────────────────────────────
+# Intentionally parallel with build-appimage: each runs in its own Docker
+# container with a fresh checkout and has no dependency on the other.
 build-snap:
-  stage: build-snap
+  stage: build
   image: snapcore/snapcraft:latest
   script:
     - snapcraft --destructive-mode
