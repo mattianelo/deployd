@@ -1383,7 +1383,46 @@ impl Component for App {
             AppMsg::ProfileExported(result) => self.handle_profile_exported(result),
             AppMsg::OpenPreInstallDialog => self.handle_open_pre_install_dialog(root, &sender),
             AppMsg::OpenPreInstallDialogReplacing(id, priority) => {
-                self.handle_open_pre_install_dialog_replacing(id, priority, root, &sender)
+                if self.pending_install.as_ref().map_or(false, |p| p.fomod_config.is_some()) {
+                    let old_name = self.mod_name_for_id(&id);
+                    if let Some(pending) = &mut self.pending_install {
+                        pending.mod_name = old_name;
+                    }
+                    self.pending_replace_mod_id = Some((id.clone(), priority));
+                    self.pending_fetched_name = None;
+                    self.pending_file_id_needed = None;
+                    let tracker = self.tracker.clone();
+                    sender.oneshot_command(async move {
+                        let selections = if let Some(t) = tracker {
+                            t.get_fomod_selections(&id)
+                                .await
+                                .ok()
+                                .flatten()
+                                .and_then(|json| {
+                                    let raw: Option<Vec<Vec<Vec<usize>>>> =
+                                        serde_json::from_str(&json).ok();
+                                    raw.map(|steps| {
+                                        steps
+                                            .into_iter()
+                                            .map(|step| {
+                                                step.into_iter()
+                                                    .map(|g| {
+                                                        g.into_iter()
+                                                            .collect::<std::collections::HashSet<usize>>()
+                                                    })
+                                                    .collect::<Vec<_>>()
+                                            })
+                                            .collect::<Vec<_>>()
+                                    })
+                                })
+                        } else {
+                            None
+                        };
+                        AppCmdMsg::FomodSelectionsLoaded(selections)
+                    });
+                } else {
+                    self.handle_open_pre_install_dialog_replacing(id, priority, root, &sender)
+                }
             }
             AppMsg::SortWithLoot => self.handle_sort_with_loot(&sender),
             AppMsg::EnableAllMods => self.handle_enable_all_mods(&sender),
@@ -1605,6 +1644,10 @@ impl Component for App {
             AppCmdMsg::AppUpdateResult(result) => self.handle_cmd_app_update_result(result),
             AppCmdMsg::ProtonDownloaded { result, tool_id } => {
                 self.handle_proton_downloaded(result, tool_id, &sender)
+            }
+            AppCmdMsg::FomodSelectionsLoaded(selections) => {
+                self.pending_fomod_selections = selections;
+                self.open_pre_install_dialog(root, &sender);
             }
             AppCmdMsg::GamesPersisted => {
                 // Reset the selection sentinel so handle_game_selected's same-index

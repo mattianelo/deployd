@@ -205,4 +205,7 @@ pub struct App {
     /// Nexus file entry. The pre-install dialog is deferred until the user either
     /// provides a file ID or skips.
     pub(crate) pending_file_id_needed: Option<crate::app::types::FileIdNeeded>,
+    /// FOMOD selections from the previous install of this mod, loaded for the
+    /// reinstall/replace flow so they can be pre-populated in the dialog.
+    pub(crate) pending_fomod_selections: Option<Vec<Vec<std::collections::HashSet<usize>>>>,
 }

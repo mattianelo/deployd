@@ -315,6 +315,9 @@ impl Tracker {
         if let Err(e) = migrations::migrate_eclipse_file_paths(&pool).await {
             eprintln!("Eclipse path migration failed (non-fatal): {e}");
         }
+        if let Err(e) = migrations::migrate_fomod_selections_column(&pool).await {
+            eprintln!("FOMOD selections column migration failed (non-fatal): {e}");
+        }
 
         let _ =
             sqlx::query("ALTER TABLE profiles ADD COLUMN save_mode TEXT NOT NULL DEFAULT 'global'")

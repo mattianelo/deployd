@@ -189,6 +189,26 @@ impl Tracker {
         Ok(())
     }
 
+    pub async fn save_fomod_selections(&self, mod_id: &str, json: &str) -> Result<()> {
+        sqlx::query("UPDATE mods SET fomod_selections = ? WHERE id = ?")
+            .bind(json)
+            .bind(mod_id)
+            .execute(&self.pool)
+            .await
+            .context("Failed to save FOMOD selections")?;
+        Ok(())
+    }
+
+    pub async fn get_fomod_selections(&self, mod_id: &str) -> Result<Option<String>> {
+        let row: Option<(Option<String>,)> =
+            sqlx::query_as("SELECT fomod_selections FROM mods WHERE id = ?")
+                .bind(mod_id)
+                .fetch_optional(&self.pool)
+                .await
+                .context("Failed to get FOMOD selections")?;
+        Ok(row.and_then(|(v,)| v))
+    }
+
     /// Get all mods that have Nexus IDs (for update checking).
     pub async fn mods_with_nexus_ids(&self, game_id: &str) -> Result<Vec<ModEntry>> {
         let all = self.list_mods(game_id).await?;

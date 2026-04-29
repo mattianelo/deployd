@@ -1318,3 +1318,10 @@ pub(super) async fn migrate_aurora_vanilla_root_paths(pool: &SqlitePool) -> Resu
 
     Ok(())
 }
+
+pub(super) async fn migrate_fomod_selections_column(pool: &SqlitePool) -> Result<()> {
+    let _ = sqlx::query("ALTER TABLE mods ADD COLUMN fomod_selections TEXT")
+        .execute(pool)
+        .await;
+    Ok(())
+}

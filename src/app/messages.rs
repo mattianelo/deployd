@@ -454,6 +454,9 @@ pub enum AppCmdMsg {
         result: Result<(), String>,
         tool_id: String,
     },
+    /// Previous FOMOD selections loaded from DB for the reinstall/replace flow.
+    /// None = no prior selections stored. Triggers opening the pre-install dialog.
+    FomodSelectionsLoaded(Option<Vec<Vec<std::collections::HashSet<usize>>>>),
     /// All games have been persisted to DB after Manage Games; safe to select the first game now.
     GamesPersisted,
     /// Avatar image bytes fetched from Nexus (None = fetch failed, use initials).

@@ -138,7 +138,13 @@ impl App {
             };
 
             if fomod_resolver::needs_user_input(&config) {
-                let extracted_root = pending.tmp_dir.path().to_path_buf();
+                let extracted_root = pending
+                    .fomod_config_path
+                    .as_deref()
+                    .and_then(|p| p.parent())
+                    .and_then(|p| p.parent())
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_else(|| pending.tmp_dir.path().to_path_buf());
                 self.fomod_dialog = Some(
                     FomodDialog::builder()
                         .transient_for(root)
@@ -146,6 +152,7 @@ impl App {
                             config,
                             extracted_root,
                             active_plugin_files,
+                            previous_selections: self.pending_fomod_selections.take(),
                         })
                         .forward(sender.input_sender(), |output| match output {
                             FomodDialogOutput::Confirmed(sel) => AppMsg::FomodConfirmed(sel),
@@ -411,6 +418,21 @@ impl App {
         self.installing = true;
         self.status_msg = Some(format!("Installing {}...", pending.mod_name));
 
+        // Serialize selections before moving into the async block.
+        let serialized_selections: Vec<Vec<Vec<usize>>> = selections
+            .selections
+            .iter()
+            .map(|step| {
+                step.iter()
+                    .map(|g| {
+                        let mut v: Vec<usize> = g.iter().copied().collect();
+                        v.sort_unstable();
+                        v
+                    })
+                    .collect()
+            })
+            .collect();
+
         let input_sender = sender.input_sender().clone();
         sender.oneshot_command(async move {
             let result: Result<AddResult, String> = async {
@@ -465,6 +487,9 @@ impl App {
                     eprintln!("[deployd] FOMOD install error: {msg}");
                     msg
                 })?;
+                if let Ok(json) = serde_json::to_string(&serialized_selections) {
+                    let _ = tracker.save_fomod_selections(&result.mod_entry.id, &json).await;
+                }
                 drop(pending.tmp_dir);
                 if let Some((old_id, old_priority)) = replace_info {
                     let _ = tracker
@@ -747,12 +772,43 @@ impl App {
                 if let Some((old_mod_id, old_mod_name, old_priority)) = existing {
                     if self.reinstall_mode {
                         self.reinstall_mode = false;
-                        self.handle_open_pre_install_dialog_replacing(
-                            old_mod_id,
-                            old_priority,
-                            root,
-                            sender,
-                        );
+                        // Set up replace context now; open dialog after fetching previous selections.
+                        let old_name = self.mod_name_for_id(&old_mod_id);
+                        if let Some(pending) = &mut self.pending_install {
+                            pending.mod_name = old_name;
+                        }
+                        self.pending_replace_mod_id = Some((old_mod_id.clone(), old_priority));
+                        self.pending_fetched_name = None;
+                        self.pending_file_id_needed = None;
+                        let tracker = self.tracker.clone();
+                        sender.oneshot_command(async move {
+                            let selections = if let Some(t) = tracker {
+                                t.get_fomod_selections(&old_mod_id)
+                                    .await
+                                    .ok()
+                                    .flatten()
+                                    .and_then(|json| {
+                                        let raw: Option<Vec<Vec<Vec<usize>>>> =
+                                            serde_json::from_str(&json).ok();
+                                        raw.map(|steps| {
+                                            steps
+                                                .into_iter()
+                                                .map(|step| {
+                                                    step.into_iter()
+                                                        .map(|g| {
+                                                            g.into_iter()
+                                                                .collect::<std::collections::HashSet<usize>>()
+                                                        })
+                                                        .collect::<Vec<_>>()
+                                                })
+                                                .collect::<Vec<_>>()
+                                        })
+                                    })
+                            } else {
+                                None
+                            };
+                            AppCmdMsg::FomodSelectionsLoaded(selections)
+                        });
                     } else {
                         let dialog = gtk::AlertDialog::builder()
                             .message("Mod Already Installed")
@@ -783,6 +839,7 @@ impl App {
             }
             Err(e) => {
                 self.reinstall_mode = false;
+                self.pending_fomod_selections = None;
                 if let Some(dl_id) = self.active_download_id.take() {
                     self.update_download_status(
                         &dl_id,

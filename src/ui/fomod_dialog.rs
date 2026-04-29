@@ -17,6 +17,8 @@ pub struct FomodDialogInit {
     pub extracted_root: PathBuf,
     /// Lowercased filenames of all active plugins in the current game's modlist.
     pub active_plugin_files: HashSet<String>,
+    /// Previously saved selections to pre-populate on reinstall. None = compute defaults.
+    pub previous_selections: Option<Vec<Vec<HashSet<usize>>>>,
 }
 
 /// Build default selections for a FOMOD config without user input.
@@ -42,6 +44,10 @@ pub struct FomodDialog {
     image_panel: gtk::Box,
     /// Preview image for the currently selected plugin
     preview_picture: gtk::Picture,
+    /// Plugin currently under the cursor: (group_idx, plugin_idx). None = no hover.
+    hovered_plugin: Option<(usize, usize)>,
+    /// Plugin most recently selected by the user. None = no explicit interaction yet.
+    last_interacted: Option<(usize, usize)>,
 }
 
 #[derive(Debug)]
@@ -51,6 +57,10 @@ pub enum FomodDialogMsg {
     TogglePlugin(usize, usize, bool),
     /// Radio selection: select exactly this plugin in the group (deselect others)
     SelectRadio(usize, usize),
+    /// Cursor entered a plugin row: show its image as preview.
+    HoverPlugin(usize, usize),
+    /// Cursor left the group list box: restore selection-based preview.
+    ClearHover,
     Confirm,
     Cancel,
 }
@@ -204,13 +214,35 @@ impl FomodDialog {
         self.update_preview();
     }
 
-    /// Update the image preview based on the first selected plugin with an image in the current step.
+    /// Update the image preview. Priority: hovered plugin → last interacted → first selected.
     fn update_preview(&self) {
         let Some(step) = self.config.steps.get(self.current_step) else {
             self.preview_picture.set_paintable(gdk::Paintable::NONE);
             self.image_panel.set_visible(false);
             return;
         };
+
+        let resolve = |gi: usize, pi: usize| -> Option<PathBuf> {
+            let plugin = step.groups.get(gi)?.plugins.get(pi)?;
+            resolve_image_path(&self.extracted_root, plugin.image_path.as_ref()?)
+        };
+
+        if let Some((gi, pi)) = self.hovered_plugin {
+            if let Some(path) = resolve(gi, pi) {
+                self.preview_picture.set_filename(Some(path));
+                self.image_panel.set_visible(true);
+                return;
+            }
+        }
+
+        if let Some((gi, pi)) = self.last_interacted {
+            if let Some(path) = resolve(gi, pi) {
+                self.preview_picture.set_filename(Some(path));
+                self.image_panel.set_visible(true);
+                return;
+            }
+        }
+
         let Some(step_sel) = self.selections.get(self.current_step) else {
             self.preview_picture.set_paintable(gdk::Paintable::NONE);
             self.image_panel.set_visible(false);
@@ -452,8 +484,23 @@ fn build_group_widget(
 
         row.add_prefix(&check);
         row.set_activatable_widget(Some(&check));
+
+        let motion = gtk::EventControllerMotion::new();
+        let s = sender.clone();
+        motion.connect_enter(move |_, _, _| {
+            s.input(FomodDialogMsg::HoverPlugin(group_idx, plugin_idx));
+        });
+        row.add_controller(motion);
+
         list_box.append(&row);
     }
+
+    let motion = gtk::EventControllerMotion::new();
+    let s = sender.clone();
+    motion.connect_leave(move |_| {
+        s.input(FomodDialogMsg::ClearHover);
+    });
+    list_box.add_controller(motion);
 
     container.append(&list_box);
     container
@@ -468,7 +515,7 @@ impl SimpleComponent for FomodDialog {
     view! {
         adw::Window {
             set_title: Some("FOMOD Installer"),
-            set_default_size: (960, 560),
+            set_default_size: (1100, 660),
             set_modal: true,
 
             gtk::Box {
@@ -484,46 +531,11 @@ impl SimpleComponent for FomodDialog {
                     },
                 },
 
-                // Main content: options on the left, image preview on the right
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Horizontal,
-                    set_vexpand: true,
-
-                    gtk::ScrolledWindow {
-                        set_hexpand: true,
-                        set_vexpand: true,
-                        set_hscrollbar_policy: gtk::PolicyType::Never,
-                        set_margin_start: 16,
-                        set_margin_end: 16,
-                        set_margin_top: 8,
-                        set_margin_bottom: 8,
-
-                        #[local_ref]
-                        content_box -> gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
-                            set_spacing: 8,
-                        },
-                    },
-
-                    #[local_ref]
-                    image_panel -> gtk::Box {
-                        set_orientation: gtk::Orientation::Vertical,
-                        set_size_request: (260, -1),
-                        set_visible: false,
-
-                        gtk::Separator {
-                            set_orientation: gtk::Orientation::Vertical,
-                        },
-
-                        #[local_ref]
-                        preview_picture -> gtk::Picture {
-                            set_can_shrink: true,
-                            set_content_fit: gtk::ContentFit::Contain,
-                            set_vexpand: true,
-                            set_margin_all: 8,
-                        },
-                    },
-                },
+                // Main content: options on the left, image preview on the right.
+                // Built imperatively in init() as gtk::Paned so the options panel
+                // cannot be pushed smaller than its natural size by a wide image.
+                #[local_ref]
+                content_paned -> gtk::Paned {},
 
                 gtk::Box {
                     set_orientation: gtk::Orientation::Horizontal,
@@ -585,12 +597,49 @@ impl SimpleComponent for FomodDialog {
             config,
             extracted_root,
             active_plugin_files,
+            previous_selections,
         } = init;
 
-        let selections = compute_default_selections(&config, &active_plugin_files);
+        let selections = previous_selections
+            .unwrap_or_else(|| compute_default_selections(&config, &active_plugin_files));
+
         let content_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
+
+        // Build image panel imperatively so we can control it without view-macro interference.
         let image_panel = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        image_panel.set_size_request(300, -1);
+        let separator = gtk::Separator::new(gtk::Orientation::Vertical);
+        image_panel.append(&separator);
         let preview_picture = gtk::Picture::new();
+        preview_picture.set_can_shrink(true);
+        preview_picture.set_content_fit(gtk::ContentFit::Contain);
+        preview_picture.set_vexpand(true);
+        preview_picture.set_margin_all(8);
+        image_panel.append(&preview_picture);
+        image_panel.set_visible(false);
+
+        // Options scroll pane wrapping the dynamic content box.
+        let options_scroll = gtk::ScrolledWindow::new();
+        options_scroll.set_hexpand(true);
+        options_scroll.set_vexpand(true);
+        options_scroll.set_hscrollbar_policy(gtk::PolicyType::Never);
+        options_scroll.set_margin_start(16);
+        options_scroll.set_margin_end(16);
+        options_scroll.set_margin_top(8);
+        options_scroll.set_margin_bottom(8);
+        options_scroll.set_child(Some(&content_box));
+
+        // Paned keeps the options panel from being squeezed by a wide image.
+        // set_shrink_start_child: false → options cannot go below their natural width.
+        // set_resize_end_child: false → extra window width goes to options, not image.
+        let content_paned = gtk::Paned::new(gtk::Orientation::Horizontal);
+        content_paned.set_vexpand(true);
+        content_paned.set_shrink_start_child(false);
+        content_paned.set_shrink_end_child(false);
+        content_paned.set_resize_start_child(true);
+        content_paned.set_resize_end_child(false);
+        content_paned.set_start_child(Some(&options_scroll));
+        content_paned.set_end_child(Some(&image_panel));
 
         let mut model = FomodDialog {
             config,
@@ -600,6 +649,8 @@ impl SimpleComponent for FomodDialog {
             content_box: content_box.clone(),
             image_panel: image_panel.clone(),
             preview_picture: preview_picture.clone(),
+            hovered_plugin: None,
+            last_interacted: None,
         };
 
         // Find first visible step
@@ -612,8 +663,6 @@ impl SimpleComponent for FomodDialog {
 
         let widgets = view_output!();
 
-        // Update preview after view_output!() so the view macro's initial
-        // set_visible: false on image_panel doesn't clobber our state.
         model.update_preview();
 
         root.present();
@@ -628,6 +677,8 @@ impl SimpleComponent for FomodDialog {
                     .find(|&i| self.step_is_visible(i))
                 {
                     self.current_step = next;
+                    self.hovered_plugin = None;
+                    self.last_interacted = None;
                     self.rebuild_content(&sender);
                 }
             }
@@ -637,6 +688,8 @@ impl SimpleComponent for FomodDialog {
                     .find(|&i| self.step_is_visible(i))
                 {
                     self.current_step = prev;
+                    self.hovered_plugin = None;
+                    self.last_interacted = None;
                     self.rebuild_content(&sender);
                 }
             }
@@ -653,8 +706,12 @@ impl SimpleComponent for FomodDialog {
                             group_sel.clear();
                         }
                         group_sel.insert(plugin_idx);
+                        self.last_interacted = Some((group_idx, plugin_idx));
                     } else {
                         group_sel.remove(&plugin_idx);
+                        if self.last_interacted == Some((group_idx, plugin_idx)) {
+                            self.last_interacted = None;
+                        }
                     }
                 }
                 self.update_preview();
@@ -666,6 +723,20 @@ impl SimpleComponent for FomodDialog {
                     group_sel.clear();
                     group_sel.insert(plugin_idx);
                 }
+                self.last_interacted = Some((group_idx, plugin_idx));
+                self.update_preview();
+            }
+            FomodDialogMsg::HoverPlugin(group_idx, plugin_idx) => {
+                self.hovered_plugin = Some((group_idx, plugin_idx));
+                self.update_preview();
+            }
+            FomodDialogMsg::ClearHover => {
+                // Persist the last hovered plugin as the new anchor so the preview
+                // doesn't jump to the "first selected" fallback on mouse-leave.
+                if let Some(hovered) = self.hovered_plugin {
+                    self.last_interacted = Some(hovered);
+                }
+                self.hovered_plugin = None;
                 self.update_preview();
             }
             FomodDialogMsg::Confirm => {
