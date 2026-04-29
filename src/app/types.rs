@@ -65,6 +65,8 @@ pub(crate) struct PendingInstall {
     /// Per-file install targets keyed by dest_rel path string.
     /// Empty map means auto-detect all (used for FOMOD installs).
     pub(crate) file_targets: HashMap<String, InstallTarget>,
+    /// Dest_rel keys for files the user chose to skip. Empty for FOMOD installs.
+    pub(crate) excluded_files: HashSet<String>,
 }
 
 /// Carried when the install-time Nexus fetch resolved the mod name but

@@ -48,6 +48,10 @@ pub struct ModPropertiesDialog {
     files_list: gtk::ListBox,
     /// Stored handle to the "Set all" row so LoadFiles can append controls to it.
     set_all_row: gtk::Box,
+    /// Stored refs to the global Data/Root toggle buttons so LoadFiles can sync
+    /// them to the actual per-file state once the DB results arrive.
+    btn_data: gtk::ToggleButton,
+    btn_root: gtk::ToggleButton,
 }
 
 #[derive(Debug)]
@@ -202,6 +206,7 @@ impl SimpleComponent for ModPropertiesDialog {
                                     },
                                 },
 
+                                #[name = "btn_root"]
                                 gtk::ToggleButton {
                                     set_label: "Root",
                                     set_active: model.install_target == InstallTarget::Root,
@@ -384,6 +389,8 @@ impl SimpleComponent for ModPropertiesDialog {
             // Placeholder widgets replaced with real widget clones after view_output!().
             files_list: gtk::ListBox::new(),
             set_all_row: gtk::Box::new(gtk::Orientation::Horizontal, 8),
+            btn_data: gtk::ToggleButton::new(),
+            btn_root: gtk::ToggleButton::new(),
         };
 
         let widgets = view_output!();
@@ -392,6 +399,8 @@ impl SimpleComponent for ModPropertiesDialog {
         // the LoadFiles handler can append rows to them from update().
         model.files_list = widgets.files_list.clone();
         model.set_all_row = widgets.set_all_row.clone();
+        model.btn_data = widgets.btn_data.clone();
+        model.btn_root = widgets.btn_root.clone();
 
         {
             let input_sender = sender.input_sender().clone();
@@ -575,6 +584,23 @@ impl SimpleComponent for ModPropertiesDialog {
                     self.set_all_row.append(&set_all_label);
                     self.set_all_row.append(&all_btn_box);
                 }
+
+                // Derive the correct global install_target from the actual per-file DB
+                // state rather than trusting mod_entry.install_target, which is only
+                // set to Root when ALL files are Root at install time.
+                let all_root = !self.file_targets.is_empty()
+                    && self.file_targets.iter().all(|t| *t == InstallTarget::Root);
+                self.install_target = if all_root {
+                    InstallTarget::Root
+                } else {
+                    InstallTarget::Data
+                };
+                // set_active emits `toggled`, not `clicked`, so connect_clicked handlers
+                // (which send SetTarget) are NOT triggered here.
+                self.btn_data
+                    .set_active(self.install_target == InstallTarget::Data);
+                self.btn_root
+                    .set_active(self.install_target == InstallTarget::Root);
 
                 // Auto-expand the file list and mark loading as done.
                 self.files_visible = true;

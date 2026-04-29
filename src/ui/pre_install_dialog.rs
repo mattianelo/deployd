@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -18,6 +18,8 @@ pub struct PreInstallDialog {
     is_fomod: bool,
     /// Per-file mutable target state, indexed by file_preview position.
     file_targets: Vec<InstallTarget>,
+    /// Per-file inclusion state; false means the file will be skipped on install.
+    file_included: Vec<bool>,
     files_visible: bool,
     /// Whether the selected game is a Bethesda game. REDEngine games hide the
     /// per-file Root/Data toggle since the concept doesn't apply to them.
@@ -32,6 +34,7 @@ pub enum PreInstallDialogMsg {
     NameChanged(String),
     SetFileTarget(usize, InstallTarget),
     SetAllTargets(InstallTarget),
+    SetFileIncluded(usize, bool),
     ToggleFiles,
     Confirm,
     Cancel,
@@ -39,9 +42,10 @@ pub enum PreInstallDialogMsg {
 
 #[derive(Debug)]
 pub enum PreInstallDialogOutput {
-    /// name + per-file target map (keys = dest_rel strings from file_preview).
-    /// Empty map means "auto-detect all" (used for FOMOD mods).
-    Confirmed(String, HashMap<String, InstallTarget>),
+    /// name + per-file target map (keys = dest_rel strings from file_preview) +
+    /// set of dest_rel keys for files the user opted to skip.
+    /// Empty map + empty set means "auto-detect all" (used for FOMOD mods).
+    Confirmed(String, HashMap<String, InstallTarget>, HashSet<String>),
     Cancelled,
 }
 
@@ -66,8 +70,8 @@ impl SimpleComponent for PreInstallDialog {
     view! {
         adw::Window {
             set_title: Some("Install Mod"),
-            set_default_size: (480, -1),
-            set_resizable: false,
+            set_default_size: (520, 680),
+            set_resizable: true,
             set_modal: true,
 
             gtk::Box {
@@ -113,7 +117,7 @@ impl SimpleComponent for PreInstallDialog {
                         set_orientation: gtk::Orientation::Vertical,
                         set_spacing: 4,
                         #[watch]
-                        set_visible: (model.is_bethesda || model.is_aurora) && !model.is_fomod && !model.file_preview.is_empty(),
+                        set_visible: !model.is_fomod && !model.file_preview.is_empty(),
 
                         gtk::Button {
                             #[watch]
@@ -144,7 +148,7 @@ impl SimpleComponent for PreInstallDialog {
                                 },
 
                                 gtk::ScrolledWindow {
-                                    set_max_content_height: 280,
+                                    set_max_content_height: 500,
                                     set_propagate_natural_height: true,
                                     set_hscrollbar_policy: gtk::PolicyType::Never,
 
@@ -194,12 +198,14 @@ impl SimpleComponent for PreInstallDialog {
     ) -> ComponentParts<Self> {
         let file_targets: Vec<InstallTarget> =
             init.file_preview.iter().map(|(_, t)| t.clone()).collect();
+        let file_included = vec![true; init.file_preview.len()];
 
         let model = PreInstallDialog {
             mod_name: init.mod_name,
             file_preview: init.file_preview,
             is_fomod: init.is_fomod,
             file_targets,
+            file_included,
             files_visible: false,
             is_bethesda: init.is_bethesda,
             is_aurora: init.is_aurora,
@@ -222,55 +228,69 @@ impl SimpleComponent for PreInstallDialog {
         let data_btns: Rc<RefCell<Vec<gtk::ToggleButton>>> = Rc::new(RefCell::new(Vec::new()));
         let root_btns: Rc<RefCell<Vec<gtk::ToggleButton>>> = Rc::new(RefCell::new(Vec::new()));
 
-        // Populate file list with per-row Root/Data toggles
+        // Populate file list with per-row checkboxes and (for Bethesda/Aurora) Data/Root toggles.
         for (idx, (path, initial_target)) in model.file_preview.iter().enumerate() {
             let row = adw::ActionRow::new();
             row.set_title(path);
 
-            let btn_data = gtk::ToggleButton::new();
-            btn_data.set_label("D");
-            btn_data.set_tooltip_text(Some("Deploy to Data directory"));
-            btn_data.set_active(*initial_target == InstallTarget::Data);
-
-            let btn_root = gtk::ToggleButton::new();
-            btn_root.set_label("R");
-            btn_root.set_tooltip_text(Some("Deploy to game root directory"));
-            btn_root.set_group(Some(&btn_data));
-            btn_root.set_active(*initial_target == InstallTarget::Root);
-
+            let check = gtk::CheckButton::new();
+            check.set_active(true);
+            check.set_tooltip_text(Some("Include this file in the install"));
             {
                 let s = sender.input_sender().clone();
-                btn_data.connect_clicked(move |b| {
-                    if b.is_active() {
-                        s.send(PreInstallDialogMsg::SetFileTarget(idx, InstallTarget::Data))
-                            .ok();
-                    }
+                check.connect_toggled(move |b| {
+                    s.send(PreInstallDialogMsg::SetFileIncluded(idx, b.is_active()))
+                        .ok();
                 });
             }
-            {
-                let s = sender.input_sender().clone();
-                btn_root.connect_clicked(move |b| {
-                    if b.is_active() {
-                        s.send(PreInstallDialogMsg::SetFileTarget(idx, InstallTarget::Root))
-                            .ok();
-                    }
-                });
+            row.add_prefix(&check);
+
+            if model.is_bethesda || model.is_aurora {
+                let btn_data = gtk::ToggleButton::new();
+                btn_data.set_label("D");
+                btn_data.set_tooltip_text(Some("Deploy to Data directory"));
+                btn_data.set_active(*initial_target == InstallTarget::Data);
+
+                let btn_root = gtk::ToggleButton::new();
+                btn_root.set_label("R");
+                btn_root.set_tooltip_text(Some("Deploy to game root directory"));
+                btn_root.set_group(Some(&btn_data));
+                btn_root.set_active(*initial_target == InstallTarget::Root);
+
+                {
+                    let s = sender.input_sender().clone();
+                    btn_data.connect_clicked(move |b| {
+                        if b.is_active() {
+                            s.send(PreInstallDialogMsg::SetFileTarget(idx, InstallTarget::Data))
+                                .ok();
+                        }
+                    });
+                }
+                {
+                    let s = sender.input_sender().clone();
+                    btn_root.connect_clicked(move |b| {
+                        if b.is_active() {
+                            s.send(PreInstallDialogMsg::SetFileTarget(idx, InstallTarget::Root))
+                                .ok();
+                        }
+                    });
+                }
+
+                data_btns.borrow_mut().push(btn_data.clone());
+                root_btns.borrow_mut().push(btn_root.clone());
+
+                let toggle_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                toggle_box.add_css_class("linked");
+                toggle_box.append(&btn_data);
+                toggle_box.append(&btn_root);
+                row.add_suffix(&toggle_box);
             }
-
-            data_btns.borrow_mut().push(btn_data.clone());
-            root_btns.borrow_mut().push(btn_root.clone());
-
-            let toggle_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-            toggle_box.add_css_class("linked");
-            toggle_box.append(&btn_data);
-            toggle_box.append(&btn_root);
-            row.add_suffix(&toggle_box);
 
             widgets.files_list.append(&row);
         }
 
-        // Populate the "Set all" row (only meaningful when there are files)
-        if !model.file_preview.is_empty() {
+        // Populate the "Set all" row — only for Bethesda/Aurora where Data/Root toggles exist.
+        if !model.file_preview.is_empty() && (model.is_bethesda || model.is_aurora) {
             let legend_text = if model.is_aurora {
                 "D = Data/ directory · R = game root (System, Launcher, Register)"
             } else {
@@ -346,19 +366,32 @@ impl SimpleComponent for PreInstallDialog {
                     *t = target.clone();
                 }
             }
+            PreInstallDialogMsg::SetFileIncluded(idx, included) => {
+                if let Some(v) = self.file_included.get_mut(idx) {
+                    *v = included;
+                }
+            }
             PreInstallDialogMsg::ToggleFiles => {
                 self.files_visible = !self.files_visible;
             }
             PreInstallDialogMsg::Confirm => {
-                let targets: HashMap<String, InstallTarget> = self
+                let mut targets = HashMap::new();
+                let mut excluded = HashSet::new();
+                for ((path, _), (target, &included)) in self
                     .file_preview
                     .iter()
-                    .zip(self.file_targets.iter())
-                    .map(|((path, _), t)| (path.clone(), t.clone()))
-                    .collect();
+                    .zip(self.file_targets.iter().zip(self.file_included.iter()))
+                {
+                    if included {
+                        targets.insert(path.clone(), target.clone());
+                    } else {
+                        excluded.insert(path.clone());
+                    }
+                }
                 let _ = sender.output(PreInstallDialogOutput::Confirmed(
                     self.mod_name.clone(),
                     targets,
+                    excluded,
                 ));
             }
             PreInstallDialogMsg::Cancel => {

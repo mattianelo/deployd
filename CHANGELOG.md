@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.0.0]
+
+### Added
+
+- **Per-file deselection in Install Dialog** — each file row in the Install Mod dialog now has a
+  checkbox. Unchecked files are excluded from the install; they are not copied to the mod cache
+  and not registered in the database.
+- **Install Dialog file list now taller and resizable** — the file list now shows up to 500 px of
+  content by default and the window can be resized freely.
+- **Install Dialog shows files for all engines** — the file list (with deselection checkboxes) is
+  now shown for REDEngine and Eclipse mods in addition to Bethesda and Aurora. Data/Root toggle
+  buttons still only appear for Bethesda and Aurora.
+
+### Fixed
+
+- **Mod Properties Root/Data order** — opening the Properties dialog for a mod whose files were
+  installed to the game root now correctly shows "Root" in the global Install To toggle. Previously
+  the toggle was initialised from the `install_target` column, which is set to Data for mixed-target
+  mods; the dialog now derives the toggle state from the actual per-file targets loaded from the
+  database, so clicking Apply no longer resets Root files to Data.
+
+---
+
 ## [0.9.9]
 
 ### Added

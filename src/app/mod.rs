@@ -1158,8 +1158,8 @@ impl Component for App {
             AppMsg::GameSelected(idx) => self.handle_game_selected(idx, &sender),
             AppMsg::InstallClicked => self.handle_install_clicked(root, &sender),
             AppMsg::FileChosen(path) => self.handle_file_chosen(path, &sender),
-            AppMsg::PreInstallConfirmed(name, targets) => {
-                self.handle_pre_install_confirmed(name, targets, root, &sender)
+            AppMsg::PreInstallConfirmed(name, targets, excluded) => {
+                self.handle_pre_install_confirmed(name, targets, excluded, root, &sender)
             }
             AppMsg::PreInstallCancelled => self.handle_pre_install_cancelled(),
             AppMsg::FomodConfirmed(selections) => self.handle_fomod_confirmed(selections, &sender),

@@ -32,7 +32,7 @@ pub enum AppMsg {
     GameSelected(u32),
     InstallClicked,
     FileChosen(PathBuf),
-    PreInstallConfirmed(String, HashMap<String, InstallTarget>),
+    PreInstallConfirmed(String, HashMap<String, InstallTarget>, std::collections::HashSet<String>),
     PreInstallCancelled,
     FomodConfirmed(fomod_resolver::FomodSelections),
     FomodCancelled,

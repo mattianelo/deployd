@@ -128,8 +128,8 @@ impl App {
                     is_aurora,
                 })
                 .forward(sender.input_sender(), |output| match output {
-                    PreInstallDialogOutput::Confirmed(name, targets) => {
-                        AppMsg::PreInstallConfirmed(name, targets)
+                    PreInstallDialogOutput::Confirmed(name, targets, excluded) => {
+                        AppMsg::PreInstallConfirmed(name, targets, excluded)
                     }
                     PreInstallDialogOutput::Cancelled => AppMsg::PreInstallCancelled,
                 }),

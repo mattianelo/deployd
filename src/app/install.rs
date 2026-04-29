@@ -114,6 +114,7 @@ impl App {
         &mut self,
         edited_name: String,
         file_targets: HashMap<String, crate::models::mod_entry::InstallTarget>,
+        excluded_files: HashSet<String>,
         root: &adw::Window,
         sender: &ComponentSender<Self>,
     ) {
@@ -125,6 +126,7 @@ impl App {
         };
         pending.mod_name = edited_name;
         pending.file_targets = file_targets;
+        pending.excluded_files = excluded_files;
 
         if let Some(config) = pending.fomod_config.take() {
             let active_plugin_files: HashSet<String> = {
@@ -268,6 +270,7 @@ impl App {
                     pending.archive_hash,
                     pending.file_targets,
                     pending.stripped_wrapper,
+                    &pending.excluded_files,
                     on_progress,
                 )
                 .await
@@ -453,6 +456,7 @@ impl App {
                     pending.archive_hash,
                     pending.file_targets,
                     pending.stripped_wrapper,
+                    &pending.excluded_files,
                     on_progress,
                 )
                 .await
@@ -598,6 +602,7 @@ impl App {
                     &cache_root,
                     pending.file_targets,
                     pending.stripped_wrapper,
+                    &pending.excluded_files,
                     on_progress,
                 )
                 .await
@@ -650,6 +655,7 @@ impl App {
                     nexus_ids: self.pending_nexus_ids.take(),
                     archive_hash,
                     file_targets: HashMap::new(),
+                    excluded_files: HashSet::new(),
                 });
                 let hash_existing = self
                     .pending_install
@@ -723,6 +729,7 @@ impl App {
                     nexus_ids: self.pending_nexus_ids.take(),
                     archive_hash,
                     file_targets: HashMap::new(),
+                    excluded_files: HashSet::new(),
                 });
                 let hash_existing = self
                     .pending_install

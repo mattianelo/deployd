@@ -147,6 +147,7 @@ pub async fn add_mod_with_file_list(
     archive_hash: Option<String>,
     file_targets: HashMap<String, InstallTarget>,
     stripped_wrapper: Option<String>,
+    excluded_files: &HashSet<String>,
     on_progress: Option<Box<dyn Fn(usize, usize) + Send>>,
 ) -> Result<AddResult> {
     let mod_id = Uuid::new_v4().to_string();
@@ -207,6 +208,15 @@ pub async fn add_mod_with_file_list(
             continue;
         }
 
+        // Skip files the user opted to exclude in the pre-install dialog.
+        let file_key = ruled_path.replace('\\', "/");
+        if excluded_files.contains(&file_key) {
+            if let Some(ref cb) = on_progress {
+                cb(file_idx + 1, total_files);
+            }
+            continue;
+        }
+
         let cache_file = cache_dir.join(&lowercase_rel);
         if let Some(parent) = cache_file.parent() {
             fs::create_dir_all(parent)?;
@@ -236,7 +246,6 @@ pub async fn add_mod_with_file_list(
             cb(file_idx + 1, total_files);
         }
 
-        let file_key = ruled_path.replace('\\', "/");
         let deploy_to_root = handler.deploy_to_root(&file_key, &file_targets, explicit_root);
 
         let rel_str = lowercase_rel.to_string_lossy();
@@ -361,6 +370,7 @@ pub async fn merge_files_into_mod(
     cache_root: &Path,
     file_targets: HashMap<String, InstallTarget>,
     stripped_wrapper: Option<String>,
+    excluded_files: &HashSet<String>,
     on_progress: Option<Box<dyn Fn(usize, usize) + Send>>,
 ) -> Result<usize> {
     let handler = engine_handler::handler_for(&game.engine);
@@ -416,6 +426,15 @@ pub async fn merge_files_into_mod(
             continue;
         }
 
+        // Skip files the user opted to exclude in the pre-install dialog.
+        let file_key = ruled_path.replace('\\', "/");
+        if excluded_files.contains(&file_key) {
+            if let Some(ref cb) = on_progress {
+                cb(file_idx + 1, total_files);
+            }
+            continue;
+        }
+
         let cache_file = cache_dir.join(&lowercase_rel);
         if let Some(parent) = cache_file.parent() {
             fs::create_dir_all(parent)?;
@@ -441,7 +460,6 @@ pub async fn merge_files_into_mod(
             cb(file_idx + 1, total_files);
         }
 
-        let file_key = ruled_path.replace('\\', "/");
         let deploy_to_root = handler.deploy_to_root(&file_key, &file_targets, explicit_root);
 
         let rel_str = lowercase_rel.to_string_lossy();

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use gtk::gio;
@@ -375,6 +375,7 @@ impl App {
             nexus_ids: None,
             archive_hash: None,
             file_targets: HashMap::new(),
+            excluded_files: HashSet::new(),
         });
         self.pre_install_dialog = Some(
             PreInstallDialog::builder()
@@ -387,8 +388,8 @@ impl App {
                     is_aurora,
                 })
                 .forward(sender.input_sender(), |output| match output {
-                    PreInstallDialogOutput::Confirmed(name, targets) => {
-                        AppMsg::PreInstallConfirmed(name, targets)
+                    PreInstallDialogOutput::Confirmed(name, targets, excluded) => {
+                        AppMsg::PreInstallConfirmed(name, targets, excluded)
                     }
                     PreInstallDialogOutput::Cancelled => AppMsg::PreInstallCancelled,
                 }),
