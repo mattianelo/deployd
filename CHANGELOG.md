@@ -12,6 +12,23 @@
 - **Install Dialog shows files for all engines** — the file list (with deselection checkboxes) is
   now shown for REDEngine and Eclipse mods in addition to Bethesda and Aurora. Data/Root toggle
   buttons still only appear for Bethesda and Aurora.
+- **FOMOD: persistent selections and hover preview** — the FOMOD installer now remembers your
+  selections when navigating between steps, and hovering an option shows its image inline without
+  clicking.
+
+### Added (experimental)
+
+- **Script extender launcher for Steam** — games with a script extender (SKSE, F4SE, etc.) can
+  now be launched directly from Deployd via Steam, with `SteamAppId` and `SteamGameId` set
+  correctly so the extender attaches.
+- **Backup and restore** — full mod-cache backups can be created and restored from Settings,
+  covering the database and all cached mod files. Useful before large migrations.
+
+### Changed
+
+- **Install dialog: file list expanded by default** — the file list opens fully expanded; the
+  global Install To toggle has been removed (per-file targets are set directly in the list).
+- **Rescan Cache renamed** — the "Scan Cache" button is now labelled "Rescan Cache".
 
 ### Fixed
 
@@ -20,6 +37,41 @@
   the toggle was initialised from the `install_target` column, which is set to Data for mixed-target
   mods; the dialog now derives the toggle state from the actual per-file targets loaded from the
   database, so clicking Apply no longer resets Root files to Data.
+- **Downloads: MD5-based file matching** — when Nexus filename matching is ambiguous, the archive
+  MD5 is computed and used to identify the exact file entry, with `uploaded_timestamp` as a
+  tiebreaker. The file-ID entry dialog is shown as a fallback when all automatic paths fail.
+- **Downloads: version shown in panel** — the file version is now stored and displayed in the
+  downloads panel so multiple versions of the same mod are distinguishable at a glance.
+- **Downloads: right-click metadata fetch shows file-ID dialog** — fetching metadata from the
+  context menu now opens the file-ID dialog when filename matching fails, instead of silently
+  doing nothing. The context menu popover closes immediately after selection.
+- **Conflict detection: directory sentinels excluded** — two mods sharing only an empty folder
+  (path ending with `/`) are no longer reported as conflicting.
+- **Plugin compact mode persisted on restart** — the compact plugin list setting now survives
+  app restarts.
+- **NXM link and timestamp parsing hardened** — malformed NXM URLs and unexpected timestamp
+  formats no longer cause a panic.
+- **FOMOD: duplicate `flagDependency` handling** — malformed FOMOD configs that declare the same
+  condition flag more than once no longer cause incorrect step visibility.
+- **GTK theme-parser warnings suppressed** — remaining benign CSS warnings from the GTK theme
+  parser are filtered at runtime and no longer appear in the log.
+
+### Fixed (experimental)
+
+- **Snap: Mono install allowed for Eclipse tools** — the AppArmor profile now permits the Mono
+  installer to run, fixing first-time tool setup for Eclipse (Dragon Age: Origins) mods.
+- **Snap: LD_PRELOAD cleared before Wine, DAZIP scan fixed, Mono dialog suppressed** — Wine no
+  longer inherits the Snap-injected `LD_PRELOAD`, DAZIP archives are found correctly on rescan,
+  and the Mono installation dialog is suppressed during Wine prefix initialisation.
+
+### Build
+
+- **Experimental feature flag** — `--experimental` build option (and `DEPLOYD_EXPERIMENTAL=1`
+  in `check.sh`) gates the Launch button, profile export/import, and Backup & Restore UI so
+  stable builds stay clean.
+- **Pure LXD local builds; CI registry image** — local builds now use a direct LXD container
+  instead of the LXD → Docker chain. CI publishes a `deployd-build-env` image to the GitLab
+  container registry on Dockerfile changes, used by the `build-appimage` job.
 
 ---
 
