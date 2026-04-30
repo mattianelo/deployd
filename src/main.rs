@@ -1,6 +1,7 @@
 use std::sync::OnceLock;
 
 use gio::prelude::*;
+use gtk::glib;
 
 mod app;
 mod core;
@@ -16,25 +17,47 @@ fn main() {
     gio::resources_register_include!("resources.gresource")
         .expect("failed to register app resources");
 
-    // Suppress "Theme parser error" GTK warnings that are emitted when the host
-    // system theme contains CSS features the bundled GTK (AppImage) doesn't
-    // recognise.  All other Gtk-domain warnings are forwarded to the default
-    // handler unchanged.
-    glib::log_set_handler(
-        Some("Gtk"),
-        glib::LogLevels::LEVEL_WARNING,
-        false,
-        false,
-        |domain: Option<&str>, level: glib::LogLevel, message: &str| {
-            if !message.contains("Theme parser error") {
-                glib::log_default_handler(domain, level, Some(message));
-            }
-        },
-    );
+    // Suppress "Theme parser error" GTK warnings emitted when the host system
+    // theme contains CSS features our bundled GTK (AppImage) doesn't recognise.
+    // GTK4 routes these through GLib's structured logging path, so we must use
+    // log_set_writer_func — log_set_handler only catches old-style g_log() calls.
+    glib::log_set_writer_func(|level, fields| {
+        let domain = fields
+            .iter()
+            .find(|f| f.key() == "GLIB_DOMAIN")
+            .and_then(|f| f.value_str())
+            .unwrap_or("");
+        let message = fields
+            .iter()
+            .find(|f| f.key() == "MESSAGE")
+            .and_then(|f| f.value_str())
+            .unwrap_or("");
+
+        if domain == "Gtk"
+            && level == glib::LogLevel::Warning
+            && message.contains("Theme parser error")
+        {
+            return glib::LogWriterOutput::Handled;
+        }
+
+        glib::log_writer_default(level, fields)
+    });
 
     // Initialize GTK and libadwaita (required when using RelmApp::from_app)
     gtk::init().unwrap();
     libadwaita::init().unwrap();
+
+    #[cfg(not(feature = "experimental"))]
+    glib::log_set_default_handler(|domain, level, message| {
+        if matches!(level, glib::LogLevel::Error | glib::LogLevel::Critical) {
+            eprintln!(
+                "({}): {:?}: {}",
+                domain.unwrap_or("unknown"),
+                level,
+                message
+            );
+        }
+    });
 
     // Register bundled icons so themes that lack notification-symbolic use ours.
     // GTK looks for icons at {prefix}/{size}/{context}/{name}.svg, so the prefix
