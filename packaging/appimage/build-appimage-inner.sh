@@ -53,6 +53,12 @@ linuxdeploy \
     --icon-file "data/icons/hicolor/scalable/apps/$APP_ID.svg" \
     --plugin gtk
 
+# 2a. Strip gvfs GIO modules bundled by linuxdeploy-plugin-gtk.
+# They are compiled against Ubuntu 24.04 and fail with "undefined symbol"
+# on older or differently-patched systems.  Deployd does not use remote
+# volume monitoring, so removing them is safe.
+find "$APPDIR/usr/lib/gio/modules" -name "libgvfs*.so" -delete 2>/dev/null || true
+
 # 2b. Regenerate GDK pixbuf loaders.cache
 # linuxdeploy-plugin-gtk writes a cache pointing at the system loader path.
 # We regenerate it against the AppDir's own bundled loaders, then stamp

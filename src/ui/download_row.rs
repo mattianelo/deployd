@@ -269,6 +269,13 @@ impl FactoryComponent for DownloadRow {
         popover.set_child(Some(&menu_box));
         popover.set_parent(&root);
 
+        // Unparent the popover when the row leaves the widget tree; otherwise GTK
+        // warns about finalizing a GtkListBoxRow that still has children.
+        let pop = popover.clone();
+        root.connect_unrealize(move |_| {
+            pop.unparent();
+        });
+
         let gesture = gtk::GestureClick::new();
         gesture.set_button(3); // right mouse button
         let pop = popover.clone();

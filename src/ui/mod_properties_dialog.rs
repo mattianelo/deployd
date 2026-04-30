@@ -48,17 +48,12 @@ pub struct ModPropertiesDialog {
     files_list: gtk::ListBox,
     /// Stored handle to the "Set all" row so LoadFiles can append controls to it.
     set_all_row: gtk::Box,
-    /// Stored refs to the global Data/Root toggle buttons so LoadFiles can sync
-    /// them to the actual per-file state once the DB results arrive.
-    btn_data: gtk::ToggleButton,
-    btn_root: gtk::ToggleButton,
 }
 
 #[derive(Debug)]
 pub enum ModPropertiesMsg {
     NameChanged(String),
     NotesChanged(String),
-    SetTarget(InstallTarget),
     SetFileTarget(usize, InstallTarget),
     SetAllFileTargets(InstallTarget),
     ToggleFiles,
@@ -178,53 +173,6 @@ impl SimpleComponent for ModPropertiesDialog {
                             },
                         },
 
-                        // Global install target — Bethesda and Aurora (REDEngine has no Data/Root split)
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
-                            set_spacing: 4,
-                            #[watch]
-                            set_visible: model.is_bethesda || model.is_aurora,
-
-                            gtk::Label {
-                                set_label: "Install To (all files)",
-                                set_halign: gtk::Align::Start,
-                                add_css_class: "heading",
-                            },
-
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Horizontal,
-                                set_spacing: 0,
-                                set_halign: gtk::Align::Start,
-                                add_css_class: "linked",
-
-                                #[name = "btn_data"]
-                                gtk::ToggleButton {
-                                    set_label: "Data",
-                                    set_active: model.install_target == InstallTarget::Data,
-                                    connect_clicked[sender] => move |_| {
-                                        sender.input(ModPropertiesMsg::SetTarget(InstallTarget::Data));
-                                    },
-                                },
-
-                                #[name = "btn_root"]
-                                gtk::ToggleButton {
-                                    set_label: "Root",
-                                    set_active: model.install_target == InstallTarget::Root,
-                                    set_group: Some(&btn_data),
-                                    connect_clicked[sender] => move |_| {
-                                        sender.input(ModPropertiesMsg::SetTarget(InstallTarget::Root));
-                                    },
-                                },
-                            },
-
-                            gtk::Label {
-                                set_label: "Also sets per-file targets below. Takes effect on the next Deploy.",
-                                set_halign: gtk::Align::Start,
-                                set_wrap: true,
-                                add_css_class: "dim-label",
-                            },
-                        },
-
                         // Per-file target section
                         gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
@@ -322,7 +270,7 @@ impl SimpleComponent for ModPropertiesDialog {
                             },
 
                             gtk::Button {
-                                set_label: "Scan Cache",
+                                set_label: "Rescan Cache",
                                 set_tooltip_text: Some("Register all files currently in the cache folder as mod files"),
                                 connect_clicked => ModPropertiesMsg::ScanCacheClicked,
                             },
@@ -389,8 +337,6 @@ impl SimpleComponent for ModPropertiesDialog {
             // Placeholder widgets replaced with real widget clones after view_output!().
             files_list: gtk::ListBox::new(),
             set_all_row: gtk::Box::new(gtk::Orientation::Horizontal, 8),
-            btn_data: gtk::ToggleButton::new(),
-            btn_root: gtk::ToggleButton::new(),
         };
 
         let widgets = view_output!();
@@ -399,8 +345,6 @@ impl SimpleComponent for ModPropertiesDialog {
         // the LoadFiles handler can append rows to them from update().
         model.files_list = widgets.files_list.clone();
         model.set_all_row = widgets.set_all_row.clone();
-        model.btn_data = widgets.btn_data.clone();
-        model.btn_root = widgets.btn_root.clone();
 
         {
             let input_sender = sender.input_sender().clone();
@@ -433,14 +377,6 @@ impl SimpleComponent for ModPropertiesDialog {
             }
             ModPropertiesMsg::NotesChanged(notes) => {
                 self.notes = notes;
-            }
-            ModPropertiesMsg::SetTarget(target) => {
-                // Global toggle: also bulk-update all per-file targets so they stay
-                // in sync when the user hits Apply.
-                for t in &mut self.file_targets {
-                    *t = target.clone();
-                }
-                self.install_target = target;
             }
             ModPropertiesMsg::SetFileTarget(idx, target) => {
                 if let Some(t) = self.file_targets.get_mut(idx) {
@@ -585,9 +521,7 @@ impl SimpleComponent for ModPropertiesDialog {
                     self.set_all_row.append(&all_btn_box);
                 }
 
-                // Derive the correct global install_target from the actual per-file DB
-                // state rather than trusting mod_entry.install_target, which is only
-                // set to Root when ALL files are Root at install time.
+                // Derive install_target from per-file state (used in Applied output).
                 let all_root = !self.file_targets.is_empty()
                     && self.file_targets.iter().all(|t| *t == InstallTarget::Root);
                 self.install_target = if all_root {
@@ -595,12 +529,6 @@ impl SimpleComponent for ModPropertiesDialog {
                 } else {
                     InstallTarget::Data
                 };
-                // set_active emits `toggled`, not `clicked`, so connect_clicked handlers
-                // (which send SetTarget) are NOT triggered here.
-                self.btn_data
-                    .set_active(self.install_target == InstallTarget::Data);
-                self.btn_root
-                    .set_active(self.install_target == InstallTarget::Root);
 
                 // Auto-expand the file list and mark loading as done.
                 self.files_visible = true;

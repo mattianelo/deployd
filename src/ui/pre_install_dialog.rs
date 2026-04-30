@@ -206,7 +206,7 @@ impl SimpleComponent for PreInstallDialog {
             is_fomod: init.is_fomod,
             file_targets,
             file_included,
-            files_visible: false,
+            files_visible: true,
             is_bethesda: init.is_bethesda,
             is_aurora: init.is_aurora,
         };

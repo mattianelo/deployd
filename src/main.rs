@@ -16,6 +16,22 @@ fn main() {
     gio::resources_register_include!("resources.gresource")
         .expect("failed to register app resources");
 
+    // Suppress "Theme parser error" GTK warnings that are emitted when the host
+    // system theme contains CSS features the bundled GTK (AppImage) doesn't
+    // recognise.  All other Gtk-domain warnings are forwarded to the default
+    // handler unchanged.
+    glib::log_set_handler(
+        Some("Gtk"),
+        glib::LogLevels::LEVEL_WARNING,
+        false,
+        false,
+        |domain: Option<&str>, level: glib::LogLevel, message: &str| {
+            if !message.contains("Theme parser error") {
+                glib::log_default_handler(domain, level, Some(message));
+            }
+        },
+    );
+
     // Initialize GTK and libadwaita (required when using RelmApp::from_app)
     gtk::init().unwrap();
     libadwaita::init().unwrap();
@@ -62,8 +78,9 @@ fn main() {
             border-bottom: 3px solid @accent_color;
         }
         @keyframes notification-pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.4; }
+            0%   { opacity: 1; }
+            50%  { opacity: 0.4; }
+            100% { opacity: 1; }
         }
         .notification-active {
             color: @error_color;
