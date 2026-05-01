@@ -142,7 +142,7 @@ impl App {
 
     pub(crate) fn handle_delete_profile_clicked(&mut self, sender: &ComponentSender<Self>) {
         if self.profiles.len() <= 1 {
-            self.toaster.toast("Cannot delete the last profile");
+            self.push_notification("Cannot delete the last profile");
             return;
         }
 

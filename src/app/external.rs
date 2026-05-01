@@ -36,12 +36,11 @@ impl App {
             }
         }
         if failed > 0 {
-            self.toaster.toast(&format!(
+            self.push_notification(&format!(
                 "Discarded {deleted} file(s); {failed} could not be deleted"
             ));
         } else if deleted > 0 {
-            self.toaster
-                .toast(&format!("Discarded {deleted} external file(s)"));
+            self.push_notification(&format!("Discarded {deleted} external file(s)"));
         }
         sender.input(AppMsg::ScanExternalFiles);
     }
@@ -86,7 +85,7 @@ impl App {
         let Some(game) = self.selected_game().cloned() else {
             return;
         };
-        self.toaster.toast("Resetting vanilla baseline…");
+        self.push_notification("Resetting vanilla baseline…");
         sender.oneshot_command(async move {
             let result = async {
                 let entries = detector::snapshot_game_files(&game);
@@ -152,7 +151,7 @@ impl App {
         let Some(game) = self.selected_game().cloned() else {
             return;
         };
-        self.toaster.toast("Adopting cleaned plugin(s)…");
+        self.push_notification("Adopting cleaned plugin(s)…");
         sender.oneshot_command(async move {
             let result = async {
                 let plugin_files = tracker
@@ -229,7 +228,7 @@ impl App {
         let Some(game) = self.selected_game().cloned() else {
             return;
         };
-        self.toaster.toast("Restoring plugin(s) from xEdit backup…");
+        self.push_notification("Restoring plugin(s) from xEdit backup…");
         sender.oneshot_command(async move {
             let result = async {
                 let plugin_files = tracker
@@ -422,7 +421,7 @@ impl App {
     ) {
         match result {
             Ok(count) => {
-                self.toaster.toast(&format!(
+                self.push_notification(&format!(
                     "Adopted {count} cleaned plugin{} into deployd",
                     if count == 1 { "" } else { "s" }
                 ));
@@ -437,7 +436,7 @@ impl App {
                 sender.input(AppMsg::ScanExternalFiles);
             }
             Err(e) => {
-                self.toaster.toast(&format!("Failed to adopt plugin: {e}"));
+                self.push_notification(&format!("Failed to adopt plugin: {e}"));
                 sender.input(AppMsg::ScanExternalFiles);
             }
         }
@@ -450,7 +449,7 @@ impl App {
     ) {
         match result {
             Ok(count) => {
-                self.toaster.toast(&format!(
+                self.push_notification(&format!(
                     "Restored {count} plugin{} from xEdit backup — plugin{} {} dirty edits",
                     if count == 1 { "" } else { "s" },
                     if count == 1 { "" } else { "s" },
@@ -467,8 +466,7 @@ impl App {
                 sender.input(AppMsg::ScanExternalFiles);
             }
             Err(e) => {
-                self.toaster
-                    .toast(&format!("Failed to restore from backup: {e}"));
+                self.push_notification(&format!("Failed to restore from backup: {e}"));
                 sender.input(AppMsg::ScanExternalFiles);
             }
         }
@@ -481,10 +479,10 @@ impl App {
     ) {
         match result {
             Ok(()) => {
-                self.toaster.toast("Vanilla baseline reset — rescanning…");
+                self.push_notification("Vanilla baseline reset — rescanning…");
                 sender.input(AppMsg::ScanExternalFiles);
             }
-            Err(e) => self.toaster.toast(&format!("Reset failed: {e}")),
+            Err(e) => self.push_notification(&format!("Reset failed: {e}")),
         }
     }
 
@@ -495,11 +493,10 @@ impl App {
     ) {
         match result {
             Ok(count) => {
-                self.toaster
-                    .toast(&format!("Marked {count} file(s) as vanilla"));
+                self.push_notification(&format!("Marked {count} file(s) as vanilla"));
                 sender.input(AppMsg::ScanExternalFiles);
             }
-            Err(e) => self.toaster.toast(&format!("Mark as vanilla failed: {e}")),
+            Err(e) => self.push_notification(&format!("Mark as vanilla failed: {e}")),
         }
     }
 }

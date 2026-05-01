@@ -231,6 +231,7 @@ impl App {
     pub(crate) fn notifications_count(&self) -> usize {
         usize::from(self.external_changes_count > 0)
             + usize::from(self.app_update_version.is_some())
+            + self.notification_count
     }
 
     /// Label for the notifications headerbar button badge.

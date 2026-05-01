@@ -75,6 +75,6 @@ impl App {
     }
 
     pub(crate) fn handle_show_toast(&mut self, msg: String) {
-        self.toaster.toast(&msg);
+        self.push_notification(&msg);
     }
 }

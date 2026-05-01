@@ -18,11 +18,11 @@ impl App {
     ) {
         // Validate preconditions before showing any dialog.
         if self.tracker.is_none() {
-            self.toaster.toast("Database not ready yet");
+            self.push_notification("Database not ready yet");
             return;
         }
         let Some(game) = self.selected_game() else {
-            self.toaster.toast("No game selected");
+            self.push_notification("No game selected");
             return;
         };
         if !game.path.exists() {
@@ -80,11 +80,11 @@ impl App {
     /// Run the deploy operation directly (after any required confirmation dialog).
     pub(crate) fn execute_deploy(&mut self, sender: &ComponentSender<Self>) {
         let Some(tracker) = self.tracker.clone() else {
-            self.toaster.toast("Database not ready yet");
+            self.push_notification("Database not ready yet");
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
-            self.toaster.toast("No game selected");
+            self.push_notification("No game selected");
             return;
         };
         if !game.path.exists() {
@@ -165,11 +165,11 @@ impl App {
 
     pub(crate) fn handle_purge_confirmed(&mut self, sender: &ComponentSender<Self>) {
         let Some(tracker) = self.tracker.clone() else {
-            self.toaster.toast("Database not ready yet");
+            self.push_notification("Database not ready yet");
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
-            self.toaster.toast("No game selected");
+            self.push_notification("No game selected");
             return;
         };
         if !game.path.exists() {
@@ -232,8 +232,7 @@ impl App {
                 AppCmdMsg::PrioritySaved(Ok(()))
             });
         }
-        self.toaster
-            .toast("Game folder confirmed — you can now deploy");
+        self.push_notification("Game folder confirmed — you can now deploy");
     }
 }
 
@@ -284,11 +283,11 @@ impl App {
                 if conflicts > 0 {
                     msg.push_str(&format!(", {conflicts} conflict(s) resolved"));
                 }
-                self.toaster.toast(&msg);
+                self.push_notification(&msg);
                 sender.input(AppMsg::ScanExternalFiles);
             }
             Err(e) => {
-                self.toaster.toast(&format!("Deploy failed: {e}"));
+                self.push_notification(&format!("Deploy failed: {e}"));
             }
         }
     }
@@ -300,16 +299,15 @@ impl App {
             Ok(count) => {
                 self.needs_deploy = true;
                 if count == 0 {
-                    self.toaster.toast(
+                    self.push_notification(
                         "No deployed files tracked — the game folder may already be clean, or try redeploying first",
                     );
                 } else {
-                    self.toaster
-                        .toast(&format!("Purged {count} deployed files"));
+                    self.push_notification(&format!("Purged {count} deployed files"));
                 }
             }
             Err(e) => {
-                self.toaster.toast(&format!("Purge failed: {e}"));
+                self.push_notification(&format!("Purge failed: {e}"));
             }
         }
     }

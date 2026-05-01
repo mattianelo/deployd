@@ -36,7 +36,7 @@ impl App {
                 }
             }
             Err(e) => {
-                self.toaster.toast(&format!("Load failed: {e}"));
+                self.push_notification(&format!("Load failed: {e}"));
             }
         }
     }
@@ -51,8 +51,7 @@ impl App {
     ) {
         match result {
             Ok(_) => {
-                self.toaster
-                    .toast("Mod removed. Deploy to update game files");
+                self.push_notification("Mod removed. Deploy to update game files");
                 let changed = self.reset_installed_download_for_mod(
                     nexus_ids,
                     &mod_name,
@@ -71,7 +70,7 @@ impl App {
                 self.reload_mods(sender);
             }
             Err(e) => {
-                self.toaster.toast(&format!("Remove failed: {e}"));
+                self.push_notification(&format!("Remove failed: {e}"));
                 self.reload_mods(sender);
             }
         }
@@ -84,7 +83,7 @@ impl App {
     ) {
         match result {
             Ok(()) => self.reload_mods(sender),
-            Err(e) => self.toaster.toast(&format!("Failed to save order: {e}")),
+            Err(e) => self.push_notification(&format!("Failed to save order: {e}")),
         }
     }
 
@@ -96,13 +95,13 @@ impl App {
         match result {
             Ok((_mod_id, cache_dir)) => {
                 self.reload_mods(sender);
-                self.toaster.toast(
+                self.push_notification(
                     "Empty mod created — put files in its cache folder, then use Scan Cache in Properties",
                 );
                 let _ = open::that(&cache_dir);
             }
             Err(e) => {
-                self.toaster.toast(&format!("Failed to create mod: {e}"));
+                self.push_notification(&format!("Failed to create mod: {e}"));
             }
         }
     }
@@ -116,10 +115,10 @@ impl App {
             Ok(msg) => {
                 self.needs_deploy = true;
                 self.reload_mods(sender);
-                self.toaster.toast(&msg);
+                self.push_notification(&msg);
             }
             Err(e) => {
-                self.toaster.toast(&format!("Rescan failed: {e}"));
+                self.push_notification(&format!("Rescan failed: {e}"));
             }
         }
     }

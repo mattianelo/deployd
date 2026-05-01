@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use adw;
 use gtk::glib;
 use gtk::prelude::*;
-use relm4::abstractions::Toaster;
 use relm4::factory::FactoryVecDeque;
 use relm4::prelude::*;
 
@@ -139,7 +138,10 @@ pub(super) fn build_model(
         needs_deploy: false,
         last_deployed_profile_id: None,
         status_msg: None,
-        toaster: Toaster::default(),
+        toast_overlay: adw::ToastOverlay::new(),
+        notification_sender: sender.input_sender().clone(),
+        notification_list: gtk::ListBox::new(),
+        notification_count: 0,
         profiles: vec![],
         active_profile_idx: 0,
         profile_model,

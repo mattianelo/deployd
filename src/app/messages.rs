@@ -246,9 +246,13 @@ pub enum AppMsg {
     DisableAllPlugins,
     /// Toggle visibility of vanilla/DLC plugins in the plugin panel.
     ToggleShowVanillaPlugins,
-    /// Show a toast notification with the given message.
-    /// Used by async tasks that cannot call self.toaster directly.
+    /// Push a notification message to the notification panel.
+    /// Used by async tasks that cannot call self.push_notification directly.
     ShowToast(String),
+    /// Decrement the notification badge count when the user dismisses an item.
+    NotificationDismissed,
+    /// Remove all notification items and reset the badge count.
+    ClearNotifications,
     /// Toggle save management mode for the active profile.
     ToggleProfileSaveMode,
     /// Manually sync the active profile's saves from the game save directory.

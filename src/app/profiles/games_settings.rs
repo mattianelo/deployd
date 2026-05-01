@@ -20,7 +20,7 @@ impl App {
     ) {
         self.overflow_menu_btn.popdown();
         let Some(tracker) = self.tracker.clone() else {
-            self.toaster.toast("Database not ready yet");
+            self.push_notification("Database not ready yet");
             return;
         };
         self.settings_dialog = Some(
@@ -64,7 +64,7 @@ impl App {
     }
 
     pub(crate) fn handle_nexus_api_key_updated(&mut self, sender: &ComponentSender<Self>) {
-        self.toaster.toast("Nexus Mods key updated.");
+        self.push_notification("Nexus Mods key updated.");
         // Re-validate to refresh username and avatar displayed in the headerbar.
         if let Some(tracker) = self.tracker.clone() {
             sender.oneshot_command(async move {
@@ -98,7 +98,7 @@ impl App {
     pub(crate) fn handle_nexus_login_clicked(&mut self, sender: &ComponentSender<Self>) {
         self.nexus_user_btn.popdown();
         let Some(tracker) = self.tracker.clone() else {
-            self.toaster.toast("Database not ready yet");
+            self.push_notification("Database not ready yet");
             return;
         };
         let input = sender.input_sender().clone();
@@ -131,7 +131,7 @@ impl App {
             let _ = tracker.clear_nexus_user().await;
             AppCmdMsg::NexusUserRefreshed(None, None, false)
         });
-        self.toaster.toast("Logged out of Nexus Mods");
+        self.push_notification("Logged out of Nexus Mods");
     }
 
     pub(crate) fn handle_manage_games_clicked(

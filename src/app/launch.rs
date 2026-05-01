@@ -18,8 +18,7 @@ impl App {
         let wine_config = match game::detect_wine_config(&game) {
             Some(c) => c,
             None => {
-                self.toaster
-                    .toast("Wine not configured for this game");
+                self.push_notification("Wine not configured for this game");
                 return;
             }
         };
@@ -45,18 +44,18 @@ impl App {
     pub(crate) fn handle_cmd_game_launched(&mut self, result: Result<(), String>) {
         match result {
             Ok(()) => {
-                self.toaster.toast("Game launched");
+                self.push_notification("Game launched");
             }
             Err(e) => {
                 crate::dlog!("deployd: game launch error: {e}");
-                self.toaster.toast(&format!("Launch failed: {e}"));
+                self.push_notification(&format!("Launch failed: {e}"));
             }
         }
     }
 
     pub(crate) fn handle_game_exited(&mut self, error: Option<String>) {
         if let Some(msg) = error {
-            self.toaster.toast(&format!("Game exited with error: {msg}"));
+            self.push_notification(&format!("Game exited with error: {msg}"));
         }
     }
 }

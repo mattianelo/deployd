@@ -52,8 +52,8 @@ impl App {
 
     pub(crate) fn handle_profile_exported(&mut self, result: Result<(), String>) {
         match result {
-            Ok(()) => self.toaster.toast("Profile exported"),
-            Err(e) => self.toaster.toast(&format!("Export failed: {e}")),
+            Ok(()) => self.push_notification("Profile exported"),
+            Err(e) => self.push_notification(&format!("Export failed: {e}")),
         }
     }
 

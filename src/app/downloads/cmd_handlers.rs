@@ -67,7 +67,7 @@ impl App {
             }
             Err(e) => {
                 eprintln!("deployd: failed to fetch Nexus metadata: {e}");
-                self.toaster.toast(&format!("Metadata fetch failed: {e}"));
+                self.push_notification(&format!("Metadata fetch failed: {e}"));
                 // For disk-scanned entries with a known mod_id but unresolved file_id,
                 // offer the dialog so the user can at least store the file_id for the next retry.
                 if let Some(ref id) = dl_id
@@ -93,10 +93,10 @@ impl App {
         match result {
             Ok(updates) => {
                 if updates.is_empty() {
-                    self.toaster.toast("All mods are up to date");
+                    self.push_notification("All mods are up to date");
                 } else {
                     let names: Vec<_> = updates.iter().map(|(_, name, _)| name.as_str()).collect();
-                    self.toaster.toast(&format!(
+                    self.push_notification(&format!(
                         "{} mod(s) have updates: {}",
                         updates.len(),
                         names.join(", ")
@@ -106,7 +106,7 @@ impl App {
                 }
             }
             Err(e) => {
-                self.toaster.toast(&format!("Update check failed: {e}"));
+                self.push_notification(&format!("Update check failed: {e}"));
             }
         }
     }
@@ -179,8 +179,7 @@ impl App {
                     });
                 }
 
-                self.toaster
-                    .toast(&format!("Download complete: {}", nxm_result.file_name));
+                self.push_notification(&format!("Download complete: {}", nxm_result.file_name));
             }
             Err(e) => {
                 // Mark the specific NXM download as failed using the id that was
@@ -196,7 +195,7 @@ impl App {
                     self.active_download_id = None;
                 }
 
-                self.toaster.toast(&format!("Download failed: {e}"));
+                self.push_notification(&format!("Download failed: {e}"));
             }
         }
     }
@@ -212,11 +211,10 @@ impl App {
     pub(crate) fn handle_cmd_app_update_result(&mut self, result: Result<(), String>) {
         match result {
             Ok(()) => {
-                self.toaster
-                    .toast("Update downloaded. Restart deployd to use the new version.");
+                self.push_notification("Update downloaded. Restart deployd to use the new version.");
             }
             Err(e) => {
-                self.toaster.toast(&format!("Update failed: {e}"));
+                self.push_notification(&format!("Update failed: {e}"));
                 // For premium-related failures, open the Nexus page as a fallback.
                 if e.contains("premium") {
                     let url = self

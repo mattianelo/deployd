@@ -357,6 +357,14 @@ impl App {
                     format!("Extracting file {done}/{total}"),
                 ));
             }));
+        let processing_sender = sender.input_sender().clone();
+        let on_processing: Option<Box<dyn FnOnce() + Send>> =
+            Some(Box::new(move || {
+                let _ = processing_sender.send(AppMsg::InstallProgress(
+                    1.0,
+                    "Processing mod structure...".to_string(),
+                ));
+            }));
 
         sender.oneshot_command(async move {
             let result: Result<PrepareResultMsg, String> = async {
@@ -367,9 +375,10 @@ impl App {
                 .await
                 .unwrap_or(None);
 
-                let prepare = installer::prepare_mod(&archive_path, on_extract_progress)
-                    .await
-                    .map_err(|e| format!("{e:#}"))?;
+                let prepare =
+                    installer::prepare_mod(&archive_path, on_extract_progress, on_processing)
+                        .await
+                        .map_err(|e| format!("{e:#}"))?;
                 let mod_name = suggested_name;
                 match prepare {
                     PrepareResult::Normal {
@@ -728,7 +737,7 @@ impl App {
         };
 
         let input_sender = sender.input_sender().clone();
-        self.toaster.toast("Fetching metadata...");
+        self.push_notification("Fetching metadata...");
         sender.oneshot_command(async move {
             let result: Result<(String, String, String), String> = async {
                 let api_key = tracker

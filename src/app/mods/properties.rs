@@ -129,8 +129,7 @@ impl App {
         });
 
         self.needs_deploy = true;
-        self.toaster
-            .toast(&format!("Properties updated for {name}"));
+        self.push_notification(&format!("Properties updated for {name}"));
     }
 
     pub(crate) fn handle_mod_properties_cancelled(&mut self) {

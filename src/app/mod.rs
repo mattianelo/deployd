@@ -11,6 +11,7 @@ pub mod install;
 mod launch;
 pub mod messages;
 pub mod mods;
+pub mod notifications;
 pub mod order_snapshots;
 pub mod plugins;
 pub mod profiles;
@@ -503,6 +504,30 @@ impl Component for App {
                                                 },
                                             },
                                         },
+                                    },
+                                },
+
+                                gtk::ScrolledWindow {
+                                    #[watch]
+                                    set_visible: model.notification_count > 0,
+                                    set_propagate_natural_height: true,
+                                    set_max_content_height: 300,
+                                    set_hscrollbar_policy: gtk::PolicyType::Never,
+
+                                    #[local_ref]
+                                    notification_list -> gtk::ListBox {
+                                        set_selection_mode: gtk::SelectionMode::None,
+                                        add_css_class: "boxed-list",
+                                    },
+                                },
+
+                                gtk::Button {
+                                    set_label: "Clear all",
+                                    add_css_class: "flat",
+                                    #[watch]
+                                    set_visible: model.notification_count > 0,
+                                    connect_clicked[sender] => move |_| {
+                                        sender.input(AppMsg::ClearNotifications);
                                     },
                                 },
                             },
@@ -1117,7 +1142,8 @@ impl Component for App {
         let (model, _game_ids, _games_for_init, profile_rename_btn, search_bar) =
             init::build_model(nxm_link, &sender);
 
-        let toast_overlay = model.toaster.overlay_widget();
+        let toast_overlay = &model.toast_overlay;
+        let notification_list = &model.notification_list;
         let mod_list = model.mods.widget();
         let plugin_list = model.plugins.widget();
         let download_list = model.downloads.widget();
@@ -1383,7 +1409,7 @@ impl Component for App {
             AppMsg::ProfileExported(result) => self.handle_profile_exported(result),
             AppMsg::OpenPreInstallDialog => self.handle_open_pre_install_dialog(root, &sender),
             AppMsg::OpenPreInstallDialogReplacing(id, priority) => {
-                if self.pending_install.as_ref().map_or(false, |p| p.fomod_config.is_some()) {
+                if self.pending_install.as_ref().is_some_and(|p| p.fomod_config.is_some()) {
                     let old_name = self.mod_name_for_id(&id);
                     if let Some(pending) = &mut self.pending_install {
                         pending.mod_name = old_name;
@@ -1431,6 +1457,15 @@ impl Component for App {
             AppMsg::DisableAllPlugins => self.handle_disable_all_plugins(&sender),
             AppMsg::ToggleShowVanillaPlugins => self.handle_toggle_show_vanilla_plugins(),
             AppMsg::ShowToast(msg) => self.handle_show_toast(msg),
+            AppMsg::NotificationDismissed => {
+                self.notification_count = self.notification_count.saturating_sub(1);
+            }
+            AppMsg::ClearNotifications => {
+                while let Some(child) = self.notification_list.first_child() {
+                    self.notification_list.remove(&child);
+                }
+                self.notification_count = 0;
+            }
             AppMsg::ToggleProfileSaveMode => {
                 self.profile_menu_btn.popdown();
                 self.handle_toggle_profile_save_mode(&sender);
@@ -1532,7 +1567,7 @@ impl Component for App {
                             dl_id.clone(), name, None, None, false, file_id, version, &sender,
                         );
                     }
-                    self.toaster.toast("Metadata updated");
+                    self.push_notification("Metadata updated");
                     // Auto-trigger the next unresolved download for the same mod so the
                     // user doesn't have to manually right-click each one.
                     let resolved_mod_id = self
@@ -1662,42 +1697,37 @@ impl Component for App {
             }
             AppCmdMsg::ModOrderSnapshotSaved(result) => {
                 if let Err(e) = result {
-                    self.toaster.toast(&format!("Failed to save snapshot: {e}"));
+                    self.push_notification(&format!("Failed to save snapshot: {e}"));
                 } else {
-                    self.toaster.toast("Mod order snapshot saved");
+                    self.push_notification("Mod order snapshot saved");
                     self.reload_order_snapshots(&sender);
                 }
             }
             AppCmdMsg::PluginOrderSnapshotSaved(result) => {
                 if let Err(e) = result {
-                    self.toaster.toast(&format!("Failed to save snapshot: {e}"));
+                    self.push_notification(&format!("Failed to save snapshot: {e}"));
                 } else {
-                    self.toaster.toast("Plugin order snapshot saved");
+                    self.push_notification("Plugin order snapshot saved");
                     self.reload_order_snapshots(&sender);
                 }
             }
             AppCmdMsg::ModOrderSnapshotRestored(result) => match result {
                 Ok(data) => {
                     self.apply_loaded_data(data, &sender);
-                    self.toaster.toast("Mod order restored");
+                    self.push_notification("Mod order restored");
                 }
-                Err(e) => self
-                    .toaster
-                    .toast(&format!("Failed to restore snapshot: {e}")),
+                Err(e) => self.push_notification(&format!("Failed to restore snapshot: {e}")),
             },
             AppCmdMsg::PluginOrderSnapshotRestored(result) => match result {
                 Ok(data) => {
                     self.apply_loaded_data(data, &sender);
-                    self.toaster.toast("Plugin order restored");
+                    self.push_notification("Plugin order restored");
                 }
-                Err(e) => self
-                    .toaster
-                    .toast(&format!("Failed to restore snapshot: {e}")),
+                Err(e) => self.push_notification(&format!("Failed to restore snapshot: {e}")),
             },
             AppCmdMsg::OrderSnapshotDeleted(result) => {
                 if let Err(e) = result {
-                    self.toaster
-                        .toast(&format!("Failed to delete snapshot: {e}"));
+                    self.push_notification(&format!("Failed to delete snapshot: {e}"));
                 }
                 self.reload_order_snapshots(&sender);
             }

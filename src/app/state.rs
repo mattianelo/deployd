@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use relm4::abstractions::Toaster;
 use relm4::factory::FactoryVecDeque;
 use relm4::prelude::*;
 
@@ -41,7 +40,15 @@ pub struct App {
     /// Profile ID that was active during the last successful deploy for the current game.
     pub(crate) last_deployed_profile_id: Option<String>,
     pub(crate) status_msg: Option<String>,
-    pub(crate) toaster: Toaster,
+    /// Overlay widget used as a structural content wrapper (no longer used for toasts).
+    pub(crate) toast_overlay: adw::ToastOverlay,
+    /// Input sender stored at initialization so push_notification can wire dismiss buttons
+    /// without requiring a ComponentSender to be threaded through every handler.
+    pub(crate) notification_sender: relm4::Sender<super::messages::AppMsg>,
+    /// Dynamic list of notification messages shown in the notification panel.
+    pub(crate) notification_list: gtk::ListBox,
+    /// Count of undismissed notification items (drives the bell badge).
+    pub(crate) notification_count: usize,
     pub(crate) profiles: Vec<Profile>,
     pub(crate) active_profile_idx: usize,
     pub(crate) profile_model: gtk::StringList,

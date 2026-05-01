@@ -15,7 +15,7 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         let Some(tracker) = self.tracker.clone() else {
-            self.toaster.toast("Database not ready");
+            self.push_notification("Database not ready");
             return;
         };
         let dialog = gtk::FileDialog::builder()
@@ -46,11 +46,11 @@ impl App {
             Ok(manifest) => {
                 let game_count = manifest.games.len();
                 let profile_count: usize = manifest.games.iter().map(|g| g.profile_count).sum();
-                self.toaster.toast(&format!(
+                self.push_notification(&format!(
                     "Backup created — {game_count} game(s), {profile_count} profile(s)"
                 ));
             }
-            Err(e) => self.toaster.toast(&format!("Backup failed: {e}")),
+            Err(e) => self.push_notification(&format!("Backup failed: {e}")),
         }
     }
 
@@ -87,7 +87,7 @@ impl App {
         let manifest = match crate::core::backup::read_backup_manifest(&path) {
             Ok(m) => m,
             Err(e) => {
-                self.toaster.toast(&format!("Cannot read backup: {e}"));
+                self.push_notification(&format!("Cannot read backup: {e}"));
                 return;
             }
         };
@@ -171,7 +171,7 @@ impl App {
                     .build();
                 dialog.choose(Some(root), None::<&gio::Cancellable>, |_| {});
             }
-            Err(e) => self.toaster.toast(&format!("Restore staging failed: {e}")),
+            Err(e) => self.push_notification(&format!("Restore staging failed: {e}")),
         }
     }
 
@@ -181,11 +181,11 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         let Some(tracker) = self.tracker.clone() else {
-            self.toaster.toast("Database not ready");
+            self.push_notification("Database not ready");
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
-            self.toaster.toast("No game selected");
+            self.push_notification("No game selected");
             return;
         };
         sender.oneshot_command(async move {
@@ -214,16 +214,15 @@ impl App {
             Ok((imported, skipped_mods, data)) => {
                 self.apply_loaded_data(data, sender);
                 if skipped_mods > 0 {
-                    self.toaster.toast(&format!(
+                    self.push_notification(&format!(
                         "Imported {imported} profile(s) from backup — \
                          {skipped_mods} mod(s) not matched (install them first, then re-import)"
                     ));
                 } else {
-                    self.toaster
-                        .toast(&format!("Imported {imported} profile(s) from backup"));
+                    self.push_notification(&format!("Imported {imported} profile(s) from backup"));
                 }
             }
-            Err(e) => self.toaster.toast(&format!("Profile import failed: {e}")),
+            Err(e) => self.push_notification(&format!("Profile import failed: {e}")),
         }
     }
 }

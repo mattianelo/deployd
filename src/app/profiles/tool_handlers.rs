@@ -15,13 +15,12 @@ use super::super::messages::{AppCmdMsg, AppMsg};
 impl App {
     pub(crate) fn handle_launch_tool(&mut self, tool_id: String, sender: &ComponentSender<Self>) {
         if self.needs_deploy {
-            self.toaster
-                .toast("Deploy your mods before launching tools");
+            self.push_notification("Deploy your mods before launching tools");
             return;
         }
 
         let Some(tool) = self.tools.iter().find(|t| t.id == tool_id).cloned() else {
-            self.toaster.toast("Tool not found");
+            self.push_notification("Tool not found");
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
@@ -38,8 +37,7 @@ impl App {
         let wine_config = match game::detect_wine_config(&game) {
             Some(c) => c,
             None => {
-                self.toaster
-                    .toast("Wine not found. Install wine via your system package manager.");
+                self.push_notification("Wine not found. Install wine via your system package manager.");
                 return;
             }
         };
@@ -148,9 +146,7 @@ impl App {
         self.status_msg = None;
         match result {
             Ok(()) => self.handle_launch_tool(tool_id, sender),
-            Err(e) => self
-                .toaster
-                .toast(&format!("Proton GE download failed: {e}")),
+            Err(e) => self.push_notification(&format!("Proton GE download failed: {e}")),
         }
     }
 
@@ -165,8 +161,7 @@ impl App {
             self.status_msg = None;
         }
 
-        self.toaster
-            .toast(&format!("{tool_name} closed — scanning for changes…"));
+        self.push_notification(&format!("{tool_name} closed — scanning for changes…"));
         sender.input(AppMsg::ScanExternalFiles);
         #[cfg(feature = "loot")]
         if self

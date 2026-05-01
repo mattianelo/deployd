@@ -193,7 +193,7 @@ impl App {
                 self.initializing = false;
 
                 if data.restored_from_backup {
-                    self.toaster.toast(
+                    self.push_notification(
                         "Database restored from backup. \
                          Re-install your mods from archives to restore a deployable state.",
                     );
@@ -219,7 +219,7 @@ impl App {
             }
             Err(e) => {
                 self.initializing = false;
-                self.toaster.toast(&format!("Init failed: {e}"));
+                self.push_notification(&format!("Init failed: {e}"));
             }
         }
     }
@@ -241,14 +241,13 @@ impl App {
                 self.apply_loaded_data(data, sender);
                 self.save_last_profile(sender);
                 if let Some(sync) = save_sync {
-                    self.toaster
-                        .toast(&format!("Profile switched — {}", sync.to_toast()));
+                    self.push_notification(&format!("Profile switched — {}", sync.to_toast()));
                 } else {
-                    self.toaster.toast("Profile switched");
+                    self.push_notification("Profile switched");
                 }
             }
             Err(e) => {
-                self.toaster.toast(&format!("Profile switch failed: {e}"));
+                self.push_notification(&format!("Profile switch failed: {e}"));
             }
         }
     }
@@ -263,11 +262,10 @@ impl App {
                 self.apply_loaded_data(data, sender);
                 self.needs_deploy = true;
                 self.save_last_profile(sender);
-                self.toaster
-                    .toast("Empty profile created — Deploy to purge game folder");
+                self.push_notification("Empty profile created — Deploy to purge game folder");
             }
             Err(e) => {
-                self.toaster.toast(&format!("Profile creation failed: {e}"));
+                self.push_notification(&format!("Profile creation failed: {e}"));
             }
         }
     }
@@ -286,10 +284,10 @@ impl App {
                     .get(self.active_profile_idx)
                     .map(|p| p.name.clone())
                     .unwrap_or_default();
-                self.toaster.toast(&format!("Cloned as '{name}'"));
+                self.push_notification(&format!("Cloned as '{name}'"));
             }
             Err(e) => {
-                self.toaster.toast(&format!("Profile clone failed: {e}"));
+                self.push_notification(&format!("Profile clone failed: {e}"));
             }
         }
     }
@@ -303,10 +301,10 @@ impl App {
             Ok(data) => {
                 self.needs_deploy = true;
                 self.apply_loaded_data(data, sender);
-                self.toaster.toast("Profile deleted");
+                self.push_notification("Profile deleted");
             }
             Err(e) => {
-                self.toaster.toast(&format!("Profile delete failed: {e}"));
+                self.push_notification(&format!("Profile delete failed: {e}"));
             }
         }
     }
@@ -325,10 +323,10 @@ impl App {
                 self.profile_dropdown
                     .set_selected(self.active_profile_idx as u32);
                 self.updating_profiles = false;
-                self.toaster.toast("Profile renamed");
+                self.push_notification("Profile renamed");
             }
             Err(e) => {
-                self.toaster.toast(&format!("Rename failed: {e}"));
+                self.push_notification(&format!("Rename failed: {e}"));
             }
         }
     }
@@ -348,42 +346,40 @@ impl App {
                     .get(self.active_profile_idx)
                     .map(|p| p.name.clone())
                     .unwrap_or_default();
-                self.toaster
-                    .toast(&format!("Imported as '{name}' — Deploy to apply"));
+                self.push_notification(&format!("Imported as '{name}' — Deploy to apply"));
             }
             Err(e) => {
-                self.toaster.toast(&format!("Import failed: {e}"));
+                self.push_notification(&format!("Import failed: {e}"));
             }
         }
     }
 
     pub(crate) fn handle_cmd_tool_saved(&mut self, result: Result<(), String>) {
         if let Err(e) = result {
-            self.toaster.toast(&format!("Failed to save tool: {e}"));
+            self.push_notification(&format!("Failed to save tool: {e}"));
         }
     }
 
     pub(crate) fn handle_cmd_tool_deleted(&mut self, result: Result<String, String>) {
         if let Err(e) = result {
-            self.toaster.toast(&format!("Failed to delete tool: {e}"));
+            self.push_notification(&format!("Failed to delete tool: {e}"));
         }
     }
 
     pub(crate) fn handle_cmd_tool_working_dir_saved(&mut self, result: Result<(), String>) {
         if let Err(e) = result {
-            self.toaster
-                .toast(&format!("Failed to save working directory: {e}"));
+            self.push_notification(&format!("Failed to save working directory: {e}"));
         }
     }
 
     pub(crate) fn handle_cmd_tool_launched(&mut self, result: Result<String, String>) {
         match result {
             Ok(name) => {
-                self.toaster.toast(&format!("Launched {name}"));
+                self.push_notification(&format!("Launched {name}"));
             }
             Err(e) => {
                 crate::dlog!("deployd: tool launch error: {e}");
-                self.toaster.toast(&format!("Launch failed: {e}"));
+                self.push_notification(&format!("Launch failed: {e}"));
             }
         }
     }
@@ -404,8 +400,7 @@ impl App {
                 }
             }
             Err(e) => {
-                self.toaster
-                    .toast(&format!("Failed to change save mode: {e}"));
+                self.push_notification(&format!("Failed to change save mode: {e}"));
             }
         }
     }
@@ -419,10 +414,10 @@ impl App {
                 if let Some(p) = self.profiles.get_mut(self.active_profile_idx) {
                     p.save_synced_at = Some(std::time::SystemTime::now());
                 }
-                self.toaster.toast(&sync.to_toast());
+                self.push_notification(&sync.to_toast());
             }
             Err(e) => {
-                self.toaster.toast(&format!("Save sync failed: {e}"));
+                self.push_notification(&format!("Save sync failed: {e}"));
             }
         }
     }

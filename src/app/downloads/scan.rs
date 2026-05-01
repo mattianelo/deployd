@@ -15,7 +15,7 @@ impl App {
         let base_dir = &self.downloads_dir;
         if !base_dir.exists() {
             if self.initial_scan_done {
-                self.toaster.toast("Downloads folder not found");
+                self.push_notification("Downloads folder not found");
             }
             self.initial_scan_done = true;
             return;
@@ -258,7 +258,7 @@ impl App {
         }
 
         if self.initial_scan_done && new_count > 0 {
-            self.toaster.toast(&format!("Found {new_count} archive(s)"));
+            self.push_notification(&format!("Found {new_count} archive(s)"));
         }
         self.initial_scan_done = true;
     }

@@ -67,6 +67,14 @@ impl App {
                     format!("Extracting file {done}/{total}"),
                 ));
             }));
+        let processing_sender = sender.input_sender().clone();
+        let on_processing: Option<Box<dyn FnOnce() + Send>> =
+            Some(Box::new(move || {
+                let _ = processing_sender.send(AppMsg::InstallProgress(
+                    1.0,
+                    "Processing mod structure...".to_string(),
+                ));
+            }));
 
         sender.oneshot_command(async move {
             let result: Result<PrepareResultMsg, String> = async {
@@ -77,7 +85,7 @@ impl App {
                 .await
                 .unwrap_or(None);
 
-                let prepare = installer::prepare_mod(&path, on_extract_progress)
+                let prepare = installer::prepare_mod(&path, on_extract_progress, on_processing)
                     .await
                     .map_err(|e| format!("{e:#}"))?;
                 match prepare {
@@ -247,7 +255,7 @@ impl App {
         let cache_root = match self.cache_root_for(&pending.game.id) {
             Ok(r) => r,
             Err(e) => {
-                self.toaster.toast(&format!("Cannot resolve cache dir: {e}"));
+                self.push_notification(&format!("Cannot resolve cache dir: {e}"));
                 return;
             }
         };
@@ -375,16 +383,24 @@ impl App {
         self.pending_replace_mod_id = None;
         self.pending_fetched_name = None;
         self.pending_file_id_needed = None;
+        let was_reinstall = self.reinstall_mode;
         self.reinstall_mode = false;
         self.installing = false;
         self.status_msg = None;
 
         if let Some(dl_id) = self.active_download_id.take() {
-            self.update_download_status(
-                &dl_id,
-                crate::models::download::DownloadStatus::Downloaded,
-                "Ready to install",
-            );
+            let (status, msg) = if was_reinstall {
+                (
+                    crate::models::download::DownloadStatus::Installed,
+                    "Installed",
+                )
+            } else {
+                (
+                    crate::models::download::DownloadStatus::Downloaded,
+                    "Ready to install",
+                )
+            };
+            self.update_download_status(&dl_id, status, msg);
         }
     }
 
@@ -410,7 +426,7 @@ impl App {
         let cache_root = match self.cache_root_for(&pending.game.id) {
             Ok(r) => r,
             Err(e) => {
-                self.toaster.toast(&format!("Cannot resolve cache dir: {e}"));
+                self.push_notification(&format!("Cannot resolve cache dir: {e}"));
                 return;
             }
         };
@@ -544,16 +560,24 @@ impl App {
         self.pending_replace_mod_id = None;
         self.pending_fetched_name = None;
         self.pending_file_id_needed = None;
+        let was_reinstall = self.reinstall_mode;
         self.reinstall_mode = false;
         self.installing = false;
         self.status_msg = None;
 
         if let Some(dl_id) = self.active_download_id.take() {
-            self.update_download_status(
-                &dl_id,
-                crate::models::download::DownloadStatus::Downloaded,
-                "Ready to install",
-            );
+            let (status, msg) = if was_reinstall {
+                (
+                    crate::models::download::DownloadStatus::Installed,
+                    "Installed",
+                )
+            } else {
+                (
+                    crate::models::download::DownloadStatus::Downloaded,
+                    "Ready to install",
+                )
+            };
+            self.update_download_status(&dl_id, status, msg);
         }
     }
 
@@ -598,7 +622,7 @@ impl App {
         let cache_root = match self.cache_root_for(&pending.game.id) {
             Ok(r) => r,
             Err(e) => {
-                self.toaster.toast(&format!("Cannot resolve cache dir: {e}"));
+                self.push_notification(&format!("Cannot resolve cache dir: {e}"));
                 return;
             }
         };
@@ -856,7 +880,7 @@ impl App {
                         });
                     }
                 }
-                self.toaster.toast(&format!("Add failed: {e}"));
+                self.push_notification(&format!("Add failed: {e}"));
             }
         }
     }
@@ -922,15 +946,22 @@ impl App {
                     }
                     m
                 };
-                self.toaster.toast(&msg);
+                self.push_notification(&msg);
                 if let Some(dialog) = self.absorb_dialog.take() {
                     dialog.widget().destroy();
                 }
 
-                if let (Some(nexus_mod_id), Some(nexus_domain)) = (
-                    add_result.mod_entry.nexus_mod_id,
-                    add_result.mod_entry.nexus_domain.as_deref(),
-                ) {
+                let already_fetched = metadata_dl_id
+                    .as_ref()
+                    .and_then(|id| self.all_downloads.iter().find(|e| &e.id == id))
+                    .is_some_and(|e| e.metadata_fetched);
+
+                if !already_fetched
+                    && let (Some(nexus_mod_id), Some(nexus_domain)) = (
+                        add_result.mod_entry.nexus_mod_id,
+                        add_result.mod_entry.nexus_domain.as_deref(),
+                    )
+                {
                     let tracker = self.tracker.clone().expect("tracker not initialized at absorb result handling");
                     let mod_id = add_result.mod_entry.id.clone();
                     let domain = nexus_domain.to_string();
@@ -988,7 +1019,7 @@ impl App {
                 }
             }
             Err(e) => {
-                self.toaster.toast(&format!("Add failed: {e}"));
+                self.push_notification(&format!("Add failed: {e}"));
             }
         }
     }
@@ -1030,7 +1061,7 @@ impl App {
                 self.needs_deploy = true;
                 self.auto_save_profile(sender);
                 self.reload_mods(sender);
-                self.toaster.toast(&format!(
+                self.push_notification(&format!(
                     "Merged {count} file(s) into '{mod_name}' — deploy to update game files"
                 ));
                 if let Some(dialog) = self.absorb_dialog.take() {
@@ -1038,7 +1069,7 @@ impl App {
                 }
             }
             Err(e) => {
-                self.toaster.toast(&format!("Merge failed: {e}"));
+                self.push_notification(&format!("Merge failed: {e}"));
             }
         }
     }

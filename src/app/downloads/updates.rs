@@ -15,7 +15,7 @@ impl App {
             return;
         };
 
-        self.toaster.toast("Checking for updates...");
+        self.push_notification("Checking for updates...");
 
         let input_sender = sender.input_sender().clone();
         sender.oneshot_command(async move {
@@ -105,7 +105,7 @@ impl App {
             return;
         };
 
-        self.toaster.toast("Downloading update...");
+        self.push_notification("Downloading update...");
 
         sender.oneshot_command(async move {
             let result: Result<(), String> = async {

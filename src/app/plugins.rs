@@ -41,8 +41,7 @@ impl App {
         new_order.insert(to, p);
 
         if let Some(master) = check_order_violates_masters(&new_order, &self.plugin_masters) {
-            self.toaster
-                .toast(&format!("Cannot move plugin: '{}' must load first", master));
+            self.push_notification(&format!("Cannot move plugin: '{}' must load first", master));
             return;
         }
 
@@ -108,8 +107,7 @@ impl App {
                 }
             }
             if let Some(master) = check_order_violates_masters(&new_order, &self.plugin_masters) {
-                self.toaster
-                    .toast(&format!("Cannot move plugin: '{}' must load first", master));
+                self.push_notification(&format!("Cannot move plugin: '{}' must load first", master));
                 return;
             }
         }
@@ -350,8 +348,7 @@ impl App {
                 plugin_names,
                 local_data_path,
             );
-            self.toaster
-                .toast("LOOT support is not enabled in this build");
+            self.push_notification("LOOT support is not enabled in this build");
         }
     }
 }
@@ -361,8 +358,7 @@ impl App {
 impl App {
     pub(crate) fn handle_cmd_plugin_order_saved(&mut self, result: Result<(), String>) {
         if let Err(e) = result {
-            self.toaster
-                .toast(&format!("Failed to save plugin order: {e}"));
+            self.push_notification(&format!("Failed to save plugin order: {e}"));
         }
     }
 
@@ -378,11 +374,10 @@ impl App {
                 self.dirty_plugins = dirty;
 
                 self.needs_deploy = true;
-                self.toaster
-                    .toast("Load order sorted by LOOT — deploy to apply");
+                self.push_notification("Load order sorted by LOOT — deploy to apply");
 
                 if dirty_count > 0 {
-                    self.toaster.toast(&format!(
+                    self.push_notification(&format!(
                         "{dirty_count} plugin{} ha{} dirty edits — clean with xEdit",
                         if dirty_count == 1 { "" } else { "s" },
                         if dirty_count == 1 { "s" } else { "ve" },
@@ -423,7 +418,7 @@ impl App {
                 }
             }
             Err(e) => {
-                self.toaster.toast(&format!("LOOT sort failed: {e}"));
+                self.push_notification(&format!("LOOT sort failed: {e}"));
             }
         }
     }

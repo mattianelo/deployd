@@ -24,15 +24,14 @@ impl App {
         let link = match NxmLink::parse(&uri) {
             Ok(l) => l,
             Err(e) => {
-                self.toaster.toast(&format!("Invalid NXM link: {e}"));
+                self.push_notification(&format!("Invalid NXM link: {e}"));
                 return;
             }
         };
 
         // Check game domain is supported
         if game::game_id_for_nexus_domain(&link.domain).is_none() {
-            self.toaster
-                .toast(&format!("Unsupported game: {}", link.domain));
+            self.push_notification(&format!("Unsupported game: {}", link.domain));
             return;
         }
 
