@@ -1,4 +1,8 @@
+use std::collections::HashMap;
+
 use relm4::prelude::*;
+
+use crate::core::tracker::OverrideInfo;
 
 use super::super::App;
 use super::super::messages::{AppCmdMsg, AppMsg};
@@ -79,11 +83,50 @@ impl App {
     pub(crate) fn handle_cmd_priority_saved(
         &mut self,
         result: Result<(), String>,
-        sender: &ComponentSender<Self>,
+        _sender: &ComponentSender<Self>,
     ) {
-        match result {
-            Ok(()) => self.reload_mods(sender),
-            Err(e) => self.push_notification(&format!("Failed to save order: {e}")),
+        if let Err(e) = result {
+            self.push_notification(&format!("Failed to save: {e}"));
+        }
+    }
+
+    pub(crate) fn handle_cmd_overrides_refreshed(
+        &mut self,
+        result: Result<HashMap<String, OverrideInfo>, String>,
+        _sender: &ComponentSender<Self>,
+    ) {
+        let Ok(overrides) = result else {
+            return;
+        };
+        let mut guard = self.mods.guard();
+        let len = guard.len();
+        for i in 0..len {
+            let needs_update = guard
+                .get(i)
+                .and_then(|r| r.mod_row())
+                .is_some_and(|r| {
+                    let info = overrides.get(&r.mod_entry.id);
+                    r.overrides != info.map_or(0, |i| i.overrides)
+                        || r.overridden_by != info.map_or(0, |i| i.overridden_by)
+                });
+            if needs_update {
+                if let Some(row) = guard.get_mut(i)
+                    && let Some(init) = row.mod_row_mut()
+                {
+                    let id = init.mod_entry.id.clone();
+                    let info = overrides.get(&id);
+                    init.overrides = info.map_or(0, |i| i.overrides);
+                    init.overridden_by = info.map_or(0, |i| i.overridden_by);
+                    init.override_files =
+                        info.map_or_else(Vec::new, |i| i.override_files.clone());
+                    init.overridden_files =
+                        info.map_or_else(Vec::new, |i| i.overridden_files.clone());
+                    init.conflicting_mod_names =
+                        info.map_or_else(Vec::new, |i| i.conflicting_mod_names.clone());
+                    init.conflicted_by_mod_names =
+                        info.map_or_else(Vec::new, |i| i.conflicted_by_mod_names.clone());
+                }
+            }
         }
     }
 

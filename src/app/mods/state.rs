@@ -4,6 +4,7 @@ use gtk::glib;
 use gtk::prelude::*;
 use relm4::prelude::*;
 
+use crate::core::game;
 use crate::core::mod_folders;
 use crate::core::tracker::OverrideInfo;
 use crate::models::group::ModGroup;
@@ -407,27 +408,36 @@ impl App {
                     .and_then(|row| row.mod_id().map(|id| (id.to_string(), i as i32)))
             })
             .collect();
+        let mod_names: HashMap<String, String> = (0..guard.len())
+            .filter_map(|i| {
+                guard.get(i).and_then(|r| r.mod_row()).map(|r| {
+                    (r.mod_entry.id.clone(), r.mod_entry.name.clone())
+                })
+            })
+            .collect();
         drop(guard);
 
-        if let Some(tracker) = self.tracker.clone() {
-            let game_id = self.selected_game().map(|g| g.id.clone());
+        if let (Some(tracker), Some(game)) = (self.tracker.clone(), self.selected_game()) {
+            let game_id = game.id.clone();
+            let engine = game.engine.clone();
             let cache_root = self
-                .selected_game()
-                .and_then(|g| self.cache_root_for(&g.id).ok())
-                .unwrap_or_else(|| crate::utils::paths::cache_root().unwrap_or_default());
+                .cache_root_for(&game_id)
+                .unwrap_or_else(|_| crate::utils::paths::cache_root().unwrap_or_default());
             sender.oneshot_command(async move {
-                let result = tracker
-                    .update_priorities(&updates)
-                    .await
-                    .map_err(|e| e.to_string());
-                if result.is_ok()
-                    && let Some(ref gid) = game_id
-                    && let Err(e) =
-                        mod_folders::refresh_named_mod_folders(&tracker, gid, &cache_root).await
+                if let Err(e) = tracker.update_priorities(&updates).await {
+                    return AppCmdMsg::OverridesRefreshed(Err(e.to_string()));
+                }
+                if let Err(e) =
+                    mod_folders::refresh_named_mod_folders(&tracker, &game_id, &cache_root).await
                 {
                     eprintln!("[deployd] named_mods refresh failed: {e}");
                 }
-                AppCmdMsg::PrioritySaved(result)
+                AppCmdMsg::OverridesRefreshed(
+                    tracker
+                        .compute_overrides(&game_id, game::handler_for(&engine), &mod_names)
+                        .await
+                        .map_err(|e| e.to_string()),
+                )
             });
         }
     }

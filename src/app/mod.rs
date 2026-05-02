@@ -1624,6 +1624,9 @@ impl Component for App {
                 self.handle_cmd_cache_dir_reset(game_id, result)
             }
             AppCmdMsg::PrioritySaved(result) => self.handle_cmd_priority_saved(result, &sender),
+            AppCmdMsg::OverridesRefreshed(result) => {
+                self.handle_cmd_overrides_refreshed(result, &sender)
+            }
             AppCmdMsg::PluginOrderSaved(result) => self.handle_cmd_plugin_order_saved(result),
             AppCmdMsg::ProfileSwitched(result) => self.handle_cmd_profile_switched(result, &sender),
             AppCmdMsg::ProfileCreated(result) => self.handle_cmd_profile_created(result, &sender),

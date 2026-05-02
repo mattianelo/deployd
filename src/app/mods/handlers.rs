@@ -1,7 +1,10 @@
+use std::collections::HashMap;
+
 use gtk::prelude::*;
 use relm4::factory::DynamicIndex;
 use relm4::prelude::*;
 
+use crate::core::game;
 use crate::ui::mod_list::{ModListItemInit, ModListItemKind, ModRowInit};
 use crate::utils::paths;
 
@@ -121,21 +124,37 @@ impl App {
         {
             let mut guard = self.plugins.guard();
             for i in 0..guard.len() {
-                if let Some(row) = guard.get_mut(i)
-                    && row.plugin.mod_id == mod_id
-                {
-                    row.mod_enabled = enabled;
+                let matches = guard.get(i).is_some_and(|row| row.plugin.mod_id == mod_id);
+                if matches {
+                    if let Some(row) = guard.get_mut(i) {
+                        row.mod_enabled = enabled;
+                    }
                 }
             }
         }
 
         self.needs_deploy = true;
 
-        if let Some(tracker) = self.tracker.clone() {
+        if let (Some(tracker), Some(game)) = (self.tracker.clone(), self.selected_game()) {
+            let game_id = game.id.clone();
+            let engine = game.engine.clone();
+            let mod_names: HashMap<String, String> = {
+                let guard = self.mods.guard();
+                (0..guard.len())
+                    .filter_map(|i| {
+                        guard.get(i).and_then(|r| r.mod_row()).map(|r| {
+                            (r.mod_entry.id.clone(), r.mod_entry.name.clone())
+                        })
+                    })
+                    .collect()
+            };
             sender.oneshot_command(async move {
-                AppCmdMsg::PrioritySaved(
+                if let Err(e) = tracker.toggle_mod(&mod_id, enabled).await {
+                    return AppCmdMsg::OverridesRefreshed(Err(e.to_string()));
+                }
+                AppCmdMsg::OverridesRefreshed(
                     tracker
-                        .toggle_mod(&mod_id, enabled)
+                        .compute_overrides(&game_id, game::handler_for(&engine), &mod_names)
                         .await
                         .map_err(|e| e.to_string()),
                 )

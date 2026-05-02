@@ -116,6 +116,15 @@ impl ModListItem {
             None
         }
     }
+
+    /// Returns a mutable reference to the ModRowInit (None for separators).
+    pub fn mod_row_mut(&mut self) -> Option<&mut ModRowInit> {
+        if let ModListItemKind::Mod(init) = &mut self.kind {
+            Some(init)
+        } else {
+            None
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

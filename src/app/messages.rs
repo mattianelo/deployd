@@ -383,6 +383,7 @@ pub enum AppCmdMsg {
         result: Result<(), String>,
     },
     PrioritySaved(Result<(), String>),
+    OverridesRefreshed(Result<std::collections::HashMap<String, crate::core::tracker::OverrideInfo>, String>),
     PluginOrderSaved(Result<(), String>),
     ProfileSwitched(Result<(LoadedData, Option<save_manager::SaveSyncResult>), String>),
     ProfileCreated(Result<LoadedData, String>),
