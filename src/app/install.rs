@@ -79,6 +79,7 @@ impl App {
         sender.oneshot_command(async move {
             let result: Result<PrepareResultMsg, String> = async {
                 let hash_path = path.clone();
+                let archive_path = Some(path.to_string_lossy().to_string());
                 let archive_hash = tokio::task::spawn_blocking(move || {
                     crate::utils::archive::hash_archive_file(&hash_path).ok()
                 })
@@ -99,6 +100,7 @@ impl App {
                         tmp_dir,
                         mod_name,
                         archive_hash,
+                        archive_path,
                     }),
                     PrepareResult::Fomod {
                         config,
@@ -110,6 +112,7 @@ impl App {
                         tmp_dir,
                         mod_name,
                         archive_hash,
+                        archive_path,
                     }),
                 }
             }
@@ -283,6 +286,7 @@ impl App {
                     &cache_root,
                     pending.nexus_ids,
                     pending.archive_hash,
+                    pending.archive_path,
                     pending.file_targets,
                     pending.stripped_wrapper,
                     &pending.excluded_files,
@@ -492,6 +496,7 @@ impl App {
                     &cache_root,
                     pending.nexus_ids,
                     pending.archive_hash,
+                    pending.archive_path,
                     pending.file_targets,
                     pending.stripped_wrapper,
                     &pending.excluded_files,
@@ -688,6 +693,7 @@ impl App {
                 tmp_dir,
                 mod_name,
                 archive_hash,
+                archive_path,
             }) => {
                 let game = self
                     .selected_game()
@@ -703,6 +709,7 @@ impl App {
                     fomod_config: None,
                     nexus_ids: self.pending_nexus_ids.take(),
                     archive_hash,
+                    archive_path,
                     file_targets: HashMap::new(),
                     excluded_files: HashSet::new(),
                 });
@@ -762,6 +769,7 @@ impl App {
                 tmp_dir,
                 mod_name,
                 archive_hash,
+                archive_path,
             }) => {
                 let game = self
                     .selected_game()
@@ -777,6 +785,7 @@ impl App {
                     fomod_config: Some(config),
                     nexus_ids: self.pending_nexus_ids.take(),
                     archive_hash,
+                    archive_path,
                     file_targets: HashMap::new(),
                     excluded_files: HashSet::new(),
                 });

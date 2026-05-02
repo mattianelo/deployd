@@ -5,6 +5,7 @@ use relm4::prelude::*;
 use crate::ui::mod_list::{ModListItemInit, ModListItemKind, ModRowInit};
 use crate::utils::paths;
 
+use super::super::messages::AppMsg;
 use super::super::App;
 use super::super::free_fns::load_game_data;
 use super::super::messages::AppCmdMsg;
@@ -198,7 +199,7 @@ impl App {
         let mut block = Vec::with_capacity(block_size);
         for _ in 0..block_size {
             if let Some(item) = guard.remove(from) {
-                block.push(crate::ui::mod_list::ModListItemInit { kind: item.kind, visible: item.visible });
+                block.push(crate::ui::mod_list::ModListItemInit { kind: item.kind, visible: item.visible, compact: item.compact });
             }
         }
 
@@ -257,6 +258,7 @@ impl App {
                                 conflicted_by_mod_names: init.conflicted_by_mod_names.clone(),
                             })),
                             visible: true,
+                            compact: self.compact_mod_rows,
                         })
                 })
                 .collect()
@@ -551,6 +553,7 @@ impl App {
                     game_id,
                     name: "New Mod".to_string(),
                     archive_hash: None,
+                    archive_path: None,
                     installed_at: Some(now),
                     enabled: true,
                     priority,
@@ -573,5 +576,53 @@ impl App {
             .await;
             AppCmdMsg::EmptyModCreated(result)
         });
+    }
+
+    pub(crate) fn handle_reinstall_mod(
+        &mut self,
+        index: DynamicIndex,
+        sender: &ComponentSender<Self>,
+    ) {
+        let idx = index.current_index();
+        let archive_path = {
+            let guard = self.mods.guard();
+            let Some(row) = guard.get(idx) else { return };
+            let Some(init) = row.mod_row() else { return };
+            init.mod_entry.archive_path.clone()
+        };
+        let Some(path_str) = archive_path else {
+            return;
+        };
+        let path = std::path::PathBuf::from(&path_str);
+        if !path.exists() {
+            self.push_notification(&format!(
+                "Archive not found: {}",
+                path.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or(path_str)
+            ));
+            return;
+        }
+        self.reinstall_mode = true;
+        sender.input(AppMsg::FileChosen(path));
+    }
+
+    pub(crate) fn handle_set_compact_mod_rows(&mut self, compact: bool) {
+        self.compact_mod_rows = compact;
+        let mut guard = self.mods.guard();
+        for i in 0..guard.len() {
+            if let Some(row) = guard.get_mut(i)
+                && !row.is_separator()
+            {
+                row.compact = compact;
+            }
+        }
+        drop(guard);
+        if let Some(tracker) = self.tracker.clone() {
+            let val = if compact { "1" } else { "0" };
+            tokio::spawn(async move {
+                let _ = tracker.set_setting("compact_mod_rows", val).await;
+            });
+        }
     }
 }

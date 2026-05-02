@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use sqlx::Row;
 
 use crate::models::mod_entry::{InstallTarget, ModEntry};
 
@@ -8,14 +9,16 @@ impl Tracker {
     /// Insert a new mod record.
     pub async fn insert_mod(&self, entry: &ModEntry) -> Result<()> {
         sqlx::query(
-            "INSERT INTO mods (id, game_id, name, archive_hash, installed_at, enabled, priority,
-                               nexus_mod_id, nexus_file_id, nexus_domain, install_target)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO mods (id, game_id, name, archive_hash, archive_path, installed_at,
+                               enabled, priority, nexus_mod_id, nexus_file_id, nexus_domain,
+                               install_target)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&entry.id)
         .bind(&entry.game_id)
         .bind(&entry.name)
         .bind(&entry.archive_hash)
+        .bind(&entry.archive_path)
         .bind(&entry.installed_at)
         .bind(entry.enabled)
         .bind(entry.priority)
@@ -41,28 +44,8 @@ impl Tracker {
 
     /// List all mods for a given game, ordered by priority ascending (lowest priority first).
     pub async fn list_mods(&self, game_id: &str) -> Result<Vec<ModEntry>> {
-        let rows = sqlx::query_as::<
-            _,
-            (
-                String,
-                String,
-                String,
-                Option<String>,
-                Option<String>,
-                bool,
-                i32,
-                Option<i64>,
-                Option<i64>,
-                Option<String>,
-                Option<String>,
-                Option<String>,
-                Option<String>,
-                Option<String>,
-                Option<String>,
-                Option<String>,
-            ),
-        >(
-            "SELECT id, game_id, name, archive_hash, installed_at, enabled, priority,
+        let rows = sqlx::query(
+            "SELECT id, game_id, name, archive_hash, archive_path, installed_at, enabled, priority,
                     nexus_mod_id, nexus_file_id, nexus_domain, version, author,
                     nexus_description, latest_version, install_target, notes
              FROM mods WHERE game_id = ? ORDER BY priority ASC",
@@ -74,45 +57,28 @@ impl Tracker {
 
         Ok(rows
             .into_iter()
-            .map(
-                |(
-                    id,
-                    game_id,
-                    name,
-                    archive_hash,
-                    installed_at,
-                    enabled,
-                    priority,
-                    nexus_mod_id,
-                    nexus_file_id,
-                    nexus_domain,
-                    version,
-                    author,
-                    nexus_description,
-                    latest_version,
-                    install_target,
-                    notes,
-                )| {
-                    ModEntry {
-                        id,
-                        game_id,
-                        name,
-                        archive_hash,
-                        installed_at,
-                        enabled,
-                        priority,
-                        nexus_mod_id,
-                        nexus_file_id,
-                        nexus_domain,
-                        version,
-                        author,
-                        nexus_description,
-                        latest_version,
-                        install_target: InstallTarget::from(install_target.as_deref()),
-                        notes,
-                    }
-                },
-            )
+            .map(|row| {
+                let install_target: Option<String> = row.get("install_target");
+                ModEntry {
+                    id: row.get("id"),
+                    game_id: row.get("game_id"),
+                    name: row.get("name"),
+                    archive_hash: row.get("archive_hash"),
+                    archive_path: row.get("archive_path"),
+                    installed_at: row.get("installed_at"),
+                    enabled: row.get("enabled"),
+                    priority: row.get("priority"),
+                    nexus_mod_id: row.get("nexus_mod_id"),
+                    nexus_file_id: row.get("nexus_file_id"),
+                    nexus_domain: row.get("nexus_domain"),
+                    version: row.get("version"),
+                    author: row.get("author"),
+                    nexus_description: row.get("nexus_description"),
+                    latest_version: row.get("latest_version"),
+                    install_target: InstallTarget::from(install_target.as_deref()),
+                    notes: row.get("notes"),
+                }
+            })
             .collect())
     }
 

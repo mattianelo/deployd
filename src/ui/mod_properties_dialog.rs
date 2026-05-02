@@ -20,6 +20,14 @@ pub struct ModPropertiesInit {
     pub is_aurora: bool,
     /// Resolved cache root for this game (used to locate the mod's cache folder).
     pub cache_root: std::path::PathBuf,
+    /// Files this mod provides that win over lower-priority mods.
+    pub override_files: Vec<String>,
+    /// Files from this mod that are overridden by higher-priority mods.
+    pub overridden_files: Vec<String>,
+    /// Names of mods this mod overrides.
+    pub conflicting_mod_names: Vec<String>,
+    /// Names of mods that override files from this mod.
+    pub conflicted_by_mod_names: Vec<String>,
 }
 
 pub struct ModPropertiesDialog {
@@ -31,6 +39,7 @@ pub struct ModPropertiesDialog {
     version: Option<String>,
     author: Option<String>,
     installed_at: Option<String>,
+    archive_filename: Option<String>,
     /// Whether the selected game is a Bethesda game.
     is_bethesda: bool,
     /// Whether the selected game uses the Aurora engine (Witcher 1).
@@ -48,6 +57,15 @@ pub struct ModPropertiesDialog {
     files_list: gtk::ListBox,
     /// Stored handle to the "Set all" row so LoadFiles can append controls to it.
     set_all_row: gtk::Box,
+    /// Files this mod provides that win over lower-priority mods.
+    override_files: Vec<String>,
+    /// Files from this mod that are overridden by higher-priority mods.
+    overridden_files: Vec<String>,
+    /// Names of mods this mod overrides.
+    conflicting_mod_names: Vec<String>,
+    /// Names of mods that override files from this mod.
+    conflicted_by_mod_names: Vec<String>,
+    conflicts_visible: bool,
 }
 
 #[derive(Debug)]
@@ -57,6 +75,7 @@ pub enum ModPropertiesMsg {
     SetFileTarget(usize, InstallTarget),
     SetAllFileTargets(InstallTarget),
     ToggleFiles,
+    ToggleConflicts,
     /// Received from app once the async DB query for this mod's files completes.
     LoadFiles(Vec<ModFile>),
     Apply,
@@ -132,13 +151,17 @@ impl SimpleComponent for ModPropertiesDialog {
 
                         // Metadata (read-only)
                         gtk::Label {
-                            set_label: &format!(
-                                "Version: {}   Author: {}   Installed: {}",
-                                model.version.as_deref().unwrap_or("Unknown"),
-                                model.author.as_deref().unwrap_or("Unknown"),
-                                model.installed_at.as_deref().unwrap_or("Unknown")
-                                    .split('T').next().unwrap_or("Unknown"),
-                            ),
+                            set_label: &{
+                                let mut parts = vec![
+                                    format!("Version: {}", model.version.as_deref().unwrap_or("Unknown")),
+                                    format!("Author: {}", model.author.as_deref().unwrap_or("Unknown")),
+                                    format!("Installed: {}", model.installed_at.as_deref().unwrap_or("Unknown").split('T').next().unwrap_or("Unknown")),
+                                ];
+                                if let Some(f) = &model.archive_filename {
+                                    parts.push(format!("Archive: {f}"));
+                                }
+                                parts.join("   ")
+                            },
                             set_halign: gtk::Align::Start,
                             set_wrap: true,
                             add_css_class: "dim-label",
@@ -257,6 +280,93 @@ impl SimpleComponent for ModPropertiesDialog {
                             },
                         },
 
+                        // Conflict summary section
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Vertical,
+                            set_spacing: 4,
+                            #[watch]
+                            set_visible: !model.override_files.is_empty() || !model.overridden_files.is_empty(),
+
+                            gtk::Button {
+                                #[watch]
+                                set_label: &{
+                                    let total = model.override_files.len() + model.overridden_files.len();
+                                    if model.conflicts_visible {
+                                        format!("Conflicts ({total}) ▲")
+                                    } else {
+                                        format!("Conflicts ({total}) ▼")
+                                    }
+                                },
+                                add_css_class: "flat",
+                                set_halign: gtk::Align::Start,
+                                connect_clicked => ModPropertiesMsg::ToggleConflicts,
+                            },
+
+                            gtk::Revealer {
+                                #[watch]
+                                set_reveal_child: model.conflicts_visible,
+
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Vertical,
+                                    set_spacing: 8,
+
+                                    // Overrides subsection
+                                    gtk::Box {
+                                        set_orientation: gtk::Orientation::Vertical,
+                                        set_spacing: 4,
+                                        #[watch]
+                                        set_visible: !model.override_files.is_empty(),
+
+                                        #[name = "overrides_label"]
+                                        gtk::Label {
+                                            set_halign: gtk::Align::Start,
+                                            set_wrap: true,
+                                            add_css_class: "heading",
+                                        },
+
+                                        gtk::ScrolledWindow {
+                                            set_max_content_height: 180,
+                                            set_propagate_natural_height: true,
+                                            set_hscrollbar_policy: gtk::PolicyType::Never,
+
+                                            #[name = "overrides_list"]
+                                            gtk::ListBox {
+                                                set_selection_mode: gtk::SelectionMode::None,
+                                                add_css_class: "boxed-list",
+                                            },
+                                        },
+                                    },
+
+                                    // Overridden by subsection
+                                    gtk::Box {
+                                        set_orientation: gtk::Orientation::Vertical,
+                                        set_spacing: 4,
+                                        #[watch]
+                                        set_visible: !model.overridden_files.is_empty(),
+
+                                        #[name = "overridden_label"]
+                                        gtk::Label {
+                                            set_halign: gtk::Align::Start,
+                                            set_wrap: true,
+                                            add_css_class: "heading",
+                                        },
+
+                                        gtk::ScrolledWindow {
+                                            set_max_content_height: 180,
+                                            set_propagate_natural_height: true,
+                                            set_hscrollbar_policy: gtk::PolicyType::Never,
+
+                                            #[name = "overridden_list"]
+                                            gtk::ListBox {
+                                                set_selection_mode: gtk::SelectionMode::None,
+                                                add_css_class: "boxed-list",
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+
                         // Cache folder actions
                         gtk::Box {
                             set_orientation: gtk::Orientation::Horizontal,
@@ -317,7 +427,16 @@ impl SimpleComponent for ModPropertiesDialog {
             is_bethesda,
             is_aurora,
             cache_root,
+            override_files,
+            overridden_files,
+            conflicting_mod_names,
+            conflicted_by_mod_names,
         } = init;
+        let archive_filename = mod_entry
+            .archive_path
+            .as_deref()
+            .and_then(|p| std::path::Path::new(p).file_name())
+            .map(|n| n.to_string_lossy().to_string());
         let mut model = ModPropertiesDialog {
             mod_id: mod_entry.id,
             cache_root,
@@ -327,6 +446,7 @@ impl SimpleComponent for ModPropertiesDialog {
             version: mod_entry.version,
             author: mod_entry.author,
             installed_at: mod_entry.installed_at,
+            archive_filename,
             is_bethesda,
             is_aurora,
             files: Vec::new(),
@@ -337,6 +457,11 @@ impl SimpleComponent for ModPropertiesDialog {
             // Placeholder widgets replaced with real widget clones after view_output!().
             files_list: gtk::ListBox::new(),
             set_all_row: gtk::Box::new(gtk::Orientation::Horizontal, 8),
+            override_files,
+            overridden_files,
+            conflicting_mod_names,
+            conflicted_by_mod_names,
+            conflicts_visible: false,
         };
 
         let widgets = view_output!();
@@ -345,6 +470,39 @@ impl SimpleComponent for ModPropertiesDialog {
         // the LoadFiles handler can append rows to them from update().
         model.files_list = widgets.files_list.clone();
         model.set_all_row = widgets.set_all_row.clone();
+
+        // Populate conflict lists (data is known at init time).
+        let wins_over = if model.conflicting_mod_names.is_empty() {
+            String::new()
+        } else {
+            format!(" — wins over: {}", model.conflicting_mod_names.join(", "))
+        };
+        widgets.overrides_label.set_label(&format!(
+            "Overrides ({}){}",
+            model.override_files.len(),
+            wins_over,
+        ));
+        for f in &model.override_files {
+            let row = adw::ActionRow::new();
+            row.set_title(f);
+            widgets.overrides_list.append(&row);
+        }
+
+        let lost_to = if model.conflicted_by_mod_names.is_empty() {
+            String::new()
+        } else {
+            format!(" — loses to: {}", model.conflicted_by_mod_names.join(", "))
+        };
+        widgets.overridden_label.set_label(&format!(
+            "Overridden by ({}){}",
+            model.overridden_files.len(),
+            lost_to,
+        ));
+        for f in &model.overridden_files {
+            let row = adw::ActionRow::new();
+            row.set_title(f);
+            widgets.overridden_list.append(&row);
+        }
 
         {
             let input_sender = sender.input_sender().clone();
@@ -390,6 +548,9 @@ impl SimpleComponent for ModPropertiesDialog {
             }
             ModPropertiesMsg::ToggleFiles => {
                 self.files_visible = !self.files_visible;
+            }
+            ModPropertiesMsg::ToggleConflicts => {
+                self.conflicts_visible = !self.conflicts_visible;
             }
             ModPropertiesMsg::LoadFiles(files) => {
                 // Build model state from loaded ModFile list.

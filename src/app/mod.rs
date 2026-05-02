@@ -1171,7 +1171,7 @@ impl Component for App {
         // keystroke into the search entry, causing the bar to flicker open/closed
         // whenever the user types while some other widget has focus.
 
-        init::wire_drag_drop(&sender, mod_list, plugin_list);
+        init::wire_drag_drop(&sender, mod_list, plugin_list, &model.mod_scroll);
 
         sender.oneshot_command(async move { init::load_init_data().await });
 
@@ -1191,6 +1191,7 @@ impl Component for App {
             AppMsg::FomodConfirmed(selections) => self.handle_fomod_confirmed(selections, &sender),
             AppMsg::FomodCancelled => self.handle_fomod_cancelled(),
             AppMsg::RemoveMod(idx) => self.handle_remove_mod(idx, &sender),
+            AppMsg::ReinstallMod(idx) => self.handle_reinstall_mod(idx, &sender),
             AppMsg::ToggleModEnabled(idx, enabled) => {
                 self.handle_toggle_mod_enabled(idx, enabled, &sender)
             }
@@ -1522,6 +1523,7 @@ impl Component for App {
             AppMsg::PauseDownload(idx) => self.handle_pause_download(idx),
             AppMsg::ResumeDownload(idx) => self.handle_resume_download(idx, &sender),
             AppMsg::SetCompactPluginRows(compact) => self.handle_set_compact_plugin_rows(compact),
+            AppMsg::SetCompactModRows(compact) => self.handle_set_compact_mod_rows(compact),
             AppMsg::SetColorScheme(idx) => self.handle_set_color_scheme(idx),
             AppMsg::NexusLoginClicked => self.handle_nexus_login_clicked(&sender),
             AppMsg::NexusLogoutClicked => self.handle_nexus_logout_clicked(&sender),

@@ -1,4 +1,6 @@
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 use std::path::PathBuf;
 
 use adw;
@@ -34,6 +36,7 @@ pub(super) fn build_model(
             .launch_default()
             .forward(sender.input_sender(), |output| match output {
                 ModListItemOutput::Remove(index) => AppMsg::RemoveMod(index),
+                ModListItemOutput::Reinstall(index) => AppMsg::ReinstallMod(index),
                 ModListItemOutput::ToggleEnabled(index, enabled) => {
                     AppMsg::ToggleModEnabled(index, enabled)
                 }
@@ -217,6 +220,7 @@ pub(super) fn build_model(
         plugin_snapshots_list: gtk::ListBox::new(),
         proton_setup: false,
         compact_plugin_rows: false,
+        compact_mod_rows: false,
         color_scheme_idx: 0,
         pending_fetched_name: None,
         pending_file_id_needed: None,
@@ -323,15 +327,50 @@ fn half_row_index(row: &gtk::ListBoxRow, y: f64, list_len: usize) -> usize {
     }
 }
 
+/// Snaps a raw drop position to the nearest valid group boundary.
+///
+/// Valid positions for dropping a group separator are: index 0, the index of
+/// any existing separator row, or the end of the list. Dropping a group inside
+/// another group's mod block would silently absorb those mods into the dragged
+/// group on the next drag, so we prevent it here.
+fn snap_to_group_boundary(list_box: &gtk::ListBox, raw_to: usize, len: usize) -> usize {
+    let mut best = raw_to;
+    let mut best_dist = usize::MAX;
+    for i in 0..=len {
+        let is_boundary = i == 0
+            || i == len
+            || list_box
+                .row_at_index(i as i32)
+                .map(|r| r.has_css_class("mod-separator-row"))
+                .unwrap_or(false);
+        if is_boundary {
+            let dist = (i as isize - raw_to as isize).unsigned_abs();
+            if dist < best_dist {
+                best_dist = dist;
+                best = i;
+            }
+        }
+    }
+    best
+}
+
 /// Attaches drag-and-drop `DropTarget` controllers to the mod and plugin list widgets.
 pub(super) fn wire_drag_drop(
     sender: &ComponentSender<App>,
     mod_list: &gtk::ListBox,
     plugin_list: &gtk::ListBox,
+    mod_scroll: &gtk::ScrolledWindow,
 ) {
+    // Shared timeout handle for drag-scroll. None = not scrolling.
+    let scroll_source: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
+
     let mod_drop = gtk::DropTarget::new(glib::Type::STRING, gtk::gdk::DragAction::MOVE);
     let mod_sender = sender.input_sender().clone();
+    let scroll_drop = scroll_source.clone();
     mod_drop.connect_drop(move |target, value, _x, y| {
+        if let Some(id) = scroll_drop.borrow_mut().take() {
+            id.remove();
+        }
         let Some(widget) = target.widget() else {
             return false;
         };
@@ -347,7 +386,8 @@ pub(super) fn wire_drag_drop(
         {
             if let Some(row) = list_box.row_at_y(y as i32) {
                 let len = list_box.observe_children().n_items() as usize;
-                let to = half_row_index(&row, y, len);
+                let raw_to = half_row_index(&row, y, len);
+                let to = snap_to_group_boundary(&list_box, raw_to, len);
                 if from != to {
                     mod_sender.send(AppMsg::MoveGroupTo(from, to)).unwrap();
                 }
@@ -380,14 +420,56 @@ pub(super) fn wire_drag_drop(
         }
         true
     });
-    mod_drop.connect_motion(|target, _x, y| {
+    let scroll_motion = scroll_source.clone();
+    let vadj_motion = mod_scroll.vadjustment();
+    mod_drop.connect_motion(move |target, _x, y| {
         if let Some(widget) = target.widget() {
-            let list_box = widget.downcast::<gtk::ListBox>().unwrap();
+            let list_box = widget.clone().downcast::<gtk::ListBox>().unwrap();
             update_drop_indicator(&list_box, y);
+
+            const EDGE: f64 = 40.0;
+            const MAX_STEP: f64 = 8.0;
+            let height = widget.height() as f64;
+            let delta = if y < EDGE {
+                // Near top — scroll up (negative)
+                -MAX_STEP * (1.0 - y / EDGE)
+            } else if y > height - EDGE {
+                // Near bottom — scroll down (positive)
+                MAX_STEP * (1.0 - (height - y) / EDGE)
+            } else {
+                0.0
+            };
+
+            if delta.abs() < 0.5 {
+                // Not near an edge — cancel any running scroll timeout
+                if let Some(id) = scroll_motion.borrow_mut().take() {
+                    id.remove();
+                }
+            } else if scroll_motion.borrow().is_none() {
+                // Start a new repeating timeout that nudges the adjustment
+                let vadj = vadj_motion.clone();
+                let scroll_ref = scroll_motion.clone();
+                let id = glib::timeout_add_local(std::time::Duration::from_millis(16), move || {
+                    let cur = vadj.value();
+                    let next = (cur + delta)
+                        .clamp(vadj.lower(), vadj.upper() - vadj.page_size());
+                    vadj.set_value(next);
+                    if scroll_ref.borrow().is_none() {
+                        glib::ControlFlow::Break
+                    } else {
+                        glib::ControlFlow::Continue
+                    }
+                });
+                *scroll_motion.borrow_mut() = Some(id);
+            }
         }
         gtk::gdk::DragAction::MOVE
     });
-    mod_drop.connect_leave(|target| {
+    let scroll_leave = scroll_source.clone();
+    mod_drop.connect_leave(move |target| {
+        if let Some(id) = scroll_leave.borrow_mut().take() {
+            id.remove();
+        }
         if let Some(widget) = target.widget() {
             let list_box = widget.downcast::<gtk::ListBox>().unwrap();
             clear_drop_indicators(&list_box);
@@ -624,6 +706,14 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             .map(|v| v == "1")
             .unwrap_or(false);
 
+        let compact_mod_rows = tracker
+            .get_setting("compact_mod_rows")
+            .await
+            .ok()
+            .flatten()
+            .map(|v| v == "1")
+            .unwrap_or(false);
+
         let color_scheme_idx = tracker
             .get_setting("color_scheme")
             .await
@@ -665,6 +755,7 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             nexus_avatar_url,
             nexus_is_premium,
             compact_plugin_rows,
+            compact_mod_rows,
             color_scheme_idx,
             restored_from_backup,
         })

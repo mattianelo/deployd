@@ -227,20 +227,20 @@ impl FomodDialog {
             resolve_image_path(&self.extracted_root, plugin.image_path.as_ref()?)
         };
 
-        if let Some((gi, pi)) = self.hovered_plugin {
-            if let Some(path) = resolve(gi, pi) {
-                self.preview_picture.set_filename(Some(path));
-                self.image_panel.set_visible(true);
-                return;
-            }
+        if let Some((gi, pi)) = self.hovered_plugin
+            && let Some(path) = resolve(gi, pi)
+        {
+            self.preview_picture.set_filename(Some(path));
+            self.image_panel.set_visible(true);
+            return;
         }
 
-        if let Some((gi, pi)) = self.last_interacted {
-            if let Some(path) = resolve(gi, pi) {
-                self.preview_picture.set_filename(Some(path));
-                self.image_panel.set_visible(true);
-                return;
-            }
+        if let Some((gi, pi)) = self.last_interacted
+            && let Some(path) = resolve(gi, pi)
+        {
+            self.preview_picture.set_filename(Some(path));
+            self.image_panel.set_visible(true);
+            return;
         }
 
         let Some(step_sel) = self.selections.get(self.current_step) else {

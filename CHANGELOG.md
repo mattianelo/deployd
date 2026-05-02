@@ -1,5 +1,41 @@
 # Changelog
 
+## [1.0.1]
+
+### Added
+
+- **Mod name autocomplete in Install dialog** — the Mod Name entry in the Install Mod dialog now
+  offers autocomplete suggestions from existing mod names (triggers after 2 characters), making it
+  easier to merge an install into an existing mod slot.
+- **Compact Mod List toggle** — Settings now includes a "Compact Mod List" switch (alongside the
+  existing plugin toggle) to reduce row height in the Mod Order panel. The setting persists across
+  restarts.
+- **Drag-scroll in Mod List** — dragging a mod near the top or bottom edge of the list now
+  auto-scrolls the panel, making it practical to reorder mods across long lists without dropping.
+- **Stable `named_mods/by-name/` symlink directory** — the named mods folder now also populates a
+  `by-name/<name>` subtree with prefix-free symlinks. These paths never change when mods are
+  reordered, providing a stable output target for tools like PGPatcher.
+- **Archive path stored; reinstall from mod row** — the source archive path is recorded when a mod
+  is installed. A reinstall button (↺) appears on each mod row when the archive is still present on
+  disk, re-opening the install flow for that archive. The archive filename is also shown in the mod
+  Properties dialog.
+- **Conflict detail in Mod Properties** — the Properties dialog now shows a collapsible Conflicts
+  section listing which files this mod overrides (wins), which of its files are overridden (loses),
+  and which mods are involved on each side.
+
+### Fixed
+
+- **Cancel on "External File Changed" dialog restores notification** — cancelling the absorb
+  dialog no longer loses the pending file list. The notification reappears so the user can retry.
+- **Group drag picks up extra mods on second drag** — dropping a group separator now snaps to the
+  nearest valid group boundary, preventing it from landing mid-group and silently absorbing the
+  mods between it and the next separator on the following drag.
+- **Pre-install dialog warns when files are auto-assigned to game root** — a banner appears when
+  any file is auto-detected as Root (exe/dll/asi), prompting the user to switch to "Set all → D"
+  for tools like Pandora whose data files must share the same folder as the executable.
+
+---
+
 ## [1.0.0]
 
 ### Added

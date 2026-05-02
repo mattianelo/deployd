@@ -76,6 +76,7 @@ impl App {
                         collapsed,
                     },
                     visible: true,
+                    compact: false,
                 });
                 group_idx += 1;
             }
@@ -110,6 +111,7 @@ impl App {
                         .map_or_else(Vec::new, |i| i.conflicted_by_mod_names.clone()),
                 })),
                 visible,
+                compact: self.compact_mod_rows,
             });
         }
 
@@ -123,6 +125,7 @@ impl App {
                     collapsed,
                 },
                 visible: true,
+                compact: false,
             });
             group_idx += 1;
         }

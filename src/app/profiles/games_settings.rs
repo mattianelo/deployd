@@ -30,6 +30,7 @@ impl App {
                     tracker,
                     self.nexus_username.is_some(),
                     self.compact_plugin_rows,
+                    self.compact_mod_rows,
                     self.color_scheme_idx,
                 ))
                 .forward(sender.input_sender(), |output| match output {
@@ -38,6 +39,9 @@ impl App {
                     SettingsDialogOutput::ManageGames => AppMsg::ManageGamesClicked,
                     SettingsDialogOutput::SetCompactPluginRows(compact) => {
                         AppMsg::SetCompactPluginRows(compact)
+                    }
+                    SettingsDialogOutput::SetCompactModRows(compact) => {
+                        AppMsg::SetCompactModRows(compact)
                     }
                     SettingsDialogOutput::ColorSchemeChanged(idx) => AppMsg::SetColorScheme(idx),
                     SettingsDialogOutput::CreateFullBackup => AppMsg::CreateFullBackupClicked,

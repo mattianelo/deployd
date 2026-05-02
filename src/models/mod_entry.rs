@@ -34,6 +34,7 @@ pub struct ModEntry {
     pub game_id: String,
     pub name: String,
     pub archive_hash: Option<String>,
+    pub archive_path: Option<String>,
     pub installed_at: Option<String>,
     pub enabled: bool,
     pub priority: i32,

@@ -27,6 +27,8 @@ pub struct PreInstallDialog {
     /// Whether the selected game uses the Aurora engine (Witcher 1). Shows the
     /// Override/Root toggle with Aurora-specific labels and auto-detection.
     is_aurora: bool,
+    /// True when any file was auto-detected as Root (exe/dll/asi at archive root).
+    has_root_files: bool,
 }
 
 #[derive(Debug)]
@@ -59,6 +61,8 @@ pub struct PreInstallDialogInit {
     pub is_bethesda: bool,
     /// Set to true for Aurora (Witcher 1) to show per-file Override/Root toggles.
     pub is_aurora: bool,
+    /// Existing mod names offered as autocomplete suggestions in the name entry.
+    pub mod_names: Vec<String>,
 }
 
 #[relm4::component(pub)]
@@ -107,6 +111,12 @@ impl SimpleComponent for PreInstallDialog {
                         set_label: "FOMOD installer will follow after confirming.",
                         add_css_class: "dim-label",
                         set_halign: gtk::Align::Start,
+                    },
+
+                    adw::Banner {
+                        #[watch]
+                        set_revealed: model.has_root_files && (model.is_bethesda || model.is_aurora),
+                        set_title: "One or more files were auto-assigned to the game root (exe/dll/asi). If this tool expects all its files in the same folder, use \"Set all → D\".",
                     },
 
                     // Collapsible file list with per-file Root/Data toggles.
@@ -198,6 +208,7 @@ impl SimpleComponent for PreInstallDialog {
     ) -> ComponentParts<Self> {
         let file_targets: Vec<InstallTarget> =
             init.file_preview.iter().map(|(_, t)| t.clone()).collect();
+        let has_root_files = file_targets.contains(&InstallTarget::Root);
         let file_included = vec![true; init.file_preview.len()];
 
         let model = PreInstallDialog {
@@ -209,6 +220,7 @@ impl SimpleComponent for PreInstallDialog {
             files_visible: true,
             is_bethesda: init.is_bethesda,
             is_aurora: init.is_aurora,
+            has_root_files,
         };
 
         let widgets = view_output!();
@@ -221,6 +233,23 @@ impl SimpleComponent for PreInstallDialog {
                     .send(PreInstallDialogMsg::NameChanged(entry.text().to_string()))
                     .unwrap();
             });
+        }
+
+        // Wire autocomplete for existing mod names (minimum 2 chars to trigger).
+        // EntryCompletion is deprecated since GTK 4.10 but remains the simplest
+        // drop-in for single-entry inline suggestions without a full custom widget.
+        #[allow(deprecated)]
+        if !init.mod_names.is_empty() {
+            let store = gtk::ListStore::new(&[glib::Type::STRING]);
+            for name in &init.mod_names {
+                store.insert_with_values(None, &[(0, name)]);
+            }
+            let completion = gtk::EntryCompletion::new();
+            completion.set_model(Some(&store));
+            completion.set_text_column(0);
+            completion.set_minimum_key_length(2);
+            completion.set_inline_completion(false);
+            widgets.name_entry.set_completion(Some(&completion));
         }
 
         // Shared button refs so the "Set all" buttons can toggle them directly.

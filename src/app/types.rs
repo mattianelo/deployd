@@ -62,6 +62,8 @@ pub(crate) struct PendingInstall {
     pub(crate) nexus_ids: Option<NexusIds>,
     /// SHA-256 hex digest of the source archive, used for duplicate detection.
     pub(crate) archive_hash: Option<String>,
+    /// Absolute path of the source archive on disk, stored in the mod record.
+    pub(crate) archive_path: Option<String>,
     /// Per-file install targets keyed by dest_rel path string.
     /// Empty map means auto-detect all (used for FOMOD installs).
     pub(crate) file_targets: HashMap<String, InstallTarget>,
@@ -127,6 +129,7 @@ pub struct InitData {
     /// Whether the logged-in Nexus user is premium.
     pub nexus_is_premium: bool,
     pub compact_plugin_rows: bool,
+    pub compact_mod_rows: bool,
     pub color_scheme_idx: u32,
     /// True when this launch follows a full-backup DB restore (marker file was present).
     pub restored_from_backup: bool,

@@ -20,12 +20,18 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         let idx = index.current_index();
-        let mod_entry = {
+        let (mod_entry, override_files, overridden_files, conflicting_mod_names, conflicted_by_mod_names) = {
             let guard = self.mods.guard();
             if let Some(item) = guard.get(idx)
                 && let crate::ui::mod_list::ModListItemKind::Mod(row) = &item.kind
             {
-                row.mod_entry.clone()
+                (
+                    row.mod_entry.clone(),
+                    row.override_files.clone(),
+                    row.overridden_files.clone(),
+                    row.conflicting_mod_names.clone(),
+                    row.conflicted_by_mod_names.clone(),
+                )
             } else {
                 return;
             }
@@ -52,6 +58,10 @@ impl App {
                     is_bethesda,
                     is_aurora,
                     cache_root,
+                    override_files,
+                    overridden_files,
+                    conflicting_mod_names,
+                    conflicted_by_mod_names,
                 })
                 .forward(sender.input_sender(), move |output| match output {
                     ModPropertiesOutput::Applied {

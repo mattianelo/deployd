@@ -37,6 +37,7 @@ pub enum AppMsg {
     FomodConfirmed(fomod_resolver::FomodSelections),
     FomodCancelled,
     RemoveMod(DynamicIndex),
+    ReinstallMod(DynamicIndex),
     ToggleModEnabled(DynamicIndex, bool),
     MoveModTo(usize, usize),
     MoveGroupTo(usize, usize),
@@ -287,6 +288,8 @@ pub enum AppMsg {
     ResumeDownload(DynamicIndex),
     /// Set compact plugin row display mode.
     SetCompactPluginRows(bool),
+    /// Set compact mod row display mode.
+    SetCompactModRows(bool),
     /// Set and persist the color scheme (0=System, 1=Light, 2=Dark).
     SetColorScheme(u32),
     /// User clicked "Login with Nexus" in the headerbar avatar popover.
@@ -314,6 +317,7 @@ pub(crate) enum PrepareResultMsg {
         tmp_dir: TempDir,
         mod_name: String,
         archive_hash: Option<String>,
+        archive_path: Option<String>,
     },
     Fomod {
         config: fomod_resolver::FomodUiConfig,
@@ -321,6 +325,7 @@ pub(crate) enum PrepareResultMsg {
         tmp_dir: TempDir,
         mod_name: String,
         archive_hash: Option<String>,
+        archive_path: Option<String>,
     },
 }
 

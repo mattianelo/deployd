@@ -8,9 +8,12 @@ use crate::utils::paths::{mod_cache_dir_in, named_mods_dir_in};
 
 /// Rebuild the `named_mods/` symlink directory for the given game.
 ///
-/// Each enabled mod gets a subdirectory named `<priority_padded>-<sanitized_name>`
-/// that symlinks to its per-mod cache directory. Tools (e.g. NPC Plugin Chooser 2)
-/// can be configured to read from this directory via the `M:\` Wine drive.
+/// Each enabled mod gets:
+/// - A priority-prefixed symlink at `named_mods/<priority_padded>-<name>` (for ordered access).
+/// - A stable symlink at `named_mods/by-name/<name>` (for tools needing a fixed path).
+///
+/// The `by-name/` subtree never changes its paths when mods are reordered, making it
+/// suitable as a fixed output folder target for tools like PGPatcher.
 pub async fn refresh_named_mod_folders(
     tracker: &Tracker,
     game_id: &str,
@@ -23,15 +26,23 @@ pub async fn refresh_named_mod_folders(
     }
     fs::create_dir_all(&named_dir)?;
 
+    let by_name_dir = named_dir.join("by-name");
+    fs::create_dir_all(&by_name_dir)?;
+
     let mods = tracker.list_mods(game_id).await?;
 
     for m in mods.iter().filter(|m| m.enabled) {
-        let folder_name = format!("{:05}-{}", m.priority, sanitize_name(&m.name));
-        let link_path = named_dir.join(&folder_name);
+        let sanitized = sanitize_name(&m.name);
         let target = mod_cache_dir_in(cache_root, &m.id);
 
+        let priority_link = named_dir.join(format!("{:05}-{sanitized}", m.priority));
+        let stable_link = by_name_dir.join(&sanitized);
+
         #[cfg(unix)]
-        std::os::unix::fs::symlink(&target, &link_path)?;
+        {
+            std::os::unix::fs::symlink(&target, &priority_link)?;
+            std::os::unix::fs::symlink(&target, &stable_link)?;
+        }
     }
 
     Ok(())

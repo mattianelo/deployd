@@ -29,6 +29,7 @@ pub enum SettingsMsg {
     ManageGames,
     SetColorScheme(u32),
     ToggleCompactPlugins(bool),
+    ToggleCompactMods(bool),
     CreateFullBackup,
     RestoreFromBackup,
 }
@@ -51,6 +52,8 @@ pub enum SettingsDialogOutput {
     ManageGames,
     /// User toggled compact plugin row mode.
     SetCompactPluginRows(bool),
+    /// User toggled compact mod row mode.
+    SetCompactModRows(bool),
     /// User changed the color scheme (0=System, 1=Light, 2=Dark).
     ColorSchemeChanged(u32),
     /// User wants to create a full backup archive.
@@ -61,8 +64,8 @@ pub enum SettingsDialogOutput {
 
 #[relm4::component(pub)]
 impl Component for SettingsDialog {
-    /// (tracker, is_logged_in, compact_plugin_rows, color_scheme_idx)
-    type Init = (Tracker, bool, bool, u32);
+    /// (tracker, is_logged_in, compact_plugin_rows, compact_mod_rows, color_scheme_idx)
+    type Init = (Tracker, bool, bool, bool, u32);
     type Input = SettingsMsg;
     type Output = SettingsDialogOutput;
     type CommandOutput = SettingsCmdMsg;
@@ -176,6 +179,15 @@ impl Component for SettingsDialog {
                             sender.input(SettingsMsg::ToggleCompactPlugins(row.is_active()));
                         },
                     },
+
+                    #[name = "compact_mod_switch_row"]
+                    add = &adw::SwitchRow {
+                        set_title: "Compact Mod List",
+                        set_subtitle: "Reduce row height in the Mod Order panel",
+                        connect_active_notify[sender] => move |row| {
+                            sender.input(SettingsMsg::ToggleCompactMods(row.is_active()));
+                        },
+                    },
                 },
 
                 // Backup & Restore section — hidden in stable builds
@@ -232,7 +244,7 @@ impl Component for SettingsDialog {
     }
 
     fn init(
-        (tracker, is_logged_in, compact_plugin_rows, color_scheme_idx): Self::Init,
+        (tracker, is_logged_in, compact_plugin_rows, compact_mod_rows, color_scheme_idx): Self::Init,
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
@@ -309,6 +321,7 @@ impl Component for SettingsDialog {
         // Initialise appearance controls with persisted values.
         widgets.color_scheme_combo.set_selected(color_scheme_idx);
         widgets.compact_switch_row.set_active(compact_plugin_rows);
+        widgets.compact_mod_switch_row.set_active(compact_mod_rows);
 
         root.present();
 
@@ -414,6 +427,9 @@ impl Component for SettingsDialog {
             }
             SettingsMsg::ToggleCompactPlugins(compact) => {
                 let _ = sender.output(SettingsDialogOutput::SetCompactPluginRows(compact));
+            }
+            SettingsMsg::ToggleCompactMods(compact) => {
+                let _ = sender.output(SettingsDialogOutput::SetCompactModRows(compact));
             }
             SettingsMsg::DownloadsDirChosen(path) => {
                 let dir_str = path.to_string_lossy().to_string();

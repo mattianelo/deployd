@@ -313,8 +313,7 @@ impl App {
         root: &adw::Window,
         sender: &ComponentSender<Self>,
     ) {
-        let files = self.pending_external_files.drain(..).collect::<Vec<_>>();
-        self.external_changes_count = 0;
+        let files = self.pending_external_files.clone();
         if files.is_empty() {
             return;
         }
@@ -363,6 +362,8 @@ impl App {
         );
         let is_bethesda = game.engine == crate::models::game::GameEngine::Bethesda;
         let is_aurora = game.engine == crate::models::game::GameEngine::Aurora;
+        self.pending_external_files.clear();
+        self.external_changes_count = 0;
         self.pending_install = Some(PendingInstall {
             tmp_dir: tempfile::tempdir().expect("tempdir"),
             mod_name: mod_name.clone(),
@@ -373,9 +374,21 @@ impl App {
             fomod_config: None,
             nexus_ids: None,
             archive_hash: None,
+            archive_path: None,
             file_targets: HashMap::new(),
             excluded_files: HashSet::new(),
         });
+        let mod_names: Vec<String> = self
+            .mods
+            .iter()
+            .filter_map(|item| {
+                if item.is_separator() {
+                    None
+                } else {
+                    Some(item.mod_name().to_owned())
+                }
+            })
+            .collect();
         self.pre_install_dialog = Some(
             PreInstallDialog::builder()
                 .transient_for(root)
@@ -385,6 +398,7 @@ impl App {
                     is_fomod: false,
                     is_bethesda,
                     is_aurora,
+                    mod_names,
                 })
                 .forward(sender.input_sender(), |output| match output {
                     PreInstallDialogOutput::Confirmed(name, targets, excluded) => {

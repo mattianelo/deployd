@@ -1325,3 +1325,10 @@ pub(super) async fn migrate_fomod_selections_column(pool: &SqlitePool) -> Result
         .await;
     Ok(())
 }
+
+pub(super) async fn migrate_archive_path_column(pool: &SqlitePool) -> Result<()> {
+    let _ = sqlx::query("ALTER TABLE mods ADD COLUMN archive_path TEXT")
+        .execute(pool)
+        .await;
+    Ok(())
+}

@@ -369,6 +369,7 @@ impl App {
         sender.oneshot_command(async move {
             let result: Result<PrepareResultMsg, String> = async {
                 let hash_path = archive_path.clone();
+                let archive_path_str = Some(archive_path.to_string_lossy().to_string());
                 let archive_hash = tokio::task::spawn_blocking(move || {
                     crate::utils::archive::hash_archive_file(&hash_path).ok()
                 })
@@ -391,6 +392,7 @@ impl App {
                         tmp_dir,
                         mod_name,
                         archive_hash,
+                        archive_path: archive_path_str,
                     }),
                     PrepareResult::Fomod {
                         config,
@@ -402,6 +404,7 @@ impl App {
                         tmp_dir,
                         mod_name,
                         archive_hash,
+                        archive_path: archive_path_str,
                     }),
                 }
             }

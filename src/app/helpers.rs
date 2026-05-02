@@ -117,6 +117,17 @@ impl App {
         } else {
             vec![]
         };
+        let mod_names: Vec<String> = self
+            .mods
+            .iter()
+            .filter_map(|item| {
+                if item.is_separator() {
+                    None
+                } else {
+                    Some(item.mod_name().to_owned())
+                }
+            })
+            .collect();
         self.pre_install_dialog = Some(
             PreInstallDialog::builder()
                 .transient_for(root)
@@ -126,6 +137,7 @@ impl App {
                     is_fomod,
                     is_bethesda,
                     is_aurora,
+                    mod_names,
                 })
                 .forward(sender.input_sender(), |output| match output {
                     PreInstallDialogOutput::Confirmed(name, targets, excluded) => {

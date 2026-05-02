@@ -1,12 +1,12 @@
 # Deployd
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Version](https://img.shields.io/badge/version-1.0.1-blue)
 ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey?logo=linux)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 
 A Linux-native mod manager for Bethesda, REDEngine, Aurora, and Eclipse games, built with GTK4 and Rust.
 
-> **v1.0.0** If you find bugs, please [open an issue](https://gitlab.com/mattianelo/deployd/-/issues).
+> **v1.0.1** If you find bugs, please [open an issue](https://gitlab.com/mattianelo/deployd/-/issues).
 
 ---
 
@@ -28,7 +28,7 @@ A Linux-native mod manager for Bethesda, REDEngine, Aurora, and Eclipse games, b
 - **FOMOD Installer** — Full wizard with conditional steps, image previews, and DLC-aware auto-selection
 - **Mod Profiles** — Per-game profiles to switch between configurations instantly
 - **Plugin Load Order** — Drag-and-drop `.esp`/`.esm`/`.esl` management written to `plugins.txt`
-- **Conflict Detection** — Per-file visibility into which mods override each other (The Witcher 1's Override/ files are matched by filename regardless of subfolder depth)
+- **Conflict Detection** — Per-file visibility into which mods override each other, with a detailed Conflicts section in each mod's Properties dialog (The Witcher 1's Override/ files are matched by filename regardless of subfolder depth)
 - **Priority-Based Deployment** — Hardlink deployment; lower in the list wins conflicts
 - **Tool Launcher** — Run xEdit, LOOT, BodySlide and more through Wine/Proton
 - **Save Management** — Browse game saves associated with the active profile
@@ -128,7 +128,7 @@ Open **Settings** (gear icon) and log in under **Nexus Mods**:
 - **Local archive** — Drag-and-drop a `.zip`, `.7z`, or `.rar` onto the mod list, or use the **+** button
 - **From Nexus Mods** — Click **Mod Manager Download**; the file downloads into Deployd automatically
 - **FOMOD mods** — A wizard opens automatically if the archive includes a FOMOD installer
-- **Reinstall** — Use the refresh button in the Downloads panel to re-extract and replace an existing mod
+- **Reinstall** — Use the ↺ button on any mod row to re-extract from its original archive, or use the refresh button in the Downloads panel
 - **Replace** — When a name conflict occurs during install, choose Replace to swap the mod in-place (preserving load order position)
 
 ### 4. Deployment

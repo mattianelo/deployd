@@ -35,6 +35,7 @@ pub enum ModListItemKind {
 pub struct ModListItemInit {
     pub kind: ModListItemKind,
     pub visible: bool,
+    pub compact: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -45,6 +46,7 @@ pub struct ModListItem {
     pub kind: ModListItemKind,
     /// Controlled by search filter and group collapse logic.
     pub visible: bool,
+    pub compact: bool,
 }
 
 impl std::fmt::Debug for ModListItem {
@@ -127,6 +129,7 @@ pub enum ModListItemOutput {
     ToggleEnabled(DynamicIndex, bool),
     RenameMod(DynamicIndex, String),
     OpenProperties(DynamicIndex),
+    Reinstall(DynamicIndex),
     // From separator rows
     ToggleGroupCollapse(DynamicIndex),
     DeleteGroup(DynamicIndex),
@@ -205,8 +208,10 @@ impl FactoryComponent for ModListItem {
                     set_spacing: 6,
                     set_margin_start: 8,
                     set_margin_end: 8,
-                    set_margin_top: 4,
-                    set_margin_bottom: 4,
+                    #[watch]
+                    set_margin_top: if self.compact { 1 } else { 4 },
+                    #[watch]
+                    set_margin_bottom: if self.compact { 1 } else { 4 },
                     #[watch]
                     set_visible: !self.is_separator(),
 
@@ -317,6 +322,18 @@ impl FactoryComponent for ModListItem {
                     },
 
                     gtk::Button {
+                        set_icon_name: "view-refresh-symbolic",
+                        set_tooltip_text: Some("Reinstall from archive"),
+                        set_valign: gtk::Align::Center,
+                        add_css_class: "flat",
+                        #[watch]
+                        set_visible: matches!(&self.kind, ModListItemKind::Mod(r) if r.mod_entry.archive_path.is_some()),
+                        connect_clicked[sender, index] => move |_| {
+                            sender.output(ModListItemOutput::Reinstall(index.clone())).unwrap();
+                        }
+                    },
+
+                    gtk::Button {
                         set_icon_name: "user-trash-symbolic",
                         set_tooltip_text: Some("Remove mod"),
                         set_valign: gtk::Align::Center,
@@ -334,6 +351,7 @@ impl FactoryComponent for ModListItem {
         Self {
             kind: init.kind,
             visible: init.visible,
+            compact: init.compact,
         }
     }
 
