@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use gtk::prelude::*;
 use relm4::factory::DynamicIndex;
 use relm4::prelude::*;
 
@@ -63,8 +62,16 @@ impl App {
             .and_then(|g| self.cache_root_for(&g.id).ok())
             .unwrap_or_else(|| paths::cache_root().unwrap_or_default());
 
-        self.pending_scroll_restore = Some(self.mod_scroll.vadjustment().value());
         self.mods.guard().remove(idx);
+        {
+            let mut guard = self.plugins.guard();
+            let to_remove: Vec<usize> = (0..guard.len())
+                .filter(|&i| guard.get(i).is_some_and(|row| row.plugin.mod_id == mod_id))
+                .collect();
+            for i in to_remove.into_iter().rev() {
+                guard.remove(i);
+            }
+        }
         self.needs_deploy = true;
         self.save_group_positions();
 
@@ -275,6 +282,7 @@ impl App {
                                 overridden_files: init.overridden_files.clone(),
                                 conflicting_mod_names: init.conflicting_mod_names.clone(),
                                 conflicted_by_mod_names: init.conflicted_by_mod_names.clone(),
+                                reinstall_from_file: init.reinstall_from_file,
                             })),
                             visible: true,
                             compact: self.compact_mod_rows,

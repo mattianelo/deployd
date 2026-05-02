@@ -18,6 +18,9 @@ pub struct ModRowInit {
     pub overridden_files: Vec<String>,
     pub conflicting_mod_names: Vec<String>,
     pub conflicted_by_mod_names: Vec<String>,
+    /// True when the source archive is outside the downloads folder.
+    /// Controls visibility of the "Reinstall from archive" button.
+    pub reinstall_from_file: bool,
 }
 
 /// What kind of list item this is.
@@ -336,7 +339,7 @@ impl FactoryComponent for ModListItem {
                         set_valign: gtk::Align::Center,
                         add_css_class: "flat",
                         #[watch]
-                        set_visible: matches!(&self.kind, ModListItemKind::Mod(r) if r.mod_entry.archive_path.is_some()),
+                        set_visible: matches!(&self.kind, ModListItemKind::Mod(r) if r.reinstall_from_file),
                         connect_clicked[sender, index] => move |_| {
                             sender.output(ModListItemOutput::Reinstall(index.clone())).unwrap();
                         }

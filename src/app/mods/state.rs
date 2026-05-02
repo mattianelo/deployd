@@ -97,6 +97,11 @@ impl App {
             };
 
             let info = overrides.get(&m.id);
+            let reinstall_from_file = m
+                .archive_path
+                .as_ref()
+                .map(|p| !std::path::Path::new(p).starts_with(&self.downloads_dir))
+                .unwrap_or(false);
             mod_display_idx += 1;
             guard.push_back(ModListItemInit {
                 kind: ModListItemKind::Mod(Box::new(ModRowInit {
@@ -110,6 +115,7 @@ impl App {
                         .map_or_else(Vec::new, |i| i.conflicting_mod_names.clone()),
                     conflicted_by_mod_names: info
                         .map_or_else(Vec::new, |i| i.conflicted_by_mod_names.clone()),
+                    reinstall_from_file,
                 })),
                 visible,
                 compact: self.compact_mod_rows,

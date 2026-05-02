@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use relm4::prelude::*;
 
+use crate::core::game;
 use crate::core::tracker::OverrideInfo;
 
 use super::super::App;
@@ -71,7 +72,34 @@ impl App {
                     });
                 }
                 self.auto_save_profile(sender);
-                self.reload_mods(sender);
+                if let (Some(tracker), Some(game)) =
+                    (self.tracker.clone(), self.selected_game().cloned())
+                {
+                    let game_id = game.id.clone();
+                    let engine = game.engine.clone();
+                    let mod_names: HashMap<String, String> = {
+                        let guard = self.mods.guard();
+                        (0..guard.len())
+                            .filter_map(|i| {
+                                guard.get(i).and_then(|r| r.mod_row()).map(|r| {
+                                    (r.mod_entry.id.clone(), r.mod_entry.name.clone())
+                                })
+                            })
+                            .collect()
+                    };
+                    sender.oneshot_command(async move {
+                        AppCmdMsg::OverridesRefreshed(
+                            tracker
+                                .compute_overrides(
+                                    &game_id,
+                                    game::handler_for(&engine),
+                                    &mod_names,
+                                )
+                                .await
+                                .map_err(|e| e.to_string()),
+                        )
+                    });
+                }
             }
             Err(e) => {
                 self.push_notification(&format!("Remove failed: {e}"));
