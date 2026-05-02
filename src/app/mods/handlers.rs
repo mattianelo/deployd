@@ -328,15 +328,33 @@ impl App {
             }
         }
         self.needs_deploy = true;
+        let game_id = game.id.clone();
+        let engine = game.engine.clone();
+        let mod_names: HashMap<String, String> = {
+            let guard = self.mods.guard();
+            (0..guard.len())
+                .filter_map(|i| {
+                    guard.get(i).and_then(|r| r.mod_row()).map(|r| {
+                        (r.mod_entry.id.clone(), r.mod_entry.name.clone())
+                    })
+                })
+                .collect()
+        };
         sender.oneshot_command(async move {
-            let result = async {
-                tracker.set_all_mods_enabled(&game.id, true).await?;
-                if let Some(pid) = &profile_id {
-                    tracker.save_to_profile(pid, &game.id).await?;
+            if let Err(e) = tracker.set_all_mods_enabled(&game_id, true).await {
+                return AppCmdMsg::OverridesRefreshed(Err(e.to_string()));
+            }
+            if let Some(pid) = &profile_id {
+                if let Err(e) = tracker.save_to_profile(pid, &game_id).await {
+                    return AppCmdMsg::OverridesRefreshed(Err(e.to_string()));
                 }
-                Ok::<(), anyhow::Error>(())
-            };
-            AppCmdMsg::PrioritySaved(result.await.map_err(|e| e.to_string()))
+            }
+            AppCmdMsg::OverridesRefreshed(
+                tracker
+                    .compute_overrides(&game_id, game::handler_for(&engine), &mod_names)
+                    .await
+                    .map_err(|e| e.to_string()),
+            )
         });
     }
 
@@ -368,15 +386,33 @@ impl App {
             }
         }
         self.needs_deploy = true;
+        let game_id = game.id.clone();
+        let engine = game.engine.clone();
+        let mod_names: HashMap<String, String> = {
+            let guard = self.mods.guard();
+            (0..guard.len())
+                .filter_map(|i| {
+                    guard.get(i).and_then(|r| r.mod_row()).map(|r| {
+                        (r.mod_entry.id.clone(), r.mod_entry.name.clone())
+                    })
+                })
+                .collect()
+        };
         sender.oneshot_command(async move {
-            let result = async {
-                tracker.set_all_mods_enabled(&game.id, false).await?;
-                if let Some(pid) = &profile_id {
-                    tracker.save_to_profile(pid, &game.id).await?;
+            if let Err(e) = tracker.set_all_mods_enabled(&game_id, false).await {
+                return AppCmdMsg::OverridesRefreshed(Err(e.to_string()));
+            }
+            if let Some(pid) = &profile_id {
+                if let Err(e) = tracker.save_to_profile(pid, &game_id).await {
+                    return AppCmdMsg::OverridesRefreshed(Err(e.to_string()));
                 }
-                Ok::<(), anyhow::Error>(())
-            };
-            AppCmdMsg::PrioritySaved(result.await.map_err(|e| e.to_string()))
+            }
+            AppCmdMsg::OverridesRefreshed(
+                tracker
+                    .compute_overrides(&game_id, game::handler_for(&engine), &mod_names)
+                    .await
+                    .map_err(|e| e.to_string()),
+            )
         });
     }
 

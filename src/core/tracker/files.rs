@@ -394,6 +394,7 @@ mod tests {
             game_id: "g".to_string(),
             name: name.to_string(),
             archive_hash: None,
+            archive_path: None,
             installed_at: None,
             enabled: true,
             priority,
