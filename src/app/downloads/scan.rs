@@ -154,6 +154,7 @@ impl App {
                     archive_hash: None,
                     archive_md5: None,
                     version: None,
+                    author: None,
                 };
                 self.all_downloads.push(entry);
                 new_count += 1;
@@ -225,6 +226,7 @@ impl App {
                     archive_hash: None,
                     archive_md5: None,
                     version: None,
+                    author: None,
                 };
                 self.all_downloads.push(entry);
                 new_count += 1;

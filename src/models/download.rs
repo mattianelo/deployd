@@ -78,6 +78,8 @@ pub struct DownloadEntry {
     pub archive_md5: Option<String>,
     /// Version string resolved from Nexus (file version, or mod version as fallback).
     pub version: Option<String>,
+    /// Mod author resolved from Nexus.
+    pub author: Option<String>,
 }
 
 impl DownloadEntry {
@@ -99,6 +101,7 @@ impl DownloadEntry {
             archive_hash: None,
             archive_md5: None,
             version: None,
+            author: None,
         }
     }
 

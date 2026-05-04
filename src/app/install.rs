@@ -951,11 +951,13 @@ impl App {
                 // the mods table and reload in a single chained command so the read cannot
                 // race ahead of the write. Otherwise a plain reload is sufficient — the
                 // metadata-fetch path will update version/author and trigger its own reload.
-                let version_from_dl: Option<String> = metadata_dl_id
-                    .as_ref()
-                    .and_then(|id| self.all_downloads.iter().find(|e| &e.id == id))
-                    .filter(|e| e.metadata_fetched)
-                    .and_then(|e| e.version.clone());
+                let (version_from_dl, author_from_dl): (Option<String>, Option<String>) =
+                    metadata_dl_id
+                        .as_ref()
+                        .and_then(|id| self.all_downloads.iter().find(|e| &e.id == id))
+                        .filter(|e| e.metadata_fetched)
+                        .map(|e| (e.version.clone(), e.author.clone()))
+                        .unwrap_or((None, None));
 
                 let already_fetched = version_from_dl.is_some()
                     || metadata_dl_id
@@ -968,8 +970,11 @@ impl App {
                 {
                     let mod_id = add_result.mod_entry.id.clone();
                     sender.oneshot_command(async move {
-                        if let Some(version) = version_from_dl {
-                            let _ = tracker.set_mod_installed_version(&mod_id, &version).await;
+                        if let Some(ref version) = version_from_dl {
+                            let _ = tracker.set_mod_installed_version(&mod_id, version).await;
+                        }
+                        if let Some(ref author) = author_from_dl {
+                            let _ = tracker.set_mod_author(&mod_id, author).await;
                         }
                         AppCmdMsg::ModsLoaded(load_game_data(&tracker, &game, false).await, true)
                     });

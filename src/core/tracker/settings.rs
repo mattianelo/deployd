@@ -97,6 +97,17 @@ impl Tracker {
         Ok(())
     }
 
+    /// Set the author for a mod by its ID.
+    pub async fn set_mod_author(&self, mod_id: &str, author: &str) -> Result<()> {
+        sqlx::query("UPDATE mods SET author = ? WHERE id = ?")
+            .bind(author)
+            .bind(mod_id)
+            .execute(&self.pool)
+            .await
+            .context("Failed to set mod author")?;
+        Ok(())
+    }
+
     /// Set the installed version for a mod (from the specific Nexus file entry).
     pub async fn set_mod_installed_version(&self, mod_id: &str, version: &str) -> Result<()> {
         sqlx::query("UPDATE mods SET version = ? WHERE id = ?")
@@ -105,6 +116,30 @@ impl Tracker {
             .execute(&self.pool)
             .await
             .context("Failed to set installed version")?;
+        Ok(())
+    }
+
+    /// Set version and author on a mod identified by its Nexus file coordinates.
+    /// Used to propagate resolved download metadata to the installed mod without a full reload.
+    pub async fn update_mod_version_author_by_nexus_ids(
+        &self,
+        game_id: &str,
+        nexus_mod_id: i64,
+        nexus_file_id: i64,
+        version: &str,
+        author: &str,
+    ) -> Result<()> {
+        sqlx::query(
+            "UPDATE mods SET version = ?, author = ? WHERE game_id = ? AND nexus_mod_id = ? AND nexus_file_id = ?",
+        )
+        .bind(version)
+        .bind(author)
+        .bind(game_id)
+        .bind(nexus_mod_id)
+        .bind(nexus_file_id)
+        .execute(&self.pool)
+        .await
+        .context("Failed to update mod version and author by Nexus IDs")?;
         Ok(())
     }
 

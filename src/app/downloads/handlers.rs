@@ -451,6 +451,7 @@ impl App {
         nexus_is_primary: bool,
         resolved_file_id: Option<i64>,
         version: Option<String>,
+        author: Option<String>,
         sender: &ComponentSender<Self>,
     ) {
         // Capture old domain before mutation to detect filtering changes
@@ -467,6 +468,9 @@ impl App {
             entry.nexus_is_primary = nexus_is_primary;
             if version.is_some() {
                 entry.version = version.clone();
+            }
+            if author.is_some() {
+                entry.author = author.clone();
             }
             if let Some(fid) = resolved_file_id
                 && let Some(NexusIds { file_id: ref mut stored_fid, .. }) = entry.nexus_ids
@@ -518,6 +522,9 @@ impl App {
                     if version.is_some() {
                         row.entry.version = version.clone();
                     }
+                    if author.is_some() {
+                        row.entry.author = author.clone();
+                    }
                     if let Some(fid) = resolved_file_id
                         && let Some(NexusIds { file_id: ref mut stored_fid, .. }) = row.entry.nexus_ids
                         && *stored_fid == 0
@@ -534,7 +541,7 @@ impl App {
                 }
             }
         }
-        // Propagate resolved version to the installed mod row so the Mod Order panel shows it.
+        // Propagate resolved version and author to the installed mod row so the Mod Order panel shows them.
         if let Some(ref v) = version
             && let Some(entry) = self.all_downloads.iter().find(|e| e.id == download_id)
             && let Some(NexusIds { mod_id: nxs_mod_id, file_id: nxs_file_id, .. }) = entry.nexus_ids
@@ -544,12 +551,23 @@ impl App {
         {
             let version_db = v.clone();
             let version_ui = v.clone();
+            let author_db = author.clone();
+            let author_ui = author.clone();
             let game_id = game.id.clone();
             sender.oneshot_command(async move {
-                tracker
-                    .update_mod_version_by_nexus_ids(&game_id, nxs_mod_id, nxs_file_id, &version_db)
-                    .await
-                    .ok();
+                if let Some(ref a) = author_db {
+                    tracker
+                        .update_mod_version_author_by_nexus_ids(
+                            &game_id, nxs_mod_id, nxs_file_id, &version_db, a,
+                        )
+                        .await
+                        .ok();
+                } else {
+                    tracker
+                        .update_mod_version_by_nexus_ids(&game_id, nxs_mod_id, nxs_file_id, &version_db)
+                        .await
+                        .ok();
+                }
                 AppCmdMsg::PrioritySaved(Ok(()))
             });
             // Surgically update the matching factory row so the subtitle appears without a reload.
@@ -561,6 +579,9 @@ impl App {
                     && init.mod_entry.nexus_file_id == Some(nxs_file_id)
                 {
                     init.mod_entry.version = Some(version_ui.clone());
+                    if let Some(a) = author_ui {
+                        init.mod_entry.author = Some(a);
+                    }
                     break;
                 }
             }
@@ -828,6 +849,7 @@ impl App {
                                     file_entry.is_primary,
                                     Some(file_entry.file_id),
                                     resolved_version.clone(),
+                                    Some(mod_author.clone()),
                                 ));
                                 let _ = input_sender.send(AppMsg::ShowToast(format!(
                                     "{} v{mod_version} by {mod_author}",
@@ -945,6 +967,7 @@ impl App {
                     nexus_is_primary,
                     resolved_file_id,
                     if unresolved { None } else { resolved_version.clone() },
+                    if unresolved { None } else { Some(mod_author.clone()) },
                 ));
                 if unresolved {
                     let _ = input_sender.send(AppMsg::ShowFileIdDialog {

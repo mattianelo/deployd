@@ -1311,9 +1311,9 @@ impl Component for App {
                 self.show_file_id_dialog(root, &sender);
             }
             AppMsg::DownloadProgress(id, frac, msg) => self.handle_download_progress(id, frac, msg),
-            AppMsg::DownloadNameResolved(id, name, domain, fname, is_primary, file_id, version) => {
+            AppMsg::DownloadNameResolved(id, name, domain, fname, is_primary, file_id, version, author) => {
                 self.handle_download_name_resolved(
-                    id, name, domain, fname, is_primary, file_id, version, &sender,
+                    id, name, domain, fname, is_primary, file_id, version, author, &sender,
                 )
             }
             AppMsg::ArchiveMd5Computed(dl_id, md5) => {
@@ -1560,7 +1560,7 @@ impl Component for App {
                     // Standalone (right-click) path: update the download entry directly.
                     if let Some(name) = combined_name {
                         self.handle_download_name_resolved(
-                            dl_id.clone(), name, None, None, false, file_id, version, &sender,
+                            dl_id.clone(), name, None, None, false, file_id, version, None, &sender,
                         );
                     }
                     self.show_toast("Metadata updated");

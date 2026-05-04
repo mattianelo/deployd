@@ -84,6 +84,7 @@ impl App {
                         let _ = input_sender.send(AppMsg::RateLimitUpdated(rl));
                     }
                     mod_info_version = Some(mod_info.version.clone());
+                    let mod_author = mod_info.author.clone();
                     let _ = input_sender.send(AppMsg::DownloadNameResolved(
                         download_id.clone(),
                         mod_info.name,
@@ -92,6 +93,7 @@ impl App {
                         false,
                         None,
                         None,
+                        Some(mod_author),
                     ));
                 }
 
