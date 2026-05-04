@@ -258,7 +258,7 @@ impl App {
         }
 
         if self.initial_scan_done && new_count > 0 {
-            self.push_notification(&format!("Found {new_count} archive(s)"));
+            self.show_toast(&format!("Found {new_count} archive(s)"));
         }
         self.initial_scan_done = true;
     }

@@ -772,7 +772,7 @@ impl App {
         };
 
         let input_sender = sender.input_sender().clone();
-        self.push_notification("Fetching metadata...");
+        self.show_toast("Fetching metadata...");
         sender.oneshot_command(async move {
             let result: Result<(String, String, String), String> = async {
                 let api_key = tracker

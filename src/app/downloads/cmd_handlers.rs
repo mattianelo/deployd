@@ -93,7 +93,7 @@ impl App {
         match result {
             Ok(updates) => {
                 if updates.is_empty() {
-                    self.push_notification("All mods are up to date");
+                    self.show_toast("All mods are up to date");
                 } else {
                     let names: Vec<_> = updates.iter().map(|(_, name, _)| name.as_str()).collect();
                     self.push_notification(&format!(
@@ -179,7 +179,7 @@ impl App {
                     });
                 }
 
-                self.push_notification(&format!("Download complete: {}", nxm_result.file_name));
+                self.show_toast(&format!("Download complete: {}", nxm_result.file_name));
             }
             Err(e) => {
                 // Mark the specific NXM download as failed using the id that was
