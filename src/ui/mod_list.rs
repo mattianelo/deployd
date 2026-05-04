@@ -534,6 +534,9 @@ impl FactoryComponent for ModListItem {
             let sender3 = sender.clone();
             right_click.connect_pressed(move |gesture, _, _, _| {
                 gesture.set_state(gtk::EventSequenceState::Claimed);
+                if let Some(widget) = gesture.widget() {
+                    widget.unset_state_flags(gtk::StateFlags::PRELIGHT);
+                }
                 sender3
                     .output(ModListItemOutput::OpenProperties(idx3.clone()))
                     .unwrap();

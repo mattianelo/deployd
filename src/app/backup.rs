@@ -46,7 +46,7 @@ impl App {
             Ok(manifest) => {
                 let game_count = manifest.games.len();
                 let profile_count: usize = manifest.games.iter().map(|g| g.profile_count).sum();
-                self.push_notification(&format!(
+                self.show_toast(&format!(
                     "Backup created — {game_count} game(s), {profile_count} profile(s)"
                 ));
             }

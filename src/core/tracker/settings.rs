@@ -108,6 +108,28 @@ impl Tracker {
         Ok(())
     }
 
+    /// Set version on a mod row identified by its Nexus file coordinates.
+    /// Used to propagate resolved download metadata to the installed mod without a full reload.
+    pub async fn update_mod_version_by_nexus_ids(
+        &self,
+        game_id: &str,
+        nexus_mod_id: i64,
+        nexus_file_id: i64,
+        version: &str,
+    ) -> Result<()> {
+        sqlx::query(
+            "UPDATE mods SET version = ? WHERE game_id = ? AND nexus_mod_id = ? AND nexus_file_id = ?",
+        )
+        .bind(version)
+        .bind(game_id)
+        .bind(nexus_mod_id)
+        .bind(nexus_file_id)
+        .execute(&self.pool)
+        .await
+        .context("Failed to update mod version by Nexus IDs")?;
+        Ok(())
+    }
+
     /// Set the latest known version for a mod (from Nexus update check).
     pub async fn set_latest_version(&self, mod_id: &str, latest_version: &str) -> Result<()> {
         sqlx::query("UPDATE mods SET latest_version = ? WHERE id = ?")

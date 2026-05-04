@@ -955,7 +955,7 @@ impl App {
                     }
                     m
                 };
-                self.push_notification(&msg);
+                self.show_toast(&msg);
                 if let Some(dialog) = self.absorb_dialog.take() {
                     dialog.widget().destroy();
                 }
@@ -1070,7 +1070,7 @@ impl App {
                 self.needs_deploy = true;
                 self.auto_save_profile(sender);
                 self.reload_mods(sender);
-                self.push_notification(&format!(
+                self.show_toast(&format!(
                     "Merged {count} file(s) into '{mod_name}' — deploy to update game files"
                 ));
                 if let Some(dialog) = self.absorb_dialog.take() {

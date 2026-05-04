@@ -44,7 +44,7 @@ impl App {
     pub(crate) fn handle_cmd_game_launched(&mut self, result: Result<(), String>) {
         match result {
             Ok(()) => {
-                self.push_notification("Game launched");
+                self.show_toast("Game launched");
             }
             Err(e) => {
                 crate::dlog!("deployd: game launch error: {e}");

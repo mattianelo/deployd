@@ -56,7 +56,7 @@ impl App {
     ) {
         match result {
             Ok(_) => {
-                self.push_notification("Mod removed. Deploy to update game files");
+                self.show_toast("Mod removed. Deploy to update game files");
                 let changed = self.reset_installed_download_for_mod(
                     nexus_ids,
                     &mod_name,

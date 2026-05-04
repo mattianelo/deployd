@@ -534,6 +534,37 @@ impl App {
                 }
             }
         }
+        // Propagate resolved version to the installed mod row so the Mod Order panel shows it.
+        if let Some(ref v) = version
+            && let Some(entry) = self.all_downloads.iter().find(|e| e.id == download_id)
+            && let Some(NexusIds { mod_id: nxs_mod_id, file_id: nxs_file_id, .. }) = entry.nexus_ids
+            && nxs_file_id != 0
+            && let Some(tracker) = self.tracker.clone()
+            && let Some(game) = self.selected_game().cloned()
+        {
+            let version_db = v.clone();
+            let version_ui = v.clone();
+            let game_id = game.id.clone();
+            sender.oneshot_command(async move {
+                tracker
+                    .update_mod_version_by_nexus_ids(&game_id, nxs_mod_id, nxs_file_id, &version_db)
+                    .await
+                    .ok();
+                AppCmdMsg::PrioritySaved(Ok(()))
+            });
+            // Surgically update the matching factory row so the subtitle appears without a reload.
+            let mut guard = self.mods.guard();
+            for i in 0..guard.len() {
+                if let Some(row) = guard.get_mut(i)
+                    && let Some(init) = row.mod_row_mut()
+                    && init.mod_entry.nexus_mod_id == Some(nxs_mod_id)
+                    && init.mod_entry.nexus_file_id == Some(nxs_file_id)
+                {
+                    init.mod_entry.version = Some(version_ui.clone());
+                    break;
+                }
+            }
+        }
         // Rebuild views only if game_domain actually changed (affects filtering)
         if game_domain.is_some() && old_domain != game_domain {
             self.rebuild_downloads_view();

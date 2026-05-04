@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use gtk::glib;
+use gtk::prelude::*;
 use relm4::factory::DynamicIndex;
 use relm4::prelude::*;
 
@@ -62,6 +64,8 @@ impl App {
             .and_then(|g| self.cache_root_for(&g.id).ok())
             .unwrap_or_else(|| paths::cache_root().unwrap_or_default());
 
+        let vadj = self.mod_scroll.vadjustment();
+        let saved_scroll = vadj.value();
         self.mods.guard().remove(idx);
         {
             let mut guard = self.plugins.guard();
@@ -74,6 +78,9 @@ impl App {
         }
         self.needs_deploy = true;
         self.save_group_positions();
+        glib::idle_add_local_once(move || {
+            vadj.set_value(saved_scroll);
+        });
 
         sender.oneshot_command(async move {
             let result: Result<String, String> = async {

@@ -52,7 +52,7 @@ impl App {
 
     pub(crate) fn handle_profile_exported(&mut self, result: Result<(), String>) {
         match result {
-            Ok(()) => self.push_notification("Profile exported"),
+            Ok(()) => self.show_toast("Profile exported"),
             Err(e) => self.push_notification(&format!("Export failed: {e}")),
         }
     }

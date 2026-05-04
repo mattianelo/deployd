@@ -321,7 +321,7 @@ fn half_row_index(row: &gtk::ListBoxRow, y: f64, list_len: usize) -> usize {
     let mid = alloc.y() + alloc.height() / 2;
     let idx = row.index() as usize;
     if (y as i32) >= mid {
-        (idx + 1).min(list_len.saturating_sub(1))
+        (idx + 1).min(list_len)
     } else {
         idx
     }
@@ -379,13 +379,18 @@ pub(super) fn wire_drag_drop(
         let Ok(data) = value.get::<String>() else {
             return false;
         };
+        let len = list_box.observe_children().n_items() as usize;
+        // Resolve the target row; if the cursor is past the last row treat it as end-of-list.
+        let row_at_y = list_box.row_at_y(y as i32).or_else(|| {
+            len.checked_sub(1)
+                .and_then(|i| list_box.row_at_index(i as i32))
+        });
         // A group separator was dragged — just reposition it.
         if let Some(from) = data
             .strip_prefix("group:")
             .and_then(|s| s.parse::<usize>().ok())
         {
-            if let Some(row) = list_box.row_at_y(y as i32) {
-                let len = list_box.observe_children().n_items() as usize;
+            if let Some(row) = row_at_y {
                 let raw_to = half_row_index(&row, y, len);
                 let to = snap_to_group_boundary(&list_box, raw_to, len);
                 if from != to {
@@ -400,8 +405,7 @@ pub(super) fn wire_drag_drop(
         else {
             return false;
         };
-        if let Some(row) = list_box.row_at_y(y as i32) {
-            let len = list_box.observe_children().n_items() as usize;
+        if let Some(row) = row_at_y {
             let to = half_row_index(&row, y, len);
             let mut selected: Vec<usize> = list_box
                 .selected_rows()

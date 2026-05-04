@@ -6,10 +6,19 @@ use super::App;
 use super::messages::AppMsg;
 
 impl App {
-    /// Add a notification message to the notification panel.
+    /// Show a transient floating toast that auto-dismisses after ~4 s.
+    /// Use for non-actionable confirmations (success, info). Errors that
+    /// require user attention belong in push_notification instead.
+    pub(crate) fn show_toast(&mut self, message: &str) {
+        let toast = adw::Toast::new(message);
+        toast.set_timeout(4);
+        self.toast_overlay.add_toast(toast);
+    }
+
+    /// Add an actionable notification to the persistent notification panel.
     ///
-    /// Each item stays until the user explicitly dismisses it, giving a
-    /// persistent history that the floating toast overlay could not provide.
+    /// Each item stays until the user explicitly dismisses it. Reserve this
+    /// for things that require the user's attention (errors, failures).
     pub(crate) fn push_notification(&mut self, message: &str) {
         let row = adw::ActionRow::new();
         row.set_title(message);

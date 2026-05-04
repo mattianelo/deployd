@@ -208,6 +208,8 @@ impl Component for App {
                                         set_icon_name: "document-edit-symbolic",
                                         set_tooltip_text: Some("Rename profile"),
                                         add_css_class: "flat",
+                                        #[watch]
+                                        set_sensitive: model.profiles.len() > 1,
                                     },
 
                                     gtk::Button {
@@ -521,15 +523,6 @@ impl Component for App {
                                     },
                                 },
 
-                                gtk::Button {
-                                    set_label: "Clear all",
-                                    add_css_class: "flat",
-                                    #[watch]
-                                    set_visible: model.notification_count > 0,
-                                    connect_clicked[sender] => move |_| {
-                                        sender.input(AppMsg::ClearNotifications);
-                                    },
-                                },
                             },
                         },
                     },
@@ -1569,7 +1562,7 @@ impl Component for App {
                             dl_id.clone(), name, None, None, false, file_id, version, &sender,
                         );
                     }
-                    self.push_notification("Metadata updated");
+                    self.show_toast("Metadata updated");
                     // Auto-trigger the next unresolved download for the same mod so the
                     // user doesn't have to manually right-click each one.
                     let resolved_mod_id = self
@@ -1704,7 +1697,7 @@ impl Component for App {
                 if let Err(e) = result {
                     self.push_notification(&format!("Failed to save snapshot: {e}"));
                 } else {
-                    self.push_notification("Mod order snapshot saved");
+                    self.show_toast("Mod order snapshot saved");
                     self.reload_order_snapshots(&sender);
                 }
             }
@@ -1712,21 +1705,21 @@ impl Component for App {
                 if let Err(e) = result {
                     self.push_notification(&format!("Failed to save snapshot: {e}"));
                 } else {
-                    self.push_notification("Plugin order snapshot saved");
+                    self.show_toast("Plugin order snapshot saved");
                     self.reload_order_snapshots(&sender);
                 }
             }
             AppCmdMsg::ModOrderSnapshotRestored(result) => match result {
                 Ok(data) => {
                     self.apply_loaded_data(data, &sender);
-                    self.push_notification("Mod order restored");
+                    self.show_toast("Mod order restored");
                 }
                 Err(e) => self.push_notification(&format!("Failed to restore snapshot: {e}")),
             },
             AppCmdMsg::PluginOrderSnapshotRestored(result) => match result {
                 Ok(data) => {
                     self.apply_loaded_data(data, &sender);
-                    self.push_notification("Plugin order restored");
+                    self.show_toast("Plugin order restored");
                 }
                 Err(e) => self.push_notification(&format!("Failed to restore snapshot: {e}")),
             },

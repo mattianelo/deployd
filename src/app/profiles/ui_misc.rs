@@ -77,6 +77,8 @@ impl App {
     }
 
     pub(crate) fn handle_show_toast(&mut self, msg: String) {
-        self.push_notification(&msg);
+        let toast = adw::Toast::new(&msg);
+        toast.set_timeout(4);
+        self.toast_overlay.add_toast(toast);
     }
 }

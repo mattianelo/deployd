@@ -159,6 +159,9 @@ fn main() {
             background-color: alpha(@warning_color, 0.15);
             color: @warning_color;
         }
+        row checkbutton check {
+            transition: opacity 150ms ease;
+        }
         ",
     );
 

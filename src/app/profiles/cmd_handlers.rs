@@ -242,9 +242,9 @@ impl App {
                 self.apply_loaded_data(data, sender);
                 self.save_last_profile(sender);
                 if let Some(sync) = save_sync {
-                    self.push_notification(&format!("Profile switched — {}", sync.to_toast()));
+                    self.show_toast(&format!("Profile switched — {}", sync.to_toast()));
                 } else {
-                    self.push_notification("Profile switched");
+                    self.show_toast("Profile switched");
                 }
             }
             Err(e) => {
@@ -263,7 +263,7 @@ impl App {
                 self.apply_loaded_data(data, sender);
                 self.needs_deploy = true;
                 self.save_last_profile(sender);
-                self.push_notification("Empty profile created — Deploy to purge game folder");
+                self.show_toast("Empty profile created — Deploy to purge game folder");
             }
             Err(e) => {
                 self.push_notification(&format!("Profile creation failed: {e}"));
@@ -285,7 +285,7 @@ impl App {
                     .get(self.active_profile_idx)
                     .map(|p| p.name.clone())
                     .unwrap_or_default();
-                self.push_notification(&format!("Cloned as '{name}'"));
+                self.show_toast(&format!("Cloned as '{name}'"));
             }
             Err(e) => {
                 self.push_notification(&format!("Profile clone failed: {e}"));
@@ -302,7 +302,7 @@ impl App {
             Ok(data) => {
                 self.needs_deploy = true;
                 self.apply_loaded_data(data, sender);
-                self.push_notification("Profile deleted");
+                self.show_toast("Profile deleted");
             }
             Err(e) => {
                 self.push_notification(&format!("Profile delete failed: {e}"));
@@ -324,7 +324,7 @@ impl App {
                 self.profile_dropdown
                     .set_selected(self.active_profile_idx as u32);
                 self.updating_profiles = false;
-                self.push_notification("Profile renamed");
+                self.show_toast("Profile renamed");
             }
             Err(e) => {
                 self.push_notification(&format!("Rename failed: {e}"));
@@ -347,7 +347,7 @@ impl App {
                     .get(self.active_profile_idx)
                     .map(|p| p.name.clone())
                     .unwrap_or_default();
-                self.push_notification(&format!("Imported as '{name}' — Deploy to apply"));
+                self.show_toast(&format!("Imported as '{name}' — Deploy to apply"));
             }
             Err(e) => {
                 self.push_notification(&format!("Import failed: {e}"));
@@ -376,7 +376,7 @@ impl App {
     pub(crate) fn handle_cmd_tool_launched(&mut self, result: Result<String, String>) {
         match result {
             Ok(name) => {
-                self.push_notification(&format!("Launched {name}"));
+                self.show_toast(&format!("Launched {name}"));
             }
             Err(e) => {
                 crate::dlog!("deployd: tool launch error: {e}");

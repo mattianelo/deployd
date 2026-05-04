@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use gtk::prelude::WidgetExt;
+use gtk::prelude::{ListModelExt, WidgetExt};
 
 use crate::core::tracker::Tracker;
 use crate::core::{detector, game, save_manager};
@@ -126,8 +126,12 @@ pub(crate) fn clear_drop_indicators(list_box: &gtk::ListBox) {
 /// nearest mod row above or below the cursor instead.
 pub(crate) fn update_drop_indicator(list_box: &gtk::ListBox, y: f64) {
     clear_drop_indicators(list_box);
-    if let Some(row) = list_box.row_at_y(y as i32) {
-        // Skip separator rows: find the nearest non-separator row
+    // If the cursor is past the last row, show a drop-below indicator on it.
+    let row = list_box.row_at_y(y as i32).or_else(|| {
+        let n = list_box.observe_children().n_items();
+        n.checked_sub(1).and_then(|i| list_box.row_at_index(i as i32))
+    });
+    if let Some(row) = row {
         if row.has_css_class("mod-separator-row") {
             return;
         }

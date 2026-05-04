@@ -32,7 +32,7 @@ impl App {
             .unwrap_or_else(|_| paths::cache_root().unwrap_or_default());
         let new_dir_clone = new_dir.clone();
 
-        self.push_notification("Moving cache…");
+        self.show_toast("Moving cache…");
 
         sender.oneshot_command(async move {
             let result = cache::move_game_cache(
@@ -69,7 +69,7 @@ impl App {
             return;
         }
 
-        self.push_notification("Resetting cache location…");
+        self.show_toast("Resetting cache location…");
 
         let game_id_clone = game_id.clone();
         sender.oneshot_command(async move {
@@ -97,7 +97,7 @@ impl App {
         match result {
             Ok(()) => {
                 self.game_cache_dirs.insert(game_id, new_dir);
-                self.push_notification("Cache moved successfully");
+                self.show_toast("Cache moved successfully");
             }
             Err(e) => {
                 self.push_notification(&format!("Cache move failed: {e}"));
@@ -113,7 +113,7 @@ impl App {
         match result {
             Ok(()) => {
                 self.game_cache_dirs.remove(&game_id);
-                self.push_notification("Cache location reset to default");
+                self.show_toast("Cache location reset to default");
             }
             Err(e) => {
                 self.push_notification(&format!("Cache reset failed: {e}"));
