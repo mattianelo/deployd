@@ -16,7 +16,7 @@ impl App {
     pub(crate) fn handle_open_mod_properties(
         &mut self,
         index: DynamicIndex,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         let idx = index.current_index();

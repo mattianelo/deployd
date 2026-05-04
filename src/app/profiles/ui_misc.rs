@@ -1,4 +1,4 @@
-use gtk::gio;
+use adw::prelude::*;
 use gtk::prelude::*;
 use relm4::prelude::*;
 
@@ -20,34 +20,36 @@ impl App {
 
     pub(crate) fn handle_close_requested(
         &mut self,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         if self.global_active_downloads > 0 {
-            let dialog = gtk::AlertDialog::builder()
-                .message("Downloads in Progress")
-                .detail(format!(
-                    "{} download(s) are still in progress. Close anyway?",
-                    self.global_active_downloads
-                ))
-                .buttons(["Cancel", "Close"])
-                .cancel_button(0)
-                .default_button(1)
-                .modal(true)
+            let body = format!(
+                "{} download(s) are still in progress. Close anyway?",
+                self.global_active_downloads
+            );
+            let dialog = adw::AlertDialog::builder()
+                .heading("Downloads in Progress")
+                .body(&body)
                 .build();
+            dialog.add_response("cancel", "Cancel");
+            dialog.add_response("close", "Close");
+            dialog.set_default_response(Some("close"));
+            dialog.set_close_response("cancel");
 
             let sender = sender.input_sender().clone();
-            dialog.choose(Some(root), None::<&gio::Cancellable>, move |result| {
-                if result == Ok(1) {
+            dialog.connect_response(None, move |_, response| {
+                if response == "close" {
                     sender.send(AppMsg::ConfirmClose).unwrap();
                 }
             });
+            dialog.present(Some(root));
         } else {
             root.destroy();
         }
     }
 
-    pub(crate) fn handle_confirm_close(&mut self, root: &adw::Window) {
+    pub(crate) fn handle_confirm_close(&mut self, root: &adw::ApplicationWindow) {
         root.destroy();
     }
 

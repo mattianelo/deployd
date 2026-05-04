@@ -11,7 +11,7 @@ use super::super::messages::{AppCmdMsg, AppMsg};
 impl App {
     pub(crate) fn handle_export_profile_clicked(
         &mut self,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         let Some(tracker) = self.tracker.clone() else {
@@ -59,7 +59,7 @@ impl App {
 
     pub(crate) fn handle_import_profile_clicked(
         &mut self,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         let filter = gtk::FileFilter::new();

@@ -11,7 +11,7 @@ use super::messages::{AppCmdMsg, AppMsg};
 impl App {
     pub(crate) fn handle_create_full_backup_clicked(
         &mut self,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         let Some(tracker) = self.tracker.clone() else {
@@ -56,7 +56,7 @@ impl App {
 
     pub(crate) fn handle_restore_from_backup_clicked(
         &mut self,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         let filter = gtk::FileFilter::new();
@@ -81,7 +81,7 @@ impl App {
     pub(crate) fn handle_restore_backup_file_chosen(
         &mut self,
         path: PathBuf,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         let manifest = match crate::core::backup::read_backup_manifest(&path) {
@@ -153,7 +153,7 @@ impl App {
     pub(crate) fn handle_cmd_full_restore_staged(
         &mut self,
         result: Result<crate::models::backup::BackupManifest, String>,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
     ) {
         match result {
             Ok(_) => {

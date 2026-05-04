@@ -83,7 +83,7 @@ impl App {
     /// Open the pre-install name/target dialog for the current `pending_install`.
     pub(crate) fn open_pre_install_dialog(
         &mut self,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         // If the install-time fetch found the mod name but could not match a Nexus file

@@ -23,10 +23,8 @@ pub struct GameSetupDialog {
     entries: Vec<GameEntry>,
     /// Custom cache dirs per game_id (passed in at init, updated on change).
     game_cache_dirs: HashMap<String, PathBuf>,
-    /// Page switcher — "list" vs "add".
-    stack: gtk::Stack,
-    /// Whether the "add game" page is currently shown.
-    add_page_visible: bool,
+    /// Navigation view — "list" vs "add".
+    navigation_view: adw::NavigationView,
     /// ListBox for game rows.
     games_list: gtk::ListBox,
     /// Container for the games list section (hidden when empty).
@@ -35,8 +33,8 @@ pub struct GameSetupDialog {
     new_game_type_idx: usize,
     new_path: Option<PathBuf>,
     new_prefix: Option<PathBuf>,
-    new_path_entry: gtk::Entry,
-    new_prefix_entry: gtk::Entry,
+    new_path_entry: adw::EntryRow,
+    new_prefix_entry: adw::EntryRow,
     add_btn: gtk::Button,
     /// Filtered list of known game options shown in the "Add Game" dropdown.
     known_opts: Vec<game::KnownGameOption>,
@@ -255,175 +253,8 @@ impl Component for GameSetupDialog {
                 glib::Propagation::Proceed
             },
 
-            gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
-
-                adw::HeaderBar {
-                    #[wrap(Some)]
-                    set_title_widget = &adw::WindowTitle {
-                        set_title: "Manage Games",
-                    },
-
-                    pack_start = &gtk::Button {
-                        set_label: "Back",
-                        add_css_class: "flat",
-                        #[watch]
-                        set_visible: model.add_page_visible,
-                        connect_clicked => GameSetupMsg::BackClicked,
-                    },
-
-                    pack_end = &gtk::Button {
-                        set_label: "OK",
-                        add_css_class: "suggested-action",
-                        #[watch]
-                        set_visible: !model.add_page_visible,
-                        connect_clicked => GameSetupMsg::Confirm,
-                    },
-                },
-
-                #[local_ref]
-                stack -> gtk::Stack {
-                    set_vexpand: true,
-                    set_transition_type: gtk::StackTransitionType::SlideLeftRight,
-
-                    // ── List page ────────────────────────────────────────────
-                    #[name = "list_page"]
-                    gtk::ScrolledWindow {
-                        set_hscrollbar_policy: gtk::PolicyType::Never,
-                        set_vexpand: true,
-
-                        adw::Clamp {
-                            set_maximum_size: 540,
-                            set_margin_all: 12,
-
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Vertical,
-                                set_spacing: 12,
-
-                                #[local_ref]
-                                games_section -> gtk::Box {
-                                    set_orientation: gtk::Orientation::Vertical,
-                                    set_spacing: 6,
-
-                                    gtk::Label {
-                                        set_label: "Your Games",
-                                        set_halign: gtk::Align::Start,
-                                        add_css_class: "heading",
-                                    },
-
-                                    #[local_ref]
-                                    games_list -> gtk::ListBox {
-                                        add_css_class: "boxed-list",
-                                        set_selection_mode: gtk::SelectionMode::None,
-                                    },
-                                },
-
-                                gtk::Button {
-                                    set_label: "Add a Game…",
-                                    set_halign: gtk::Align::Start,
-                                    add_css_class: "pill",
-                                    connect_clicked => GameSetupMsg::AddGameClicked,
-                                },
-                            },
-                        },
-                    },
-
-                    // ── Add page ─────────────────────────────────────────────
-                    #[name = "add_page"]
-                    gtk::ScrolledWindow {
-                        set_hscrollbar_policy: gtk::PolicyType::Never,
-
-                        adw::Clamp {
-                            set_maximum_size: 540,
-                            set_margin_all: 12,
-
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Vertical,
-                                set_spacing: 12,
-
-                                gtk::Label {
-                                    set_label: "Game Type",
-                                    set_halign: gtk::Align::Start,
-                                    add_css_class: "heading",
-                                },
-
-                                gtk::ListBox {
-                                    add_css_class: "boxed-list",
-                                    set_selection_mode: gtk::SelectionMode::None,
-
-                                    #[name = "game_type_combo"]
-                                    adw::ComboRow {
-                                        set_title: "Game",
-                                        connect_selected_notify[sender] => move |row| {
-                                            sender.input(GameSetupMsg::GameTypeSelected(
-                                                row.selected(),
-                                            ));
-                                        },
-                                    },
-                                },
-
-                                gtk::Label {
-                                    set_label: "Directories",
-                                    set_halign: gtk::Align::Start,
-                                    add_css_class: "heading",
-                                },
-
-                                gtk::ListBox {
-                                    add_css_class: "boxed-list",
-                                    set_selection_mode: gtk::SelectionMode::None,
-
-                                    adw::ActionRow {
-                                        set_title: "Game Folder",
-                                        set_subtitle: "Required",
-
-                                        add_suffix = &gtk::Button::from_icon_name("folder-symbolic") {
-                                            set_valign: gtk::Align::Center,
-                                            add_css_class: "flat",
-                                            connect_clicked => GameSetupMsg::BrowseNewPath,
-                                        },
-
-                                        #[local_ref]
-                                        add_suffix = new_path_entry -> gtk::Entry {
-                                            set_valign: gtk::Align::Center,
-                                            set_width_chars: 20,
-                                            set_editable: false,
-                                            set_placeholder_text: Some("Not set"),
-                                        },
-                                    },
-
-                                    adw::ActionRow {
-                                        set_title: "Wine Prefix",
-                                        set_subtitle: "Required",
-
-                                        add_suffix = &gtk::Button::from_icon_name("folder-symbolic") {
-                                            set_valign: gtk::Align::Center,
-                                            add_css_class: "flat",
-                                            connect_clicked => GameSetupMsg::BrowseNewPrefix,
-                                        },
-
-                                        #[local_ref]
-                                        add_suffix = new_prefix_entry -> gtk::Entry {
-                                            set_valign: gtk::Align::Center,
-                                            set_width_chars: 20,
-                                            set_editable: false,
-                                            set_placeholder_text: Some("Not set"),
-                                        },
-                                    },
-                                },
-
-                                #[local_ref]
-                                add_btn -> gtk::Button {
-                                    set_label: "Add Game",
-                                    add_css_class: "suggested-action",
-                                    set_halign: gtk::Align::End,
-                                    set_sensitive: false,
-                                    connect_clicked => GameSetupMsg::ConfirmAdd,
-                                },
-                            },
-                        },
-                    },
-                },
-            },
+            #[local_ref]
+            navigation_view -> adw::NavigationView { }
         }
     }
 
@@ -434,7 +265,6 @@ impl Component for GameSetupDialog {
     ) -> ComponentParts<Self> {
         let (detected_games, persisted_custom, game_cache_dirs) = init;
 
-        // Merge detected (now always empty) and persisted custom games.
         let mut entries: Vec<GameEntry> = detected_games
             .into_iter()
             .map(|g| GameEntry {
@@ -466,21 +296,200 @@ impl Component for GameSetupDialog {
             });
         }
 
-        let stack = gtk::Stack::new();
-        let games_list = gtk::ListBox::new();
-        let games_section = gtk::Box::new(gtk::Orientation::Vertical, 6);
-        let new_path_entry = gtk::Entry::new();
-        let new_prefix_entry = gtk::Entry::new();
-        let add_btn = gtk::Button::with_label("Add Game");
-
         let known_opts: Vec<game::KnownGameOption> =
             game::known_game_options().into_iter().collect();
+
+        // ── Shared widgets stored in model ────────────────────────────────────
+        let games_list = gtk::ListBox::new();
+        games_list.add_css_class("boxed-list");
+        games_list.set_selection_mode(gtk::SelectionMode::None);
+
+        let games_section = gtk::Box::new(gtk::Orientation::Vertical, 6);
+
+        let new_path_entry = adw::EntryRow::new();
+        new_path_entry.set_title("Game Folder");
+        new_path_entry.set_editable(false);
+
+        let new_prefix_entry = adw::EntryRow::new();
+        new_prefix_entry.set_title("Wine Prefix");
+        new_prefix_entry.set_editable(false);
+
+        let add_btn = gtk::Button::with_label("Add Game");
+        add_btn.add_css_class("suggested-action");
+        add_btn.set_halign(gtk::Align::End);
+        add_btn.set_sensitive(false);
+        {
+            let s = sender.input_sender().clone();
+            add_btn.connect_clicked(move |_| {
+                s.send(GameSetupMsg::ConfirmAdd).ok();
+            });
+        }
+
+        let navigation_view = adw::NavigationView::new();
+
+        // ── List page ─────────────────────────────────────────────────────────
+        let games_label = gtk::Label::new(Some("Your Games"));
+        games_label.set_halign(gtk::Align::Start);
+        games_label.add_css_class("heading");
+
+        games_section.set_orientation(gtk::Orientation::Vertical);
+        games_section.set_spacing(6);
+        games_section.append(&games_label);
+        games_section.append(&games_list);
+
+        let add_game_btn = gtk::Button::with_label("Add a Game…");
+        add_game_btn.set_halign(gtk::Align::Start);
+        add_game_btn.add_css_class("pill");
+        {
+            let s = sender.input_sender().clone();
+            add_game_btn.connect_clicked(move |_| {
+                s.send(GameSetupMsg::AddGameClicked).ok();
+            });
+        }
+
+        let list_vbox = gtk::Box::new(gtk::Orientation::Vertical, 12);
+        list_vbox.append(&games_section);
+        list_vbox.append(&add_game_btn);
+
+        let list_clamp = adw::Clamp::new();
+        list_clamp.set_maximum_size(540);
+        list_clamp.set_margin_all(12);
+        list_clamp.set_child(Some(&list_vbox));
+
+        let list_scrolled = gtk::ScrolledWindow::new();
+        list_scrolled.set_hscrollbar_policy(gtk::PolicyType::Never);
+        list_scrolled.set_vexpand(true);
+        list_scrolled.set_child(Some(&list_clamp));
+
+        let cancel_btn = gtk::Button::with_label("Cancel");
+        cancel_btn.add_css_class("flat");
+        {
+            let s = sender.input_sender().clone();
+            cancel_btn.connect_clicked(move |_| {
+                s.send(GameSetupMsg::Cancel).ok();
+            });
+        }
+
+        let ok_btn = gtk::Button::with_label("OK");
+        ok_btn.add_css_class("suggested-action");
+        {
+            let s = sender.input_sender().clone();
+            ok_btn.connect_clicked(move |_| {
+                s.send(GameSetupMsg::Confirm).ok();
+            });
+        }
+
+        let list_header = adw::HeaderBar::new();
+        list_header.set_show_back_button(false);
+        list_header.pack_start(&cancel_btn);
+        list_header.pack_end(&ok_btn);
+        list_header.set_title_widget(Some(&adw::WindowTitle::new("Manage Games", "")));
+
+        let list_toolbar = adw::ToolbarView::new();
+        list_toolbar.add_top_bar(&list_header);
+        list_toolbar.set_content(Some(&list_scrolled));
+
+        let list_page = adw::NavigationPage::new(&list_toolbar, "Manage Games");
+        list_page.set_tag(Some("list"));
+
+        // ── Add page ──────────────────────────────────────────────────────────
+        let type_label = gtk::Label::new(Some("Game Type"));
+        type_label.set_halign(gtk::Align::Start);
+        type_label.add_css_class("heading");
+
+        let game_type_combo = adw::ComboRow::new();
+        game_type_combo.set_title("Game");
+        let labels: Vec<String> = known_opts.iter().map(|o| o.title.to_string()).collect();
+        let strs: Vec<&str> = labels.iter().map(String::as_str).collect();
+        game_type_combo.set_model(Some(&gtk::StringList::new(&strs)));
+        {
+            let s = sender.input_sender().clone();
+            game_type_combo.connect_selected_notify(move |row| {
+                s.send(GameSetupMsg::GameTypeSelected(row.selected())).ok();
+            });
+        }
+
+        let type_list = gtk::ListBox::new();
+        type_list.add_css_class("boxed-list");
+        type_list.set_selection_mode(gtk::SelectionMode::None);
+        type_list.append(&game_type_combo);
+
+        let dir_label = gtk::Label::new(Some("Directories"));
+        dir_label.set_halign(gtk::Align::Start);
+        dir_label.add_css_class("heading");
+
+        let path_browse_btn = gtk::Button::from_icon_name("folder-symbolic");
+        path_browse_btn.set_valign(gtk::Align::Center);
+        path_browse_btn.add_css_class("flat");
+        {
+            let s = sender.input_sender().clone();
+            path_browse_btn.connect_clicked(move |_| {
+                s.send(GameSetupMsg::BrowseNewPath).ok();
+            });
+        }
+        new_path_entry.add_suffix(&path_browse_btn);
+
+        let prefix_browse_btn = gtk::Button::from_icon_name("folder-symbolic");
+        prefix_browse_btn.set_valign(gtk::Align::Center);
+        prefix_browse_btn.add_css_class("flat");
+        {
+            let s = sender.input_sender().clone();
+            prefix_browse_btn.connect_clicked(move |_| {
+                s.send(GameSetupMsg::BrowseNewPrefix).ok();
+            });
+        }
+        new_prefix_entry.add_suffix(&prefix_browse_btn);
+
+        let dir_list = gtk::ListBox::new();
+        dir_list.add_css_class("boxed-list");
+        dir_list.set_selection_mode(gtk::SelectionMode::None);
+        dir_list.append(&new_path_entry);
+        dir_list.append(&new_prefix_entry);
+
+        let add_vbox = gtk::Box::new(gtk::Orientation::Vertical, 12);
+        add_vbox.append(&type_label);
+        add_vbox.append(&type_list);
+        add_vbox.append(&dir_label);
+        add_vbox.append(&dir_list);
+        add_vbox.append(&add_btn);
+
+        let add_clamp = adw::Clamp::new();
+        add_clamp.set_maximum_size(540);
+        add_clamp.set_margin_all(12);
+        add_clamp.set_child(Some(&add_vbox));
+
+        let add_scrolled = gtk::ScrolledWindow::new();
+        add_scrolled.set_hscrollbar_policy(gtk::PolicyType::Never);
+        add_scrolled.set_child(Some(&add_clamp));
+
+        let add_back_btn = gtk::Button::with_label("Back");
+        add_back_btn.add_css_class("flat");
+        {
+            let s = sender.input_sender().clone();
+            add_back_btn.connect_clicked(move |_| {
+                s.send(GameSetupMsg::BackClicked).ok();
+            });
+        }
+
+        let add_header = adw::HeaderBar::new();
+        add_header.set_show_back_button(false);
+        add_header.pack_start(&add_back_btn);
+        add_header.set_title_widget(Some(&adw::WindowTitle::new("Add a Game", "")));
+
+        let add_toolbar = adw::ToolbarView::new();
+        add_toolbar.add_top_bar(&add_header);
+        add_toolbar.set_content(Some(&add_scrolled));
+
+        let add_page = adw::NavigationPage::new(&add_toolbar, "Add a Game");
+        add_page.set_tag(Some("add"));
+
+        navigation_view.push(&list_page);
+        navigation_view.add(&add_page);
 
         let model = GameSetupDialog {
             entries,
             game_cache_dirs,
-            stack,
-            add_page_visible: false,
+            navigation_view,
             games_list,
             games_section,
             new_game_type_idx: 0,
@@ -492,31 +501,10 @@ impl Component for GameSetupDialog {
             known_opts,
         };
 
-        let stack = &model.stack;
-        let games_list = &model.games_list;
-        let games_section = &model.games_section;
-        let new_path_entry = &model.new_path_entry;
-        let new_prefix_entry = &model.new_prefix_entry;
-        let add_btn = &model.add_btn;
-
+        let navigation_view = &model.navigation_view;
         let widgets = view_output!();
 
-        // Populate the game-type combo with the filtered options list.
-        let labels: Vec<String> = model
-            .known_opts
-            .iter()
-            .map(|o| o.title.to_string())
-            .collect();
-        let strs: Vec<&str> = labels.iter().map(String::as_str).collect();
-        widgets
-            .game_type_combo
-            .set_model(Some(&gtk::StringList::new(&strs)));
-
-        model.stack.page(&widgets.list_page).set_name("list");
-        model.stack.page(&widgets.add_page).set_name("add");
-
         model.rebuild_games(&sender);
-        model.stack.set_visible_child_name("list");
 
         root.present();
 
@@ -611,13 +599,11 @@ impl Component for GameSetupDialog {
                 self.new_path_entry.set_text("");
                 self.new_prefix_entry.set_text("");
                 self.update_add_btn();
-                self.stack.set_visible_child_name("add");
-                self.add_page_visible = true;
+                self.navigation_view.push_by_tag("add");
             }
 
             GameSetupMsg::BackClicked => {
-                self.stack.set_visible_child_name("list");
-                self.add_page_visible = false;
+                self.navigation_view.pop();
             }
 
             GameSetupMsg::GameTypeSelected(idx) => {
@@ -686,8 +672,7 @@ impl Component for GameSetupDialog {
                 self.new_prefix_entry.set_text("");
                 self.update_add_btn();
                 self.rebuild_games(&sender);
-                self.stack.set_visible_child_name("list");
-                self.add_page_visible = false;
+                self.navigation_view.pop();
             }
 
             GameSetupMsg::Confirm => {

@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use adw::prelude::*;
 use gtk::gio;
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -13,7 +14,7 @@ use super::messages::{AppCmdMsg, AppMsg};
 impl App {
     pub(crate) fn handle_deploy_clicked(
         &mut self,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         // Validate preconditions before showing any dialog.
@@ -53,24 +54,27 @@ impl App {
                 .map(|p| p.name.clone())
                 .unwrap_or_default();
 
-            let dialog = gtk::AlertDialog::builder()
-                .message("Deploy with different profile?")
-                .detail(format!(
-                    "The game folder was last deployed with \"{last_name}\". \
-                     You are now on \"{cur_name}\". Deploying will overwrite \
-                     the game folder with this profile's mods."
-                ))
-                .buttons(["Cancel", "Deploy"])
-                .cancel_button(0)
-                .default_button(0)
-                .modal(true)
+            let body = format!(
+                "The game folder was last deployed with \"{last_name}\". \
+                 You are now on \"{cur_name}\". Deploying will overwrite \
+                 the game folder with this profile's mods."
+            );
+            let dialog = adw::AlertDialog::builder()
+                .heading("Deploy with different profile?")
+                .body(&body)
                 .build();
+            dialog.add_response("cancel", "Cancel");
+            dialog.add_response("deploy", "Deploy");
+            dialog.set_default_response(Some("deploy"));
+            dialog.set_close_response("cancel");
+            dialog.set_response_appearance("deploy", adw::ResponseAppearance::Suggested);
             let s = sender.input_sender().clone();
-            dialog.choose(Some(root), None::<&gio::Cancellable>, move |r| {
-                if r == Ok(1) {
+            dialog.connect_response(None, move |_, response| {
+                if response == "deploy" {
                     let _ = s.send(AppMsg::DeployConfirmed);
                 }
             });
+            dialog.present(Some(root));
             return;
         }
 
@@ -110,7 +114,7 @@ impl App {
 
     pub(crate) fn handle_purge_clicked(
         &mut self,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         self.deploy_options_btn.popdown();
@@ -194,7 +198,7 @@ impl App {
 
     pub(crate) fn handle_grant_game_folder_access(
         &mut self,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         let Some(game) = self.selected_game().cloned() else {

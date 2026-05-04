@@ -12,7 +12,7 @@ use crate::utils::paths;
 pub struct SettingsDialog {
     tracker: Tracker,
     is_logged_in: bool,
-    api_key_entry: gtk::Entry,
+    api_key_row: adw::PasswordEntryRow,
     status_label: gtk::Label,
     test_button: gtk::Button,
     save_button: gtk::Button,
@@ -85,9 +85,8 @@ impl Component for SettingsDialog {
                     set_visible: !model.is_logged_in,
                     set_description: Some("Use the account button in the title bar to log in or out via SSO. To use a manual API key instead, enter it below."),
 
-                    // Manual API key entry (hidden when using SSO; suffix added imperatively)
-                    #[name = "api_key_row"]
-                    add = &adw::ActionRow {
+                    #[local_ref]
+                    add = api_key_row -> adw::PasswordEntryRow {
                         set_title: "Manual API Key",
                     },
 
@@ -248,12 +247,7 @@ impl Component for SettingsDialog {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let api_key_entry = gtk::Entry::builder()
-            .hexpand(true)
-            .valign(gtk::Align::Center)
-            .visibility(false)
-            .placeholder_text("Paste API key here")
-            .build();
+        let api_key_row = adw::PasswordEntryRow::new();
         let status_label = gtk::Label::new(None);
         let test_button = gtk::Button::new();
         let save_button = gtk::Button::new();
@@ -263,23 +257,18 @@ impl Component for SettingsDialog {
         let model = SettingsDialog {
             tracker,
             is_logged_in,
-            api_key_entry,
+            api_key_row,
             status_label,
             test_button,
             save_button,
             downloads_dir: default_dir,
         };
 
+        let api_key_row = &model.api_key_row;
         let status_label = &model.status_label;
         let test_button = &model.test_button;
         let save_button = &model.save_button;
         let widgets = view_output!();
-
-        // API key entry suffix
-        widgets.api_key_row.add_suffix(&model.api_key_entry);
-        widgets
-            .api_key_row
-            .set_activatable_widget(Some(&model.api_key_entry));
 
         // Ko-fi support row suffix
         let kofi_image = gtk::Image::from_resource("/io/mattianelo/Deployd/kofi-logo.svg");
@@ -331,7 +320,7 @@ impl Component for SettingsDialog {
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, root: &Self::Root) {
         match msg {
             SettingsMsg::TestKey => {
-                let key = self.api_key_entry.text().to_string();
+                let key = self.api_key_row.text().to_string();
                 if key.is_empty() {
                     self.status_label.set_label("Please enter an API key.");
                     self.status_label.remove_css_class("success");
@@ -361,7 +350,7 @@ impl Component for SettingsDialog {
                 });
             }
             SettingsMsg::Save => {
-                let key = self.api_key_entry.text().to_string();
+                let key = self.api_key_row.text().to_string();
                 let tracker = self.tracker.clone();
 
                 self.save_button.set_sensitive(false);
@@ -500,7 +489,7 @@ impl Component for SettingsDialog {
                 if let Some(ref key) = key
                     && !key.is_empty()
                 {
-                    self.api_key_entry.set_text(key);
+                    self.api_key_row.set_text(key);
                 }
             }
             SettingsCmdMsg::DownloadsDirLoaded(dir) => {

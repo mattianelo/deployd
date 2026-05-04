@@ -16,14 +16,11 @@ pub struct WelcomeWizard {
     install_paths: Vec<Option<PathBuf>>,
     /// User-browsed Wine prefix for each known game.
     wine_prefixes: Vec<Option<PathBuf>>,
-    /// Current page name shown in the stack.
-    current_page: &'static str,
     // Widget handles for imperative rebuilds.
-    stack: gtk::Stack,
+    navigation_view: adw::NavigationView,
     games_list: gtk::ListBox,
     dirs_list: gtk::ListBox,
     next_btn: gtk::Button,
-    back_dirs_btn: gtk::Button,
     finish_btn: gtk::Button,
 }
 
@@ -84,7 +81,6 @@ impl WelcomeWizard {
                 });
             }
             row.add_prefix(&check);
-            // Make the whole row activate the checkbox.
             row.set_activatable_widget(Some(&check));
 
             self.games_list.append(&row);
@@ -166,7 +162,6 @@ impl WelcomeWizard {
             self.dirs_list.append(&expander);
         }
 
-        // Finish is enabled only when every selected game has an install path.
         let all_set = self.missing_paths().is_empty();
         self.finish_btn.set_sensitive(all_set);
     }
@@ -190,158 +185,8 @@ impl Component for WelcomeWizard {
                 glib::Propagation::Proceed
             },
 
-            gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
-
-                adw::HeaderBar {
-                    #[wrap(Some)]
-                    set_title_widget = &adw::WindowTitle {
-                        set_title: "Welcome to Deployd",
-                    },
-
-                    pack_start = &gtk::Button {
-                        set_label: "Back",
-                        add_css_class: "flat",
-                        #[watch]
-                        set_visible: model.current_page == "directories",
-                        connect_clicked => WelcomeWizardMsg::BackToGames,
-                    },
-                },
-
-                #[local_ref]
-                stack -> gtk::Stack {
-                    set_vexpand: true,
-                    set_transition_type: gtk::StackTransitionType::SlideLeftRight,
-
-                    // ── Welcome page ─────────────────────────────────────────
-                    #[name = "welcome_page"]
-                    adw::StatusPage {
-                        set_icon_name: Some("deployd"),
-                        set_title: "Welcome to Deployd",
-                        set_description: Some("A mod manager for Bethesda and REDEngine games.\nChoose the games you want to manage and point Deployd\nto their installation folders to get started."),
-
-                        gtk::Button {
-                            set_label: "Get Started",
-                            add_css_class: "suggested-action",
-                            add_css_class: "pill",
-                            set_halign: gtk::Align::Center,
-                            connect_clicked => WelcomeWizardMsg::GetStarted,
-                        },
-                    },
-
-                    // ── Game selection page ───────────────────────────────────
-                    #[name = "games_page"]
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 0,
-
-                        gtk::ScrolledWindow {
-                            set_hscrollbar_policy: gtk::PolicyType::Never,
-                            set_vexpand: true,
-
-                            adw::Clamp {
-                                set_maximum_size: 540,
-                                set_margin_all: 12,
-
-                                gtk::Box {
-                                    set_orientation: gtk::Orientation::Vertical,
-                                    set_spacing: 12,
-
-                                    gtk::Label {
-                                        set_label: "Which games do you want to manage?",
-                                        set_halign: gtk::Align::Start,
-                                        add_css_class: "heading",
-                                    },
-
-                                    #[local_ref]
-                                    games_list -> gtk::ListBox {
-                                        add_css_class: "boxed-list",
-                                        set_selection_mode: gtk::SelectionMode::None,
-                                    },
-                                },
-                            },
-                        },
-
-                        // Footer bar with Next button.
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Horizontal,
-                            set_margin_start: 12,
-                            set_margin_end: 12,
-                            set_margin_top: 6,
-                            set_margin_bottom: 12,
-                            set_halign: gtk::Align::End,
-
-                            #[local_ref]
-                            next_btn -> gtk::Button {
-                                set_label: "Next",
-                                add_css_class: "suggested-action",
-                                set_sensitive: false,
-                                connect_clicked => WelcomeWizardMsg::NextToDirectories,
-                            },
-                        },
-                    },
-
-                    // ── Directory configuration page ──────────────────────────
-                    #[name = "dirs_page"]
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 0,
-
-                        gtk::ScrolledWindow {
-                            set_hscrollbar_policy: gtk::PolicyType::Never,
-                            set_vexpand: true,
-
-                            adw::Clamp {
-                                set_maximum_size: 540,
-                                set_margin_all: 12,
-
-                                gtk::Box {
-                                    set_orientation: gtk::Orientation::Vertical,
-                                    set_spacing: 12,
-
-                                    gtk::Label {
-                                        set_label: "Where are these games installed?",
-                                        set_halign: gtk::Align::Start,
-                                        add_css_class: "heading",
-                                    },
-
-                                    #[local_ref]
-                                    dirs_list -> gtk::ListBox {
-                                        add_css_class: "boxed-list",
-                                        set_selection_mode: gtk::SelectionMode::None,
-                                    },
-                                },
-                            },
-                        },
-
-                        // Footer bar with Back / Finish.
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Horizontal,
-                            set_margin_start: 12,
-                            set_margin_end: 12,
-                            set_margin_top: 6,
-                            set_margin_bottom: 12,
-                            set_halign: gtk::Align::End,
-                            set_spacing: 6,
-
-                            #[local_ref]
-                            back_dirs_btn -> gtk::Button {
-                                set_label: "Back",
-                                add_css_class: "flat",
-                                connect_clicked => WelcomeWizardMsg::BackToGames,
-                            },
-
-                            #[local_ref]
-                            finish_btn -> gtk::Button {
-                                set_label: "Finish",
-                                add_css_class: "suggested-action",
-                                set_sensitive: false,
-                                connect_clicked => WelcomeWizardMsg::Finish,
-                            },
-                        },
-                    },
-                },
-            },
+            #[local_ref]
+            navigation_view -> adw::NavigationView { }
         }
     }
 
@@ -353,40 +198,172 @@ impl Component for WelcomeWizard {
         let known_opts: Vec<game::KnownGameOption> = game::known_game_options();
         let n = known_opts.len();
 
-        let stack = gtk::Stack::new();
+        // ── Games list (rebuilt imperatively) ────────────────────────────────
         let games_list = gtk::ListBox::new();
+        games_list.add_css_class("boxed-list");
+        games_list.set_selection_mode(gtk::SelectionMode::None);
+
+        // ── Dirs list (rebuilt imperatively) ─────────────────────────────────
         let dirs_list = gtk::ListBox::new();
+        dirs_list.add_css_class("boxed-list");
+        dirs_list.set_selection_mode(gtk::SelectionMode::None);
+
+        // ── Next button ───────────────────────────────────────────────────────
         let next_btn = gtk::Button::with_label("Next");
-        let back_dirs_btn = gtk::Button::with_label("Back");
+        next_btn.add_css_class("suggested-action");
+        next_btn.set_sensitive(false);
+        {
+            let s = sender.input_sender().clone();
+            next_btn.connect_clicked(move |_| {
+                s.send(WelcomeWizardMsg::NextToDirectories).ok();
+            });
+        }
+
+        // ── Finish button ─────────────────────────────────────────────────────
         let finish_btn = gtk::Button::with_label("Finish");
+        finish_btn.add_css_class("suggested-action");
+        finish_btn.set_sensitive(false);
+        {
+            let s = sender.input_sender().clone();
+            finish_btn.connect_clicked(move |_| {
+                s.send(WelcomeWizardMsg::Finish).ok();
+            });
+        }
+
+        let navigation_view = adw::NavigationView::new();
+
+        // ── Welcome page ──────────────────────────────────────────────────────
+        let get_started_btn = gtk::Button::with_label("Get Started");
+        get_started_btn.add_css_class("suggested-action");
+        get_started_btn.add_css_class("pill");
+        get_started_btn.set_halign(gtk::Align::Center);
+        {
+            let s = sender.input_sender().clone();
+            get_started_btn.connect_clicked(move |_| {
+                s.send(WelcomeWizardMsg::GetStarted).ok();
+            });
+        }
+
+        let welcome_status = adw::StatusPage::new();
+        welcome_status.set_icon_name(Some("deployd"));
+        welcome_status.set_title("Welcome to Deployd");
+        welcome_status.set_description(Some(
+            "A mod manager for Bethesda and REDEngine games.\n\
+             Choose the games you want to manage and point Deployd\n\
+             to their installation folders to get started.",
+        ));
+        welcome_status.set_child(Some(&get_started_btn));
+
+        let skip_btn = gtk::Button::with_label("Skip");
+        skip_btn.add_css_class("flat");
+        {
+            let s = sender.input_sender().clone();
+            skip_btn.connect_clicked(move |_| {
+                s.send(WelcomeWizardMsg::Cancel).ok();
+            });
+        }
+        let welcome_header = adw::HeaderBar::new();
+        welcome_header.set_show_back_button(false);
+        welcome_header.pack_end(&skip_btn);
+
+        let welcome_toolbar = adw::ToolbarView::new();
+        welcome_toolbar.add_top_bar(&welcome_header);
+        welcome_toolbar.set_content(Some(&welcome_status));
+
+        let welcome_page = adw::NavigationPage::new(&welcome_toolbar, "Welcome");
+        welcome_page.set_tag(Some("welcome"));
+
+        // ── Games page ────────────────────────────────────────────────────────
+        let games_label = gtk::Label::new(Some("Which games do you want to manage?"));
+        games_label.set_halign(gtk::Align::Start);
+        games_label.add_css_class("heading");
+
+        let games_vbox = gtk::Box::new(gtk::Orientation::Vertical, 12);
+        games_vbox.append(&games_label);
+        games_vbox.append(&games_list);
+
+        let games_clamp = adw::Clamp::new();
+        games_clamp.set_maximum_size(540);
+        games_clamp.set_margin_all(12);
+        games_clamp.set_child(Some(&games_vbox));
+
+        let games_scrolled = gtk::ScrolledWindow::new();
+        games_scrolled.set_hscrollbar_policy(gtk::PolicyType::Never);
+        games_scrolled.set_vexpand(true);
+        games_scrolled.set_child(Some(&games_clamp));
+
+        let games_header = adw::HeaderBar::new();
+        games_header.set_show_back_button(false);
+        games_header.pack_end(&next_btn);
+
+        let games_toolbar = adw::ToolbarView::new();
+        games_toolbar.add_top_bar(&games_header);
+        games_toolbar.set_content(Some(&games_scrolled));
+
+        let games_page = adw::NavigationPage::new(&games_toolbar, "Select Games");
+        games_page.set_tag(Some("games"));
+
+        // ── Directories page ──────────────────────────────────────────────────
+        let dirs_label = gtk::Label::new(Some("Where are these games installed?"));
+        dirs_label.set_halign(gtk::Align::Start);
+        dirs_label.add_css_class("heading");
+
+        let dirs_vbox = gtk::Box::new(gtk::Orientation::Vertical, 12);
+        dirs_vbox.append(&dirs_label);
+        dirs_vbox.append(&dirs_list);
+
+        let dirs_clamp = adw::Clamp::new();
+        dirs_clamp.set_maximum_size(540);
+        dirs_clamp.set_margin_all(12);
+        dirs_clamp.set_child(Some(&dirs_vbox));
+
+        let dirs_scrolled = gtk::ScrolledWindow::new();
+        dirs_scrolled.set_hscrollbar_policy(gtk::PolicyType::Never);
+        dirs_scrolled.set_vexpand(true);
+        dirs_scrolled.set_child(Some(&dirs_clamp));
+
+        let back_btn = gtk::Button::with_label("Back");
+        back_btn.add_css_class("flat");
+        {
+            let s = sender.input_sender().clone();
+            back_btn.connect_clicked(move |_| {
+                s.send(WelcomeWizardMsg::BackToGames).ok();
+            });
+        }
+
+        let dirs_header = adw::HeaderBar::new();
+        dirs_header.set_show_back_button(false);
+        dirs_header.pack_start(&back_btn);
+        dirs_header.pack_end(&finish_btn);
+
+        let dirs_toolbar = adw::ToolbarView::new();
+        dirs_toolbar.add_top_bar(&dirs_header);
+        dirs_toolbar.set_content(Some(&dirs_scrolled));
+
+        let dirs_page = adw::NavigationPage::new(&dirs_toolbar, "Set Directories");
+        dirs_page.set_tag(Some("directories"));
+
+        // ── Wire navigation view ──────────────────────────────────────────────
+        // push() adds and shows the welcome page as the root.
+        navigation_view.push(&welcome_page);
+        // add() makes games and directories available for push_by_tag().
+        navigation_view.add(&games_page);
+        navigation_view.add(&dirs_page);
 
         let model = WelcomeWizard {
             known_opts,
             selected: vec![false; n],
             install_paths: vec![None; n],
             wine_prefixes: vec![None; n],
-            current_page: "welcome",
-            stack,
+            navigation_view,
             games_list,
             dirs_list,
             next_btn,
-            back_dirs_btn,
             finish_btn,
         };
 
-        let stack = &model.stack;
-        let games_list = &model.games_list;
-        let dirs_list = &model.dirs_list;
-        let next_btn = &model.next_btn;
-        let back_dirs_btn = &model.back_dirs_btn;
-        let finish_btn = &model.finish_btn;
-
+        let navigation_view = &model.navigation_view;
         let widgets = view_output!();
-
-        model.stack.page(&widgets.welcome_page).set_name("welcome");
-        model.stack.page(&widgets.games_page).set_name("games");
-        model.stack.page(&widgets.dirs_page).set_name("directories");
-        model.stack.set_visible_child_name("welcome");
 
         model.rebuild_games_list(&sender);
 
@@ -398,8 +375,7 @@ impl Component for WelcomeWizard {
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, root: &Self::Root) {
         match msg {
             WelcomeWizardMsg::GetStarted => {
-                self.current_page = "games";
-                self.stack.set_visible_child_name("games");
+                self.navigation_view.push_by_tag("games");
             }
 
             WelcomeWizardMsg::ToggleGame(idx) => {
@@ -408,19 +384,15 @@ impl Component for WelcomeWizard {
                 }
                 let any = self.selected.iter().any(|&s| s);
                 self.next_btn.set_sensitive(any);
-                // No full rebuild needed — the checkbutton already updated its own visual.
             }
 
             WelcomeWizardMsg::NextToDirectories => {
-                self.current_page = "directories";
                 self.rebuild_dirs_list(&sender);
-                self.stack.set_visible_child_name("directories");
+                self.navigation_view.push_by_tag("directories");
             }
 
             WelcomeWizardMsg::BackToGames => {
-                self.current_page = "games";
-                self.rebuild_games_list(&sender);
-                self.stack.set_visible_child_name("games");
+                self.navigation_view.pop();
             }
 
             WelcomeWizardMsg::BrowseInstallPath(idx) => {

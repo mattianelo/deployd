@@ -37,7 +37,7 @@ impl Component for App {
     type CommandOutput = AppCmdMsg;
 
     view! {
-        adw::Window {
+        adw::ApplicationWindow {
             set_title: Some("Deployd"),
             set_default_size: (1100, 680),
             connect_close_request[sender] => move |_| {

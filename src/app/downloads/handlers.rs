@@ -104,7 +104,7 @@ impl App {
     pub(crate) fn handle_rename_download(
         &mut self,
         index: DynamicIndex,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         let idx = index.current_index();
@@ -126,7 +126,9 @@ impl App {
             .margin_end(8)
             .build();
 
-        let dialog = adw::MessageDialog::new(Some(root), Some("Rename Download"), None::<&str>);
+        let dialog = adw::AlertDialog::builder()
+            .heading("Rename Download")
+            .build();
         dialog.set_extra_child(Some(&entry));
         dialog.add_response("cancel", "Cancel");
         dialog.add_response("apply", "Apply");
@@ -144,7 +146,7 @@ impl App {
                 }
             }
         });
-        dialog.present();
+        dialog.present(Some(root));
     }
 
     pub(crate) fn handle_confirm_download_rename(
@@ -541,7 +543,7 @@ impl App {
     pub(crate) fn handle_fetch_download_metadata(
         &mut self,
         index: DynamicIndex,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         let idx = index.current_index();
@@ -576,11 +578,10 @@ impl App {
                     .margin_end(8)
                     .build();
 
-                let dialog = adw::MessageDialog::new(
-                    Some(root),
-                    Some("Enter Nexus Mod ID"),
-                    Some("Paste a Nexus mod URL or type the numeric mod ID."),
-                );
+                let dialog = adw::AlertDialog::builder()
+                    .heading("Enter Nexus Mod ID")
+                    .body("Paste a Nexus mod URL or type the numeric mod ID.")
+                    .build();
                 dialog.set_extra_child(Some(&text_entry));
                 dialog.add_response("cancel", "Cancel");
                 dialog.add_response("fetch", "Fetch");
@@ -603,7 +604,7 @@ impl App {
                         domain.clone(),
                     ));
                 });
-                dialog.present();
+                dialog.present(Some(root));
                 return;
             }
         }

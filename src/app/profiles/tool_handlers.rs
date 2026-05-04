@@ -59,7 +59,7 @@ impl App {
     pub(crate) fn handle_confirm_proton_setup(
         &mut self,
         tool_id: String,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         let dialog = gtk::AlertDialog::builder()
@@ -93,7 +93,7 @@ impl App {
         &mut self,
         tool_id: String,
         prefix: PathBuf,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         let dialog = gtk::AlertDialog::builder()
@@ -175,7 +175,7 @@ impl App {
 
     pub(crate) fn handle_manage_tools_clicked(
         &mut self,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         self.overflow_menu_btn.popdown();

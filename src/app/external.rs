@@ -53,7 +53,7 @@ impl App {
 
     pub(crate) fn handle_reset_vanilla_baseline(
         &mut self,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         self.overflow_menu_btn.popdown();
@@ -310,7 +310,7 @@ impl App {
 
     pub(crate) fn handle_absorb_external_files(
         &mut self,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         let files = self.pending_external_files.clone();
@@ -343,7 +343,7 @@ impl App {
     pub(crate) fn handle_absorb_files_selected(
         &mut self,
         file_list: Vec<(std::path::PathBuf, std::path::PathBuf)>,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         if file_list.is_empty() {

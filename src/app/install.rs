@@ -20,7 +20,7 @@ use super::types::PendingInstall;
 impl App {
     pub(crate) fn handle_install_clicked(
         &mut self,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         let dialog = gtk::FileDialog::builder()
@@ -126,7 +126,7 @@ impl App {
         edited_name: String,
         file_targets: HashMap<String, crate::models::mod_entry::InstallTarget>,
         excluded_files: HashSet<String>,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         if let Some(dialog) = self.pre_install_dialog.take() {
@@ -351,7 +351,7 @@ impl App {
 
     pub(crate) fn handle_open_pre_install_dialog(
         &mut self,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         self.open_pre_install_dialog(root, sender);
@@ -361,7 +361,7 @@ impl App {
         &mut self,
         old_mod_id: String,
         old_priority: i32,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         let old_name = self.mod_name_for_id(&old_mod_id);
@@ -680,7 +680,7 @@ impl App {
     pub(crate) fn handle_cmd_mod_prepared(
         &mut self,
         result: Result<PrepareResultMsg, String>,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         self.installing = false;
@@ -1092,7 +1092,7 @@ impl App {
     ///          partial mod name already stored in `pending_fetched_name`.
     pub(crate) fn show_file_id_dialog(
         &mut self,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         let Some(ctx) = self.pending_file_id_needed.take() else {
@@ -1109,14 +1109,13 @@ impl App {
             .margin_end(8)
             .build();
 
-        let dialog = adw::MessageDialog::new(
-            Some(root),
-            Some("File Not Found on Nexus"),
-            Some(
+        let dialog = adw::AlertDialog::builder()
+            .heading("File Not Found on Nexus")
+            .body(
                 "The archive filename did not match any file on this mod page. \
                  Enter the Nexus file ID to complete the metadata, or skip to proceed.",
-            ),
-        );
+            )
+            .build();
         dialog.set_extra_child(Some(&text_entry));
         dialog.add_response("skip", "Skip");
         dialog.add_response("fetch", "Fetch");
@@ -1143,7 +1142,7 @@ impl App {
             // Skip or invalid input — open pre-install dialog with partial name.
             let _ = input_sender.send(AppMsg::OpenPreInstallDialog);
         });
-        dialog.present();
+        dialog.present(Some(root));
     }
 
     /// Fetch the Nexus file entry for the user-supplied `file_id` and resolve the combined

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use gtk::gio;
+use adw::prelude::*;
 use gtk::prelude::*;
 use relm4::prelude::*;
 
@@ -15,7 +15,7 @@ use super::super::messages::{AppCmdMsg, AppMsg};
 impl App {
     pub(crate) fn handle_settings_clicked(
         &mut self,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         self.overflow_menu_btn.popdown();
@@ -140,7 +140,7 @@ impl App {
 
     pub(crate) fn handle_manage_games_clicked(
         &mut self,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         let detected: Vec<crate::models::game::Game> = self.games.clone();
@@ -254,7 +254,7 @@ impl App {
 
     pub(crate) fn handle_show_welcome_wizard(
         &mut self,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         self.welcome_wizard = Some(
@@ -299,33 +299,35 @@ impl App {
     pub(crate) fn confirm_remove_game(
         &mut self,
         game_id: String,
-        root: &adw::Window,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
-        let dialog = gtk::AlertDialog::builder()
-            .message("Stop managing this game?")
-            .detail("Installed mods stay in the cache and can be kept or permanently deleted.")
-            .buttons(["Cancel", "Remove only", "Remove & delete mods"])
-            .cancel_button(0)
-            .default_button(0)
-            .modal(true)
+        let dialog = adw::AlertDialog::builder()
+            .heading("Stop managing this game?")
+            .body("Installed mods stay in the cache and can be kept or permanently deleted.")
             .build();
+        dialog.add_response("cancel", "Cancel");
+        dialog.add_response("remove", "Remove only");
+        dialog.add_response("remove-delete", "Remove & delete mods");
+        dialog.set_close_response("cancel");
+        dialog.set_response_appearance("remove-delete", adw::ResponseAppearance::Destructive);
         let s = sender.input_sender().clone();
-        dialog.choose(Some(root), None::<&gio::Cancellable>, move |r| match r {
-            Ok(1) => {
+        dialog.connect_response(None, move |_, response| match response {
+            "remove" => {
                 let _ = s.send(AppMsg::RemoveGameConfirmed {
-                    game_id,
+                    game_id: game_id.clone(),
                     delete_mods: false,
                 });
             }
-            Ok(2) => {
+            "remove-delete" => {
                 let _ = s.send(AppMsg::RemoveGameConfirmed {
-                    game_id,
+                    game_id: game_id.clone(),
                     delete_mods: true,
                 });
             }
             _ => {}
         });
+        dialog.present(Some(root));
     }
 
     pub(crate) fn handle_remove_game(
