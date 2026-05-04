@@ -287,7 +287,7 @@ impl App {
                 if conflicts > 0 {
                     msg.push_str(&format!(", {conflicts} conflict(s) resolved"));
                 }
-                self.push_notification(&msg);
+                self.show_toast(&msg);
                 sender.input(AppMsg::ScanExternalFiles);
             }
             Err(e) => {

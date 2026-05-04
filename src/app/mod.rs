@@ -452,7 +452,8 @@ impl Component for App {
 
                                 gtk::ScrolledWindow {
                                     #[watch]
-                                    set_visible: model.notifications_count() > 0,
+                                    set_visible: model.external_changes_count > 0
+                                        || model.app_update_version.is_some(),
                                     set_propagate_natural_height: true,
                                     set_max_content_height: 400,
                                     set_hscrollbar_policy: gtk::PolicyType::Never,

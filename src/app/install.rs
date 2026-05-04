@@ -14,6 +14,7 @@ use crate::ui::fomod_dialog::{
 use crate::utils::{fomod_resolver, paths};
 
 use super::App;
+use super::free_fns::load_game_data;
 use super::messages::{AppCmdMsg, AppMsg, PrepareResultMsg};
 use super::types::PendingInstall;
 
@@ -945,7 +946,35 @@ impl App {
                 let plugins = add_result.plugins_found.len();
                 self.needs_deploy = true;
                 self.auto_save_profile(sender);
-                self.reload_mods(sender);
+
+                // If the download entry already has resolved metadata, write the version to
+                // the mods table and reload in a single chained command so the read cannot
+                // race ahead of the write. Otherwise a plain reload is sufficient — the
+                // metadata-fetch path will update version/author and trigger its own reload.
+                let version_from_dl: Option<String> = metadata_dl_id
+                    .as_ref()
+                    .and_then(|id| self.all_downloads.iter().find(|e| &e.id == id))
+                    .filter(|e| e.metadata_fetched)
+                    .and_then(|e| e.version.clone());
+
+                let already_fetched = version_from_dl.is_some()
+                    || metadata_dl_id
+                        .as_ref()
+                        .and_then(|id| self.all_downloads.iter().find(|e| &e.id == id))
+                        .is_some_and(|e| e.metadata_fetched);
+
+                if let (Some(tracker), Some(game)) =
+                    (self.tracker.clone(), self.selected_game().cloned())
+                {
+                    let mod_id = add_result.mod_entry.id.clone();
+                    sender.oneshot_command(async move {
+                        if let Some(version) = version_from_dl {
+                            let _ = tracker.set_mod_installed_version(&mod_id, &version).await;
+                        }
+                        AppCmdMsg::ModsLoaded(load_game_data(&tracker, &game, false).await, true)
+                    });
+                }
+
                 let msg = if was_replace {
                     "Mod replaced — deploy to update game files".to_string()
                 } else {
@@ -959,11 +988,6 @@ impl App {
                 if let Some(dialog) = self.absorb_dialog.take() {
                     dialog.widget().destroy();
                 }
-
-                let already_fetched = metadata_dl_id
-                    .as_ref()
-                    .and_then(|id| self.all_downloads.iter().find(|e| &e.id == id))
-                    .is_some_and(|e| e.metadata_fetched);
 
                 if !already_fetched
                     && let (Some(nexus_mod_id), Some(nexus_domain)) = (
