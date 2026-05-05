@@ -966,8 +966,8 @@ impl App {
                     nexus_file_name,
                     nexus_is_primary,
                     resolved_file_id,
-                    if unresolved { None } else { resolved_version.clone() },
-                    if unresolved { None } else { Some(mod_author.clone()) },
+                    resolved_version.clone(),
+                    Some(mod_author.clone()),
                 ));
                 if unresolved {
                     let _ = input_sender.send(AppMsg::ShowFileIdDialog {
