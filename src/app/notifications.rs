@@ -20,7 +20,7 @@ impl App {
     /// Each item stays until the user explicitly dismisses it. Reserve this
     /// for things that require the user's attention (errors, failures).
     pub(crate) fn push_notification(&mut self, message: &str) {
-        let row = adw::ActionRow::new();
+        let row = adw::ExpanderRow::new();
         row.set_title(message);
         row.set_title_lines(2);
 
@@ -40,6 +40,23 @@ impl App {
         });
 
         row.add_suffix(&dismiss_btn);
+
+        // Full message revealed on expand, selectable for copy-paste
+        let label = gtk::Label::new(Some(message));
+        label.set_wrap(true);
+        label.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+        label.set_xalign(0.0);
+        label.set_selectable(true);
+        label.set_margin_top(8);
+        label.set_margin_bottom(8);
+        label.set_margin_start(16);
+        label.set_margin_end(16);
+        let detail_row = gtk::ListBoxRow::new();
+        detail_row.set_child(Some(&label));
+        detail_row.set_activatable(false);
+        detail_row.set_selectable(false);
+        row.add_row(&detail_row);
+
         self.notification_list.prepend(&row);
         self.notification_count += 1;
     }

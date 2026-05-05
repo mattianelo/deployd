@@ -510,6 +510,22 @@ impl Component for App {
                                     },
                                 },
 
+                                gtk::Box {
+                                    #[watch]
+                                    set_visible: model.notification_count > 0,
+                                    set_orientation: gtk::Orientation::Horizontal,
+                                    set_halign: gtk::Align::End,
+
+                                    gtk::Button {
+                                        set_label: "Clear All",
+                                        add_css_class: "flat",
+                                        set_tooltip_text: Some("Dismiss all notifications"),
+                                        connect_clicked[sender] => move |_| {
+                                            sender.input(AppMsg::ClearNotifications);
+                                        },
+                                    },
+                                },
+
                                 gtk::ScrolledWindow {
                                     #[watch]
                                     set_visible: model.notification_count > 0,

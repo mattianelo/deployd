@@ -66,6 +66,9 @@ impl App {
 
         let vadj = self.mod_scroll.vadjustment();
         let saved_scroll = vadj.value();
+        // If the error path triggers populate_mods, it will read this anchor instead of
+        // the post-removal vadjustment value (which may already be clamped/wrong).
+        self.pending_scroll_restore = Some(saved_scroll);
         self.mods.guard().remove(idx);
         {
             let mut guard = self.plugins.guard();

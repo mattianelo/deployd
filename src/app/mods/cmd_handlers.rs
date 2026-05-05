@@ -56,6 +56,7 @@ impl App {
     ) {
         match result {
             Ok(_) => {
+                self.pending_scroll_restore = None;
                 self.show_toast("Mod removed. Deploy to update game files");
                 let changed = self.reset_installed_download_for_mod(
                     nexus_ids,
