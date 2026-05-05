@@ -978,6 +978,8 @@ impl App {
                         }
                         AppCmdMsg::ModsLoaded(load_game_data(&tracker, &game, false).await, true)
                     });
+                } else {
+                    self.reload_mods(sender);
                 }
 
                 let msg = if was_replace {

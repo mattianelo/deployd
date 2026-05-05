@@ -139,10 +139,8 @@ impl App {
             let mut guard = self.plugins.guard();
             for i in 0..guard.len() {
                 let matches = guard.get(i).is_some_and(|row| row.plugin.mod_id == mod_id);
-                if matches {
-                    if let Some(row) = guard.get_mut(i) {
-                        row.mod_enabled = enabled;
-                    }
+                if matches && let Some(row) = guard.get_mut(i) {
+                    row.mod_enabled = enabled;
                 }
             }
         }
@@ -359,10 +357,10 @@ impl App {
             if let Err(e) = tracker.set_all_mods_enabled(&game_id, true).await {
                 return AppCmdMsg::OverridesRefreshed(Err(e.to_string()));
             }
-            if let Some(pid) = &profile_id {
-                if let Err(e) = tracker.save_to_profile(pid, &game_id).await {
-                    return AppCmdMsg::OverridesRefreshed(Err(e.to_string()));
-                }
+            if let Some(pid) = &profile_id
+                && let Err(e) = tracker.save_to_profile(pid, &game_id).await
+            {
+                return AppCmdMsg::OverridesRefreshed(Err(e.to_string()));
             }
             AppCmdMsg::OverridesRefreshed(
                 tracker
@@ -417,10 +415,10 @@ impl App {
             if let Err(e) = tracker.set_all_mods_enabled(&game_id, false).await {
                 return AppCmdMsg::OverridesRefreshed(Err(e.to_string()));
             }
-            if let Some(pid) = &profile_id {
-                if let Err(e) = tracker.save_to_profile(pid, &game_id).await {
-                    return AppCmdMsg::OverridesRefreshed(Err(e.to_string()));
-                }
+            if let Some(pid) = &profile_id
+                && let Err(e) = tracker.save_to_profile(pid, &game_id).await
+            {
+                return AppCmdMsg::OverridesRefreshed(Err(e.to_string()));
             }
             AppCmdMsg::OverridesRefreshed(
                 tracker

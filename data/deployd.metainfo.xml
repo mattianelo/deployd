@@ -20,7 +20,7 @@
       handles Nexus Mods downloads via SSO login and NXM links, and deploys mods
       as hardlinks for safe, non-destructive mod management.
     </p>
-    <p>Version 1.0.0.</p>
+    <p>Version 1.1.1.</p>
     <ul>
       <li>Supports Skyrim SE, Fallout 4, Fallout: New Vegas, Starfield, The Witcher 3, and Cyberpunk 2077</li>
       <li>Game detection from Steam and Heroic Launcher (GOG/Epic)</li>
@@ -64,6 +64,22 @@
   </keywords>
 
   <releases>
+    <release version="1.1.1" date="2026-05-05" type="stable">
+      <description>
+        <p>Mod author now propagates correctly to the Mod Order panel after a metadata fetch.
+        Scroll position is restored after mod list reloads. Introduces a drag dead zone to prevent
+        accidental reorders. Download progress, deploy results, and install confirmations are now
+        delivered as toasts. UI migrated to libadwaita 1.5 patterns. Fixes empty notification
+        bubble, missing deploy toast, and metadata version race on install.</p>
+      </description>
+    </release>
+    <release version="1.0.1" date="2026-05-01" type="stable">
+      <description>
+        <p>Adds mod name autocomplete in the Install dialog, a Compact Mod List toggle, drag-scroll
+        in the Mod Order panel, stable named-mods by-name symlinks, archive path storage with
+        reinstall button, and conflict detail in Mod Properties.</p>
+      </description>
+    </release>
     <release version="1.0.0" date="2026-04-29" type="stable">
       <description>
         <p>First stable release. Fixes Mod Properties incorrectly resetting per-file

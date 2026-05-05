@@ -44,8 +44,8 @@ fn main() {
     });
 
     // Initialize GTK and libadwaita (required when using RelmApp::from_app)
-    gtk::init().unwrap();
-    libadwaita::init().unwrap();
+    gtk::init().expect("GTK initialisation failed — no display server available");
+    libadwaita::init().expect("libadwaita initialisation failed — no display server available");
 
     #[cfg(not(feature = "experimental"))]
     glib::log_set_default_handler(|domain, level, message| {

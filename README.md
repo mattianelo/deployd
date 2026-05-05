@@ -1,12 +1,12 @@
 # Deployd
 
-![Version](https://img.shields.io/badge/version-1.0.1-blue)
+![Version](https://img.shields.io/badge/version-1.1.1-blue)
 ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey?logo=linux)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 
 A Linux-native mod manager for Bethesda, REDEngine, Aurora, and Eclipse games, built with GTK4 and Rust.
 
-> **v1.0.1** If you find bugs, please [open an issue](https://gitlab.com/mattianelo/deployd/-/issues).
+> **v1.1.1** If you find bugs, please [open an issue](https://gitlab.com/mattianelo/deployd/-/issues).
 
 ---
 

@@ -17,7 +17,7 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         match result {
-            Ok((_mod_id, _version, _author, nexus_name, nexus_file_name)) => {
+            Ok((_mod_id, _version, author, nexus_name, nexus_file_name)) => {
                 // Propagate the fetched name back to the download entry if it was
                 // not already resolved by an earlier mechanism (e.g. NXM auto-fetch).
                 if let Some(ref id) = dl_id {
@@ -33,6 +33,9 @@ impl App {
                                 entry.nexus_file_name = nexus_file_name.clone();
                             }
                             entry.metadata_fetched = true;
+                            if !author.is_empty() {
+                                entry.author = Some(author.clone());
+                            }
                         }
                         {
                             let mut guard = self.downloads.guard();
@@ -45,6 +48,9 @@ impl App {
                                         row.entry.nexus_file_name = nexus_file_name.clone();
                                     }
                                     row.entry.metadata_fetched = true;
+                                    if !author.is_empty() {
+                                        row.entry.author = Some(author.clone());
+                                    }
                                     break;
                                 }
                             }

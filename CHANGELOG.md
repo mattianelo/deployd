@@ -1,5 +1,44 @@
 # Changelog
 
+## [1.1.1]
+
+### Added
+
+- **Mod author propagated to Mod Order panel** — installing a mod whose metadata was fetched via
+  the Downloads panel (manual fetch or right-click) now correctly carries the author name through
+  to the Mod Order row. Previously the author was discarded after the metadata fetch and never
+  reached the panel.
+- **Scroll position restored after mod list reload** — the Mod Order panel now preserves the
+  vertical scroll position across reloads, so a reload triggered by install or re-scan no longer
+  jumps the view back to the top.
+- **Drag dead zone** — a small movement threshold must be exceeded before a mod-row drag is
+  initiated, preventing accidental reorders from stray click motion.
+- **Version metadata displayed in Downloads panel** — the Nexus file version is fetched alongside
+  mod name and author, and shown in the Downloads row so multiple versions of the same file are
+  distinguishable without opening Properties.
+
+### Changed
+
+- **Toast notifications** — download progress, deploy results, and install confirmations are now
+  delivered as libadwaita toasts instead of the notification bubble, giving faster dismissal and
+  better integration with the app window.
+- **UI migrated to libadwaita 1.5** — all widgets updated to use the latest libadwaita patterns
+  (AdwNavigationView, AdwToolbarView, AdwActionRow, AdwBanner); deprecated shims removed.
+
+### Fixed
+
+- **Empty notification bubble** — the notification indicator no longer shows a bubble when the
+  in-progress queue is empty.
+- **Deploy toast shown after install** — the post-install deploy toast was silently suppressed in
+  some paths; it now appears consistently.
+- **Metadata version race on install** — a race between the metadata-fetch completion and the
+  install flow could leave the version field unpopulated; the fetch result is now applied before
+  the install proceeds.
+- **In-progress download/metadata notifications rerouted to toasts** — mid-operation status
+  messages were incorrectly going to the notification bubble instead of toasts.
+
+---
+
 ## [1.0.1]
 
 ### Added

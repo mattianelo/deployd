@@ -137,10 +137,10 @@ impl App {
                     r.overrides != info.map_or(0, |i| i.overrides)
                         || r.overridden_by != info.map_or(0, |i| i.overridden_by)
                 });
-            if needs_update {
-                if let Some(row) = guard.get_mut(i)
-                    && let Some(init) = row.mod_row_mut()
-                {
+            if needs_update
+                && let Some(row) = guard.get_mut(i)
+                && let Some(init) = row.mod_row_mut()
+            {
                     let id = init.mod_entry.id.clone();
                     let info = overrides.get(&id);
                     init.overrides = info.map_or(0, |i| i.overrides);
@@ -153,7 +153,6 @@ impl App {
                         info.map_or_else(Vec::new, |i| i.conflicting_mod_names.clone());
                     init.conflicted_by_mod_names =
                         info.map_or_else(Vec::new, |i| i.conflicted_by_mod_names.clone());
-                }
             }
         }
     }

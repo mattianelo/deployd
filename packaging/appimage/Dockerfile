@@ -20,7 +20,8 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
     && /root/.cargo/bin/rustup component add rust-std clippy
 ENV PATH="/root/.cargo/bin:$PATH"
 
-RUN cargo install cargo-audit --locked
+RUN cargo install cargo-audit --locked \
+    && cargo install cargo-nextest --locked
 
 # UMU Launcher — Python zipapp bundling all dependencies; needs python3 at runtime.
 # Pinned to a specific release for reproducible builds.
