@@ -71,6 +71,8 @@ pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result
         .map(|f| (f.game_rel_lowercase.as_str(), f))
         .collect();
 
+    let vanilla_snapshot = tracker.get_vanilla_metadata(&game.id).await?;
+
     let (winners, conflicts_resolved) =
         compute_winners(tracker, &game.id, game::handler_for(&game.engine)).await?;
     let winners_map: HashMap<&str, &ModFile> = winners
@@ -227,7 +229,8 @@ pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result
             // file — copy it to our backup store before replacing it with the mod file.
             let deploy_target_lower = deploy_target.to_string_lossy().to_lowercase();
             let is_ours = deployed_lower.contains(&deploy_target_lower);
-            if !is_ours && let Ok(backup_dir) = paths::vanilla_backup_dir(&game.id) {
+            let is_vanilla = vanilla_snapshot.contains_key(&f.game_rel_lowercase);
+            if !is_ours && is_vanilla && let Ok(backup_dir) = paths::vanilla_backup_dir(&game.id) {
                 let _ = fs::create_dir_all(&backup_dir);
                 let backup_name = f.game_rel_lowercase.replace('/', "__");
                 let backup_path = backup_dir.join(&backup_name);
