@@ -208,8 +208,6 @@ impl Component for App {
                                         set_icon_name: "document-edit-symbolic",
                                         set_tooltip_text: Some("Rename profile"),
                                         add_css_class: "flat",
-                                        #[watch]
-                                        set_sensitive: model.profiles.len() > 1,
                                     },
 
                                     gtk::Button {
@@ -598,19 +596,20 @@ impl Component for App {
                     },
                 },
 
-                adw::OverlaySplitView {
+                #[local_ref]
+                downloads_paned -> gtk::Paned {
+                    set_orientation: gtk::Orientation::Horizontal,
                     set_vexpand: true,
                     #[watch]
                     set_visible: !model.initializing,
-                    #[watch]
-                    set_show_sidebar: model.downloads_visible,
-                    set_sidebar_position: gtk::PackType::End,
-                    set_max_sidebar_width: 400.0,
-                    set_min_sidebar_width: 300.0,
+                    set_shrink_end_child: false,
+                    set_resize_end_child: false,
 
                     #[wrap(Some)]
-                    set_sidebar = &adw::ToolbarView {
+                    set_end_child = &adw::ToolbarView {
                         set_width_request: 300,
+                        #[watch]
+                        set_visible: model.downloads_visible,
 
                         add_top_bar = &adw::HeaderBar {
                             set_centering_policy: adw::CenteringPolicy::Loose,
@@ -639,6 +638,17 @@ impl Component for App {
                                 add_css_class: "flat",
                                 connect_clicked[sender] => move |_| {
                                     sender.input(AppMsg::SetDownloadsVisible(false));
+                                },
+                            },
+
+                            pack_end = &gtk::ToggleButton {
+                                set_icon_name: "view-more-symbolic",
+                                set_tooltip_text: Some("Show hidden downloads"),
+                                add_css_class: "flat",
+                                #[watch]
+                                set_active: model.show_hidden_downloads,
+                                connect_toggled[sender] => move |btn| {
+                                    sender.input(AppMsg::SetShowHiddenDownloads(btn.is_active()));
                                 },
                             },
 
@@ -722,7 +732,7 @@ impl Component for App {
                     },
 
                     #[wrap(Some)]
-                    set_content = &gtk::Box {
+                    set_start_child = &gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
 
                         #[local_ref]
@@ -1162,6 +1172,7 @@ impl Component for App {
         let tool_buttons_box = &model.tool_buttons_box;
         let mod_scroll = &model.mod_scroll;
         let downloads_scroll = &model.downloads_scroll;
+        let downloads_paned = &model.downloads_paned;
         let deploy_options_btn = &model.deploy_options_btn;
         let notifications_menu_btn = &model.notifications_menu_btn;
         let overflow_menu_btn = &model.overflow_menu_btn;
@@ -1304,6 +1315,10 @@ impl Component for App {
             AppMsg::ReinstallDownload(idx) => self.handle_reinstall_download(idx, &sender),
             AppMsg::ClearDownloadMetadata(idx) => self.handle_clear_download_metadata(idx, &sender),
             AppMsg::RenameDownload(idx) => self.handle_rename_download(idx, root, &sender),
+            AppMsg::DeleteDownload(idx) => self.handle_delete_download(idx, root, &sender),
+            AppMsg::ConfirmDeleteDownload(id) => self.handle_confirm_delete_download(id, &sender),
+            AppMsg::HideDownload(idx) => self.handle_hide_download(idx, &sender),
+            AppMsg::SetShowHiddenDownloads(show) => self.handle_set_show_hidden_downloads(show),
             AppMsg::ConfirmDownloadRename(id, name) => {
                 self.handle_confirm_download_rename(id, name, &sender)
             }

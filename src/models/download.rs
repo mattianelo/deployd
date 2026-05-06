@@ -80,6 +80,8 @@ pub struct DownloadEntry {
     pub version: Option<String>,
     /// Mod author resolved from Nexus.
     pub author: Option<String>,
+    /// Whether this entry is hidden from the downloads list (not deleted from disk).
+    pub hidden: bool,
 }
 
 impl DownloadEntry {
@@ -102,6 +104,7 @@ impl DownloadEntry {
             archive_md5: None,
             version: None,
             author: None,
+            hidden: false,
         }
     }
 

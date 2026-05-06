@@ -136,6 +136,11 @@ pub enum AppMsg {
     ReinstallDownload(DynamicIndex),
     ClearDownloadMetadata(DynamicIndex),
     RenameDownload(DynamicIndex),
+    DeleteDownload(DynamicIndex),
+    /// download_id confirmed from the delete confirmation dialog
+    ConfirmDeleteDownload(String),
+    HideDownload(DynamicIndex),
+    SetShowHiddenDownloads(bool),
     /// (download_id, new_name) — confirmed from the rename dialog
     ConfirmDownloadRename(String, String),
     /// (download_id, nexus_mod_id, domain) — confirmed from the "enter Nexus URL" dialog

@@ -35,13 +35,19 @@ impl App {
             .selected_game()
             .and_then(crate::core::game::nexus_domain)
             .map(String::from);
+        let show_hidden = self.show_hidden_downloads;
         let mut entries: Vec<&DownloadEntry> = self
             .all_downloads
             .iter()
-            .filter(|entry| match (&current_domain, &entry.game_domain) {
-                (Some(cur), Some(dom)) => cur == dom,
-                (_, None) => true,
-                (None, _) => true,
+            .filter(|entry| {
+                if entry.hidden && !show_hidden {
+                    return false;
+                }
+                match (&current_domain, &entry.game_domain) {
+                    (Some(cur), Some(dom)) => cur == dom,
+                    (_, None) => true,
+                    (None, _) => true,
+                }
             })
             .collect();
         match self.download_sort {

@@ -8,6 +8,8 @@ use crate::models::download::{DownloadEntry, DownloadStatus};
 pub struct DownloadRow {
     pub entry: DownloadEntry,
     pub visible: bool,
+    // Stored so update_view can reactively relabel it without needing it in view!.
+    hide_btn: gtk::Button,
 }
 
 #[derive(Debug)]
@@ -19,6 +21,8 @@ pub enum DownloadRowOutput {
     Rename(DynamicIndex),
     Pause(DynamicIndex),
     Resume(DynamicIndex),
+    Delete(DynamicIndex),
+    HideDownload(DynamicIndex),
 }
 
 #[relm4::factory(pub)]
@@ -193,9 +197,15 @@ impl FactoryComponent for DownloadRow {
     }
 
     fn init_model(init: Self::Init, _index: &DynamicIndex, _sender: FactorySender<Self>) -> Self {
+        let hide_btn = gtk::Button::builder()
+            .label(if init.hidden { "Unhide" } else { "Hide" })
+            .css_classes(["flat"])
+            .halign(gtk::Align::Fill)
+            .build();
         Self {
             entry: init,
             visible: true,
+            hide_btn,
         }
     }
 
@@ -232,6 +242,12 @@ impl FactoryComponent for DownloadRow {
             .css_classes(["flat"])
             .halign(gtk::Align::Fill)
             .build();
+        let hide_btn = self.hide_btn.clone();
+        let delete_btn = gtk::Button::builder()
+            .label("Delete")
+            .css_classes(["flat", "destructive-action"])
+            .halign(gtk::Align::Fill)
+            .build();
 
         let reinstall_idx = index.clone();
         let reinstall_sender = sender.clone();
@@ -263,9 +279,31 @@ impl FactoryComponent for DownloadRow {
                 .ok();
         });
 
+        let hide_idx = index.clone();
+        let hide_sender = sender.clone();
+        let hide_pop = popover.clone();
+        hide_btn.connect_clicked(move |_| {
+            hide_pop.popdown();
+            hide_sender
+                .output(DownloadRowOutput::HideDownload(hide_idx.clone()))
+                .ok();
+        });
+
+        let delete_idx = index.clone();
+        let delete_sender = sender.clone();
+        let delete_pop = popover.clone();
+        delete_btn.connect_clicked(move |_| {
+            delete_pop.popdown();
+            delete_sender
+                .output(DownloadRowOutput::Delete(delete_idx.clone()))
+                .ok();
+        });
+
         menu_box.append(&reinstall_btn);
         menu_box.append(&fetch_btn);
         menu_box.append(&clear_btn);
+        menu_box.append(&hide_btn);
+        menu_box.append(&delete_btn);
         popover.set_child(Some(&menu_box));
         popover.set_parent(&root);
 

@@ -169,7 +169,13 @@ impl App {
                 if self.active_download_id.as_deref() == Some(nxm_download_id.as_str()) {
                     self.active_download_id = None;
                 }
-                self.refresh_download_counts();
+                // When this was the last active download, rebuild the view so the
+                // sort order and filter chips (Active/Completed) reflect the new status.
+                if !self.all_downloads.iter().any(|e| e.is_active()) {
+                    self.rebuild_downloads_view();
+                } else {
+                    self.refresh_download_counts();
+                }
 
                 // Persist completed download entry
                 if let Some(tracker) = self.tracker.clone()

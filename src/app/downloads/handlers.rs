@@ -2,6 +2,7 @@ use adw::prelude::*;
 use gtk::prelude::*;
 use relm4::factory::DynamicIndex;
 use relm4::prelude::*;
+use gtk::glib;
 
 use crate::core::installer::PrepareResult;
 use crate::core::{game, installer};
@@ -17,7 +18,27 @@ impl App {
     }
 
     pub(crate) fn handle_set_downloads_visible(&mut self, visible: bool) {
+        if !visible && self.downloads_visible {
+            // Save current sidebar width before hiding so it can be restored.
+            let paned = &self.downloads_paned;
+            let total = paned.allocation().width();
+            let sidebar_w = total - paned.position();
+            if sidebar_w > 100 {
+                self.downloads_panel_width = sidebar_w;
+            }
+        }
         self.downloads_visible = visible;
+        if visible {
+            // After the end child becomes visible and GTK performs layout,
+            // restore the saved sidebar width by setting the divider position.
+            let paned = self.downloads_paned.clone();
+            let saved_w = self.downloads_panel_width;
+            glib::idle_add_local_once(move || {
+                let total = paned.allocation().width();
+                let pos = (total - saved_w).max(200);
+                paned.set_position(pos);
+            });
+        }
     }
 
     pub(crate) fn handle_download_sort_changed(&mut self, idx: u32) {
@@ -1052,6 +1073,107 @@ impl App {
             let uri = format!("nxm://{domain}/mods/{mod_id}/files/{file_id}");
             sender.input(AppMsg::NxmLinkReceived(uri));
         }
+    }
+
+    pub(crate) fn handle_delete_download(
+        &mut self,
+        index: DynamicIndex,
+        root: &adw::ApplicationWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        let idx = index.current_index();
+        let (download_id, mod_name, archive_path) = {
+            let guard = self.downloads.guard();
+            let Some(row) = guard.get(idx) else { return };
+            (
+                row.entry.id.clone(),
+                row.entry.mod_name.clone(),
+                row.entry.archive_path.clone(),
+            )
+        };
+
+        let dialog = adw::AlertDialog::builder()
+            .heading("Delete Download")
+            .body(format!(
+                "Delete \"{}\" and its archive file from disk?",
+                mod_name
+            ))
+            .build();
+        dialog.add_response("cancel", "Cancel");
+        dialog.add_response("delete", "Delete");
+        dialog.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
+        dialog.set_default_response(Some("cancel"));
+        dialog.set_close_response("cancel");
+
+        let input_sender = sender.input_sender().clone();
+        dialog.connect_response(None, move |_, response| {
+            if response == "delete" {
+                if let Some(ref path) = archive_path {
+                    let _ = std::fs::remove_file(path);
+                }
+                input_sender
+                    .send(AppMsg::ConfirmDeleteDownload(download_id.clone()))
+                    .ok();
+            }
+        });
+        dialog.present(Some(root));
+    }
+
+    pub(crate) fn handle_confirm_delete_download(
+        &mut self,
+        download_id: String,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.all_downloads.retain(|e| e.id != download_id);
+        {
+            let mut guard = self.downloads.guard();
+            for i in (0..guard.len()).rev() {
+                if guard.get(i).is_some_and(|r| r.entry.id == download_id) {
+                    guard.remove(i);
+                    break;
+                }
+            }
+        }
+        if let Some(tracker) = self.tracker.clone() {
+            let id = download_id.clone();
+            sender.oneshot_command(async move {
+                let _ = tracker.delete_download_entries(&[id]).await;
+                AppCmdMsg::PrioritySaved(Ok(()))
+            });
+        }
+        self.refresh_download_counts();
+    }
+
+    pub(crate) fn handle_hide_download(
+        &mut self,
+        index: DynamicIndex,
+        sender: &ComponentSender<Self>,
+    ) {
+        let idx = index.current_index();
+        let download_id = {
+            let guard = self.downloads.guard();
+            guard.get(idx).map(|r| r.entry.id.clone())
+        };
+        let Some(download_id) = download_id else { return };
+
+        if let Some(entry) = self.all_downloads.iter_mut().find(|e| e.id == download_id) {
+            entry.hidden = !entry.hidden;
+        }
+        if let Some(tracker) = self.tracker.clone()
+            && let Some(entry) = self.all_downloads.iter().find(|e| e.id == download_id)
+        {
+            let entry = entry.clone();
+            sender.oneshot_command(async move {
+                let _ = tracker.save_download_entry(&entry).await;
+                AppCmdMsg::PrioritySaved(Ok(()))
+            });
+        }
+        self.rebuild_downloads_view();
+    }
+
+    pub(crate) fn handle_set_show_hidden_downloads(&mut self, show: bool) {
+        self.show_hidden_downloads = show;
+        self.rebuild_downloads_view();
     }
 }
 

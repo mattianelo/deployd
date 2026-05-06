@@ -94,6 +94,7 @@ pub(super) async fn migrate_download_columns(pool: &SqlitePool) -> Result<()> {
         ("archive_md5", "TEXT"),
         ("version", "TEXT"),
         ("author", "TEXT"),
+        ("hidden", "INTEGER DEFAULT 0"),
     ];
 
     for (col, col_type) in &new_columns {

@@ -545,6 +545,7 @@ impl SimpleComponent for ModPropertiesDialog {
                 for t in &mut self.file_targets {
                     *t = target.clone();
                 }
+                self.install_target = target;
             }
             ModPropertiesMsg::ToggleFiles => {
                 self.files_visible = !self.files_visible;
@@ -682,14 +683,18 @@ impl SimpleComponent for ModPropertiesDialog {
                     self.set_all_row.append(&all_btn_box);
                 }
 
-                // Derive install_target from per-file state (used in Applied output).
-                let all_root = !self.file_targets.is_empty()
-                    && self.file_targets.iter().all(|t| *t == InstallTarget::Root);
-                self.install_target = if all_root {
-                    InstallTarget::Root
-                } else {
-                    InstallTarget::Data
-                };
+                // Sync install_target from per-file state only when files are present.
+                // When file_targets is empty (no DB records), the original mod
+                // install_target (set from mod_entry in init) must be preserved —
+                // overwriting it here would corrupt Root mods that have no file records.
+                if !self.file_targets.is_empty() {
+                    let all_root = self.file_targets.iter().all(|t| *t == InstallTarget::Root);
+                    self.install_target = if all_root {
+                        InstallTarget::Root
+                    } else {
+                        InstallTarget::Data
+                    };
+                }
 
                 // Auto-expand the file list and mark loading as done.
                 self.files_visible = true;

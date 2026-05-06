@@ -67,6 +67,8 @@ pub(super) fn build_model(
                 DownloadRowOutput::Rename(index) => AppMsg::RenameDownload(index),
                 DownloadRowOutput::Pause(index) => AppMsg::PauseDownload(index),
                 DownloadRowOutput::Resume(index) => AppMsg::ResumeDownload(index),
+                DownloadRowOutput::Delete(index) => AppMsg::DeleteDownload(index),
+                DownloadRowOutput::HideDownload(index) => AppMsg::HideDownload(index),
             });
 
     // Games start empty; they are populated from the DB (persisted games) or via
@@ -128,6 +130,7 @@ pub(super) fn build_model(
     let profile_rename_entry = gtk::Entry::builder().hexpand(true).build();
     let mod_scroll = gtk::ScrolledWindow::new();
     let downloads_scroll = gtk::ScrolledWindow::new();
+    let downloads_paned = gtk::Paned::new(gtk::Orientation::Horizontal);
 
     let model = App {
         initializing: true,
@@ -183,6 +186,7 @@ pub(super) fn build_model(
         download_sort: DownloadSort::Default,
         mod_filter: ModFilter::All,
         download_filter: DownloadFilter::All,
+        show_hidden_downloads: false,
         pending_external_files: Vec::new(),
         external_changes_count: 0,
         pending_replace_mod_id: None,
@@ -190,6 +194,8 @@ pub(super) fn build_model(
         pending_scroll_restore: None,
         mod_scroll,
         downloads_scroll,
+        downloads_paned,
+        downloads_panel_width: 350,
         #[cfg(feature = "loot")]
         dirty_plugins: HashMap::new(),
         deploy_options_btn: gtk::MenuButton::new(),
@@ -250,8 +256,22 @@ pub(super) fn build_model(
         let sender = sender.input_sender().clone();
         let popover = rename_popover.clone();
         let profile_menu_btn = model.profile_menu_btn.clone();
-        rename_apply.connect_clicked(move |_| {
-            let new_name = entry_ref.text().to_string();
+        {
+            let entry_ref = entry_ref.clone();
+            let sender = sender.clone();
+            let popover = popover.clone();
+            let profile_menu_btn = profile_menu_btn.clone();
+            rename_apply.connect_clicked(move |_| {
+                let new_name = entry_ref.text().to_string();
+                if !new_name.is_empty() {
+                    sender.send(AppMsg::RenameProfile(new_name)).unwrap();
+                }
+                popover.popdown();
+                profile_menu_btn.popdown();
+            });
+        }
+        entry_ref.connect_activate(move |e| {
+            let new_name = e.text().to_string();
             if !new_name.is_empty() {
                 sender.send(AppMsg::RenameProfile(new_name)).unwrap();
             }

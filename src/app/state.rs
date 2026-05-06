@@ -119,6 +119,8 @@ pub struct App {
     pub(crate) mod_filter: ModFilter,
     /// Active filter chip selection for the downloads sidebar.
     pub(crate) download_filter: DownloadFilter,
+    /// Whether hidden download entries are shown in the downloads sidebar.
+    pub(crate) show_hidden_downloads: bool,
     /// Files found in the game folder that are not tracked by any mod.
     pub(crate) pending_external_files: Vec<ExternalFile>,
     /// Number of external files detected (drives the badge button visibility).
@@ -134,6 +136,10 @@ pub struct App {
     pub(crate) mod_scroll: gtk::ScrolledWindow,
     /// ScrolledWindow wrapping the downloads list — held so we can restore scroll position.
     pub(crate) downloads_scroll: gtk::ScrolledWindow,
+    /// The Paned widget that splits main content from the downloads sidebar.
+    pub(crate) downloads_paned: gtk::Paned,
+    /// Last user-set sidebar width in pixels; restored when the panel is re-shown.
+    pub(crate) downloads_panel_width: i32,
     /// Dirty-edit info keyed by lowercase plugin filename, from the LOOT masterlist.
     /// Populated after each LOOT sort; cleared on game switch. CRC-based so entries
     /// drop automatically once the user cleans a plugin and re-sorts.
