@@ -295,7 +295,7 @@ impl App {
                 plugin_names,
                 local_data_path,
             );
-            self.push_notification("LOOT support is not enabled in this build");
+            self.show_toast("LOOT support is not enabled in this build");
         }
     }
 }
@@ -321,10 +321,10 @@ impl App {
                 self.dirty_plugins = dirty;
 
                 self.needs_deploy = true;
-                self.push_notification("Load order sorted by LOOT — deploy to apply");
+                self.show_toast("Load order sorted by LOOT — deploy to apply");
 
                 if dirty_count > 0 {
-                    self.push_notification(&format!(
+                    self.show_toast(&format!(
                         "{dirty_count} plugin{} ha{} dirty edits — clean with xEdit",
                         if dirty_count == 1 { "" } else { "s" },
                         if dirty_count == 1 { "s" } else { "ve" },
@@ -365,7 +365,7 @@ impl App {
                 }
             }
             Err(e) => {
-                self.push_notification(&format!("LOOT sort failed: {e}"));
+                self.show_toast(&format!("LOOT sort failed: {e}"));
             }
         }
     }

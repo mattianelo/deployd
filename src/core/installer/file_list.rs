@@ -246,5 +246,6 @@ pub(crate) fn is_ignorable_file(name_lower: &str) -> bool {
             | "license"
             | "credits.txt"
             | "version.txt"
+            | "meta.ini"
     )
 }
