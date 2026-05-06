@@ -75,42 +75,6 @@ pub(crate) fn parse_nexus_mod_id(filename: &str) -> Option<i64> {
     None
 }
 
-/// Check whether a proposed plugin ordering violates any master-dependency constraint.
-///
-/// `new_order` is the ordered list of `(plugin_id, filename)` after the proposed move.
-/// `masters_map` maps `plugin_id → Vec<master_filename>` (lowercased; loaded via `load_game_data`).
-///
-/// Returns the filename of the first master found to load *after* its dependent, or `None` if the
-/// order is valid.
-pub(crate) fn check_order_violates_masters(
-    new_order: &[(String, String)],
-    masters_map: &HashMap<String, Vec<String>>,
-) -> Option<String> {
-    // Keep the *first* (earliest-loading) occurrence of each lowercase filename.
-    // HashMap::collect() would keep the last entry for duplicate keys, which causes false
-    // violations when a vanilla plugin (position 0) and a same-named managed plugin (higher
-    // position) both appear in the list (show_vanilla_plugins = true).
-    let mut pos: HashMap<String, usize> = HashMap::new();
-    for (i, (_, f)) in new_order.iter().enumerate() {
-        pos.entry(f.to_lowercase()).or_insert(i);
-    }
-
-    for (i, (plugin_id, _)) in new_order.iter().enumerate() {
-        let Some(masters) = masters_map.get(plugin_id) else {
-            continue;
-        };
-        for master in masters {
-            let master_lc = master.to_lowercase();
-            if let Some(&mpos) = pos.get(&master_lc)
-                && mpos > i
-            {
-                return Some(master.clone());
-            }
-        }
-    }
-    None
-}
-
 /// Clear all drop indicator CSS classes from a ListBox's rows.
 pub(crate) fn clear_drop_indicators(list_box: &gtk::ListBox) {
     let mut idx = 0;

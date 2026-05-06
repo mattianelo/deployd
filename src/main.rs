@@ -184,6 +184,8 @@ fn main() {
         .mod-separator-row { transition: background-color 150ms ease; }
         .mod-separator-row button { opacity: 0; transition: opacity 150ms ease; }
         .mod-separator-row:hover button { opacity: 1; }
+        .mod-row button { opacity: 0; transition: opacity 150ms ease; }
+        .mod-row:hover button { opacity: 1; }
         .mod-row-enabled { background-color: alpha(@accent_color, 0.08); border-radius: 6px; }
         .code-pill { font-family: monospace; background-color: alpha(@window_fg_color, 0.07); border-radius: 4px; padding: 1px 6px; }
         ",

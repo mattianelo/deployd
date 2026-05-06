@@ -11,7 +11,7 @@ use crate::models::plugin::PluginDirtyInfo;
 use crate::ui::plugin_list::PluginRowInit;
 
 use super::App;
-use super::free_fns::{check_order_violates_masters, load_game_data};
+use super::free_fns::load_game_data;
 use super::messages::AppCmdMsg;
 
 impl App {
@@ -21,30 +21,6 @@ impl App {
         to: usize,
         sender: &ComponentSender<Self>,
     ) {
-        let order: Vec<(String, String)> = {
-            let guard = self.plugins.guard();
-            let len = guard.len();
-            if from >= len || to >= len || from == to {
-                return;
-            }
-            (0..len)
-                .filter_map(|i| {
-                    guard
-                        .get(i)
-                        .map(|row| (row.plugin.id.clone(), row.plugin.filename.clone()))
-                })
-                .collect()
-        };
-
-        let mut new_order = order.clone();
-        let p = new_order.remove(from);
-        new_order.insert(to, p);
-
-        if let Some(master) = check_order_violates_masters(&new_order, &self.plugin_masters) {
-            self.push_notification(&format!("Cannot move plugin: '{}' must load first", master));
-            return;
-        }
-
         let mut guard = self.plugins.guard();
         let len = guard.len();
         if from >= len || to >= len || from == to {
@@ -81,35 +57,6 @@ impl App {
         let anchor = to.saturating_sub(drag_pos).min(len.saturating_sub(n));
         if selected.iter().enumerate().all(|(i, &s)| anchor + i == s) {
             return;
-        }
-
-        {
-            let order: Vec<(String, String)> = {
-                let guard = self.plugins.guard();
-                (0..guard.len())
-                    .filter_map(|i| {
-                        guard
-                            .get(i)
-                            .map(|row| (row.plugin.id.clone(), row.plugin.filename.clone()))
-                    })
-                    .collect()
-            };
-            let selected_set: std::collections::HashSet<usize> = selected.iter().copied().collect();
-            let mut new_order: Vec<(String, String)> = order
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| !selected_set.contains(i))
-                .map(|(_, v)| v.clone())
-                .collect();
-            for (i, &idx) in selected.iter().enumerate() {
-                if idx < order.len() {
-                    new_order.insert(anchor + i, order[idx].clone());
-                }
-            }
-            if let Some(master) = check_order_violates_masters(&new_order, &self.plugin_masters) {
-                self.push_notification(&format!("Cannot move plugin: '{}' must load first", master));
-                return;
-            }
         }
 
         let items: Vec<PluginRowInit> = {

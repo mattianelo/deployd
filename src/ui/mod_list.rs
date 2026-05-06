@@ -192,9 +192,9 @@ impl FactoryComponent for ModListItem {
             set_visible: self.visible,
             #[watch]
             set_css_classes: match &self.kind {
-                ModListItemKind::Mod(r) if r.mod_entry.enabled => &["mod-row-enabled"],
+                ModListItemKind::Mod(r) if r.mod_entry.enabled => &["mod-row", "mod-row-enabled"],
+                ModListItemKind::Mod(_)                         => &["mod-row"],
                 ModListItemKind::Separator { .. }               => &["mod-separator-row"],
-                _                                               => &[],
             },
 
             // Outer vertical box — one child visible at a time
@@ -308,6 +308,28 @@ impl FactoryComponent for ModListItem {
                         },
                     },
 
+                    gtk::Button {
+                        set_icon_name: "view-refresh-symbolic",
+                        set_tooltip_text: Some("Reinstall from archive"),
+                        set_valign: gtk::Align::Center,
+                        add_css_class: "flat",
+                        #[watch]
+                        set_visible: matches!(&self.kind, ModListItemKind::Mod(r) if r.reinstall_from_file),
+                        connect_clicked[sender, index] => move |_| {
+                            sender.output(ModListItemOutput::Reinstall(index.clone())).unwrap();
+                        }
+                    },
+
+                    gtk::Button {
+                        set_icon_name: "user-trash-symbolic",
+                        set_tooltip_text: Some("Remove mod"),
+                        set_valign: gtk::Align::Center,
+                        add_css_class: "flat",
+                        connect_clicked[sender, index] => move |_| {
+                            sender.output(ModListItemOutput::Remove(index.clone())).unwrap();
+                        }
+                    },
+
                     gtk::Image {
                         set_icon_name: Some("software-update-available-symbolic"),
                         #[watch]
@@ -367,28 +389,6 @@ impl FactoryComponent for ModListItem {
                             &self.kind,
                             ModListItemKind::Mod(r) if r.mod_entry.notes.as_ref().is_some_and(|n| !n.is_empty())
                         ),
-                    },
-
-                    gtk::Button {
-                        set_icon_name: "view-refresh-symbolic",
-                        set_tooltip_text: Some("Reinstall from archive"),
-                        set_valign: gtk::Align::Center,
-                        add_css_class: "flat",
-                        #[watch]
-                        set_visible: matches!(&self.kind, ModListItemKind::Mod(r) if r.reinstall_from_file),
-                        connect_clicked[sender, index] => move |_| {
-                            sender.output(ModListItemOutput::Reinstall(index.clone())).unwrap();
-                        }
-                    },
-
-                    gtk::Button {
-                        set_icon_name: "user-trash-symbolic",
-                        set_tooltip_text: Some("Remove mod"),
-                        set_valign: gtk::Align::Center,
-                        add_css_class: "flat",
-                        connect_clicked[sender, index] => move |_| {
-                            sender.output(ModListItemOutput::Remove(index.clone())).unwrap();
-                        }
                     },
                 },
             },
@@ -602,8 +602,14 @@ impl FactoryComponent for ModListItem {
             if let Some(outer) = root_ref.child().and_downcast::<gtk::Box>()
                 && let Some(mod_row_box) = outer.last_child().and_downcast::<gtk::Box>()
             {
-                mod_row_box.append(&rename_btn);
-                mod_row_box.append(&props_btn);
+                // Insert before status icons: anchor on Remove button (check → name → reinstall → remove)
+                let remove_widget = mod_row_box
+                    .first_child()
+                    .and_then(|c| c.next_sibling())
+                    .and_then(|c| c.next_sibling())
+                    .and_then(|c| c.next_sibling());
+                mod_row_box.insert_child_after(&rename_btn, remove_widget.as_ref());
+                mod_row_box.insert_child_after(&props_btn, Some(&rename_btn));
             }
 
             // Right-click gesture → open Properties dialog
