@@ -219,19 +219,58 @@ impl App {
         if from >= len || to > len {
             return;
         }
-        let to = to.min(len.saturating_sub(1));
-        if from == to {
-            return;
-        }
-        if from < to {
-            for i in from..to {
-                guard.swap(i, i + 1);
+
+        let collapsed = guard.get(from).map(|r| r.is_collapsed()).unwrap_or(false);
+
+        if collapsed {
+            // Collapsed group looks like a single unit to the user, so move it as a block.
+            let block_end = (from + 1..len)
+                .find(|&i| guard.get(i).map(|r| r.is_separator()).unwrap_or(false))
+                .unwrap_or(len);
+            let block_size = block_end - from;
+
+            // Drop landing inside the block's own span is a no-op.
+            if to > from && to <= block_end {
+                return;
+            }
+
+            let mut block = Vec::with_capacity(block_size);
+            for _ in 0..block_size {
+                if let Some(item) = guard.remove(from) {
+                    block.push(ModListItemInit {
+                        kind: item.kind,
+                        visible: item.visible,
+                        compact: item.compact,
+                    });
+                }
+            }
+
+            let effective_to = if to > from {
+                (to - block_size).min(guard.len())
+            } else {
+                to.min(guard.len())
+            };
+
+            for (i, item) in block.into_iter().enumerate() {
+                guard.insert(effective_to + i, item);
             }
         } else {
-            for i in (to..from).rev() {
-                guard.swap(i, i + 1);
+            // Expanded group: move just the separator so grouping shifts dynamically.
+            let to = to.min(len.saturating_sub(1));
+            if from == to {
+                return;
+            }
+            if from < to {
+                for i in from..to {
+                    guard.swap(i, i + 1);
+                }
+            } else {
+                for i in (to..from).rev() {
+                    guard.swap(i, i + 1);
+                }
             }
         }
+
         drop(guard);
         self.needs_deploy = true;
         self.refresh_priority_labels();
