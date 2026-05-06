@@ -1140,6 +1140,23 @@ impl Component for App {
                         add_css_class: "dim-label",
                     },
 
+                    gtk::Label {
+                        set_label: "\u{00b7}",
+                        #[watch]
+                        set_visible: model.issues_mods_count() > 0,
+                        add_css_class: "caption",
+                        add_css_class: "dim-label",
+                    },
+
+                    gtk::Label {
+                        #[watch]
+                        set_label: &model.conflict_count_label(),
+                        #[watch]
+                        set_visible: model.issues_mods_count() > 0,
+                        add_css_class: "caption",
+                        add_css_class: "warning",
+                    },
+
                     gtk::Box { set_hexpand: true },
 
                     gtk::Label {

@@ -296,6 +296,15 @@ impl App {
             .count()
     }
 
+    pub(crate) fn conflict_count_label(&self) -> String {
+        let n = self.issues_mods_count();
+        if n == 1 {
+            "1 conflict".to_string()
+        } else {
+            format!("{n} conflicts")
+        }
+    }
+
     pub(crate) fn enabled_plugins_count(&self) -> usize {
         self.plugins.iter().filter(|p| p.plugin.enabled).count()
     }

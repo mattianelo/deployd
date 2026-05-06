@@ -351,29 +351,21 @@ impl FactoryComponent for ModListItem {
                     },
 
                     gtk::Image {
-                        set_icon_name: Some("media-playlist-shuffle-symbolic"),
+                        set_icon_name: Some("media-record-symbolic"),
                         #[watch]
                         set_tooltip_text: Some(&if let ModListItemKind::Mod(r) = &self.kind {
-                            format_conflict_tooltip("Overrides", r.overrides, &r.override_files, &r.conflicting_mod_names)
+                            format_conflict_tooltip_combined(r)
                         } else {
                             String::new()
                         }),
                         #[watch]
-                        set_visible: matches!(&self.kind, ModListItemKind::Mod(r) if r.overrides > 0),
-                        add_css_class: "success",
-                    },
-
-                    gtk::Image {
-                        set_icon_name: Some("dialog-warning-symbolic"),
+                        set_visible: matches!(&self.kind, ModListItemKind::Mod(r) if r.overrides > 0 || r.overridden_by > 0),
                         #[watch]
-                        set_tooltip_text: Some(&if let ModListItemKind::Mod(r) = &self.kind {
-                            format_conflict_tooltip("Overridden in", r.overridden_by, &r.overridden_files, &r.conflicted_by_mod_names)
+                        set_css_classes: if let ModListItemKind::Mod(r) = &self.kind {
+                            if r.overridden_by > 0 { &["warning"] } else { &["success"] }
                         } else {
-                            String::new()
-                        }),
-                        #[watch]
-                        set_visible: matches!(&self.kind, ModListItemKind::Mod(r) if r.overridden_by > 0),
-                        add_css_class: "warning",
+                            &["success"]
+                        },
                     },
 
                     gtk::Image {
@@ -697,4 +689,25 @@ fn format_conflict_tooltip(
         }
     }
     tooltip
+}
+
+fn format_conflict_tooltip_combined(r: &ModRowInit) -> String {
+    let mut parts = Vec::new();
+    if r.overrides > 0 {
+        parts.push(format_conflict_tooltip(
+            "Overrides",
+            r.overrides,
+            &r.override_files,
+            &r.conflicting_mod_names,
+        ));
+    }
+    if r.overridden_by > 0 {
+        parts.push(format_conflict_tooltip(
+            "Overridden in",
+            r.overridden_by,
+            &r.overridden_files,
+            &r.conflicted_by_mod_names,
+        ));
+    }
+    parts.join("\n\n")
 }
