@@ -1334,3 +1334,19 @@ pub(super) async fn migrate_archive_path_column(pool: &SqlitePool) -> Result<()>
         .await;
     Ok(())
 }
+
+pub(super) async fn migrate_group_color_column(pool: &SqlitePool) -> Result<()> {
+    let columns: Vec<(String,)> = sqlx::query_as("PRAGMA table_info(mod_groups)")
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(|row: (i32, String, String, i32, Option<String>, i32)| (row.1,))
+        .collect();
+    if !columns.iter().any(|(name,)| name == "color") {
+        sqlx::query("ALTER TABLE mod_groups ADD COLUMN color TEXT")
+            .execute(pool)
+            .await
+            .context("Failed to add color column to mod_groups")?;
+    }
+    Ok(())
+}

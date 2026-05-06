@@ -136,10 +136,6 @@ pub struct App {
     pub(crate) mod_scroll: gtk::ScrolledWindow,
     /// ScrolledWindow wrapping the downloads list — held so we can restore scroll position.
     pub(crate) downloads_scroll: gtk::ScrolledWindow,
-    /// The Paned widget that splits main content from the downloads sidebar.
-    pub(crate) downloads_paned: gtk::Paned,
-    /// Last user-set sidebar width in pixels; restored when the panel is re-shown.
-    pub(crate) downloads_panel_width: i32,
     /// Dirty-edit info keyed by lowercase plugin filename, from the LOOT masterlist.
     /// Populated after each LOOT sort; cleared on game switch. CRC-based so entries
     /// drop automatically once the user cleans a plugin and re-sorts.

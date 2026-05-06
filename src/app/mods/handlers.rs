@@ -597,6 +597,46 @@ impl App {
         }
     }
 
+    pub(crate) fn handle_set_group_color(
+        &mut self,
+        index: DynamicIndex,
+        color: Option<String>,
+        sender: &ComponentSender<Self>,
+    ) {
+        let idx = index.current_index();
+        let group_id = {
+            let guard = self.mods.guard();
+            if let Some(item) = guard.get(idx)
+                && let crate::ui::mod_list::ModListItemKind::Separator { group_id, .. } = &item.kind
+            {
+                group_id.clone()
+            } else {
+                return;
+            }
+        };
+
+        {
+            let mut guard = self.mods.guard();
+            if let Some(item) = guard.get_mut(idx)
+                && let crate::ui::mod_list::ModListItemKind::Separator {
+                    color: c, ..
+                } = &mut item.kind
+            {
+                *c = color.clone();
+            }
+        }
+
+        if let Some(tracker) = self.tracker.clone() {
+            let color_ref = color.as_deref().map(String::from);
+            sender.oneshot_command(async move {
+                let _ = tracker
+                    .set_group_color(&group_id, color_ref.as_deref())
+                    .await;
+                crate::app::messages::AppCmdMsg::PrioritySaved(Ok(()))
+            });
+        }
+    }
+
     pub(crate) fn handle_create_empty_mod(&mut self, sender: &ComponentSender<Self>) {
         self.overflow_menu_btn.popdown();
         let Some(tracker) = self.tracker.clone() else {

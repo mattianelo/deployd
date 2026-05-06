@@ -23,6 +23,10 @@ pub struct ModRowInit {
     pub reinstall_from_file: bool,
 }
 
+/// Preset group colors. Stored as short name strings; rendered via CSS classes.
+pub const GROUP_COLOR_NAMES: &[&str] =
+    &["red", "orange", "yellow", "green", "teal", "blue", "purple", "pink"];
+
 /// What kind of list item this is.
 pub enum ModListItemKind {
     /// A collapsible group separator header.
@@ -30,6 +34,7 @@ pub enum ModListItemKind {
         group_id: String,
         name: String,
         collapsed: bool,
+        color: Option<String>,
     },
     /// A regular mod row.
     Mod(Box<ModRowInit>),
@@ -82,6 +87,15 @@ impl ModListItem {
         } else {
             ""
         }
+    }
+
+    /// CSS classes for the group color dot widget.
+    pub fn group_color_classes(&self) -> Vec<&str> {
+        let mut classes = vec!["group-color-dot"];
+        if let ModListItemKind::Separator { color: Some(c), .. } = &self.kind {
+            classes.push(c.as_str());
+        }
+        classes
     }
 
     /// Returns the mod name for search filtering (empty for separators).
@@ -146,6 +160,7 @@ pub enum ModListItemOutput {
     ToggleGroupCollapse(DynamicIndex),
     DeleteGroup(DynamicIndex),
     RenameGroup(DynamicIndex, String),
+    SetGroupColor(DynamicIndex, Option<String>),
 }
 
 // ---------------------------------------------------------------------------
@@ -181,6 +196,11 @@ impl FactoryComponent for ModListItem {
                     #[watch]
                     set_visible: self.is_separator(),
                     add_css_class: "dim-label",
+
+                    gtk::Box {
+                        #[watch]
+                        set_css_classes: &self.group_color_classes(),
+                    },
 
                     gtk::Label {
                         #[watch]
@@ -392,7 +412,7 @@ impl FactoryComponent for ModListItem {
             });
             root_ref.add_controller(drag_source);
 
-            // Rename button with popover for group separators
+            // Rename / color button with popover for group separators
             let group_name = self.group_name().to_string();
             let entry = gtk::Entry::builder()
                 .text(&group_name)
@@ -402,21 +422,61 @@ impl FactoryComponent for ModListItem {
                 .label("Rename")
                 .css_classes(["suggested-action"])
                 .build();
-            let popover_box = gtk::Box::builder()
+            let rename_row = gtk::Box::builder()
                 .orientation(gtk::Orientation::Horizontal)
                 .spacing(4)
-                .margin_start(4)
-                .margin_end(4)
-                .margin_top(4)
-                .margin_bottom(4)
                 .build();
-            popover_box.append(&entry);
-            popover_box.append(&apply_btn);
+            rename_row.append(&entry);
+            rename_row.append(&apply_btn);
+
+            // Color palette row
+            let color_row = gtk::Box::builder()
+                .orientation(gtk::Orientation::Horizontal)
+                .spacing(4)
+                .build();
+            // "None" clear button
+            {
+                let clear_btn = gtk::Button::builder()
+                    .icon_name("edit-clear-symbolic")
+                    .tooltip_text("No color")
+                    .css_classes(["flat", "circular"])
+                    .build();
+                let idx = index.clone();
+                let s = sender.clone();
+                clear_btn.connect_clicked(move |_| {
+                    s.output(ModListItemOutput::SetGroupColor(idx.clone(), None)).ok();
+                });
+                color_row.append(&clear_btn);
+            }
+            for &color_name in crate::ui::mod_list::GROUP_COLOR_NAMES {
+                let swatch = gtk::Button::builder()
+                    .tooltip_text(color_name)
+                    .css_classes(["color-swatch", color_name])
+                    .build();
+                let idx = index.clone();
+                let s = sender.clone();
+                let name = color_name.to_string();
+                swatch.connect_clicked(move |_| {
+                    s.output(ModListItemOutput::SetGroupColor(idx.clone(), Some(name.clone()))).ok();
+                });
+                color_row.append(&swatch);
+            }
+
+            let popover_box = gtk::Box::builder()
+                .orientation(gtk::Orientation::Vertical)
+                .spacing(4)
+                .margin_start(6)
+                .margin_end(6)
+                .margin_top(6)
+                .margin_bottom(6)
+                .build();
+            popover_box.append(&color_row);
+            popover_box.append(&rename_row);
             let popover = gtk::Popover::builder().child(&popover_box).build();
 
             let rename_btn = gtk::MenuButton::builder()
                 .icon_name("document-edit-symbolic")
-                .tooltip_text("Rename group")
+                .tooltip_text("Rename group / set color")
                 .valign(gtk::Align::Center)
                 .css_classes(["flat", "circular"])
                 .popover(&popover)

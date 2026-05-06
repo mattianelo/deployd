@@ -183,6 +183,8 @@ pub enum AppMsg {
     CreateGroup(String),
     /// Rename an existing group separator (identified by factory index).
     RenameGroup(DynamicIndex, String),
+    /// Set (or clear) the color label of a group.
+    SetGroupColor(DynamicIndex, Option<String>),
     /// Open the Properties dialog for a mod row (right-click).
     OpenModProperties(DynamicIndex),
     /// Apply changes from the mod Properties dialog.

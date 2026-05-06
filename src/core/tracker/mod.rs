@@ -321,6 +321,9 @@ impl Tracker {
         if let Err(e) = migrations::migrate_archive_path_column(&pool).await {
             eprintln!("archive_path column migration failed (non-fatal): {e}");
         }
+        if let Err(e) = migrations::migrate_group_color_column(&pool).await {
+            eprintln!("group color column migration failed (non-fatal): {e}");
+        }
 
         let _ =
             sqlx::query("ALTER TABLE profiles ADD COLUMN save_mode TEXT NOT NULL DEFAULT 'global'")

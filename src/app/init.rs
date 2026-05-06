@@ -45,6 +45,9 @@ pub(super) fn build_model(
                 ModListItemOutput::ToggleGroupCollapse(index) => AppMsg::ToggleGroupCollapse(index),
                 ModListItemOutput::DeleteGroup(index) => AppMsg::DeleteGroup(index),
                 ModListItemOutput::RenameGroup(index, name) => AppMsg::RenameGroup(index, name),
+                ModListItemOutput::SetGroupColor(index, color) => {
+                    AppMsg::SetGroupColor(index, color)
+                }
             });
 
     let plugins =
@@ -130,7 +133,6 @@ pub(super) fn build_model(
     let profile_rename_entry = gtk::Entry::builder().hexpand(true).build();
     let mod_scroll = gtk::ScrolledWindow::new();
     let downloads_scroll = gtk::ScrolledWindow::new();
-    let downloads_paned = gtk::Paned::new(gtk::Orientation::Horizontal);
 
     let model = App {
         initializing: true,
@@ -194,8 +196,6 @@ pub(super) fn build_model(
         pending_scroll_restore: None,
         mod_scroll,
         downloads_scroll,
-        downloads_paned,
-        downloads_panel_width: 350,
         #[cfg(feature = "loot")]
         dirty_plugins: HashMap::new(),
         deploy_options_btn: gtk::MenuButton::new(),

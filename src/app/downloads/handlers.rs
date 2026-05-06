@@ -2,7 +2,6 @@ use adw::prelude::*;
 use gtk::prelude::*;
 use relm4::factory::DynamicIndex;
 use relm4::prelude::*;
-use gtk::glib;
 
 use crate::core::installer::PrepareResult;
 use crate::core::{game, installer};
@@ -18,27 +17,7 @@ impl App {
     }
 
     pub(crate) fn handle_set_downloads_visible(&mut self, visible: bool) {
-        if !visible && self.downloads_visible {
-            // Save current sidebar width before hiding so it can be restored.
-            let paned = &self.downloads_paned;
-            let total = paned.allocation().width();
-            let sidebar_w = total - paned.position();
-            if sidebar_w > 100 {
-                self.downloads_panel_width = sidebar_w;
-            }
-        }
         self.downloads_visible = visible;
-        if visible {
-            // After the end child becomes visible and GTK performs layout,
-            // restore the saved sidebar width by setting the divider position.
-            let paned = self.downloads_paned.clone();
-            let saved_w = self.downloads_panel_width;
-            glib::idle_add_local_once(move || {
-                let total = paned.allocation().width();
-                let pos = (total - saved_w).max(200);
-                paned.set_position(pos);
-            });
-        }
     }
 
     pub(crate) fn handle_download_sort_changed(&mut self, idx: u32) {

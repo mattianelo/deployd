@@ -5,8 +5,8 @@ use super::Tracker;
 impl Tracker {
     /// List all groups for a game, ordered by position.
     pub async fn list_groups(&self, game_id: &str) -> Result<Vec<crate::models::group::ModGroup>> {
-        let rows: Vec<(String, String, f64, i32)> = sqlx::query_as(
-            "SELECT id, name, position, collapsed
+        let rows: Vec<(String, String, f64, i32, Option<String>)> = sqlx::query_as(
+            "SELECT id, name, position, collapsed, color
              FROM mod_groups
              WHERE game_id = ?
              ORDER BY position ASC",
@@ -19,11 +19,12 @@ impl Tracker {
         Ok(rows
             .into_iter()
             .map(
-                |(id, name, position, collapsed)| crate::models::group::ModGroup {
+                |(id, name, position, collapsed, color)| crate::models::group::ModGroup {
                     id,
                     name,
                     position,
                     collapsed: collapsed != 0,
+                    color,
                 },
             )
             .collect())
@@ -54,6 +55,7 @@ impl Tracker {
             name: name.to_string(),
             position,
             collapsed: false,
+            color: None,
         })
     }
 
@@ -102,6 +104,17 @@ impl Tracker {
             .execute(&self.pool)
             .await
             .context("Failed to move mod group")?;
+        Ok(())
+    }
+
+    /// Set (or clear) the color label for a group.
+    pub async fn set_group_color(&self, group_id: &str, color: Option<&str>) -> Result<()> {
+        sqlx::query("UPDATE mod_groups SET color = ? WHERE id = ?")
+            .bind(color)
+            .bind(group_id)
+            .execute(&self.pool)
+            .await
+            .context("Failed to set group color")?;
         Ok(())
     }
 }

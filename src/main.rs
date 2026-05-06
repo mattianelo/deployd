@@ -162,6 +162,25 @@ fn main() {
         row checkbutton check {
             transition: opacity 150ms ease;
         }
+        .group-color-dot {
+            min-width: 10px;
+            min-height: 10px;
+            border-radius: 5px;
+        }
+        .color-swatch {
+            min-width: 18px;
+            min-height: 18px;
+            padding: 0;
+            border-radius: 9px;
+        }
+        .color-red, .color-swatch.red     { background-color: #e53935; }
+        .color-orange, .color-swatch.orange { background-color: #fb8c00; }
+        .color-yellow, .color-swatch.yellow { background-color: #fdd835; }
+        .color-green, .color-swatch.green  { background-color: #43a047; }
+        .color-teal, .color-swatch.teal   { background-color: #00897b; }
+        .color-blue, .color-swatch.blue   { background-color: #1e88e5; }
+        .color-purple, .color-swatch.purple { background-color: #8e24aa; }
+        .color-pink, .color-swatch.pink   { background-color: #d81b60; }
         ",
     );
 

@@ -596,20 +596,19 @@ impl Component for App {
                     },
                 },
 
-                #[local_ref]
-                downloads_paned -> gtk::Paned {
-                    set_orientation: gtk::Orientation::Horizontal,
+                adw::OverlaySplitView {
                     set_vexpand: true,
                     #[watch]
                     set_visible: !model.initializing,
-                    set_shrink_end_child: false,
-                    set_resize_end_child: false,
+                    #[watch]
+                    set_show_sidebar: model.downloads_visible,
+                    set_sidebar_position: gtk::PackType::End,
+                    set_max_sidebar_width: 700.0,
+                    set_min_sidebar_width: 250.0,
+                    set_collapsed: false,
 
                     #[wrap(Some)]
-                    set_end_child = &adw::ToolbarView {
-                        set_width_request: 300,
-                        #[watch]
-                        set_visible: model.downloads_visible,
+                    set_sidebar = &adw::ToolbarView {
 
                         add_top_bar = &adw::HeaderBar {
                             set_centering_policy: adw::CenteringPolicy::Loose,
@@ -732,7 +731,7 @@ impl Component for App {
                     },
 
                     #[wrap(Some)]
-                    set_start_child = &gtk::Box {
+                    set_content = &gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
 
                         #[local_ref]
@@ -1172,7 +1171,6 @@ impl Component for App {
         let tool_buttons_box = &model.tool_buttons_box;
         let mod_scroll = &model.mod_scroll;
         let downloads_scroll = &model.downloads_scroll;
-        let downloads_paned = &model.downloads_paned;
         let deploy_options_btn = &model.deploy_options_btn;
         let notifications_menu_btn = &model.notifications_menu_btn;
         let overflow_menu_btn = &model.overflow_menu_btn;
@@ -1375,6 +1373,7 @@ impl Component for App {
             AppMsg::DeleteGroup(idx) => self.handle_delete_group(idx, &sender),
             AppMsg::CreateGroup(name) => self.handle_create_group(name, &sender),
             AppMsg::RenameGroup(idx, name) => self.handle_rename_group(idx, name),
+            AppMsg::SetGroupColor(idx, color) => self.handle_set_group_color(idx, color, &sender),
             AppMsg::OpenModProperties(idx) => self.handle_open_mod_properties(idx, root, &sender),
             AppMsg::ModPropertiesApplied {
                 mod_id,
