@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use adw::prelude::*;
+use gtk::glib;
 use gtk::prelude::*;
 use relm4::prelude::*;
 
@@ -39,7 +39,6 @@ pub struct ModPropertiesDialog {
     version: Option<String>,
     author: Option<String>,
     installed_at: Option<String>,
-    archive_filename: Option<String>,
     /// Whether the selected game is a Bethesda game.
     is_bethesda: bool,
     /// Whether the selected game uses the Aurora engine (Witcher 1).
@@ -108,7 +107,7 @@ impl SimpleComponent for ModPropertiesDialog {
     view! {
         adw::Window {
             set_title: Some("Mod Properties"),
-            set_default_size: (540, 700),
+            set_default_size: (820, 700),
             set_modal: true,
 
             gtk::Box {
@@ -161,18 +160,6 @@ impl SimpleComponent for ModPropertiesDialog {
                             add_css_class: "dim-label",
                             add_css_class: "caption",
                         },
-                        gtk::Label {
-                            #[watch]
-                            set_visible: model.archive_filename.is_some(),
-                            #[watch]
-                            set_label: model.archive_filename.as_deref().unwrap_or(""),
-                            set_halign: gtk::Align::Start,
-                            set_selectable: true,
-                            set_wrap: true,
-                            add_css_class: "monospace",
-                            add_css_class: "code-pill",
-                        },
-
                         // Notes
                         gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
@@ -437,11 +424,6 @@ impl SimpleComponent for ModPropertiesDialog {
             conflicting_mod_names,
             conflicted_by_mod_names,
         } = init;
-        let archive_filename = mod_entry
-            .archive_path
-            .as_deref()
-            .and_then(|p| std::path::Path::new(p).file_name())
-            .map(|n| n.to_string_lossy().to_string());
         let mut model = ModPropertiesDialog {
             mod_id: mod_entry.id,
             cache_root,
@@ -451,7 +433,6 @@ impl SimpleComponent for ModPropertiesDialog {
             version: mod_entry.version,
             author: mod_entry.author,
             installed_at: mod_entry.installed_at,
-            archive_filename,
             is_bethesda,
             is_aurora,
             files: Vec::new(),
@@ -488,8 +469,20 @@ impl SimpleComponent for ModPropertiesDialog {
             wins_over,
         ));
         for f in &model.override_files {
-            let row = adw::ActionRow::new();
-            row.set_title(f);
+            let row = gtk::ListBoxRow::new();
+            let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+            hbox.set_margin_start(12);
+            hbox.set_margin_end(12);
+            hbox.set_margin_top(5);
+            hbox.set_margin_bottom(5);
+            let label = gtk::Label::new(Some(f));
+            label.set_halign(gtk::Align::Start);
+            label.set_hexpand(true);
+            label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+            label.add_css_class("monospace");
+            label.set_tooltip_text(Some(f));
+            hbox.append(&label);
+            row.set_child(Some(&hbox));
             widgets.overrides_list.append(&row);
         }
 
@@ -504,8 +497,20 @@ impl SimpleComponent for ModPropertiesDialog {
             lost_to,
         ));
         for f in &model.overridden_files {
-            let row = adw::ActionRow::new();
-            row.set_title(f);
+            let row = gtk::ListBoxRow::new();
+            let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+            hbox.set_margin_start(12);
+            hbox.set_margin_end(12);
+            hbox.set_margin_top(5);
+            hbox.set_margin_bottom(5);
+            let label = gtk::Label::new(Some(f));
+            label.set_halign(gtk::Align::Start);
+            label.set_hexpand(true);
+            label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+            label.add_css_class("monospace");
+            label.set_tooltip_text(Some(f));
+            hbox.append(&label);
+            row.set_child(Some(&hbox));
             widgets.overridden_list.append(&row);
         }
 
@@ -528,7 +533,10 @@ impl SimpleComponent for ModPropertiesDialog {
             });
         }
 
-        root.present();
+        glib::idle_add_local_once({
+            let root = root.clone();
+            move || root.present()
+        });
 
         ComponentParts { model, widgets }
     }
@@ -579,9 +587,20 @@ impl SimpleComponent for ModPropertiesDialog {
                     Rc::new(RefCell::new(Vec::new()));
 
                 for (idx, (_, display_path)) in self.files.iter().enumerate() {
-                    let row = adw::ActionRow::new();
-                    row.set_title(display_path);
-                    row.add_css_class("monospace");
+                    let row = gtk::ListBoxRow::new();
+                    let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                    hbox.set_margin_start(12);
+                    hbox.set_margin_end(8);
+                    hbox.set_margin_top(5);
+                    hbox.set_margin_bottom(5);
+
+                    let label = gtk::Label::new(Some(display_path.as_str()));
+                    label.set_halign(gtk::Align::Start);
+                    label.set_hexpand(true);
+                    label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+                    label.add_css_class("monospace");
+                    label.set_tooltip_text(Some(display_path.as_str()));
+                    hbox.append(&label);
 
                     // Per-file Data/Root toggles for Bethesda and Aurora games.
                     if self.is_bethesda || self.is_aurora {
@@ -589,12 +608,14 @@ impl SimpleComponent for ModPropertiesDialog {
                         btn_data.set_label("D");
                         btn_data.set_tooltip_text(Some("Deploy to Data directory"));
                         btn_data.set_active(self.file_targets[idx] == InstallTarget::Data);
+                        btn_data.add_css_class("dr-btn");
 
                         let btn_root = gtk::ToggleButton::new();
                         btn_root.set_label("R");
                         btn_root.set_tooltip_text(Some("Deploy to game root directory"));
                         btn_root.set_group(Some(&btn_data));
                         btn_root.set_active(self.file_targets[idx] == InstallTarget::Root);
+                        btn_root.add_css_class("dr-btn");
 
                         {
                             let s = sender.input_sender().clone();
@@ -628,9 +649,10 @@ impl SimpleComponent for ModPropertiesDialog {
                         toggle_box.add_css_class("linked");
                         toggle_box.append(&btn_data);
                         toggle_box.append(&btn_root);
-                        row.add_suffix(&toggle_box);
+                        hbox.append(&toggle_box);
                     }
 
+                    row.set_child(Some(&hbox));
                     self.files_list.append(&row);
                 }
 
@@ -652,6 +674,7 @@ impl SimpleComponent for ModPropertiesDialog {
                     let btn_all_data = gtk::Button::with_label("D");
                     btn_all_data.set_tooltip_text(Some("Set all files to Data directory"));
                     btn_all_data.add_css_class("flat");
+                    btn_all_data.add_css_class("dr-btn");
                     {
                         let data_btns = data_btns.clone();
                         let s = sender.input_sender().clone();
@@ -667,6 +690,7 @@ impl SimpleComponent for ModPropertiesDialog {
                     let btn_all_root = gtk::Button::with_label("R");
                     btn_all_root.set_tooltip_text(Some("Set all files to game root directory"));
                     btn_all_root.add_css_class("flat");
+                    btn_all_root.add_css_class("dr-btn");
                     {
                         let root_btns = root_btns.clone();
                         let s = sender.input_sender().clone();
