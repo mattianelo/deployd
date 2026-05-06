@@ -193,6 +193,7 @@ impl SimpleComponent for AbsorbDialog {
             check.set_valign(gtk::Align::Center);
 
             let row = adw::ActionRow::new();
+            row.add_css_class("monospace");
             if file.is_managed_plugin {
                 row.set_title(&file.game_rel_original);
                 if file.xedit_backup_path.is_some() {

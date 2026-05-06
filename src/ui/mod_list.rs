@@ -190,6 +190,12 @@ impl FactoryComponent for ModListItem {
             set_selectable: false,
             #[watch]
             set_visible: self.visible,
+            #[watch]
+            set_css_classes: match &self.kind {
+                ModListItemKind::Mod(r) if r.mod_entry.enabled => &["mod-row-enabled"],
+                ModListItemKind::Separator { .. }               => &["mod-separator-row"],
+                _                                               => &[],
+            },
 
             // Outer vertical box — one child visible at a time
             gtk::Box {
@@ -408,8 +414,6 @@ impl FactoryComponent for ModListItem {
         let widgets = view_output!();
 
         if self.is_separator() {
-            root_ref.add_css_class("mod-separator-row");
-
             // Drag source so groups can be repositioned in the list
             let drag_source = gtk::DragSource::new();
             drag_source.set_actions(gtk::gdk::DragAction::MOVE);

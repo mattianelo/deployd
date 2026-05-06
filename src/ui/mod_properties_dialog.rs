@@ -151,21 +151,26 @@ impl SimpleComponent for ModPropertiesDialog {
 
                         // Metadata (read-only)
                         gtk::Label {
-                            set_label: &{
-                                let mut parts = vec![
-                                    format!("Version: {}", model.version.as_deref().unwrap_or("Unknown")),
-                                    format!("Author: {}", model.author.as_deref().unwrap_or("Unknown")),
-                                    format!("Installed: {}", model.installed_at.as_deref().unwrap_or("Unknown").split('T').next().unwrap_or("Unknown")),
-                                ];
-                                if let Some(f) = &model.archive_filename {
-                                    parts.push(format!("Archive: {f}"));
-                                }
-                                parts.join("   ")
-                            },
+                            set_label: &[
+                                format!("Version: {}", model.version.as_deref().unwrap_or("Unknown")),
+                                format!("Author: {}", model.author.as_deref().unwrap_or("Unknown")),
+                                format!("Installed: {}", model.installed_at.as_deref().unwrap_or("Unknown").split('T').next().unwrap_or("Unknown")),
+                            ].join("   "),
                             set_halign: gtk::Align::Start,
                             set_wrap: true,
                             add_css_class: "dim-label",
                             add_css_class: "caption",
+                        },
+                        gtk::Label {
+                            #[watch]
+                            set_visible: model.archive_filename.is_some(),
+                            #[watch]
+                            set_label: model.archive_filename.as_deref().unwrap_or(""),
+                            set_halign: gtk::Align::Start,
+                            set_selectable: true,
+                            set_wrap: true,
+                            add_css_class: "monospace",
+                            add_css_class: "code-pill",
                         },
 
                         // Notes
@@ -576,6 +581,7 @@ impl SimpleComponent for ModPropertiesDialog {
                 for (idx, (_, display_path)) in self.files.iter().enumerate() {
                     let row = adw::ActionRow::new();
                     row.set_title(display_path);
+                    row.add_css_class("monospace");
 
                     // Per-file Data/Root toggles for Bethesda and Aurora games.
                     if self.is_bethesda || self.is_aurora {

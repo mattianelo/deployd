@@ -140,6 +140,7 @@ impl Component for App {
                     #[local_ref]
                     pack_start = game_dropdown -> gtk::DropDown {
                         set_selected: 0,
+                        add_css_class: "flat",
                         #[watch]
                         set_visible: model.has_games() && !model.initializing,
                         connect_selected_notify[sender] => move |dd| {
@@ -161,6 +162,7 @@ impl Component for App {
                     #[local_ref]
                     pack_start = profile_dropdown -> gtk::DropDown {
                         set_tooltip_text: Some("Active profile"),
+                        add_css_class: "flat",
                         #[watch]
                         set_visible: model.has_games() && !model.initializing,
                         connect_selected_notify[sender] => move |dd| {
@@ -929,7 +931,7 @@ impl Component for App {
 
                             adw::StatusPage {
                                 #[watch]
-                                set_visible: model.has_no_mods(),
+                                set_visible: model.has_no_mods() && matches!(model.mod_filter, ModFilter::All),
                                 set_icon_name: Some("package-x-generic-symbolic"),
                                 #[watch]
                                 set_title: if model.has_games() { "No Mods" } else { "No Games Detected" },
@@ -941,6 +943,24 @@ impl Component for App {
                                         "Install a supported game via Heroic Launcher"
                                     }
                                 ),
+                            },
+                            adw::StatusPage {
+                                #[watch]
+                                set_visible: matches!(model.mod_filter, ModFilter::Enabled)
+                                    && model.enabled_mods_count() == 0
+                                    && model.total_mods_count() > 0,
+                                set_icon_name: Some("checkbox-checked-symbolic"),
+                                set_title: "No Enabled Mods",
+                                set_description: Some("Enable mods with the checkbox on the left."),
+                            },
+                            adw::StatusPage {
+                                #[watch]
+                                set_visible: matches!(model.mod_filter, ModFilter::Issues)
+                                    && model.issues_mods_count() == 0
+                                    && model.total_mods_count() > 0,
+                                set_icon_name: Some("emblem-ok-symbolic"),
+                                set_title: "No Conflicts",
+                                set_description: Some("No mods override each other's files."),
                             },
                         },
 
