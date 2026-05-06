@@ -90,10 +90,20 @@ impl ModListItem {
     }
 
     /// CSS classes for the group color dot widget.
-    pub fn group_color_classes(&self) -> Vec<&str> {
+    pub fn group_color_classes(&self) -> Vec<&'static str> {
         let mut classes = vec!["group-color-dot"];
         if let ModListItemKind::Separator { color: Some(c), .. } = &self.kind {
-            classes.push(c.as_str());
+            match c.as_str() {
+                "red"    => classes.push("color-red"),
+                "orange" => classes.push("color-orange"),
+                "yellow" => classes.push("color-yellow"),
+                "green"  => classes.push("color-green"),
+                "teal"   => classes.push("color-teal"),
+                "blue"   => classes.push("color-blue"),
+                "purple" => classes.push("color-purple"),
+                "pink"   => classes.push("color-pink"),
+                _        => {}
+            }
         }
         classes
     }
@@ -429,6 +439,17 @@ impl FactoryComponent for ModListItem {
             rename_row.append(&entry);
             rename_row.append(&apply_btn);
 
+            // Build popover first so swatch closures can close it on click.
+            let popover_box = gtk::Box::builder()
+                .orientation(gtk::Orientation::Vertical)
+                .spacing(4)
+                .margin_start(6)
+                .margin_end(6)
+                .margin_top(6)
+                .margin_bottom(6)
+                .build();
+            let popover = gtk::Popover::builder().child(&popover_box).build();
+
             // Color palette row
             let color_row = gtk::Box::builder()
                 .orientation(gtk::Orientation::Horizontal)
@@ -443,8 +464,10 @@ impl FactoryComponent for ModListItem {
                     .build();
                 let idx = index.clone();
                 let s = sender.clone();
+                let p = popover.clone();
                 clear_btn.connect_clicked(move |_| {
                     s.output(ModListItemOutput::SetGroupColor(idx.clone(), None)).ok();
+                    p.popdown();
                 });
                 color_row.append(&clear_btn);
             }
@@ -455,24 +478,16 @@ impl FactoryComponent for ModListItem {
                     .build();
                 let idx = index.clone();
                 let s = sender.clone();
+                let p = popover.clone();
                 let name = color_name.to_string();
                 swatch.connect_clicked(move |_| {
                     s.output(ModListItemOutput::SetGroupColor(idx.clone(), Some(name.clone()))).ok();
+                    p.popdown();
                 });
                 color_row.append(&swatch);
             }
-
-            let popover_box = gtk::Box::builder()
-                .orientation(gtk::Orientation::Vertical)
-                .spacing(4)
-                .margin_start(6)
-                .margin_end(6)
-                .margin_top(6)
-                .margin_bottom(6)
-                .build();
             popover_box.append(&color_row);
             popover_box.append(&rename_row);
-            let popover = gtk::Popover::builder().child(&popover_box).build();
 
             let rename_btn = gtk::MenuButton::builder()
                 .icon_name("document-edit-symbolic")

@@ -347,32 +347,6 @@ fn half_row_index(row: &gtk::ListBoxRow, y: f64, list_len: usize) -> usize {
     }
 }
 
-/// Snaps a raw drop position to the nearest valid group boundary.
-///
-/// Valid positions for dropping a group separator are: index 0, the index of
-/// any existing separator row, or the end of the list. Dropping a group inside
-/// another group's mod block would silently absorb those mods into the dragged
-/// group on the next drag, so we prevent it here.
-fn snap_to_group_boundary(list_box: &gtk::ListBox, raw_to: usize, len: usize) -> usize {
-    let mut best = raw_to;
-    let mut best_dist = usize::MAX;
-    for i in 0..=len {
-        let is_boundary = i == 0
-            || i == len
-            || list_box
-                .row_at_index(i as i32)
-                .map(|r| r.has_css_class("mod-separator-row"))
-                .unwrap_or(false);
-        if is_boundary {
-            let dist = (i as isize - raw_to as isize).unsigned_abs();
-            if dist < best_dist {
-                best_dist = dist;
-                best = i;
-            }
-        }
-    }
-    best
-}
 
 /// Attaches drag-and-drop `DropTarget` controllers to the mod and plugin list widgets.
 pub(super) fn wire_drag_drop(
@@ -411,8 +385,7 @@ pub(super) fn wire_drag_drop(
             .and_then(|s| s.parse::<usize>().ok())
         {
             if let Some(row) = row_at_y {
-                let raw_to = half_row_index(&row, y, len);
-                let to = snap_to_group_boundary(&list_box, raw_to, len);
+                let to = half_row_index(&row, y, len);
                 if from != to {
                     mod_sender.send(AppMsg::MoveGroupTo(from, to)).unwrap();
                 }

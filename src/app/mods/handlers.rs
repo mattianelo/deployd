@@ -185,7 +185,11 @@ impl App {
     ) {
         let mut guard = self.mods.guard();
         let len = guard.len();
-        if from >= len || to >= len || from == to {
+        if from >= len || to > len {
+            return;
+        }
+        let to = to.min(len.saturating_sub(1));
+        if from == to {
             return;
         }
         if from < to {
@@ -212,43 +216,24 @@ impl App {
     ) {
         let mut guard = self.mods.guard();
         let len = guard.len();
-        if from >= len || to >= len || from == to {
+        if from >= len || to > len {
             return;
         }
-
-        // Find the end of this group's block (next separator or end of list).
-        let block_end = (from + 1..len)
-            .find(|&i| guard.get(i).map(|r| r.is_separator()).unwrap_or(false))
-            .unwrap_or(len);
-        let block_size = block_end - from;
-
-        // Drop within own block is a no-op.
-        if to >= from && to < block_end {
+        let to = to.min(len.saturating_sub(1));
+        if from == to {
             return;
         }
-
-        // Extract the whole block (separator + member mods).
-        // guard.remove() returns Option<ModListItem>; we move the kind field into
-        // a fresh ModListItemInit (both structs share the same ModListItemKind).
-        let mut block = Vec::with_capacity(block_size);
-        for _ in 0..block_size {
-            if let Some(item) = guard.remove(from) {
-                block.push(crate::ui::mod_list::ModListItemInit { kind: item.kind, visible: item.visible, compact: item.compact });
+        if from < to {
+            for i in from..to {
+                guard.swap(i, i + 1);
+            }
+        } else {
+            for i in (to..from).rev() {
+                guard.swap(i, i + 1);
             }
         }
-
-        // After removal, indices > from shift down by block_size.
-        let effective_to = if to > from {
-            (to - block_size).min(guard.len())
-        } else {
-            to.min(guard.len())
-        };
-
-        for (i, item) in block.into_iter().enumerate() {
-            guard.insert(effective_to + i, item);
-        }
-
         drop(guard);
+        self.needs_deploy = true;
         self.refresh_priority_labels();
         self.save_group_positions();
         self.save_mod_priorities(sender);
@@ -263,9 +248,10 @@ impl App {
     ) {
         let len = self.mods.guard().len();
         let n = selected.len();
-        if n == 0 || to >= len {
+        if n == 0 || to > len {
             return;
         }
+        let to = to.min(len.saturating_sub(1));
         let drag_pos = selected.iter().position(|&s| s == from).unwrap_or(0);
         let anchor = to.saturating_sub(drag_pos).min(len.saturating_sub(n));
         if selected.iter().enumerate().all(|(i, &s)| anchor + i == s) {
