@@ -686,10 +686,10 @@ impl App {
                 let matches = guard
                     .get(i)
                     .is_some_and(|r| mod_id_set.contains(&r.plugin.mod_id));
-                if matches {
-                    if let Some(row) = guard.get_mut(i) {
-                        row.mod_enabled = true;
-                    }
+                if matches
+                    && let Some(row) = guard.get_mut(i)
+                {
+                    row.mod_enabled = true;
                 }
             }
         }
@@ -750,10 +750,10 @@ impl App {
                 let matches = guard
                     .get(i)
                     .is_some_and(|r| mod_id_set.contains(&r.plugin.mod_id));
-                if matches {
-                    if let Some(row) = guard.get_mut(i) {
-                        row.mod_enabled = false;
-                    }
+                if matches
+                    && let Some(row) = guard.get_mut(i)
+                {
+                    row.mod_enabled = false;
                 }
             }
         }
@@ -798,7 +798,7 @@ impl App {
             return;
         }
         let dialog = adw::AlertDialog::builder()
-            .heading(&format!("Remove {} Mod{}?", n, if n == 1 { "" } else { "s" }))
+            .heading(format!("Remove {} Mod{}?", n, if n == 1 { "" } else { "s" }))
             .body("This will delete the selected mods and cannot be undone.")
             .build();
         dialog.add_response("cancel", "Cancel");

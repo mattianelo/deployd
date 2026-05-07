@@ -202,26 +202,30 @@ impl App {
                 .as_ref()
                 .map(|p| p.mod_name.clone())
                 .unwrap_or_default();
-            let dialog = gtk::AlertDialog::builder()
-                .message("Mod name already exists")
-                .detail(format!(
-                    "'{}' already exists. Merge files into it, replace it, or create a separate mod?",
-                    mod_name
-                ))
-                .buttons(["Create New", "Merge", "Replace"])
-                .cancel_button(0)
-                .default_button(1)
-                .modal(true)
+            let body = format!(
+                "'{}' already exists. Merge files into it, replace it, or create a separate mod?",
+                mod_name
+            );
+            let dialog = adw::AlertDialog::builder()
+                .heading("Mod name already exists")
+                .body(&body)
                 .build();
+            dialog.add_response("create", "Create New");
+            dialog.add_response("merge", "Merge");
+            dialog.add_response("replace", "Replace");
+            dialog.set_default_response(Some("merge"));
+            dialog.set_close_response("create");
+            dialog.set_response_appearance("replace", adw::ResponseAppearance::Destructive);
             let input_sender = sender.input_sender().clone();
-            dialog.choose(Some(root), None::<&gio::Cancellable>, move |result| {
-                let msg = match result {
-                    Ok(1) => AppMsg::PreInstallMerge(existing_id),
-                    Ok(2) => AppMsg::PreInstallReplace(existing_id, existing_priority),
+            dialog.connect_response(None, move |_, response| {
+                let msg = match response {
+                    "merge" => AppMsg::PreInstallMerge(existing_id.clone()),
+                    "replace" => AppMsg::PreInstallReplace(existing_id.clone(), existing_priority),
                     _ => AppMsg::PreInstallCreateNew,
                 };
                 let _ = input_sender.send(msg);
             });
+            dialog.present(Some(root));
             return;
         }
 
@@ -737,27 +741,34 @@ impl App {
                             sender,
                         );
                     } else {
-                        let dialog = gtk::AlertDialog::builder()
-                            .message("Mod Already Installed")
-                            .detail(format!(
-                                "\"{old_mod_name}\" is already installed. Replace it or install alongside?"
-                            ))
-                            .buttons(["Cancel", "Install Alongside", "Replace"])
-                            .cancel_button(0)
-                            .default_button(1)
-                            .modal(true)
+                        let body = format!(
+                            "\"{old_mod_name}\" is already installed. Replace it or install alongside?"
+                        );
+                        let dialog = adw::AlertDialog::builder()
+                            .heading("Mod Already Installed")
+                            .body(&body)
                             .build();
+                        dialog.add_response("cancel", "Cancel");
+                        dialog.add_response("alongside", "Install Alongside");
+                        dialog.add_response("replace", "Replace");
+                        dialog.set_default_response(Some("alongside"));
+                        dialog.set_close_response("cancel");
+                        dialog.set_response_appearance(
+                            "replace",
+                            adw::ResponseAppearance::Destructive,
+                        );
                         let input_sender = sender.input_sender().clone();
-                        dialog.choose(Some(root), None::<&gio::Cancellable>, move |result| {
-                            let _ = match result {
-                                Ok(1) => input_sender.send(AppMsg::OpenPreInstallDialog),
-                                Ok(2) => input_sender.send(AppMsg::OpenPreInstallDialogReplacing(
-                                    old_mod_id,
+                        dialog.connect_response(None, move |_, response| {
+                            let _ = match response {
+                                "alongside" => input_sender.send(AppMsg::OpenPreInstallDialog),
+                                "replace" => input_sender.send(AppMsg::OpenPreInstallDialogReplacing(
+                                    old_mod_id.clone(),
                                     old_priority,
                                 )),
                                 _ => input_sender.send(AppMsg::PreInstallCancelled),
                             };
                         });
+                        dialog.present(Some(root));
                     }
                 } else {
                     self.reinstall_mode = false;
@@ -844,27 +855,34 @@ impl App {
                             AppCmdMsg::FomodSelectionsLoaded(selections)
                         });
                     } else {
-                        let dialog = gtk::AlertDialog::builder()
-                            .message("Mod Already Installed")
-                            .detail(format!(
-                                "\"{old_mod_name}\" is already installed. Replace it or install alongside?"
-                            ))
-                            .buttons(["Cancel", "Install Alongside", "Replace"])
-                            .cancel_button(0)
-                            .default_button(1)
-                            .modal(true)
+                        let body = format!(
+                            "\"{old_mod_name}\" is already installed. Replace it or install alongside?"
+                        );
+                        let dialog = adw::AlertDialog::builder()
+                            .heading("Mod Already Installed")
+                            .body(&body)
                             .build();
+                        dialog.add_response("cancel", "Cancel");
+                        dialog.add_response("alongside", "Install Alongside");
+                        dialog.add_response("replace", "Replace");
+                        dialog.set_default_response(Some("alongside"));
+                        dialog.set_close_response("cancel");
+                        dialog.set_response_appearance(
+                            "replace",
+                            adw::ResponseAppearance::Destructive,
+                        );
                         let input_sender = sender.input_sender().clone();
-                        dialog.choose(Some(root), None::<&gio::Cancellable>, move |result| {
-                            let _ = match result {
-                                Ok(1) => input_sender.send(AppMsg::OpenPreInstallDialog),
-                                Ok(2) => input_sender.send(AppMsg::OpenPreInstallDialogReplacing(
-                                    old_mod_id,
+                        dialog.connect_response(None, move |_, response| {
+                            let _ = match response {
+                                "alongside" => input_sender.send(AppMsg::OpenPreInstallDialog),
+                                "replace" => input_sender.send(AppMsg::OpenPreInstallDialogReplacing(
+                                    old_mod_id.clone(),
                                     old_priority,
                                 )),
                                 _ => input_sender.send(AppMsg::PreInstallCancelled),
                             };
                         });
+                        dialog.present(Some(root));
                     }
                 } else {
                     self.reinstall_mode = false;

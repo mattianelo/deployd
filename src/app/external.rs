@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use gtk::gio;
+use adw::prelude::*;
 use gtk::prelude::*;
 use relm4::prelude::*;
 
@@ -57,22 +57,24 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         self.overflow_menu_btn.popdown();
-        let dialog = gtk::AlertDialog::builder()
-            .message("Reset vanilla baseline?")
-            .detail("This re-snapshots the current game folder as the new vanilla state. Any files added since the last snapshot will no longer be reported as external changes. Use this after a clean game reinstall.")
-            .buttons(["Cancel", "Reset"])
-            .cancel_button(0)
-            .default_button(0)
-            .modal(true)
+        let dialog = adw::AlertDialog::builder()
+            .heading("Reset vanilla baseline?")
+            .body("This re-snapshots the current game folder as the new vanilla state. Any files added since the last snapshot will no longer be reported as external changes. Use this after a clean game reinstall.")
             .build();
+        dialog.add_response("cancel", "Cancel");
+        dialog.add_response("reset", "Reset");
+        dialog.set_default_response(Some("cancel"));
+        dialog.set_close_response("cancel");
+        dialog.set_response_appearance("reset", adw::ResponseAppearance::Destructive);
         let input_sender = sender.input_sender().clone();
-        dialog.choose(Some(root), None::<&gio::Cancellable>, move |result| {
-            if result == Ok(1) {
+        dialog.connect_response(None, move |_, response| {
+            if response == "reset" {
                 input_sender
                     .send(AppMsg::ResetVanillaBaselineConfirmed)
                     .unwrap();
             }
         });
+        dialog.present(Some(root));
     }
 
     pub(crate) fn handle_reset_vanilla_baseline_confirmed(

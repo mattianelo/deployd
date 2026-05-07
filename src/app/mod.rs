@@ -43,10 +43,8 @@ impl Component for App {
                 glib::Propagation::Stop
             },
 
-            gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
-
-                adw::HeaderBar {
+            adw::ToolbarView {
+                add_top_bar = &adw::HeaderBar {
                     set_centering_policy: adw::CenteringPolicy::Loose,
                     #[wrap(Some)]
                     set_title_widget = &adw::WindowTitle {
@@ -545,29 +543,38 @@ impl Component for App {
                     pack_end = tool_buttons_box -> gtk::Box {},
                 },
 
+                #[wrap(Some)]
+                set_content = &gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+
                 #[local_ref]
                 search_bar -> gtk::SearchBar {
                     #[watch]
                     set_search_mode: model.search_active,
                 },
 
-                gtk::Box {
+                adw::Clamp {
                     #[watch]
                     set_visible: model.initializing,
                     set_vexpand: true,
-                    set_orientation: gtk::Orientation::Vertical,
                     set_valign: gtk::Align::Center,
                     set_halign: gtk::Align::Center,
-                    set_spacing: 12,
 
-                    gtk::Spinner {
-                        set_spinning: true,
-                        set_size_request: (32, 32),
-                    },
-                    gtk::Label {
-                        set_label: "Loading...",
-                        add_css_class: "title-3",
-                    },
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_valign: gtk::Align::Center,
+                        set_halign: gtk::Align::Center,
+                        set_spacing: 12,
+
+                        gtk::Spinner {
+                            set_spinning: true,
+                            set_size_request: (32, 32),
+                        },
+                        gtk::Label {
+                            set_label: "Loading...",
+                            add_css_class: "title-3",
+                        },
+                    }
                 },
 
                 adw::OverlaySplitView {
@@ -634,72 +641,76 @@ impl Component for App {
                         },
 
                         #[wrap(Some)]
-                        set_content = &gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
+                        set_content = &adw::Clamp {
+                            set_maximum_size: 700,
 
                             gtk::Box {
-                                set_orientation: gtk::Orientation::Horizontal,
-                                set_margin_start: 8,
-                                set_margin_end: 8,
-                                set_margin_top: 4,
-                                set_margin_bottom: 4,
-                                set_spacing: 4,
+                                set_orientation: gtk::Orientation::Vertical,
 
-                                gtk::Button {
-                                    #[watch]
-                                    set_css_classes: if matches!(model.download_filter, DownloadFilter::All) {
-                                        &["pill", "filter-chip", "suggested-action"]
-                                    } else {
-                                        &["pill", "filter-chip"]
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Horizontal,
+                                    set_margin_start: 8,
+                                    set_margin_end: 8,
+                                    set_margin_top: 4,
+                                    set_margin_bottom: 4,
+                                    set_spacing: 4,
+
+                                    gtk::Button {
+                                        #[watch]
+                                        set_css_classes: if matches!(model.download_filter, DownloadFilter::All) {
+                                            &["pill", "filter-chip", "suggested-action"]
+                                        } else {
+                                            &["pill", "filter-chip"]
+                                        },
+                                        set_label: "All",
+                                        connect_clicked => AppMsg::SetDownloadFilter(DownloadFilter::All),
                                     },
-                                    set_label: "All",
-                                    connect_clicked => AppMsg::SetDownloadFilter(DownloadFilter::All),
-                                },
 
-                                gtk::Button {
-                                    #[watch]
-                                    set_css_classes: if matches!(model.download_filter, DownloadFilter::Active) {
-                                        &["pill", "filter-chip", "suggested-action"]
-                                    } else {
-                                        &["pill", "filter-chip"]
+                                    gtk::Button {
+                                        #[watch]
+                                        set_css_classes: if matches!(model.download_filter, DownloadFilter::Active) {
+                                            &["pill", "filter-chip", "suggested-action"]
+                                        } else {
+                                            &["pill", "filter-chip"]
+                                        },
+                                        #[watch]
+                                        set_label: &format!("Active ({})", model.active_downloads_count()),
+                                        connect_clicked => AppMsg::SetDownloadFilter(DownloadFilter::Active),
                                     },
-                                    #[watch]
-                                    set_label: &format!("Active ({})", model.active_downloads_count()),
-                                    connect_clicked => AppMsg::SetDownloadFilter(DownloadFilter::Active),
-                                },
 
-                                gtk::Button {
-                                    #[watch]
-                                    set_css_classes: if matches!(model.download_filter, DownloadFilter::Completed) {
-                                        &["pill", "filter-chip", "suggested-action"]
-                                    } else {
-                                        &["pill", "filter-chip"]
+                                    gtk::Button {
+                                        #[watch]
+                                        set_css_classes: if matches!(model.download_filter, DownloadFilter::Completed) {
+                                            &["pill", "filter-chip", "suggested-action"]
+                                        } else {
+                                            &["pill", "filter-chip"]
+                                        },
+                                        #[watch]
+                                        set_label: &format!("Completed ({})", model.completed_downloads_count()),
+                                        connect_clicked => AppMsg::SetDownloadFilter(DownloadFilter::Completed),
                                     },
-                                    #[watch]
-                                    set_label: &format!("Completed ({})", model.completed_downloads_count()),
-                                    connect_clicked => AppMsg::SetDownloadFilter(DownloadFilter::Completed),
                                 },
-                            },
-
-                            #[local_ref]
-                            downloads_scroll -> gtk::ScrolledWindow {
-                                set_vexpand: true,
-                                set_hscrollbar_policy: gtk::PolicyType::Automatic,
 
                                 #[local_ref]
-                                download_list -> gtk::ListBox {
-                                    set_selection_mode: gtk::SelectionMode::None,
-                                    add_css_class: "boxed-list",
-                                    set_margin_all: 8,
-                                }
-                            },
+                                downloads_scroll -> gtk::ScrolledWindow {
+                                    set_vexpand: true,
+                                    set_hscrollbar_policy: gtk::PolicyType::Automatic,
 
-                            adw::StatusPage {
-                                #[watch]
-                                set_visible: model.downloads.is_empty(),
-                                set_icon_name: Some("folder-download-symbolic"),
-                                set_title: "No Downloads",
-                                set_description: Some("Click Scan or download from Nexus Mods"),
+                                    #[local_ref]
+                                    download_list -> gtk::ListBox {
+                                        set_selection_mode: gtk::SelectionMode::None,
+                                        add_css_class: "boxed-list",
+                                        set_margin_all: 8,
+                                    }
+                                },
+
+                                adw::StatusPage {
+                                    #[watch]
+                                    set_visible: model.downloads.is_empty(),
+                                    set_icon_name: Some("folder-download-symbolic"),
+                                    set_title: "No Downloads",
+                                    set_description: Some("Click Scan or download from Nexus Mods"),
+                                },
                             },
                         },
                     },
@@ -712,15 +723,18 @@ impl Component for App {
                         toast_overlay -> adw::ToastOverlay {
                             set_vexpand: true,
 
-                            gtk::Paned {
-                        set_orientation: gtk::Orientation::Horizontal,
-                        set_position: 450,
-                        set_shrink_start_child: false,
-                        set_shrink_end_child: false,
+                            adw::NavigationSplitView {
+                        set_collapsed: false,
+                        set_min_sidebar_width: 360.0,
+                        set_max_sidebar_width: 560.0,
 
                         // LEFT PANEL: Mod Order
                         #[wrap(Some)]
-                        set_start_child = &gtk::Box {
+                        set_sidebar = &adw::NavigationPage {
+                            set_title: "Mod Order",
+
+                            #[wrap(Some)]
+                            set_child = &gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
 
                             // Normal mode header
@@ -790,8 +804,11 @@ impl Component for App {
                                                     if !name.is_empty() {
                                                         sender.input(AppMsg::SaveModOrderSnapshot(name));
                                                         mod_snapshot_save_entry.set_text("");
-                                                        if let Some(w) = btn.ancestor(gtk::Popover::static_type()) {
-                                                            w.downcast_ref::<gtk::Popover>().unwrap().popdown();
+                                                        if let Some(popover) = btn
+                                                            .ancestor(gtk::Popover::static_type())
+                                                            .and_downcast::<gtk::Popover>()
+                                                        {
+                                                            popover.popdown();
                                                         }
                                                     }
                                                 },
@@ -991,11 +1008,16 @@ impl Component for App {
                                     connect_clicked => AppMsg::RemoveSelectedMods,
                                 },
                             },
+                            },
                         },
 
                         // RIGHT PANEL: Plugin Load Order
                         #[wrap(Some)]
-                        set_end_child = &gtk::Box {
+                        set_content = &adw::NavigationPage {
+                            set_title: "Plugin Order",
+
+                            #[wrap(Some)]
+                            set_child = &gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
 
                             // Normal mode header
@@ -1066,8 +1088,11 @@ impl Component for App {
                                                     if !name.is_empty() {
                                                         sender.input(AppMsg::SavePluginOrderSnapshot(name));
                                                         plugin_snapshot_save_entry.set_text("");
-                                                        if let Some(w) = btn.ancestor(gtk::Popover::static_type()) {
-                                                            w.downcast_ref::<gtk::Popover>().unwrap().popdown();
+                                                        if let Some(popover) = btn
+                                                            .ancestor(gtk::Popover::static_type())
+                                                            .and_downcast::<gtk::Popover>()
+                                                        {
+                                                            popover.popdown();
                                                         }
                                                     }
                                                 },
@@ -1184,6 +1209,7 @@ impl Component for App {
                                     connect_clicked => AppMsg::DisableSelectedPlugins,
                                 },
                             },
+                            },
                         },
                     }
                     }
@@ -1265,6 +1291,7 @@ impl Component for App {
                         #[watch]
                         set_visible: model.has_games(),
                     },
+                },
                 },
             }
         }

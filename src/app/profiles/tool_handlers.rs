@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use gtk::gio;
+use adw::prelude::*;
 use gtk::prelude::*;
 use relm4::prelude::*;
 
@@ -62,25 +62,27 @@ impl App {
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
-        let dialog = gtk::AlertDialog::builder()
-            .message("First-run Setup Required")
-            .detail(
+        let dialog = adw::AlertDialog::builder()
+            .heading("First-run Setup Required")
+            .body(
                 "Proton GE (~600 MB) needs to be downloaded before tools can run. \
                  This is a one-time download.\n\n\
                  The tool will launch automatically when the download finishes.",
             )
-            .buttons(["Cancel", "Download & Launch"])
-            .cancel_button(0)
-            .default_button(1)
-            .modal(true)
             .build();
+        dialog.add_response("cancel", "Cancel");
+        dialog.add_response("download", "Download & Launch");
+        dialog.set_default_response(Some("download"));
+        dialog.set_close_response("cancel");
+        dialog.set_response_appearance("download", adw::ResponseAppearance::Suggested);
 
         let s = sender.input_sender().clone();
-        dialog.choose(Some(root), None::<&gio::Cancellable>, move |result| {
-            if result == Ok(1) {
-                let _ = s.send(AppMsg::ProtonSetupConfirmed(tool_id));
+        dialog.connect_response(None, move |_, response| {
+            if response == "download" {
+                let _ = s.send(AppMsg::ProtonSetupConfirmed(tool_id.clone()));
             }
         });
+        dialog.present(Some(root));
     }
 
     /// Show a one-time Mono install info dialog for Eclipse tools under the Snap wine-runtime.
@@ -96,26 +98,28 @@ impl App {
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
-        let dialog = gtk::AlertDialog::builder()
-            .message("Mono Required for This Tool")
-            .detail(
+        let dialog = adw::AlertDialog::builder()
+            .heading("Mono Required for This Tool")
+            .body(
                 "Wine will ask to install Mono — a .NET runtime required by tools like \
                  CharGenMorph Compiler.\n\n\
                  Accept the installation when prompted. This message will not appear again.",
             )
-            .buttons(["Cancel", "Launch"])
-            .cancel_button(0)
-            .default_button(1)
-            .modal(true)
             .build();
+        dialog.add_response("cancel", "Cancel");
+        dialog.add_response("launch", "Launch");
+        dialog.set_default_response(Some("launch"));
+        dialog.set_close_response("cancel");
+        dialog.set_response_appearance("launch", adw::ResponseAppearance::Suggested);
 
         let s = sender.input_sender().clone();
-        dialog.choose(Some(root), None::<&gio::Cancellable>, move |result| {
-            if result == Ok(1) {
+        dialog.connect_response(None, move |_, response| {
+            if response == "launch" {
                 let _ = std::fs::write(prefix.join(".deployd_mono_prompt_v1"), b"");
-                let _ = s.send(AppMsg::LaunchTool(tool_id));
+                let _ = s.send(AppMsg::LaunchTool(tool_id.clone()));
             }
         });
+        dialog.present(Some(root));
     }
 
     /// User confirmed the Proton GE download — start the async GitHub download.

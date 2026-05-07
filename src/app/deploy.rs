@@ -150,21 +150,23 @@ impl App {
                 .to_string()
         };
 
-        let dialog = gtk::AlertDialog::builder()
-            .message("Purge deployed files?")
-            .detail(detail)
-            .buttons(["Cancel", "Purge"])
-            .cancel_button(0)
-            .default_button(0)
-            .modal(true)
+        let dialog = adw::AlertDialog::builder()
+            .heading("Purge deployed files?")
+            .body(&detail)
             .build();
+        dialog.add_response("cancel", "Cancel");
+        dialog.add_response("purge", "Purge");
+        dialog.set_default_response(Some("cancel"));
+        dialog.set_close_response("cancel");
+        dialog.set_response_appearance("purge", adw::ResponseAppearance::Destructive);
 
         let input_sender = sender.input_sender().clone();
-        dialog.choose(Some(root), None::<&gio::Cancellable>, move |result| {
-            if result == Ok(1) {
+        dialog.connect_response(None, move |_, response| {
+            if response == "purge" {
                 input_sender.send(AppMsg::PurgeConfirmed).unwrap();
             }
         });
+        dialog.present(Some(root));
     }
 
     pub(crate) fn handle_purge_confirmed(&mut self, sender: &ComponentSender<Self>) {
