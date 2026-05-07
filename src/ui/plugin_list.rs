@@ -75,7 +75,8 @@ impl FactoryComponent for PluginRow {
 
     view! {
         root = gtk::ListBoxRow {
-            set_selectable: false,
+            #[watch]
+            set_selectable: !self.is_vanilla,
             #[watch]
             set_visible: self.visible,
             #[watch]
