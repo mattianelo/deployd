@@ -34,10 +34,11 @@ plugs:
     content: wine-runtime-c22
     target: $SNAP/wine-runtime
     default-provider: wine-platform-runtime-core22:wine-runtime-c22
-  wine-9-staging:
+  wine-10-stable:
     interface: content
+    content: wine-base-stable
     target: $SNAP/wine-platform
-    default-provider: wine-platform-9-staging-core22
+    default-provider: wine-platform
 
 slots:
   dbus-deployd:
@@ -50,10 +51,10 @@ apps:
     command: bin/deployd
     extensions: [gnome]
     plugs:
-      - home              # Game directories, wine prefixes, mod archives
-      - network           # Nexus Mods API, NXM downloads, and SSO WebSocket (outbound)
-      - wine-runtime      # Wine binaries via content interface
-      - wine-9-staging    # Wine staging libraries via content interface
+      - home
+      - network
+      - wine-runtime
+      - wine-10-stable
     slots: [dbus-deployd]
     desktop: usr/share/applications/deployd.desktop
 
@@ -74,11 +75,7 @@ parts:
       - libarchive13t64
     override-build: |
       cargo build --release --features loot,libarchive-fallback
-      install -m755 target/release/deployd "$CRAFT_PART_INSTALL/bin/deployd"
+      install -Dm755 target/release/deployd "$CRAFT_PART_INSTALL/bin/deployd"
       install -Dm644 data/deployd.desktop \
         "$CRAFT_PART_INSTALL/usr/share/applications/deployd.desktop"
-      install -Dm644 data/icons/hicolor/scalable/apps/deployd.svg \
-        "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/scalable/apps/deployd.svg"
-      install -Dm644 data/deployd.metainfo.xml \
-        "$CRAFT_PART_INSTALL/usr/share/metainfo/deployd.metainfo.xml"
 
