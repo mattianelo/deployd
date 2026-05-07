@@ -1,6 +1,6 @@
 name: deployd
 base: core24
-version: '1.1.1'
+version: '2.2.0'
 title: Deployd
 summary: Mod manager for PC games on Linux
 license: GPL-3.0
@@ -68,12 +68,13 @@ parts:
       - libssl-dev
       - pkg-config
       - libarchive-dev
+      - libunrar-dev
     stage-packages:
       - libsqlite3-0
       - libarchive13t64
-      - python3
     override-build: |
-      craftctl default
+      cargo build --release --features loot,libarchive-fallback
+      install -m755 target/release/deployd "$CRAFT_PART_INSTALL/bin/deployd"
       install -Dm644 data/deployd.desktop \
         "$CRAFT_PART_INSTALL/usr/share/applications/deployd.desktop"
       install -Dm644 data/icons/hicolor/scalable/apps/deployd.svg \

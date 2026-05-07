@@ -14,7 +14,6 @@ DOCKERFILE="$REPO_ROOT/packaging/appimage/Dockerfile"
 LXD_CONTAINER="deployd-appimage-build"
 CMD="${1:-check}"
 FEATURES="loot,libarchive-fallback"
-[ "${DEPLOYD_EXPERIMENTAL:-0}" = "1" ] && FEATURES="$FEATURES,experimental"
 
 # ── LXD path (host) ──────────────────────────────────────────────────────────
 if [ "${DEPLOYD_NO_LXD:-0}" != "1" ] \

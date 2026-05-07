@@ -1,13 +1,11 @@
 #!/bin/bash
 # Host-side wrapper — runs inside LXD (preferred) or directly via Docker.
-# Usage: bash packaging/appimage/build-appimage.sh [--rebuild] [--clean] [--debug] [--experimental]
+# Usage: bash packaging/appimage/build-appimage.sh [--rebuild] [--clean] [--debug]
 #
 # Flags:
-#   --rebuild       Destroy and recreate the LXD container / rebuild the Docker image.
-#   --clean         Delete the LXD container after a successful build.
-#   --debug         Compile in debug mode (faster build, larger binary, no optimisations).
-#   --experimental  Enable experimental features (script extender launcher, profile
-#                   export/import, backup & restore UI).  Never set for stable releases.
+#   --rebuild  Destroy and recreate the LXD container / rebuild the Docker image.
+#   --clean    Delete the LXD container after a successful build.
+#   --debug    Compile in debug mode (faster build, larger binary, no optimisations).
 #
 # Prerequisites (LXD — preferred):
 #   sudo snap install lxd
@@ -37,13 +35,11 @@ LXD_CONTAINER="deployd-appimage-build"
 REBUILD=0
 CLEAN=0
 DEBUG=0
-EXPERIMENTAL=0
 for arg in "$@"; do
     case "$arg" in
-        --rebuild)      REBUILD=1 ;;
-        --clean)        CLEAN=1 ;;
-        --debug)        DEBUG=1 ;;
-        --experimental) EXPERIMENTAL=1 ;;
+        --rebuild) REBUILD=1 ;;
+        --clean)   CLEAN=1 ;;
+        --debug)   DEBUG=1 ;;
         *) echo "Unknown option: $arg"; exit 1 ;;
     esac
 done
@@ -78,8 +74,7 @@ if _lxd_available; then
     fi
 
     INNER_FLAGS=""
-    [ "$DEBUG"        = "1" ] && INNER_FLAGS="$INNER_FLAGS --debug"
-    [ "$EXPERIMENTAL" = "1" ] && INNER_FLAGS="$INNER_FLAGS --experimental"
+    [ "$DEBUG" = "1" ] && INNER_FLAGS="$INNER_FLAGS --debug"
 
     echo "==> Running build inside LXD container $LXD_CONTAINER"
     # shellcheck disable=SC2086
@@ -127,8 +122,7 @@ VERSION=$(grep '^version' "$REPO_ROOT/Cargo.toml" | head -1 | sed 's/.*= *"\(.*\
 echo "==> Running build inside container (Deployd $VERSION)"
 
 INNER_FLAGS=""
-[ "$DEBUG"        = "1" ] && INNER_FLAGS="$INNER_FLAGS --debug"
-[ "$EXPERIMENTAL" = "1" ] && INNER_FLAGS="$INNER_FLAGS --experimental"
+[ "$DEBUG" = "1" ] && INNER_FLAGS="$INNER_FLAGS --debug"
 
 docker run --rm \
     -v "$REPO_ROOT:/workspace:z" \

@@ -20,7 +20,7 @@
       handles Nexus Mods downloads via SSO login and NXM links, and deploys mods
       as hardlinks for safe, non-destructive mod management.
     </p>
-    <p>Version 1.1.1.</p>
+    <p>Version 2.2.0.</p>
     <ul>
       <li>Supports Skyrim SE, Fallout 4, Fallout: New Vegas, Starfield, The Witcher 3, and Cyberpunk 2077</li>
       <li>Game detection from Steam and Heroic Launcher (GOG/Epic)</li>
@@ -64,6 +64,16 @@
   </keywords>
 
   <releases>
+    <release version="2.2.0" date="2026-05-07" type="stable">
+      <description>
+        <p>Multi-row selection in mod and plugin panels. Color-coded mod groups with palette picker.
+        LOOT notifications as toasts. Conflict dot icon with tint; conflict count in the status bar.
+        Filter empty states, enabled-mod tint, monospace paths, hover group highlights. Downloads panel:
+        delete, hide, resizable sidebar. Notifications: clear-all, expandable rows. Removed experimental
+        features (profile import/export, script extender launch, backup &amp; restore). Snap packaging
+        now on-par with AppImage (libunrar, feature flags, CI enabled).</p>
+      </description>
+    </release>
     <release version="1.1.1" date="2026-05-05" type="stable">
       <description>
         <p>Mod author now propagates correctly to the Mod Order panel after a metadata fetch.

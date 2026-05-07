@@ -136,45 +136,7 @@ fn resolve_launcher(proton_dir: Option<&Path>) -> Option<WineLauncher> {
     {
         return Some(WineLauncher::Wine(wine_bin));
     }
-    if let Some(bin) = resolve_wine_binary() {
-        return Some(WineLauncher::Wine(bin));
-    }
-    // UMU: commented out — pressure-vessel/bwrap blocked on AppImage + Snap.
-    // if let Some(umu) = resolve_umu_binary() {
-    //     return Some(WineLauncher::Umu(umu));
-    // }
-    None
-}
-
-/// Find the `umu-run` binary.
-///
-/// Checks bundle locations first (snap, then AppImage), then falls back to
-/// `$PATH` for system-wide installations.
-#[allow(dead_code)] // UMU commented out; kept for future re-enable
-pub(crate) fn resolve_umu_binary() -> Option<PathBuf> {
-    if let Ok(snap) = std::env::var("SNAP") {
-        let p = PathBuf::from(&snap).join("usr/bin/umu-run");
-        if p.is_file() {
-            return Some(p);
-        }
-    }
-
-    if let Some(appdir) = std::env::var_os("APPDIR").map(PathBuf::from) {
-        let p = appdir.join("usr/bin/umu-run");
-        if p.is_file() {
-            return Some(p);
-        }
-    }
-
-    let path_var = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path_var) {
-        let candidate = dir.join("umu-run");
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-
-    None
+    resolve_wine_binary().map(WineLauncher::Wine)
 }
 
 /// Find the `wine64` (or `wine`) binary.

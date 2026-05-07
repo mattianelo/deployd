@@ -14,13 +14,6 @@ pub(super) struct KnownGame {
     pub(super) engine: GameEngine,
     /// Save directory relative to the Wine user directory. `None` disables save management.
     pub(super) save_game_subpath: Option<&'static str>,
-    /// Root-level loader executable for SKSE/F4SE/NVSE/SFSE.
-    /// `None` for games without a script extender.
-    pub(super) script_extender_loader: Option<&'static str>,
-    /// Steam App ID, used to set `SteamAppId`/`SteamGameId` env vars so that
-    /// `SteamAPI_Init()` can connect to the running Steam daemon.
-    /// `None` for non-Steam or non-Bethesda games.
-    pub(super) steam_app_id: Option<u32>,
 }
 
 pub(super) const KNOWN_GAMES: &[KnownGame] = &[
@@ -36,8 +29,6 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         nexus_domain: "skyrimspecialedition",
         engine: GameEngine::Bethesda,
         save_game_subpath: Some("Documents/My Games/Skyrim Special Edition/Saves"),
-        script_extender_loader: Some("skse64_loader.exe"),
-        steam_app_id: Some(489830),
     },
     KnownGame {
         deployd_id: "fallout-4",
@@ -49,8 +40,6 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         nexus_domain: "fallout4",
         engine: GameEngine::Bethesda,
         save_game_subpath: Some("Documents/My Games/Fallout4/Saves"),
-        script_extender_loader: Some("f4se_loader.exe"),
-        steam_app_id: Some(377160),
     },
     KnownGame {
         deployd_id: "fallout-nv",
@@ -62,8 +51,6 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         nexus_domain: "newvegas",
         engine: GameEngine::Bethesda,
         save_game_subpath: Some("Documents/My Games/FalloutNV/Saves"),
-        script_extender_loader: Some("nvse_loader.exe"),
-        steam_app_id: Some(22380),
     },
     KnownGame {
         deployd_id: "starfield",
@@ -75,8 +62,6 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         nexus_domain: "starfield",
         engine: GameEngine::Bethesda,
         save_game_subpath: Some("Documents/My Games/Starfield/Saves"),
-        script_extender_loader: Some("sfse_loader.exe"),
-        steam_app_id: Some(1716740),
     },
     // ── REDEngine games ───────────────────────────────────────────────────────
     KnownGame {
@@ -89,8 +74,6 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         nexus_domain: "witcher3",
         engine: GameEngine::REDEngine,
         save_game_subpath: Some("Documents/The Witcher 3/gamesaves"),
-        script_extender_loader: None,
-        steam_app_id: None,
     },
     KnownGame {
         deployd_id: "cyberpunk-2077",
@@ -102,8 +85,6 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         nexus_domain: "cyberpunk2077",
         engine: GameEngine::REDEngine,
         save_game_subpath: Some("Saved Games/CD Projekt Red/Cyberpunk 2077"),
-        script_extender_loader: None,
-        steam_app_id: None,
     },
     KnownGame {
         deployd_id: "witcher-2",
@@ -115,8 +96,6 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         nexus_domain: "witcher2",
         engine: GameEngine::REDEngine,
         save_game_subpath: Some("Documents/The Witcher 2/gamesaves"),
-        script_extender_loader: None,
-        steam_app_id: None,
     },
     // ── The Witcher (Aurora engine) ───────────────────────────────────────────
     KnownGame {
@@ -129,8 +108,6 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         nexus_domain: "witcher",
         engine: GameEngine::Aurora,
         save_game_subpath: Some("Documents/The Witcher/saves"),
-        script_extender_loader: None,
-        steam_app_id: None,
     },
     // ── Dragon Age: Origins ───────────────────────────────────────────────────
     // data_subdir is relative to the Wine user dir; deploy_dir() resolves <wine_user>/<data_subdir>.
@@ -144,7 +121,5 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         nexus_domain: "dragonage",
         engine: GameEngine::Eclipse,
         save_game_subpath: Some("Documents/BioWare/Dragon Age/Characters"),
-        script_extender_loader: None,
-        steam_app_id: None,
     },
 ];

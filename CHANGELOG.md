@@ -1,5 +1,60 @@
 # Changelog
 
+## [2.2.0]
+
+### Added
+
+- **Multi-row selection in Plugin Order panel** — Ctrl/Shift click to build a selection; drag the
+  block to move all selected plugins together in one operation.
+- **Color-coded mod groups** — group headers display a tinted dot; a color palette (clear + 8
+  swatches) appears in the rename popover to set or clear the color.
+- **LOOT sort notifications as toasts** — LOOT sort results are delivered as toasts rather than
+  accumulating silently in the notification panel.
+- **Conflict dot icon with tint** — the per-row conflict indicator is a single dot icon; yellow
+  when the mod is overridden, green when it only overrides. Tooltip combines both directions.
+  A `· N conflicts` label is added to the status bar, hidden when zero.
+- **Filter empty states, enabled-mod tint, UI polish** — mod list shows an empty-state placeholder
+  when filters return no results; enabled mods receive a subtle background tint; archive paths use
+  monospace; group headers highlight on hover; dropdowns use the flat style.
+- **Downloads panel improvements** — delete individual download entries, hide the panel entirely,
+  resizable sidebar (250 – 700 px) via `adw::OverlaySplitView` replacing the legacy `gtk::Paned`.
+- **Notification improvements** — clear-all button in the notification panel header; expandable
+  rows for long messages; scroll position preserved after delete.
+
+### Fixed
+
+- Plain click replaces the current selection; Ctrl/Shift still extend it.
+- Pressing Escape or clicking an empty area clears the list selection.
+- Version-column migration guard prevents a duplicate-column error on upgrade.
+- Selection tint refreshes correctly after a tracker reload.
+- Unselect is deferred past the drag-drop commit so drops land in the right position.
+- File and conflict list rows use raw `ListBoxRow` with 5 px margins, replacing
+  `adw::ActionRow` whose 52 px Adwaita height made rows appear too tall.
+- Window no longer flashes black on first show; `present()` is deferred to the next idle tick.
+- Dependency load-order panel drag-and-drop was blocked by a stale sensitivity guard.
+- Collapsed group drag now moves the separator and all hidden member mods as a block.
+  Expanded group drag moves only the separator (members follow by position).
+- Downloads: version field is always propagated from a metadata fetch.
+- Deployer: vanilla backup is only created for files that existed in the pre-mod baseline;
+  files placed by other tools are not backed up and will not be unexpectedly restored.
+
+### Removed
+
+- **Experimental features deleted** — Profile Import/Export, Script Extender Launch, and
+  Backup & Restore were fully implemented but not production-ready. The implementations,
+  their UI surfaces, messages, and backing tracker functions have been removed entirely.
+- **Dead UMU launch path** — `resolve_umu_binary()` and its commented-out call site are
+  removed. UMU is still bundled in the AppImage for manual use.
+
+### Packaging
+
+- Snap build now passes `--features loot,libarchive-fallback` (parity with AppImage).
+- `libunrar-dev` added to Snap build-packages (parity with AppImage Dockerfile).
+- `python3` removed from Snap stage-packages; it was only staged for UMU Launcher,
+  which cannot run inside a Strict snap (bwrap/pressure-vessel blocked).
+- Snap CI job re-enabled; triggers on version tags and manual pipeline runs,
+  matching AppImage CI behaviour.
+
 ## [1.1.1]
 
 ### Added

@@ -74,10 +74,6 @@ pub enum AppMsg {
     /// Fired from the background wait-thread when a launched tool's Wine process exits.
     /// The second field carries the stderr output if the process exited with a non-zero status.
     ToolExited(String, Option<String>),
-    LaunchGameClicked,
-    /// Fired from the background wait-thread when the game process exits.
-    /// `Some(msg)` carries a user-facing error string; `None` means clean exit.
-    GameExited(Option<String>),
     /// Show a first-run Proton GE download confirmation dialog for `tool_id`.
     ConfirmProtonSetup(String),
     /// User confirmed the first-run Proton GE download; start the download.
@@ -224,14 +220,6 @@ pub enum AppMsg {
     CreateEmptyMod,
     /// Re-register all files in a mod's cache folder as its mod_files records.
     ScanModFromCache(String),
-    /// Export the active profile to a JSON file.
-    ExportProfileClicked,
-    /// Import a profile from a JSON file (open file chooser).
-    ImportProfileClicked,
-    /// File chosen for profile import.
-    ImportProfileFileChosen(PathBuf),
-    /// Result of an async profile export operation.
-    ProfileExported(Result<(), String>),
     /// Open the pre-install dialog without replacing any existing mod.
     OpenPreInstallDialog,
     /// Open the pre-install dialog and replace the given mod (id, old_priority) after successful install.
@@ -303,18 +291,6 @@ pub enum AppMsg {
     NexusLoginClicked,
     /// User clicked "Log Out" in the headerbar avatar popover.
     NexusLogoutClicked,
-    /// Open the file-save dialog to create a full backup archive.
-    CreateFullBackupClicked,
-    /// Open the file-open dialog to restore from a backup archive.
-    RestoreFromBackupClicked,
-    /// Backup archive chosen for restore — read the manifest and present options.
-    RestoreBackupFileChosen(std::path::PathBuf),
-    /// Stage a full DB restore from the given backup archive.
-    StageFullRestore(std::path::PathBuf),
-    /// Import all profiles for the current game from the given backup archive.
-    ImportProfilesFromBackup(std::path::PathBuf),
-    /// Full backup archive created; carries the manifest on success.
-    FullBackupCreated(Result<crate::models::backup::BackupManifest, String>),
 }
 
 pub(crate) enum PrepareResultMsg {
@@ -401,7 +377,6 @@ pub enum AppCmdMsg {
     ToolDeleted(Result<String, String>),
     ToolWorkingDirSaved(Result<(), String>),
     ToolLaunched(Result<String, String>),
-    GameLaunched(Result<(), String>),
     /// Files were merged into an existing mod. Carries `(mod_name, files_merged)`.
     ModMerged(Result<(String, usize), String>),
     /// Combined mod+file name fetched after the user supplied a file ID.
@@ -428,7 +403,6 @@ pub enum AppCmdMsg {
     VanillaBaselineReset(Result<(), String>),
     /// Result of upserting vanilla entries for individually marked files.
     VanillaEntriesUpdated(Result<usize, String>),
-    ProfileImported(Result<LoadedData, String>),
     /// Last-deployed profile ID loaded from DB settings after a game switch.
     LastDeployedProfileLoaded(Option<String>),
     /// Empty mod created (mod_id, cache_dir_path).
@@ -459,10 +433,6 @@ pub enum AppCmdMsg {
     PluginOrderSnapshotRestored(Result<crate::app::types::LoadedData, String>),
     /// Mod or plugin order snapshot deleted; carries updated snapshot list (game_id, kind).
     OrderSnapshotDeleted(Result<(), String>),
-    /// Full DB restore staged; carries the manifest on success.
-    FullRestoreStaged(Result<crate::models::backup::BackupManifest, String>),
-    /// Profiles imported from a backup archive; carries (imported_count, skipped_mod_count, reloaded data).
-    ProfilesImportedFromBackup(Result<(usize, usize, crate::app::types::LoadedData), String>),
     /// Result of the self-update AppImage download + replace.
     AppUpdateResult(Result<(), String>),
     /// Result of downloading + extracting Proton GE from GitHub. Carries the

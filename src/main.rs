@@ -47,7 +47,6 @@ fn main() {
     gtk::init().expect("GTK initialisation failed — no display server available");
     libadwaita::init().expect("libadwaita initialisation failed — no display server available");
 
-    #[cfg(not(feature = "experimental"))]
     glib::log_set_default_handler(|domain, level, message| {
         if matches!(level, glib::LogLevel::Error | glib::LogLevel::Critical) {
             eprintln!(

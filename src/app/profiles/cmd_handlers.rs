@@ -332,29 +332,6 @@ impl App {
         }
     }
 
-    pub(crate) fn handle_cmd_profile_imported(
-        &mut self,
-        result: Result<LoadedData, String>,
-        sender: &ComponentSender<Self>,
-    ) {
-        match result {
-            Ok(data) => {
-                self.apply_loaded_data(data, sender);
-                self.needs_deploy = true;
-                self.save_last_profile(sender);
-                let name = self
-                    .profiles
-                    .get(self.active_profile_idx)
-                    .map(|p| p.name.clone())
-                    .unwrap_or_default();
-                self.show_toast(&format!("Imported as '{name}' — Deploy to apply"));
-            }
-            Err(e) => {
-                self.push_notification(&format!("Import failed: {e}"));
-            }
-        }
-    }
-
     pub(crate) fn handle_cmd_tool_saved(&mut self, result: Result<(), String>) {
         if let Err(e) = result {
             self.push_notification(&format!("Failed to save tool: {e}"));

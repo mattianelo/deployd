@@ -161,12 +161,6 @@ impl App {
         self.installing || self.deploying || self.proton_setup
     }
 
-    pub(crate) fn script_extender_present(&self) -> bool {
-        self.selected_game()
-            .and_then(game::script_extender_loader_path)
-            .is_some()
-    }
-
     /// True when the selected game supports per-profile save management.
     pub(crate) fn game_has_save_management(&self) -> bool {
         self.selected_game().is_some_and(game::has_save_management)

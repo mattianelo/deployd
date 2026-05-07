@@ -1,4 +1,3 @@
-pub mod backup;
 pub mod cache;
 pub mod cache_handlers;
 pub mod deploy;
@@ -8,7 +7,6 @@ pub mod free_fns;
 pub mod helpers;
 pub mod init;
 pub mod install;
-mod launch;
 pub mod messages;
 pub mod mods;
 pub mod notifications;
@@ -221,21 +219,6 @@ impl Component for App {
                                         connect_clicked => AppMsg::DeleteProfileClicked,
                                     },
 
-                                    gtk::Button {
-                                        set_icon_name: "document-save-symbolic",
-                                        set_tooltip_text: Some("Export active profile to file"),
-                                        add_css_class: "flat",
-                                        set_visible: cfg!(feature = "experimental"),
-                                        connect_clicked => AppMsg::ExportProfileClicked,
-                                    },
-
-                                    gtk::Button {
-                                        set_icon_name: "document-open-symbolic",
-                                        set_tooltip_text: Some("Import profile from file"),
-                                        add_css_class: "flat",
-                                        set_visible: cfg!(feature = "experimental"),
-                                        connect_clicked => AppMsg::ImportProfileClicked,
-                                    },
                                 },
 
                                 #[local_ref]
@@ -285,17 +268,6 @@ impl Component for App {
                                 set_label: model.status_msg.as_deref().unwrap_or("Extracting..."),
                             },
                         },
-                    },
-
-                    pack_end = &gtk::Button {
-                        set_label: "Launch",
-                        set_icon_name: "media-playback-start-symbolic",
-                        set_tooltip_text: Some("Launch game via script extender"),
-                        #[watch]
-                        set_visible: cfg!(feature = "experimental") && model.script_extender_present(),
-                        #[watch]
-                        set_sensitive: !model.is_busy(),
-                        connect_clicked => AppMsg::LaunchGameClicked,
                     },
 
                     pack_end = &gtk::Box {
@@ -1286,8 +1258,6 @@ impl Component for App {
             AppMsg::GameFolderGranted(path) => self.handle_game_folder_granted(path, &sender),
             AppMsg::LaunchTool(name) => self.handle_launch_tool(name, &sender),
             AppMsg::ToolExited(name, error) => self.handle_tool_exited(name, error, &sender),
-            AppMsg::LaunchGameClicked => self.handle_launch_game_clicked(&sender),
-            AppMsg::GameExited(error) => self.handle_game_exited(error),
             AppMsg::ConfirmProtonSetup(tool_id) => {
                 self.handle_confirm_proton_setup(tool_id, root, &sender)
             }
@@ -1457,18 +1427,6 @@ impl Component for App {
             }
             AppMsg::CreateEmptyMod => self.handle_create_empty_mod(&sender),
             AppMsg::ScanModFromCache(mod_id) => self.handle_scan_mod_from_cache(mod_id, &sender),
-            AppMsg::ExportProfileClicked => {
-                self.profile_menu_btn.popdown();
-                self.handle_export_profile_clicked(root, &sender);
-            }
-            AppMsg::ImportProfileClicked => {
-                self.profile_menu_btn.popdown();
-                self.handle_import_profile_clicked(root, &sender);
-            }
-            AppMsg::ImportProfileFileChosen(path) => {
-                self.handle_import_profile_file_chosen(path, &sender)
-            }
-            AppMsg::ProfileExported(result) => self.handle_profile_exported(result),
             AppMsg::OpenPreInstallDialog => self.handle_open_pre_install_dialog(root, &sender),
             AppMsg::OpenPreInstallDialogReplacing(id, priority) => {
                 if self.pending_install.as_ref().is_some_and(|p| p.fomod_config.is_some()) {
@@ -1588,20 +1546,6 @@ impl Component for App {
             AppMsg::SetColorScheme(idx) => self.handle_set_color_scheme(idx),
             AppMsg::NexusLoginClicked => self.handle_nexus_login_clicked(&sender),
             AppMsg::NexusLogoutClicked => self.handle_nexus_logout_clicked(&sender),
-            AppMsg::CreateFullBackupClicked => {
-                self.handle_create_full_backup_clicked(root, &sender)
-            }
-            AppMsg::RestoreFromBackupClicked => {
-                self.handle_restore_from_backup_clicked(root, &sender)
-            }
-            AppMsg::RestoreBackupFileChosen(path) => {
-                self.handle_restore_backup_file_chosen(path, root, &sender)
-            }
-            AppMsg::StageFullRestore(path) => self.handle_stage_full_restore(path, &sender),
-            AppMsg::ImportProfilesFromBackup(path) => {
-                self.handle_import_profiles_from_backup(path, &sender)
-            }
-            AppMsg::FullBackupCreated(result) => self.handle_full_backup_created(result),
         }
     }
 
@@ -1700,7 +1644,6 @@ impl Component for App {
                 self.handle_cmd_tool_working_dir_saved(result)
             }
             AppCmdMsg::ToolLaunched(result) => self.handle_cmd_tool_launched(result),
-            AppCmdMsg::GameLaunched(result) => self.handle_cmd_game_launched(result),
             AppCmdMsg::ModMerged(result) => self.handle_cmd_mod_merged(result, &sender),
             AppCmdMsg::NxmDownloadComplete(id, result) => {
                 self.handle_cmd_nxm_download_complete(id, result, &sender)
@@ -1721,7 +1664,6 @@ impl Component for App {
             AppCmdMsg::VanillaEntriesUpdated(result) => {
                 self.handle_cmd_vanilla_entries_updated(result, &sender)
             }
-            AppCmdMsg::ProfileImported(result) => self.handle_cmd_profile_imported(result, &sender),
             AppCmdMsg::EmptyModCreated(result) => {
                 self.handle_cmd_empty_mod_created(result, &sender)
             }
@@ -1736,12 +1678,6 @@ impl Component for App {
             }
             AppCmdMsg::SavesSynced(result) => self.handle_cmd_saves_synced(result),
             AppCmdMsg::LastDeployedProfileLoaded(id) => self.last_deployed_profile_id = id,
-            AppCmdMsg::FullRestoreStaged(result) => {
-                self.handle_cmd_full_restore_staged(result, root)
-            }
-            AppCmdMsg::ProfilesImportedFromBackup(result) => {
-                self.handle_cmd_profiles_imported_from_backup(result, &sender);
-            }
             AppCmdMsg::AppUpdateResult(result) => self.handle_cmd_app_update_result(result),
             AppCmdMsg::ProtonDownloaded { result, tool_id } => {
                 self.handle_proton_downloaded(result, tool_id, &sender)

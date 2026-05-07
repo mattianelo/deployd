@@ -15,11 +15,9 @@ APP_ID="deployd"
 OUTPUT="$REPO_ROOT/Deployd-x86_64.AppImage"
 
 DEBUG=0
-EXPERIMENTAL=0
 for arg in "$@"; do
     case "$arg" in
-        --debug)        DEBUG=1 ;;
-        --experimental) EXPERIMENTAL=1 ;;
+        --debug) DEBUG=1 ;;
     esac
 done
 
@@ -31,7 +29,6 @@ echo "==> Building Deployd $VERSION AppImage (inner)"
 
 # 1. Compile
 FEATURES="loot,libarchive-fallback"
-[ "$EXPERIMENTAL" = "1" ] && FEATURES="$FEATURES,experimental"
 
 if [ "$DEBUG" = "1" ]; then
     echo "==> Compiling (debug, features: $FEATURES)"

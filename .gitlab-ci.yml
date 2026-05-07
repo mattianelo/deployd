@@ -93,6 +93,7 @@ build-snap:
   stage: build
   image: snapcore/snapcraft:latest
   script:
+    - bash packaging/snap/fetch-deps.sh
     - snapcraft pack --destructive-mode
   artifacts:
     name: "Deployd-snap-$CI_COMMIT_TAG"
@@ -100,5 +101,6 @@ build-snap:
       - "*.snap"
     expire_in: 90 days
   rules:
-    # Disabled: snap publishing is on hold pending store review.
-    - when: never
+    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual

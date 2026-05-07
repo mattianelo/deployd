@@ -5,10 +5,8 @@ pub(crate) mod eclipse;
 pub(crate) mod engine_handler;
 mod ini;
 mod known_games;
-mod launcher;
 mod metadata;
 mod redengine;
-mod steam;
 mod tools;
 mod wine;
 
@@ -25,7 +23,6 @@ pub use metadata::{
     all_nexus_domains, detect_save_dir, game_id_for_nexus_domain, has_save_management,
     known_data_subdir, nexus_domain,
 };
-pub(crate) use launcher::launch_game;
 pub use tools::{archive_mod_dir, detect_tool_path, tool_presets_for};
 pub(crate) use wine::linux_path_to_wine_path;
 pub use wine::{
@@ -59,22 +56,3 @@ pub fn known_game_options() -> Vec<KnownGameOption> {
         .collect()
 }
 
-/// Return the path to the script extender loader in the game root if it is
-/// present on disk, or `None` if the game has no script extender or the
-/// loader has not been deployed yet.
-pub fn script_extender_loader_path(game: &Game) -> Option<PathBuf> {
-    let loader = KNOWN_GAMES
-        .iter()
-        .find(|k| k.deployd_id == game.id)?
-        .script_extender_loader?;
-    let path = game.path.join(loader);
-    path.exists().then_some(path)
-}
-
-/// Return the Steam App ID for the game, if known.
-pub(crate) fn game_steam_app_id(game: &Game) -> Option<u32> {
-    KNOWN_GAMES
-        .iter()
-        .find(|k| k.deployd_id == game.id)?
-        .steam_app_id
-}
