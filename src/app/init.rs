@@ -405,7 +405,6 @@ pub(super) fn wire_drag_drop(
                 .iter()
                 .map(|r| gtk::prelude::ListBoxRowExt::index(r) as usize)
                 .collect();
-            list_box.unselect_all();
             if selected.contains(&from) && selected.len() > 1 {
                 selected.sort_unstable();
                 mod_sender
@@ -414,6 +413,8 @@ pub(super) fn wire_drag_drop(
             } else if from != to {
                 mod_sender.send(AppMsg::MoveModTo(from, to)).unwrap();
             }
+            let lb = list_box.clone();
+            glib::idle_add_local_once(move || lb.unselect_all());
         }
         true
     });
@@ -499,7 +500,6 @@ pub(super) fn wire_drag_drop(
                 .iter()
                 .map(|r| gtk::prelude::ListBoxRowExt::index(r) as usize)
                 .collect();
-            list_box.unselect_all();
             if selected.contains(&from) && selected.len() > 1 {
                 selected.sort_unstable();
                 plugin_sender
@@ -508,6 +508,8 @@ pub(super) fn wire_drag_drop(
             } else if from != to {
                 plugin_sender.send(AppMsg::MovePluginTo(from, to)).unwrap();
             }
+            let lb = list_box.clone();
+            glib::idle_add_local_once(move || lb.unselect_all());
         }
         true
     });
