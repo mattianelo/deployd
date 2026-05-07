@@ -60,6 +60,16 @@ pub(super) async fn migrate_nexus_columns(pool: &SqlitePool) -> Result<()> {
 /// One-time fix for mods installed with the old code that stored the Nexus mod-page
 /// version (latest available) in the `version` column instead of `latest_version`.
 pub(super) async fn migrate_version_columns(pool: &SqlitePool) -> Result<()> {
+    let done: Option<String> = sqlx::query_scalar(
+        "SELECT value FROM settings WHERE key = 'migration_version_columns_done'",
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    if done.is_some() {
+        return Ok(());
+    }
+
     sqlx::query(
         "UPDATE mods SET latest_version = version \
          WHERE latest_version IS NULL AND version IS NOT NULL",
@@ -72,6 +82,13 @@ pub(super) async fn migrate_version_columns(pool: &SqlitePool) -> Result<()> {
     )
     .execute(pool)
     .await?;
+
+    sqlx::query(
+        "INSERT INTO settings (key, value) VALUES ('migration_version_columns_done', '1')",
+    )
+    .execute(pool)
+    .await?;
+
     Ok(())
 }
 
