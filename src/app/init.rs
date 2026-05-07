@@ -405,6 +405,7 @@ pub(super) fn wire_drag_drop(
                 .iter()
                 .map(|r| gtk::prelude::ListBoxRowExt::index(r) as usize)
                 .collect();
+            list_box.unselect_all();
             if selected.contains(&from) && selected.len() > 1 {
                 selected.sort_unstable();
                 mod_sender
@@ -413,8 +414,6 @@ pub(super) fn wire_drag_drop(
             } else if from != to {
                 mod_sender.send(AppMsg::MoveModTo(from, to)).unwrap();
             }
-            let lb = list_box.clone();
-            glib::idle_add_local_once(move || lb.unselect_all());
         }
         true
     });
@@ -500,6 +499,7 @@ pub(super) fn wire_drag_drop(
                 .iter()
                 .map(|r| gtk::prelude::ListBoxRowExt::index(r) as usize)
                 .collect();
+            list_box.unselect_all();
             if selected.contains(&from) && selected.len() > 1 {
                 selected.sort_unstable();
                 plugin_sender
@@ -508,8 +508,6 @@ pub(super) fn wire_drag_drop(
             } else if from != to {
                 plugin_sender.send(AppMsg::MovePluginTo(from, to)).unwrap();
             }
-            let lb = list_box.clone();
-            glib::idle_add_local_once(move || lb.unselect_all());
         }
         true
     });
@@ -545,22 +543,11 @@ fn wire_deselect(list_box: &gtk::ListBox) {
     list_box.add_controller(key_ctrl);
 
     let click_ctrl = gtk::GestureClick::new();
-    click_ctrl.set_propagation_phase(gtk::PropagationPhase::Capture);
     let lb = list_box.clone();
     click_ctrl.connect_pressed(move |gesture, _, _x, y| {
         if lb.row_at_y(y as i32).is_none() {
             lb.unselect_all();
             gesture.set_state(gtk::EventSequenceState::Claimed);
-        } else {
-            let modifiers = gesture
-                .current_event()
-                .map(|e| e.modifier_state())
-                .unwrap_or(gtk::gdk::ModifierType::empty());
-            if !modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK)
-                && !modifiers.contains(gtk::gdk::ModifierType::SHIFT_MASK)
-            {
-                lb.unselect_all();
-            }
         }
     });
     list_box.add_controller(click_ctrl);

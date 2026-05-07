@@ -187,8 +187,7 @@ impl FactoryComponent for ModListItem {
 
     view! {
         root = gtk::ListBoxRow {
-            #[watch]
-            set_selectable: !self.is_separator(),
+            set_selectable: false,
             #[watch]
             set_visible: self.visible,
             #[watch]

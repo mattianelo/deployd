@@ -895,7 +895,7 @@ impl Component for App {
 
                                 #[local_ref]
                                 mod_list -> gtk::ListBox {
-                                    set_selection_mode: gtk::SelectionMode::Multiple,
+                                    set_selection_mode: gtk::SelectionMode::None,
                                     add_css_class: "boxed-list",
                                     set_margin_all: 8,
                                 }
@@ -1063,7 +1063,7 @@ impl Component for App {
 
                                 #[local_ref]
                                 plugin_list -> gtk::ListBox {
-                                    set_selection_mode: gtk::SelectionMode::Multiple,
+                                    set_selection_mode: gtk::SelectionMode::None,
                                     add_css_class: "boxed-list",
                                     set_margin_all: 8,
                                 }
