@@ -402,4 +402,116 @@ impl App {
             });
         }
     }
+
+    pub(crate) fn handle_enter_plugin_selection_mode(&mut self) {
+        self.plugin_selection_active = true;
+        self.selected_plugins.clear();
+        let mut g = self.plugins.guard();
+        for row in g.iter_mut() {
+            row.selection_mode = true;
+            row.selected = false;
+        }
+    }
+
+    pub(crate) fn handle_exit_plugin_selection_mode(&mut self) {
+        self.plugin_selection_active = false;
+        self.selected_plugins.clear();
+        let mut g = self.plugins.guard();
+        for row in g.iter_mut() {
+            row.selection_mode = false;
+            row.selected = false;
+        }
+    }
+
+    pub(crate) fn handle_toggle_plugin_row_selected(&mut self, idx: usize) {
+        if !self.plugin_selection_active {
+            return;
+        }
+        let mut g = self.plugins.guard();
+        let Some(row) = g.get_mut(idx) else { return };
+        if row.is_vanilla {
+            return;
+        }
+        row.selected = !row.selected;
+        if row.selected {
+            self.selected_plugins.insert(idx);
+        } else {
+            self.selected_plugins.remove(&idx);
+        }
+    }
+
+    pub(crate) fn handle_enable_selected_plugins(&mut self, sender: &ComponentSender<Self>) {
+        if self.selected_plugins.is_empty() {
+            return;
+        }
+        let Some(tracker) = self.tracker.clone() else { return };
+        let Some(game) = self.selected_game().cloned() else { return };
+        let profile_id = self.profiles.get(self.active_profile_idx).map(|p| p.id.clone());
+
+        let indices: Vec<usize> = self.selected_plugins.iter().copied().collect();
+        let mut plugin_ids: Vec<String> = Vec::new();
+
+        {
+            let mut guard = self.plugins.guard();
+            for &idx in &indices {
+                let Some(row) = guard.get_mut(idx) else { continue };
+                row.plugin.enabled = true;
+                plugin_ids.push(row.plugin.id.clone());
+            }
+        }
+        self.needs_deploy = true;
+
+        let _game_id = game.id.clone();
+        sender.oneshot_command(async move {
+            let result = async {
+                for plugin_id in &plugin_ids {
+                    tracker.toggle_plugin(plugin_id, true).await?;
+                }
+                if let Some(pid) = &profile_id {
+                    tracker.save_to_profile(pid, &game.id).await?;
+                }
+                Ok::<(), anyhow::Error>(())
+            };
+            AppCmdMsg::PluginOrderSaved(result.await.map_err(|e| e.to_string()))
+        });
+
+        self.handle_exit_plugin_selection_mode();
+    }
+
+    pub(crate) fn handle_disable_selected_plugins(&mut self, sender: &ComponentSender<Self>) {
+        if self.selected_plugins.is_empty() {
+            return;
+        }
+        let Some(tracker) = self.tracker.clone() else { return };
+        let Some(game) = self.selected_game().cloned() else { return };
+        let profile_id = self.profiles.get(self.active_profile_idx).map(|p| p.id.clone());
+
+        let indices: Vec<usize> = self.selected_plugins.iter().copied().collect();
+        let mut plugin_ids: Vec<String> = Vec::new();
+
+        {
+            let mut guard = self.plugins.guard();
+            for &idx in &indices {
+                let Some(row) = guard.get_mut(idx) else { continue };
+                row.plugin.enabled = false;
+                plugin_ids.push(row.plugin.id.clone());
+            }
+        }
+        self.needs_deploy = true;
+
+        sender.oneshot_command(async move {
+            let result = async {
+                for plugin_id in &plugin_ids {
+                    tracker.toggle_plugin(plugin_id, false).await?;
+                }
+                if let Some(pid) = &profile_id {
+                    tracker.save_to_profile(pid, &game.id).await?;
+                }
+                Ok::<(), anyhow::Error>(())
+            };
+            AppCmdMsg::PluginOrderSaved(result.await.map_err(|e| e.to_string()))
+        });
+
+        self.handle_exit_plugin_selection_mode();
+    }
 }

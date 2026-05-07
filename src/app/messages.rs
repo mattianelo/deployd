@@ -291,6 +291,18 @@ pub enum AppMsg {
     NexusLoginClicked,
     /// User clicked "Log Out" in the headerbar avatar popover.
     NexusLogoutClicked,
+    EnterModSelectionMode,
+    ExitModSelectionMode,
+    ToggleModRowSelected(usize),
+    EnableSelectedMods,
+    DisableSelectedMods,
+    RemoveSelectedMods,
+    ConfirmRemoveSelectedMods,
+    EnterPluginSelectionMode,
+    ExitPluginSelectionMode,
+    TogglePluginRowSelected(usize),
+    EnableSelectedPlugins,
+    DisableSelectedPlugins,
 }
 
 pub(crate) enum PrepareResultMsg {

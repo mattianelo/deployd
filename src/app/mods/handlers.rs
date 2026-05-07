@@ -1,5 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
+use adw::prelude::*;
 use gtk::glib;
 use gtk::prelude::*;
 use relm4::factory::DynamicIndex;
@@ -760,5 +761,277 @@ impl App {
                 let _ = tracker.set_setting("compact_mod_rows", val).await;
             });
         }
+    }
+
+    pub(crate) fn handle_enter_mod_selection_mode(&mut self) {
+        self.mod_selection_active = true;
+        self.selected_mods.clear();
+        let mut g = self.mods.guard();
+        for item in g.iter_mut() {
+            item.selection_mode = true;
+            item.selected = false;
+        }
+    }
+
+    pub(crate) fn handle_exit_mod_selection_mode(&mut self) {
+        self.mod_selection_active = false;
+        self.selected_mods.clear();
+        let mut g = self.mods.guard();
+        for item in g.iter_mut() {
+            item.selection_mode = false;
+            item.selected = false;
+        }
+    }
+
+    pub(crate) fn handle_toggle_mod_row_selected(&mut self, idx: usize) {
+        if !self.mod_selection_active {
+            return;
+        }
+        let mut g = self.mods.guard();
+        let Some(item) = g.get_mut(idx) else { return };
+        if item.is_separator() {
+            return;
+        }
+        item.selected = !item.selected;
+        if item.selected {
+            self.selected_mods.insert(idx);
+        } else {
+            self.selected_mods.remove(&idx);
+        }
+    }
+
+    pub(crate) fn handle_enable_selected_mods(&mut self, sender: &ComponentSender<Self>) {
+        if self.selected_mods.is_empty() {
+            return;
+        }
+        let Some(tracker) = self.tracker.clone() else { return };
+        let Some(game) = self.selected_game().cloned() else { return };
+
+        let indices: Vec<usize> = self.selected_mods.iter().copied().collect();
+        let mut mod_ids: Vec<String> = Vec::new();
+
+        {
+            let mut guard = self.mods.guard();
+            for &idx in &indices {
+                let Some(item) = guard.get_mut(idx) else { continue };
+                let Some(entry) = item.mod_entry_mut() else { continue };
+                entry.enabled = true;
+                mod_ids.push(entry.id.clone());
+            }
+        }
+        {
+            let mod_id_set: HashSet<String> = mod_ids.iter().cloned().collect();
+            let mut guard = self.plugins.guard();
+            for i in 0..guard.len() {
+                let matches = guard
+                    .get(i)
+                    .is_some_and(|r| mod_id_set.contains(&r.plugin.mod_id));
+                if matches {
+                    if let Some(row) = guard.get_mut(i) {
+                        row.mod_enabled = true;
+                    }
+                }
+            }
+        }
+        self.needs_deploy = true;
+
+        let game_id = game.id.clone();
+        let engine = game.engine.clone();
+        let mod_names: HashMap<String, String> = {
+            let guard = self.mods.guard();
+            (0..guard.len())
+                .filter_map(|i| {
+                    guard.get(i).and_then(|r| r.mod_row()).map(|r| {
+                        (r.mod_entry.id.clone(), r.mod_entry.name.clone())
+                    })
+                })
+                .collect()
+        };
+        sender.oneshot_command(async move {
+            for mod_id in &mod_ids {
+                if let Err(e) = tracker.toggle_mod(mod_id, true).await {
+                    return AppCmdMsg::OverridesRefreshed(Err(e.to_string()));
+                }
+            }
+            AppCmdMsg::OverridesRefreshed(
+                tracker
+                    .compute_overrides(&game_id, game::handler_for(&engine), &mod_names)
+                    .await
+                    .map_err(|e| e.to_string()),
+            )
+        });
+
+        self.handle_exit_mod_selection_mode();
+    }
+
+    pub(crate) fn handle_disable_selected_mods(&mut self, sender: &ComponentSender<Self>) {
+        if self.selected_mods.is_empty() {
+            return;
+        }
+        let Some(tracker) = self.tracker.clone() else { return };
+        let Some(game) = self.selected_game().cloned() else { return };
+
+        let indices: Vec<usize> = self.selected_mods.iter().copied().collect();
+        let mut mod_ids: Vec<String> = Vec::new();
+
+        {
+            let mut guard = self.mods.guard();
+            for &idx in &indices {
+                let Some(item) = guard.get_mut(idx) else { continue };
+                let Some(entry) = item.mod_entry_mut() else { continue };
+                entry.enabled = false;
+                mod_ids.push(entry.id.clone());
+            }
+        }
+        {
+            let mod_id_set: HashSet<String> = mod_ids.iter().cloned().collect();
+            let mut guard = self.plugins.guard();
+            for i in 0..guard.len() {
+                let matches = guard
+                    .get(i)
+                    .is_some_and(|r| mod_id_set.contains(&r.plugin.mod_id));
+                if matches {
+                    if let Some(row) = guard.get_mut(i) {
+                        row.mod_enabled = false;
+                    }
+                }
+            }
+        }
+        self.needs_deploy = true;
+
+        let game_id = game.id.clone();
+        let engine = game.engine.clone();
+        let mod_names: HashMap<String, String> = {
+            let guard = self.mods.guard();
+            (0..guard.len())
+                .filter_map(|i| {
+                    guard.get(i).and_then(|r| r.mod_row()).map(|r| {
+                        (r.mod_entry.id.clone(), r.mod_entry.name.clone())
+                    })
+                })
+                .collect()
+        };
+        sender.oneshot_command(async move {
+            for mod_id in &mod_ids {
+                if let Err(e) = tracker.toggle_mod(mod_id, false).await {
+                    return AppCmdMsg::OverridesRefreshed(Err(e.to_string()));
+                }
+            }
+            AppCmdMsg::OverridesRefreshed(
+                tracker
+                    .compute_overrides(&game_id, game::handler_for(&engine), &mod_names)
+                    .await
+                    .map_err(|e| e.to_string()),
+            )
+        });
+
+        self.handle_exit_mod_selection_mode();
+    }
+
+    pub(crate) fn handle_remove_selected_mods(
+        &mut self,
+        root: &adw::ApplicationWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        let n = self.selected_mods.len();
+        if n == 0 {
+            return;
+        }
+        let dialog = adw::AlertDialog::builder()
+            .heading(&format!("Remove {} Mod{}?", n, if n == 1 { "" } else { "s" }))
+            .body("This will delete the selected mods and cannot be undone.")
+            .build();
+        dialog.add_response("cancel", "Cancel");
+        dialog.add_response("remove", &format!("Remove {n}"));
+        dialog.set_response_appearance("remove", adw::ResponseAppearance::Destructive);
+        dialog.set_default_response(Some("cancel"));
+        dialog.set_close_response("cancel");
+        let s = sender.input_sender().clone();
+        dialog.connect_response(None, move |_, id| {
+            if id == "remove" {
+                let _ = s.send(AppMsg::ConfirmRemoveSelectedMods);
+            }
+        });
+        dialog.present(Some(root));
+    }
+
+    pub(crate) fn handle_confirm_remove_selected_mods(&mut self, sender: &ComponentSender<Self>) {
+        let Some(tracker) = self.tracker.clone() else { return };
+        let cache_root = self
+            .selected_game()
+            .and_then(|g| self.cache_root_for(&g.id).ok())
+            .unwrap_or_else(|| paths::cache_root().unwrap_or_default());
+
+        let vadj = self.mod_scroll.vadjustment();
+        self.pending_scroll_restore = Some(vadj.value());
+
+        let mut indices: Vec<usize> = self.selected_mods.iter().copied().collect();
+        indices.sort_unstable_by(|a, b| b.cmp(a));
+
+        for &idx in &indices {
+            let (mod_id, removed_nexus_ids, removed_mod_name, removed_archive_hash) = {
+                let guard = self.mods.guard();
+                let Some(row) = guard.get(idx) else { continue };
+                let Some(init) = row.mod_row() else { continue };
+                (
+                    init.mod_entry.id.clone(),
+                    init.mod_entry
+                        .nexus_mod_id
+                        .zip(init.mod_entry.nexus_file_id),
+                    init.mod_entry.name.clone(),
+                    init.mod_entry.archive_hash.clone(),
+                )
+            };
+
+            self.mods.guard().remove(idx);
+            {
+                let mut guard = self.plugins.guard();
+                let to_remove: Vec<usize> = (0..guard.len())
+                    .filter(|&i| {
+                        guard
+                            .get(i)
+                            .is_some_and(|row| row.plugin.mod_id == mod_id)
+                    })
+                    .collect();
+                for i in to_remove.into_iter().rev() {
+                    guard.remove(i);
+                }
+            }
+
+            let tracker_clone = tracker.clone();
+            let cache_root_clone = cache_root.clone();
+            sender.oneshot_command(async move {
+                let result: Result<String, String> = async {
+                    tracker_clone
+                        .delete_plugins_for_mod(&mod_id)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    tracker_clone
+                        .delete_mod_files(&mod_id)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    tracker_clone
+                        .delete_mod(&mod_id)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    let cache = paths::mod_cache_dir_in(&cache_root_clone, &mod_id);
+                    if cache.exists() {
+                        let _ = std::fs::remove_dir_all(&cache);
+                    }
+                    Ok(mod_id)
+                }
+                .await;
+                AppCmdMsg::ModRemoved(
+                    result,
+                    removed_nexus_ids,
+                    removed_mod_name,
+                    removed_archive_hash,
+                )
+            });
+        }
+
+        self.needs_deploy = true;
+        self.save_group_positions();
+        self.handle_exit_mod_selection_mode();
     }
 }

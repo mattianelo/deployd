@@ -185,6 +185,10 @@ pub(super) fn build_model(
         search_scope: SearchScope::All,
         rate_limit_info: None,
         collapsed_groups: HashSet::new(),
+        mod_selection_active: false,
+        selected_mods: HashSet::new(),
+        plugin_selection_active: false,
+        selected_plugins: HashSet::new(),
         download_sort: DownloadSort::Default,
         mod_filter: ModFilter::All,
         download_filter: DownloadFilter::All,
@@ -528,6 +532,16 @@ pub(super) fn wire_drag_drop(
 
     wire_deselect(mod_list);
     wire_deselect(plugin_list);
+
+    let sel_sender = sender.input_sender().clone();
+    mod_list.connect_row_activated(move |_, row| {
+        let _ = sel_sender.send(AppMsg::ToggleModRowSelected(row.index() as usize));
+    });
+
+    let sel_sender = sender.input_sender().clone();
+    plugin_list.connect_row_activated(move |_, row| {
+        let _ = sel_sender.send(AppMsg::TogglePluginRowSelected(row.index() as usize));
+    });
 }
 
 fn wire_deselect(list_box: &gtk::ListBox) {

@@ -48,6 +48,8 @@ pub struct PluginRow {
     pub plugin_type_css: &'static str,
     /// Whether compact (reduced height) display is active.
     pub compact: bool,
+    pub selection_mode: bool,
+    pub selected: bool,
 }
 
 impl PluginRow {
@@ -77,6 +79,8 @@ impl FactoryComponent for PluginRow {
         root = gtk::ListBoxRow {
             set_selectable: false,
             #[watch]
+            set_activatable: self.selection_mode,
+            #[watch]
             set_visible: self.visible,
             #[watch]
             set_css_classes: if self.compact { &["compact-row"] } else { &[] },
@@ -96,6 +100,16 @@ impl FactoryComponent for PluginRow {
                 set_sensitive: self.mod_enabled,
 
                 gtk::CheckButton {
+                    #[watch]
+                    set_visible: self.selection_mode,
+                    #[watch]
+                    set_active: self.selected,
+                    set_can_focus: false,
+                },
+
+                gtk::CheckButton {
+                    #[watch]
+                    set_visible: !self.selection_mode,
                     // Show as unchecked when the mod is disabled so the user
                     // immediately sees the effective (inactive) state.
                     #[watch]
@@ -190,6 +204,8 @@ impl FactoryComponent for PluginRow {
             plugin_type_label,
             plugin_type_css,
             compact: init.compact,
+            selection_mode: false,
+            selected: false,
         }
     }
 

@@ -33,6 +33,10 @@ pub struct App {
     pub(crate) mods: FactoryVecDeque<ModListItem>,
     /// Group IDs that are currently collapsed (kept in sync with DB on toggle).
     pub(crate) collapsed_groups: HashSet<String>,
+    pub(crate) mod_selection_active: bool,
+    pub(crate) selected_mods: HashSet<usize>,
+    pub(crate) plugin_selection_active: bool,
+    pub(crate) selected_plugins: HashSet<usize>,
     pub(crate) plugins: FactoryVecDeque<PluginRow>,
     pub(crate) installing: bool,
     pub(crate) deploying: bool,

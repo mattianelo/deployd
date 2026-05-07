@@ -55,6 +55,8 @@ pub struct ModListItem {
     /// Controlled by search filter and group collapse logic.
     pub visible: bool,
     pub compact: bool,
+    pub selection_mode: bool,
+    pub selected: bool,
 }
 
 impl std::fmt::Debug for ModListItem {
@@ -189,6 +191,8 @@ impl FactoryComponent for ModListItem {
         root = gtk::ListBoxRow {
             set_selectable: false,
             #[watch]
+            set_activatable: self.selection_mode && !self.is_separator(),
+            #[watch]
             set_visible: self.visible,
             #[watch]
             set_css_classes: match &self.kind {
@@ -264,6 +268,16 @@ impl FactoryComponent for ModListItem {
                     set_visible: !self.is_separator(),
 
                     gtk::CheckButton {
+                        #[watch]
+                        set_visible: self.selection_mode,
+                        #[watch]
+                        set_active: self.selected,
+                        set_can_focus: false,
+                    },
+
+                    gtk::CheckButton {
+                        #[watch]
+                        set_visible: !self.selection_mode,
                         #[watch]
                         set_active: if let ModListItemKind::Mod(r) = &self.kind { r.mod_entry.enabled } else { false },
                         connect_toggled[sender, index] => move |btn| {
@@ -392,6 +406,8 @@ impl FactoryComponent for ModListItem {
             kind: init.kind,
             visible: init.visible,
             compact: init.compact,
+            selection_mode: false,
+            selected: false,
         }
     }
 

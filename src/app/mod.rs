@@ -723,12 +723,15 @@ impl Component for App {
                         set_start_child = &gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
 
+                            // Normal mode header
                             gtk::Box {
                                 set_orientation: gtk::Orientation::Horizontal,
                                 set_margin_top: 8,
                                 set_margin_bottom: 4,
                                 set_margin_start: 8,
                                 set_margin_end: 8,
+                                #[watch]
+                                set_visible: !model.mod_selection_active,
 
                                 gtk::Label {
                                     set_label: "Mod Order",
@@ -842,6 +845,37 @@ impl Component for App {
                                         sender.input(AppMsg::CreateGroup("New Group".to_string()));
                                     },
                                 },
+
+                                gtk::Button {
+                                    set_icon_name: "object-select-symbolic",
+                                    set_tooltip_text: Some("Select mods"),
+                                    add_css_class: "flat",
+                                    connect_clicked => AppMsg::EnterModSelectionMode,
+                                },
+                            },
+
+                            // Selection mode header
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Horizontal,
+                                set_margin_top: 8,
+                                set_margin_bottom: 4,
+                                set_margin_start: 8,
+                                set_margin_end: 8,
+                                #[watch]
+                                set_visible: model.mod_selection_active,
+
+                                gtk::Label {
+                                    #[watch]
+                                    set_label: &format!("{} selected", model.selected_mods.len()),
+                                    set_hexpand: true,
+                                    set_halign: gtk::Align::Start,
+                                    add_css_class: "heading",
+                                },
+
+                                gtk::Button {
+                                    set_label: "Cancel",
+                                    connect_clicked => AppMsg::ExitModSelectionMode,
+                                },
                             },
 
                             gtk::Box {
@@ -850,6 +884,8 @@ impl Component for App {
                                 set_margin_end: 8,
                                 set_margin_bottom: 4,
                                 set_spacing: 4,
+                                #[watch]
+                                set_visible: !model.mod_selection_active,
 
                                 gtk::Button {
                                     #[watch]
@@ -934,6 +970,27 @@ impl Component for App {
                                 set_title: "No Conflicts",
                                 set_description: Some("No mods override each other's files."),
                             },
+
+                            gtk::ActionBar {
+                                #[watch]
+                                set_revealed: model.mod_selection_active,
+
+                                pack_start = &gtk::Button {
+                                    set_label: "Enable",
+                                    connect_clicked => AppMsg::EnableSelectedMods,
+                                },
+
+                                pack_start = &gtk::Button {
+                                    set_label: "Disable",
+                                    connect_clicked => AppMsg::DisableSelectedMods,
+                                },
+
+                                pack_end = &gtk::Button {
+                                    set_label: "Remove",
+                                    add_css_class: "destructive-action",
+                                    connect_clicked => AppMsg::RemoveSelectedMods,
+                                },
+                            },
                         },
 
                         // RIGHT PANEL: Plugin Load Order
@@ -941,10 +998,13 @@ impl Component for App {
                         set_end_child = &gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
 
+                            // Normal mode header
                             gtk::Box {
                                 set_orientation: gtk::Orientation::Horizontal,
                                 set_margin_top: 8,
                                 set_margin_bottom: 4,
+                                #[watch]
+                                set_visible: !model.plugin_selection_active,
 
                                 gtk::Label {
                                     set_label: "Plugin Order",
@@ -1055,6 +1115,39 @@ impl Component for App {
                                     set_margin_end: 4,
                                     connect_clicked => AppMsg::SortWithLoot,
                                 },
+
+                                gtk::Button {
+                                    set_icon_name: "object-select-symbolic",
+                                    set_tooltip_text: Some("Select plugins"),
+                                    add_css_class: "flat",
+                                    set_valign: gtk::Align::Center,
+                                    set_margin_end: 4,
+                                    connect_clicked => AppMsg::EnterPluginSelectionMode,
+                                },
+                            },
+
+                            // Selection mode header
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Horizontal,
+                                set_margin_top: 8,
+                                set_margin_bottom: 4,
+                                set_margin_start: 8,
+                                set_margin_end: 8,
+                                #[watch]
+                                set_visible: model.plugin_selection_active,
+
+                                gtk::Label {
+                                    #[watch]
+                                    set_label: &format!("{} selected", model.selected_plugins.len()),
+                                    set_hexpand: true,
+                                    set_halign: gtk::Align::Start,
+                                    add_css_class: "heading",
+                                },
+
+                                gtk::Button {
+                                    set_label: "Cancel",
+                                    connect_clicked => AppMsg::ExitPluginSelectionMode,
+                                },
                             },
 
                             gtk::ScrolledWindow {
@@ -1075,6 +1168,21 @@ impl Component for App {
                                 set_icon_name: Some("application-x-addon-symbolic"),
                                 set_title: "No Plugins",
                                 set_description: Some("Plugin files (.esp/.esm/.esl) will appear here"),
+                            },
+
+                            gtk::ActionBar {
+                                #[watch]
+                                set_revealed: model.plugin_selection_active,
+
+                                pack_start = &gtk::Button {
+                                    set_label: "Enable",
+                                    connect_clicked => AppMsg::EnableSelectedPlugins,
+                                },
+
+                                pack_start = &gtk::Button {
+                                    set_label: "Disable",
+                                    connect_clicked => AppMsg::DisableSelectedPlugins,
+                                },
                             },
                         },
                     }
@@ -1546,6 +1654,18 @@ impl Component for App {
             AppMsg::SetColorScheme(idx) => self.handle_set_color_scheme(idx),
             AppMsg::NexusLoginClicked => self.handle_nexus_login_clicked(&sender),
             AppMsg::NexusLogoutClicked => self.handle_nexus_logout_clicked(&sender),
+            AppMsg::EnterModSelectionMode => self.handle_enter_mod_selection_mode(),
+            AppMsg::ExitModSelectionMode => self.handle_exit_mod_selection_mode(),
+            AppMsg::ToggleModRowSelected(idx) => self.handle_toggle_mod_row_selected(idx),
+            AppMsg::EnableSelectedMods => self.handle_enable_selected_mods(&sender),
+            AppMsg::DisableSelectedMods => self.handle_disable_selected_mods(&sender),
+            AppMsg::RemoveSelectedMods => self.handle_remove_selected_mods(root, &sender),
+            AppMsg::ConfirmRemoveSelectedMods => self.handle_confirm_remove_selected_mods(&sender),
+            AppMsg::EnterPluginSelectionMode => self.handle_enter_plugin_selection_mode(),
+            AppMsg::ExitPluginSelectionMode => self.handle_exit_plugin_selection_mode(),
+            AppMsg::TogglePluginRowSelected(idx) => self.handle_toggle_plugin_row_selected(idx),
+            AppMsg::EnableSelectedPlugins => self.handle_enable_selected_plugins(&sender),
+            AppMsg::DisableSelectedPlugins => self.handle_disable_selected_plugins(&sender),
         }
     }
 
