@@ -1,3 +1,6 @@
+use std::cell::Cell;
+use std::rc::Rc;
+
 use gtk::prelude::*;
 use relm4::factory::{DynamicIndex, FactoryComponent, FactorySender};
 use relm4::prelude::*;
@@ -50,6 +53,8 @@ pub struct PluginRow {
     pub compact: bool,
     pub selection_mode: bool,
     pub selected: bool,
+    /// Shared with the row's DragSource; set to true only in selection mode.
+    pub drag_enabled: Rc<Cell<bool>>,
 }
 
 impl PluginRow {
@@ -63,9 +68,7 @@ impl PluginRow {
 }
 
 #[derive(Debug)]
-pub enum PluginRowOutput {
-    ToggleEnabled(DynamicIndex, bool),
-}
+pub enum PluginRowOutput {}
 
 #[relm4::factory(pub)]
 impl FactoryComponent for PluginRow {
@@ -107,21 +110,6 @@ impl FactoryComponent for PluginRow {
                     set_can_focus: false,
                 },
 
-                gtk::CheckButton {
-                    #[watch]
-                    set_visible: !self.selection_mode,
-                    // Show as unchecked when the mod is disabled so the user
-                    // immediately sees the effective (inactive) state.
-                    #[watch]
-                    set_active: self.plugin.enabled && self.mod_enabled,
-                    // Vanilla/DLC plugins are managed by the game engine, not Deployd.
-                    #[watch]
-                    set_sensitive: !self.is_vanilla,
-                    connect_toggled[sender, index] => move |btn| {
-                        sender.output(PluginRowOutput::ToggleEnabled(index.clone(), btn.is_active())).unwrap();
-                    }
-                },
-
                 gtk::Label {
                     #[watch]
                     set_label: self.plugin_type_label,
@@ -132,6 +120,8 @@ impl FactoryComponent for PluginRow {
                 gtk::Label {
                     #[watch]
                     set_label: &self.display_filename,
+                    #[watch]
+                    set_sensitive: self.plugin.enabled,
                     set_hexpand: true,
                     set_halign: gtk::Align::Start,
                     set_ellipsize: gtk::pango::EllipsizeMode::End,
@@ -206,6 +196,7 @@ impl FactoryComponent for PluginRow {
             compact: init.compact,
             selection_mode: false,
             selected: false,
+            drag_enabled: Rc::new(Cell::new(false)),
         }
     }
 
@@ -214,7 +205,7 @@ impl FactoryComponent for PluginRow {
         index: &DynamicIndex,
         root: Self::Root,
         _returned_widget: &<Self::ParentWidget as relm4::factory::FactoryView>::ReturnedWidget,
-        sender: FactorySender<Self>,
+        _sender: FactorySender<Self>,
     ) -> Self::Widgets {
         let root_ref = root.clone();
         let widgets = view_output!();
@@ -225,7 +216,9 @@ impl FactoryComponent for PluginRow {
             let drag_source = gtk::DragSource::new();
             drag_source.set_actions(gtk::gdk::DragAction::MOVE);
             let idx = index.clone();
+            let drag_enabled = self.drag_enabled.clone();
             drag_source.connect_prepare(move |_src, _x, _y| {
+                if !drag_enabled.get() { return None; }
                 let current = idx.current_index();
                 Some(gtk::gdk::ContentProvider::for_value(
                     &format!("plugin:{current}").to_value(),

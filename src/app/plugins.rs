@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use adw;
-use relm4::factory::DynamicIndex;
 use relm4::prelude::*;
 
 use crate::core::game;
@@ -106,40 +105,6 @@ impl App {
                 count += 1;
                 row.order_label = format!("#{count}");
             }
-        }
-    }
-
-    pub(crate) fn handle_toggle_plugin_enabled(
-        &mut self,
-        index: DynamicIndex,
-        enabled: bool,
-        sender: &ComponentSender<Self>,
-    ) {
-        let idx = index.current_index();
-        let plugin_id = {
-            let guard = self.plugins.guard();
-            let Some(row) = guard.get(idx) else { return };
-            row.plugin.id.clone()
-        };
-
-        {
-            let mut guard = self.plugins.guard();
-            if let Some(row) = guard.get_mut(idx) {
-                row.plugin.enabled = enabled;
-            }
-        }
-
-        self.needs_deploy = true;
-
-        if let Some(tracker) = self.tracker.clone() {
-            sender.oneshot_command(async move {
-                AppCmdMsg::PluginOrderSaved(
-                    tracker
-                        .toggle_plugin(&plugin_id, enabled)
-                        .await
-                        .map_err(|e| e.to_string()),
-                )
-            });
         }
     }
 
@@ -410,6 +375,7 @@ impl App {
         for row in g.iter_mut() {
             row.selection_mode = true;
             row.selected = false;
+            row.drag_enabled.set(true);
         }
     }
 
@@ -420,6 +386,7 @@ impl App {
         for row in g.iter_mut() {
             row.selection_mode = false;
             row.selected = false;
+            row.drag_enabled.set(false);
         }
     }
 

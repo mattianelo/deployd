@@ -36,9 +36,7 @@ pub enum AppMsg {
     PreInstallCancelled,
     FomodConfirmed(fomod_resolver::FomodSelections),
     FomodCancelled,
-    RemoveMod(DynamicIndex),
     ReinstallMod(DynamicIndex),
-    ToggleModEnabled(DynamicIndex, bool),
     MoveModTo(usize, usize),
     MoveGroupTo(usize, usize),
     MoveSelectedModsTo {
@@ -52,7 +50,6 @@ pub enum AppMsg {
         from: usize,
         to: usize,
     },
-    TogglePluginEnabled(DynamicIndex, bool),
     RenameMod(DynamicIndex, String),
     ProfileSelected(u32),
     NewProfileClicked,

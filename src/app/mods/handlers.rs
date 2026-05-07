@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
 use adw::prelude::*;
-use gtk::glib;
 use gtk::prelude::*;
 use relm4::factory::DynamicIndex;
 use relm4::prelude::*;
@@ -35,147 +34,6 @@ impl App {
         }
         self.reload_mods_full(sender);
         self.rebuild_downloads_view();
-    }
-
-    pub(crate) fn handle_remove_mod(
-        &mut self,
-        index: DynamicIndex,
-        sender: &ComponentSender<Self>,
-    ) {
-        let idx = index.current_index();
-        let (mod_id, removed_nexus_ids, removed_mod_name, removed_archive_hash) = {
-            let guard = self.mods.guard();
-            let Some(row) = guard.get(idx) else { return };
-            let Some(init) = row.mod_row() else { return };
-            let id = init.mod_entry.id.clone();
-            let nids = init
-                .mod_entry
-                .nexus_mod_id
-                .zip(init.mod_entry.nexus_file_id);
-            let name = init.mod_entry.name.clone();
-            let hash = init.mod_entry.archive_hash.clone();
-            (id, nids, name, hash)
-        };
-
-        let Some(tracker) = self.tracker.clone() else {
-            return;
-        };
-        let cache_root = self
-            .selected_game()
-            .and_then(|g| self.cache_root_for(&g.id).ok())
-            .unwrap_or_else(|| paths::cache_root().unwrap_or_default());
-
-        let vadj = self.mod_scroll.vadjustment();
-        let saved_scroll = vadj.value();
-        // If the error path triggers populate_mods, it will read this anchor instead of
-        // the post-removal vadjustment value (which may already be clamped/wrong).
-        self.pending_scroll_restore = Some(saved_scroll);
-        self.mods.guard().remove(idx);
-        {
-            let mut guard = self.plugins.guard();
-            let to_remove: Vec<usize> = (0..guard.len())
-                .filter(|&i| guard.get(i).is_some_and(|row| row.plugin.mod_id == mod_id))
-                .collect();
-            for i in to_remove.into_iter().rev() {
-                guard.remove(i);
-            }
-        }
-        self.needs_deploy = true;
-        self.save_group_positions();
-        glib::idle_add_local_once(move || {
-            vadj.set_value(saved_scroll);
-        });
-
-        sender.oneshot_command(async move {
-            let result: Result<String, String> = async {
-                tracker
-                    .delete_plugins_for_mod(&mod_id)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                tracker
-                    .delete_mod_files(&mod_id)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                tracker
-                    .delete_mod(&mod_id)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                let cache = paths::mod_cache_dir_in(&cache_root, &mod_id);
-                if cache.exists() {
-                    let _ = std::fs::remove_dir_all(&cache);
-                }
-                Ok(mod_id)
-            }
-            .await;
-            AppCmdMsg::ModRemoved(
-                result,
-                removed_nexus_ids,
-                removed_mod_name,
-                removed_archive_hash,
-            )
-        });
-    }
-
-    pub(crate) fn handle_toggle_mod_enabled(
-        &mut self,
-        index: DynamicIndex,
-        enabled: bool,
-        sender: &ComponentSender<Self>,
-    ) {
-        let idx = index.current_index();
-        let mod_id = {
-            let guard = self.mods.guard();
-            let Some(row) = guard.get(idx) else { return };
-            let Some(id) = row.mod_id() else { return };
-            id.to_string()
-        };
-
-        {
-            let mut guard = self.mods.guard();
-            if let Some(row) = guard.get_mut(idx)
-                && let Some(entry) = row.mod_entry_mut()
-            {
-                entry.enabled = enabled;
-            }
-        }
-
-        {
-            let mut guard = self.plugins.guard();
-            for i in 0..guard.len() {
-                let matches = guard.get(i).is_some_and(|row| row.plugin.mod_id == mod_id);
-                if matches && let Some(row) = guard.get_mut(i) {
-                    row.mod_enabled = enabled;
-                }
-            }
-        }
-
-        self.needs_deploy = true;
-
-        if let (Some(tracker), Some(game)) = (self.tracker.clone(), self.selected_game()) {
-            let game_id = game.id.clone();
-            let engine = game.engine.clone();
-            let mod_names: HashMap<String, String> = {
-                let guard = self.mods.guard();
-                (0..guard.len())
-                    .filter_map(|i| {
-                        guard.get(i).and_then(|r| r.mod_row()).map(|r| {
-                            (r.mod_entry.id.clone(), r.mod_entry.name.clone())
-                        })
-                    })
-                    .collect()
-            };
-            sender.oneshot_command(async move {
-                if let Err(e) = tracker.toggle_mod(&mod_id, enabled).await {
-                    return AppCmdMsg::OverridesRefreshed(Err(e.to_string()));
-                }
-                AppCmdMsg::OverridesRefreshed(
-                    tracker
-                        .compute_overrides(&game_id, game::handler_for(&engine), &mod_names)
-                        .await
-                        .map_err(|e| e.to_string()),
-                )
-            });
-        }
     }
 
     pub(crate) fn handle_move_mod_to(
@@ -770,6 +628,7 @@ impl App {
         for item in g.iter_mut() {
             item.selection_mode = true;
             item.selected = false;
+            item.drag_enabled.set(true);
         }
     }
 
@@ -780,6 +639,7 @@ impl App {
         for item in g.iter_mut() {
             item.selection_mode = false;
             item.selected = false;
+            item.drag_enabled.set(false);
         }
     }
 

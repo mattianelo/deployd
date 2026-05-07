@@ -1,3 +1,6 @@
+use std::cell::Cell;
+use std::rc::Rc;
+
 use gtk::prelude::*;
 use relm4::factory::{DynamicIndex, FactoryComponent, FactorySender};
 use relm4::prelude::*;
@@ -57,6 +60,8 @@ pub struct ModListItem {
     pub compact: bool,
     pub selection_mode: bool,
     pub selected: bool,
+    /// Shared with the row's DragSource; set to true only in selection mode.
+    pub drag_enabled: Rc<Cell<bool>>,
 }
 
 impl std::fmt::Debug for ModListItem {
@@ -163,8 +168,6 @@ impl ModListItem {
 #[derive(Debug)]
 pub enum ModListItemOutput {
     // From mod rows
-    Remove(DynamicIndex),
-    ToggleEnabled(DynamicIndex, bool),
     RenameMod(DynamicIndex, String),
     OpenProperties(DynamicIndex),
     Reinstall(DynamicIndex),
@@ -196,9 +199,11 @@ impl FactoryComponent for ModListItem {
             set_visible: self.visible,
             #[watch]
             set_css_classes: match &self.kind {
-                ModListItemKind::Mod(r) if r.mod_entry.enabled => &["mod-row", "mod-row-enabled"],
-                ModListItemKind::Mod(_)                         => &["mod-row"],
-                ModListItemKind::Separator { .. }               => &["mod-separator-row"],
+                ModListItemKind::Mod(r) if r.mod_entry.enabled && self.selected => &["mod-row", "mod-row-enabled", "mod-row-selected"],
+                ModListItemKind::Mod(r) if r.mod_entry.enabled                  => &["mod-row", "mod-row-enabled"],
+                ModListItemKind::Mod(_) if self.selected                        => &["mod-row", "mod-row-selected"],
+                ModListItemKind::Mod(_)                                         => &["mod-row"],
+                ModListItemKind::Separator { .. }                               => &["mod-separator-row"],
             },
 
             // Outer vertical box — one child visible at a time
@@ -275,20 +280,12 @@ impl FactoryComponent for ModListItem {
                         set_can_focus: false,
                     },
 
-                    gtk::CheckButton {
-                        #[watch]
-                        set_visible: !self.selection_mode,
-                        #[watch]
-                        set_active: if let ModListItemKind::Mod(r) = &self.kind { r.mod_entry.enabled } else { false },
-                        connect_toggled[sender, index] => move |btn| {
-                            sender.output(ModListItemOutput::ToggleEnabled(index.clone(), btn.is_active())).unwrap();
-                        }
-                    },
-
                     gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
                         set_hexpand: true,
                         set_valign: gtk::Align::Center,
+                        #[watch]
+                        set_sensitive: if let ModListItemKind::Mod(r) = &self.kind { r.mod_entry.enabled } else { true },
 
                         gtk::Label {
                             #[watch]
@@ -331,16 +328,6 @@ impl FactoryComponent for ModListItem {
                         set_visible: matches!(&self.kind, ModListItemKind::Mod(r) if r.reinstall_from_file),
                         connect_clicked[sender, index] => move |_| {
                             sender.output(ModListItemOutput::Reinstall(index.clone())).unwrap();
-                        }
-                    },
-
-                    gtk::Button {
-                        set_icon_name: "user-trash-symbolic",
-                        set_tooltip_text: Some("Remove mod"),
-                        set_valign: gtk::Align::Center,
-                        add_css_class: "flat",
-                        connect_clicked[sender, index] => move |_| {
-                            sender.output(ModListItemOutput::Remove(index.clone())).unwrap();
                         }
                     },
 
@@ -408,6 +395,7 @@ impl FactoryComponent for ModListItem {
             compact: init.compact,
             selection_mode: false,
             selected: false,
+            drag_enabled: Rc::new(Cell::new(false)),
         }
     }
 
@@ -426,7 +414,9 @@ impl FactoryComponent for ModListItem {
             let drag_source = gtk::DragSource::new();
             drag_source.set_actions(gtk::gdk::DragAction::MOVE);
             let idx = index.clone();
+            let drag_enabled = self.drag_enabled.clone();
             drag_source.connect_prepare(move |_src, _x, _y| {
+                if !drag_enabled.get() { return None; }
                 let current = idx.current_index();
                 Some(gtk::gdk::ContentProvider::for_value(
                     &format!("group:{current}").to_value(),
@@ -538,7 +528,9 @@ impl FactoryComponent for ModListItem {
             let drag_source = gtk::DragSource::new();
             drag_source.set_actions(gtk::gdk::DragAction::MOVE);
             let idx = index.clone();
+            let drag_enabled = self.drag_enabled.clone();
             drag_source.connect_prepare(move |_src, _x, _y| {
+                if !drag_enabled.get() { return None; }
                 let current = idx.current_index();
                 Some(gtk::gdk::ContentProvider::for_value(
                     &format!("mod:{current}").to_value(),
@@ -610,13 +602,12 @@ impl FactoryComponent for ModListItem {
             if let Some(outer) = root_ref.child().and_downcast::<gtk::Box>()
                 && let Some(mod_row_box) = outer.last_child().and_downcast::<gtk::Box>()
             {
-                // Insert before status icons: anchor on Remove button (check → name → reinstall → remove)
-                let remove_widget = mod_row_box
+                // Insert after reinstall button: selection_cb → name_box → reinstall_btn
+                let reinstall_widget = mod_row_box
                     .first_child()
                     .and_then(|c| c.next_sibling())
-                    .and_then(|c| c.next_sibling())
                     .and_then(|c| c.next_sibling());
-                mod_row_box.insert_child_after(&rename_btn, remove_widget.as_ref());
+                mod_row_box.insert_child_after(&rename_btn, reinstall_widget.as_ref());
                 mod_row_box.insert_child_after(&props_btn, Some(&rename_btn));
             }
 

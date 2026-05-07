@@ -959,7 +959,7 @@ impl Component for App {
                                     && model.total_mods_count() > 0,
                                 set_icon_name: Some("checkbox-checked-symbolic"),
                                 set_title: "No Enabled Mods",
-                                set_description: Some("Enable mods with the checkbox on the left."),
+                                set_description: Some("Select mods and use the action bar to enable them."),
                             },
                             adw::StatusPage {
                                 #[watch]
@@ -1326,11 +1326,7 @@ impl Component for App {
             AppMsg::PreInstallCancelled => self.handle_pre_install_cancelled(),
             AppMsg::FomodConfirmed(selections) => self.handle_fomod_confirmed(selections, &sender),
             AppMsg::FomodCancelled => self.handle_fomod_cancelled(),
-            AppMsg::RemoveMod(idx) => self.handle_remove_mod(idx, &sender),
             AppMsg::ReinstallMod(idx) => self.handle_reinstall_mod(idx, &sender),
-            AppMsg::ToggleModEnabled(idx, enabled) => {
-                self.handle_toggle_mod_enabled(idx, enabled, &sender)
-            }
             AppMsg::MoveModTo(from, to) => self.handle_move_mod_to(from, to, &sender),
             AppMsg::MoveGroupTo(from, to) => self.handle_move_group_to(from, to, &sender),
             AppMsg::MoveSelectedModsTo { selected, from, to } => {
@@ -1339,9 +1335,6 @@ impl Component for App {
             AppMsg::MovePluginTo(from, to) => self.handle_move_plugin_to(from, to, &sender),
             AppMsg::MoveSelectedPluginsTo { selected, from, to } => {
                 self.handle_move_selected_plugins_to(selected, from, to, &sender)
-            }
-            AppMsg::TogglePluginEnabled(idx, enabled) => {
-                self.handle_toggle_plugin_enabled(idx, enabled, &sender)
             }
             AppMsg::RenameMod(idx, name) => self.handle_rename_mod(idx, name, &sender),
             AppMsg::ProfileSelected(idx) => self.handle_profile_selected(idx, &sender),

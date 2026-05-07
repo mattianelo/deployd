@@ -14,7 +14,6 @@ use crate::core::tracker::Tracker;
 use crate::models::game::{Game, GameEngine};
 use crate::ui::download_row::DownloadRowOutput;
 use crate::ui::mod_list::ModListItemOutput;
-use crate::ui::plugin_list::PluginRowOutput;
 use crate::utils::paths;
 
 use super::free_fns::load_game_data;
@@ -35,11 +34,7 @@ pub(super) fn build_model(
         FactoryVecDeque::builder()
             .launch_default()
             .forward(sender.input_sender(), |output| match output {
-                ModListItemOutput::Remove(index) => AppMsg::RemoveMod(index),
                 ModListItemOutput::Reinstall(index) => AppMsg::ReinstallMod(index),
-                ModListItemOutput::ToggleEnabled(index, enabled) => {
-                    AppMsg::ToggleModEnabled(index, enabled)
-                }
                 ModListItemOutput::RenameMod(index, name) => AppMsg::RenameMod(index, name),
                 ModListItemOutput::OpenProperties(index) => AppMsg::OpenModProperties(index),
                 ModListItemOutput::ToggleGroupCollapse(index) => AppMsg::ToggleGroupCollapse(index),
@@ -53,11 +48,7 @@ pub(super) fn build_model(
     let plugins =
         FactoryVecDeque::builder()
             .launch_default()
-            .forward(sender.input_sender(), |output| match output {
-                PluginRowOutput::ToggleEnabled(index, enabled) => {
-                    AppMsg::TogglePluginEnabled(index, enabled)
-                }
-            });
+            .forward(sender.input_sender(), |output| match output {});
 
     let downloads =
         FactoryVecDeque::builder()
