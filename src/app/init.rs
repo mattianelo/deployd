@@ -527,6 +527,32 @@ pub(super) fn wire_drag_drop(
         }
     });
     plugin_list.add_controller(plugin_drop);
+
+    wire_deselect(mod_list);
+    wire_deselect(plugin_list);
+}
+
+fn wire_deselect(list_box: &gtk::ListBox) {
+    let key_ctrl = gtk::EventControllerKey::new();
+    key_ctrl.set_propagation_phase(gtk::PropagationPhase::Capture);
+    let lb = list_box.clone();
+    key_ctrl.connect_key_pressed(move |_, key, _, _| {
+        if key == gtk::gdk::Key::Escape {
+            lb.unselect_all();
+        }
+        glib::Propagation::Proceed
+    });
+    list_box.add_controller(key_ctrl);
+
+    let click_ctrl = gtk::GestureClick::new();
+    let lb = list_box.clone();
+    click_ctrl.connect_pressed(move |gesture, _, _x, y| {
+        if lb.row_at_y(y as i32).is_none() {
+            lb.unselect_all();
+            gesture.set_state(gtk::EventSequenceState::Claimed);
+        }
+    });
+    list_box.add_controller(click_ctrl);
 }
 
 /// Asynchronously opens the database, loads game data, and fetches initial
