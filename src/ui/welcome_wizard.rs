@@ -274,17 +274,20 @@ impl Component for WelcomeWizard {
         welcome_page.set_tag(Some("welcome"));
 
         // ── Games page ────────────────────────────────────────────────────────
-        let games_label = gtk::Label::new(Some("Which games do you want to manage?"));
-        games_label.set_halign(gtk::Align::Start);
-        games_label.add_css_class("heading");
+        let games_group = adw::PreferencesGroup::new();
+        games_group.set_title("Games");
+        games_group.set_description(Some("Choose the games you want to manage."));
+        games_group.add(&games_list);
 
         let games_vbox = gtk::Box::new(gtk::Orientation::Vertical, 12);
-        games_vbox.append(&games_label);
-        games_vbox.append(&games_list);
+        games_vbox.append(&games_group);
 
         let games_clamp = adw::Clamp::new();
         games_clamp.set_maximum_size(540);
-        games_clamp.set_margin_all(12);
+        games_clamp.set_margin_top(12);
+        games_clamp.set_margin_bottom(12);
+        games_clamp.set_margin_start(12);
+        games_clamp.set_margin_end(12);
         games_clamp.set_child(Some(&games_vbox));
 
         let games_scrolled = gtk::ScrolledWindow::new();
@@ -304,17 +307,20 @@ impl Component for WelcomeWizard {
         games_page.set_tag(Some("games"));
 
         // ── Directories page ──────────────────────────────────────────────────
-        let dirs_label = gtk::Label::new(Some("Where are these games installed?"));
-        dirs_label.set_halign(gtk::Align::Start);
-        dirs_label.add_css_class("heading");
+        let dirs_group = adw::PreferencesGroup::new();
+        dirs_group.set_title("Directories");
+        dirs_group.set_description(Some("Set the installation folder and Wine prefix for each selected game."));
+        dirs_group.add(&dirs_list);
 
         let dirs_vbox = gtk::Box::new(gtk::Orientation::Vertical, 12);
-        dirs_vbox.append(&dirs_label);
-        dirs_vbox.append(&dirs_list);
+        dirs_vbox.append(&dirs_group);
 
         let dirs_clamp = adw::Clamp::new();
         dirs_clamp.set_maximum_size(540);
-        dirs_clamp.set_margin_all(12);
+        dirs_clamp.set_margin_top(12);
+        dirs_clamp.set_margin_bottom(12);
+        dirs_clamp.set_margin_start(12);
+        dirs_clamp.set_margin_end(12);
         dirs_clamp.set_child(Some(&dirs_vbox));
 
         let dirs_scrolled = gtk::ScrolledWindow::new();

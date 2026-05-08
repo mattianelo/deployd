@@ -222,10 +222,8 @@ impl Component for ToolManager {
             set_default_size: (500, -1),
             set_modal: true,
 
-            gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
-
-                adw::HeaderBar {
+            adw::ToolbarView {
+                add_top_bar = &adw::HeaderBar {
                     #[wrap(Some)]
                     set_title_widget = &adw::WindowTitle {
                         set_title: "Manage Tools",
@@ -233,58 +231,61 @@ impl Component for ToolManager {
                     },
                 },
 
-                gtk::ScrolledWindow {
+                #[wrap(Some)]
+                set_content = &gtk::ScrolledWindow {
                     set_vexpand: true,
                     set_hscrollbar_policy: gtk::PolicyType::Never,
                     set_propagate_natural_height: true,
 
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Vertical,
-                        set_margin_all: 12,
-                        set_spacing: 12,
+                    adw::Clamp {
+                        set_maximum_size: 560,
+                        set_margin_top: 12,
+                        set_margin_bottom: 12,
+                        set_margin_start: 12,
+                        set_margin_end: 12,
 
-                        // Preset catalog section
-                        gtk::Label {
-                            set_label: "Available Tools",
-                            set_halign: gtk::Align::Start,
-                            add_css_class: "heading",
-                        },
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Vertical,
+                            set_spacing: 12,
 
-                        #[local_ref]
-                        preset_box -> gtk::ListBox {
-                            set_selection_mode: gtk::SelectionMode::None,
-                            add_css_class: "boxed-list",
-                        },
+                            adw::PreferencesGroup {
+                                set_title: "Available Tools",
 
-                        // Configured tools section
-                        gtk::Label {
-                            set_label: "Configured Tools",
-                            set_halign: gtk::Align::Start,
-                            add_css_class: "heading",
-                            set_margin_top: 4,
-                        },
+                                #[local_ref]
+                                add = preset_box -> gtk::ListBox {
+                                    set_selection_mode: gtk::SelectionMode::None,
+                                    add_css_class: "boxed-list",
+                                },
+                            },
 
-                        #[local_ref]
-                        tool_list -> gtk::ListBox {
-                            set_selection_mode: gtk::SelectionMode::None,
-                            add_css_class: "boxed-list",
-                            set_show_separators: true,
-                        },
+                            adw::PreferencesGroup {
+                                set_title: "Configured Tools",
 
-                        // Custom tool button
-                        gtk::Button {
-                            set_label: "Add Custom Tool…",
-                            set_halign: gtk::Align::Start,
-                            add_css_class: "flat",
-                            connect_clicked => ToolManagerMsg::AddCustom,
-                        },
+                                #[local_ref]
+                                add = tool_list -> gtk::ListBox {
+                                    set_selection_mode: gtk::SelectionMode::None,
+                                    add_css_class: "boxed-list",
+                                    set_show_separators: true,
+                                },
+                            },
 
-                        gtk::Label {
-                            set_label: "Tip: your mod folders are accessible from tools at M:\\ — e.g. configure NPC Plugin Chooser 2 to look for mods in M:\\",
-                            set_halign: gtk::Align::Start,
-                            set_wrap: true,
-                            add_css_class: "dim-label",
-                            set_margin_top: 4,
+                            adw::PreferencesGroup {
+                                set_title: "Custom Tools",
+                                set_description: Some("Mod folders are accessible from tools at M:\\."),
+
+                                add = &adw::ActionRow {
+                                    set_title: "Add Custom Tool",
+                                    set_subtitle: "Browse for an executable, batch file, command file, or jar",
+
+                                    add_suffix = &gtk::Button {
+                                        set_icon_name: "list-add-symbolic",
+                                        set_tooltip_text: Some("Add Custom Tool"),
+                                        set_valign: gtk::Align::Center,
+                                        add_css_class: "flat",
+                                        connect_clicked => ToolManagerMsg::AddCustom,
+                                    },
+                                },
+                            },
                         },
                     },
                 },

@@ -28,7 +28,7 @@ pub struct GameSetupDialog {
     /// ListBox for game rows.
     games_list: gtk::ListBox,
     /// Container for the games list section (hidden when empty).
-    games_section: gtk::Box,
+    games_section: adw::PreferencesGroup,
     /// State for the "Add Game" form.
     new_game_type_idx: usize,
     new_path: Option<PathBuf>,
@@ -304,7 +304,7 @@ impl Component for GameSetupDialog {
         games_list.add_css_class("boxed-list");
         games_list.set_selection_mode(gtk::SelectionMode::None);
 
-        let games_section = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        let games_section = adw::PreferencesGroup::new();
 
         let new_path_entry = adw::EntryRow::new();
         new_path_entry.set_title("Game Folder");
@@ -328,14 +328,8 @@ impl Component for GameSetupDialog {
         let navigation_view = adw::NavigationView::new();
 
         // ── List page ─────────────────────────────────────────────────────────
-        let games_label = gtk::Label::new(Some("Your Games"));
-        games_label.set_halign(gtk::Align::Start);
-        games_label.add_css_class("heading");
-
-        games_section.set_orientation(gtk::Orientation::Vertical);
-        games_section.set_spacing(6);
-        games_section.append(&games_label);
-        games_section.append(&games_list);
+        games_section.set_title("Your Games");
+        games_section.add(&games_list);
 
         let add_game_btn = gtk::Button::with_label("Add a Game…");
         add_game_btn.set_halign(gtk::Align::Start);
@@ -353,7 +347,10 @@ impl Component for GameSetupDialog {
 
         let list_clamp = adw::Clamp::new();
         list_clamp.set_maximum_size(540);
-        list_clamp.set_margin_all(12);
+        list_clamp.set_margin_top(12);
+        list_clamp.set_margin_bottom(12);
+        list_clamp.set_margin_start(12);
+        list_clamp.set_margin_end(12);
         list_clamp.set_child(Some(&list_vbox));
 
         let list_scrolled = gtk::ScrolledWindow::new();
@@ -393,10 +390,6 @@ impl Component for GameSetupDialog {
         list_page.set_tag(Some("list"));
 
         // ── Add page ──────────────────────────────────────────────────────────
-        let type_label = gtk::Label::new(Some("Game Type"));
-        type_label.set_halign(gtk::Align::Start);
-        type_label.add_css_class("heading");
-
         let game_type_combo = adw::ComboRow::new();
         game_type_combo.set_title("Game");
         let labels: Vec<String> = known_opts.iter().map(|o| o.title.to_string()).collect();
@@ -409,14 +402,9 @@ impl Component for GameSetupDialog {
             });
         }
 
-        let type_list = gtk::ListBox::new();
-        type_list.add_css_class("boxed-list");
-        type_list.set_selection_mode(gtk::SelectionMode::None);
-        type_list.append(&game_type_combo);
-
-        let dir_label = gtk::Label::new(Some("Directories"));
-        dir_label.set_halign(gtk::Align::Start);
-        dir_label.add_css_class("heading");
+        let type_group = adw::PreferencesGroup::new();
+        type_group.set_title("Game Type");
+        type_group.add(&game_type_combo);
 
         let path_browse_btn = gtk::Button::from_icon_name("folder-symbolic");
         path_browse_btn.set_valign(gtk::Align::Center);
@@ -440,22 +428,22 @@ impl Component for GameSetupDialog {
         }
         new_prefix_entry.add_suffix(&prefix_browse_btn);
 
-        let dir_list = gtk::ListBox::new();
-        dir_list.add_css_class("boxed-list");
-        dir_list.set_selection_mode(gtk::SelectionMode::None);
-        dir_list.append(&new_path_entry);
-        dir_list.append(&new_prefix_entry);
+        let dir_group = adw::PreferencesGroup::new();
+        dir_group.set_title("Directories");
+        dir_group.add(&new_path_entry);
+        dir_group.add(&new_prefix_entry);
 
         let add_vbox = gtk::Box::new(gtk::Orientation::Vertical, 12);
-        add_vbox.append(&type_label);
-        add_vbox.append(&type_list);
-        add_vbox.append(&dir_label);
-        add_vbox.append(&dir_list);
+        add_vbox.append(&type_group);
+        add_vbox.append(&dir_group);
         add_vbox.append(&add_btn);
 
         let add_clamp = adw::Clamp::new();
         add_clamp.set_maximum_size(540);
-        add_clamp.set_margin_all(12);
+        add_clamp.set_margin_top(12);
+        add_clamp.set_margin_bottom(12);
+        add_clamp.set_margin_start(12);
+        add_clamp.set_margin_end(12);
         add_clamp.set_child(Some(&add_vbox));
 
         let add_scrolled = gtk::ScrolledWindow::new();
