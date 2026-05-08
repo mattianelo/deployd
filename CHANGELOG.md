@@ -38,6 +38,26 @@
 - Deployer: vanilla backup is only created for files that existed in the pre-mod baseline;
   files placed by other tools are not backed up and will not be unexpectedly restored.
 
+### Changed
+
+- **Complete libadwaita migration** — the primary app shell, dialogs, popovers, transient states,
+  and factory-backed main lists now follow modern GNOME HIG patterns while preserving existing
+  Relm4 messages, drag/drop behaviour, Snap/AppImage paths, and mod-management logic.
+- **Main window rebuilt around adaptive libadwaita structure** — the root app shell now uses
+  `adw::ToolbarView`, the Mod Order and Plugin Order panes use `adw::NavigationSplitView`, pane
+  headers use local `adw::HeaderBar` controls, and downloads remain in an `adw::OverlaySplitView`
+  with the existing sidebar width behaviour.
+- **Popover and transient UI converted to GNOME rows and alerts** — profile, deploy, overflow,
+  snapshot, notification, and Nexus account popovers now use boxed lists, preferences groups, and
+  `adw::ActionRow` patterns where practical; app workflow prompts now use `adw::AlertDialog`.
+- **Dialog workflows migrated to libadwaita** — FOMOD, Mod Properties, Pre-install, Absorb External
+  Changes, Tool Manager, Game Setup, and Welcome Wizard now use libadwaita toolbar, clamp,
+  preferences, action-row, status, and action-bar patterns. The Absorb dialog also opens at a larger
+  default size.
+- **Main list rows migrated to libadwaita patterns** — mod, plugin, and download rows now use
+  `adw::ActionRow`-style structure for a more consistent GNOME HIG presentation while preserving
+  existing drag/drop, selection, metadata, and row action behaviour.
+
 ### Removed
 
 - **Experimental features deleted** — Profile Import/Export, Script Extender Launch, and
@@ -45,6 +65,8 @@
   their UI surfaces, messages, and backing tracker functions have been removed entirely.
 - **Dead UMU launch path** — `resolve_umu_binary()` and its commented-out call site are
   removed. UMU is still bundled in the AppImage for manual use.
+- **Compact row settings removed** — mod and plugin lists now use one balanced row density rather
+  than separate compact/non-compact modes.
 
 ### Packaging
 

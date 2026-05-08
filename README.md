@@ -1,12 +1,13 @@
 # Deployd
 
-![Version](https://img.shields.io/badge/version-1.1.1-blue)
+![Version](https://img.shields.io/badge/version-2.2.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey?logo=linux)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 
-A Linux-native mod manager for Bethesda, REDEngine, Aurora, and Eclipse games, built with GTK4 and Rust.
+A Linux-native mod manager for Bethesda, REDEngine, Aurora, and Eclipse games, built with GTK4,
+libadwaita, and Rust.
 
-> **v1.1.1** If you find bugs, please [open an issue](https://gitlab.com/mattianelo/deployd/-/issues).
+> **v2.2.0** If you find bugs, please [open an issue](https://gitlab.com/mattianelo/deployd/-/issues).
 
 ---
 
@@ -15,7 +16,7 @@ A Linux-native mod manager for Bethesda, REDEngine, Aurora, and Eclipse games, b
 | Engine | Games |
 |--------|-------|
 | Bethesda | Skyrim Special Edition · Fallout 4 · Fallout: New Vegas · Starfield |
-| REDEngine | The Witcher 3 · Cyberpunk 2077 |
+| REDEngine | The Witcher 3 · Cyberpunk 2077 · The Witcher 2 |
 | Aurora | The Witcher 1 |
 | Eclipse | Dragon Age: Origins |
 
@@ -35,40 +36,25 @@ A Linux-native mod manager for Bethesda, REDEngine, Aurora, and Eclipse games, b
 - **Mod Notes** — Attach personal notes to any mod; preview on hover from the list
 - **Notifications Panel** — External changes and alerts collected in a sidebar, with "All Caught Up" state
 - **Download pause/resume** — Active downloads can be paused and resumed mid-transfer
-- **Compact mode & color scheme** — Appearance settings let you switch color scheme and enable compact rows for the mod and plugin lists
+- **GNOME HIG interface** — Libadwaita navigation, adaptive split views, toolbar views,
+  status pages, toast feedback, dialogs, list rows, and appearance settings keep Deployd aligned
+  with modern GNOME app conventions
 
 ---
 
-## Installation
+## Interface
 
-### Snap
+Deployd uses libadwaita throughout its primary workflows:
 
-```bash
-snap install deployd
-```
-
-The Snap bundles all required libraries and UMU Launcher. No additional runtime dependencies needed.
-
-> **Note:** The NXM scheme handler requires the `network-bind` interface. Connect it once after install:
-> ```bash
-> snap connect deployd:network-bind
-> ```
-
-### AppImage
-
-### Runtime Dependencies (AppImage)
-
-The AppImage bundles most of its dependencies, but the following must be present on your system:
-
-**Fedora / RHEL:**
-```bash
-sudo dnf install gtk4 libadwaita
-```
-
-**Ubuntu / Debian:**
-```bash
-sudo apt install libgtk-4-1 libadwaita-1-0
-```
+- The main Mod Order and Plugin Order panels use adaptive libadwaita navigation, so wide windows
+  show both panes side by side while narrow windows collapse cleanly.
+- Downloads, notifications, profile actions, deploy actions, snapshots, and Nexus account controls
+  use GNOME-style rows, popovers, status pages, and toast feedback.
+- Install-related workflows, including FOMOD, Pre-install, Absorb External Changes, Mod Properties,
+  Tool Manager, Game Setup, and the Welcome Wizard, use libadwaita toolbar, clamp, preferences,
+  action-row, and alert patterns.
+- Mod, plugin, and download lists use balanced libadwaita row layouts. The old compact row mode was
+  removed in favor of one consistent middle-density presentation.
 
 ---
 
