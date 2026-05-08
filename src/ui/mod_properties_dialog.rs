@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use adw::prelude::*;
 use gtk::glib;
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -110,10 +111,8 @@ impl SimpleComponent for ModPropertiesDialog {
             set_default_size: (820, 700),
             set_modal: true,
 
-            gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
-
-                adw::HeaderBar {
+            adw::ToolbarView {
+                add_top_bar = &adw::HeaderBar {
                     #[wrap(Some)]
                     set_title_widget = &adw::WindowTitle {
                         set_title: "Properties",
@@ -121,57 +120,50 @@ impl SimpleComponent for ModPropertiesDialog {
                     },
                 },
 
-                gtk::ScrolledWindow {
+                #[wrap(Some)]
+                set_content = &gtk::ScrolledWindow {
                     set_vexpand: true,
                     set_hscrollbar_policy: gtk::PolicyType::Never,
 
+                    adw::Clamp {
+                        set_maximum_size: 720,
+                        set_margin_top: 12,
+                        set_margin_bottom: 12,
+                        set_margin_start: 12,
+                        set_margin_end: 12,
+
                     gtk::Box {
-                        set_orientation: gtk::Orientation::Vertical,
-                        set_margin_all: 16,
-                        set_spacing: 16,
-
-                        // Name
-                        gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
-                            set_spacing: 4,
+                            set_spacing: 16,
 
-                            gtk::Label {
-                                set_label: "Name",
-                                set_halign: gtk::Align::Start,
-                                add_css_class: "heading",
-                            },
-
+                        adw::PreferencesGroup {
+                            set_title: "Details",
                             #[name = "name_entry"]
-                            gtk::Entry {
+                            add = &adw::EntryRow {
+                                set_title: "Name",
                                 set_text: &model.name,
-                                set_hexpand: true,
+                            },
+
+                            add = &adw::ActionRow {
+                                set_title: "Version",
+                                set_subtitle: model.version.as_deref().unwrap_or("Unknown"),
+                            },
+
+                            add = &adw::ActionRow {
+                                set_title: "Author",
+                                set_subtitle: model.author.as_deref().unwrap_or("Unknown"),
+                            },
+
+                            add = &adw::ActionRow {
+                                set_title: "Installed",
+                                set_subtitle: model.installed_at.as_deref().unwrap_or("Unknown").split('T').next().unwrap_or("Unknown"),
                             },
                         },
 
-                        // Metadata (read-only)
-                        gtk::Label {
-                            set_label: &[
-                                format!("Version: {}", model.version.as_deref().unwrap_or("Unknown")),
-                                format!("Author: {}", model.author.as_deref().unwrap_or("Unknown")),
-                                format!("Installed: {}", model.installed_at.as_deref().unwrap_or("Unknown").split('T').next().unwrap_or("Unknown")),
-                            ].join("   "),
-                            set_halign: gtk::Align::Start,
-                            set_wrap: true,
-                            add_css_class: "dim-label",
-                            add_css_class: "caption",
-                        },
-                        // Notes
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
-                            set_spacing: 4,
+                        adw::PreferencesGroup {
+                            set_title: "Notes",
 
-                            gtk::Label {
-                                set_label: "Notes",
-                                set_halign: gtk::Align::Start,
-                                add_css_class: "heading",
-                            },
-
-                            gtk::ScrolledWindow {
+                            add = &gtk::ScrolledWindow {
                                 set_min_content_height: 80,
                                 set_max_content_height: 200,
                                 set_hscrollbar_policy: gtk::PolicyType::Never,
@@ -188,13 +180,11 @@ impl SimpleComponent for ModPropertiesDialog {
                             },
                         },
 
-                        // Per-file target section
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
-                            set_spacing: 4,
+                        adw::PreferencesGroup {
+                            set_title: "Files",
 
                             // Spinner shown while files are loading
-                            gtk::Box {
+                            add = &gtk::Box {
                                 set_orientation: gtk::Orientation::Horizontal,
                                 set_spacing: 8,
                                 #[watch]
@@ -212,7 +202,7 @@ impl SimpleComponent for ModPropertiesDialog {
                             },
 
                             // File section shown once loaded
-                            gtk::Box {
+                            add = &gtk::Box {
                                 set_orientation: gtk::Orientation::Vertical,
                                 set_spacing: 4,
                                 #[watch]
@@ -272,14 +262,12 @@ impl SimpleComponent for ModPropertiesDialog {
                             },
                         },
 
-                        // Conflict summary section
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
-                            set_spacing: 4,
+                        adw::PreferencesGroup {
+                            set_title: "Conflicts",
                             #[watch]
                             set_visible: !model.override_files.is_empty() || !model.overridden_files.is_empty(),
 
-                            gtk::Button {
+                            add = &gtk::Button {
                                 #[watch]
                                 set_label: &{
                                     let total = model.override_files.len() + model.overridden_files.len();
@@ -294,7 +282,7 @@ impl SimpleComponent for ModPropertiesDialog {
                                 connect_clicked => ModPropertiesMsg::ToggleConflicts,
                             },
 
-                            gtk::Revealer {
+                            add = &gtk::Revealer {
                                 #[watch]
                                 set_reveal_child: model.conflicts_visible,
 
@@ -359,44 +347,52 @@ impl SimpleComponent for ModPropertiesDialog {
                             },
                         },
 
-                        // Cache folder actions
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Horizontal,
-                            set_spacing: 8,
-                            set_halign: gtk::Align::Start,
+                        adw::PreferencesGroup {
+                            set_title: "Cache Folder",
 
-                            gtk::Button {
-                                set_label: "Open Folder",
-                                set_tooltip_text: Some("Open this mod's cache folder in the file manager"),
-                                connect_clicked => ModPropertiesMsg::OpenFolder,
+                            add = &adw::ActionRow {
+                                set_title: "Open Folder",
+                                set_subtitle: "Open this mod's cache folder in the file manager",
+
+                                add_suffix = &gtk::Button {
+                                    set_icon_name: "folder-open-symbolic",
+                                    set_tooltip_text: Some("Open Folder"),
+                                    set_valign: gtk::Align::Center,
+                                    add_css_class: "flat",
+                                    connect_clicked => ModPropertiesMsg::OpenFolder,
+                                },
                             },
 
-                            gtk::Button {
-                                set_label: "Rescan Cache",
-                                set_tooltip_text: Some("Register all files currently in the cache folder as mod files"),
-                                connect_clicked => ModPropertiesMsg::ScanCacheClicked,
-                            },
-                        },
+                            add = &adw::ActionRow {
+                                set_title: "Rescan Cache",
+                                set_subtitle: "Register all files currently in the cache folder as mod files",
 
-                        // Action buttons
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Horizontal,
-                            set_halign: gtk::Align::End,
-                            set_spacing: 8,
-
-                            gtk::Button {
-                                set_label: "Cancel",
-                                connect_clicked => ModPropertiesMsg::Cancel,
-                            },
-
-                            gtk::Button {
-                                set_label: "Apply",
-                                add_css_class: "suggested-action",
-                                #[watch]
-                                set_sensitive: !model.files_loading,
-                                connect_clicked => ModPropertiesMsg::Apply,
+                                add_suffix = &gtk::Button {
+                                    set_icon_name: "view-refresh-symbolic",
+                                    set_tooltip_text: Some("Rescan Cache"),
+                                    set_valign: gtk::Align::Center,
+                                    add_css_class: "flat",
+                                    connect_clicked => ModPropertiesMsg::ScanCacheClicked,
+                                },
                             },
                         },
+
+                        },
+                    },
+                },
+
+                add_bottom_bar = &gtk::ActionBar {
+                    pack_start = &gtk::Button {
+                        set_label: "Cancel",
+                        connect_clicked => ModPropertiesMsg::Cancel,
+                    },
+
+                    pack_end = &gtk::Button {
+                        set_label: "Apply",
+                        add_css_class: "suggested-action",
+                        #[watch]
+                        set_sensitive: !model.files_loading,
+                        connect_clicked => ModPropertiesMsg::Apply,
                     },
                 },
             },
@@ -469,20 +465,12 @@ impl SimpleComponent for ModPropertiesDialog {
             wins_over,
         ));
         for f in &model.override_files {
-            let row = gtk::ListBoxRow::new();
-            let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-            hbox.set_margin_start(12);
-            hbox.set_margin_end(12);
-            hbox.set_margin_top(5);
-            hbox.set_margin_bottom(5);
-            let label = gtk::Label::new(Some(f));
-            label.set_halign(gtk::Align::Start);
-            label.set_hexpand(true);
-            label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
-            label.add_css_class("monospace");
-            label.set_tooltip_text(Some(f));
-            hbox.append(&label);
-            row.set_child(Some(&hbox));
+            let row = adw::ActionRow::new();
+            row.set_title(f);
+            row.set_title_lines(1);
+            row.set_activatable(false);
+            row.set_tooltip_text(Some(f));
+            row.add_css_class("property");
             widgets.overrides_list.append(&row);
         }
 
@@ -497,20 +485,12 @@ impl SimpleComponent for ModPropertiesDialog {
             lost_to,
         ));
         for f in &model.overridden_files {
-            let row = gtk::ListBoxRow::new();
-            let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-            hbox.set_margin_start(12);
-            hbox.set_margin_end(12);
-            hbox.set_margin_top(5);
-            hbox.set_margin_bottom(5);
-            let label = gtk::Label::new(Some(f));
-            label.set_halign(gtk::Align::Start);
-            label.set_hexpand(true);
-            label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
-            label.add_css_class("monospace");
-            label.set_tooltip_text(Some(f));
-            hbox.append(&label);
-            row.set_child(Some(&hbox));
+            let row = adw::ActionRow::new();
+            row.set_title(f);
+            row.set_title_lines(1);
+            row.set_activatable(false);
+            row.set_tooltip_text(Some(f));
+            row.add_css_class("property");
             widgets.overridden_list.append(&row);
         }
 
@@ -587,20 +567,12 @@ impl SimpleComponent for ModPropertiesDialog {
                     Rc::new(RefCell::new(Vec::new()));
 
                 for (idx, (_, display_path)) in self.files.iter().enumerate() {
-                    let row = gtk::ListBoxRow::new();
-                    let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-                    hbox.set_margin_start(12);
-                    hbox.set_margin_end(8);
-                    hbox.set_margin_top(5);
-                    hbox.set_margin_bottom(5);
-
-                    let label = gtk::Label::new(Some(display_path.as_str()));
-                    label.set_halign(gtk::Align::Start);
-                    label.set_hexpand(true);
-                    label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
-                    label.add_css_class("monospace");
-                    label.set_tooltip_text(Some(display_path.as_str()));
-                    hbox.append(&label);
+                    let row = adw::ActionRow::new();
+                    row.set_title(display_path.as_str());
+                    row.set_title_lines(1);
+                    row.set_activatable(false);
+                    row.set_tooltip_text(Some(display_path.as_str()));
+                    row.add_css_class("property");
 
                     // Per-file Data/Root toggles for Bethesda and Aurora games.
                     if self.is_bethesda || self.is_aurora {
@@ -649,10 +621,9 @@ impl SimpleComponent for ModPropertiesDialog {
                         toggle_box.add_css_class("linked");
                         toggle_box.append(&btn_data);
                         toggle_box.append(&btn_root);
-                        hbox.append(&toggle_box);
+                        row.add_suffix(&toggle_box);
                     }
 
-                    row.set_child(Some(&hbox));
                     self.files_list.append(&row);
                 }
 
