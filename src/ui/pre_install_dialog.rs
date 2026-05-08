@@ -78,118 +78,123 @@ impl SimpleComponent for PreInstallDialog {
             set_resizable: true,
             set_modal: true,
 
-            gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
-
-                adw::HeaderBar {
+            adw::ToolbarView {
+                add_top_bar = &adw::HeaderBar {
                     #[wrap(Some)]
                     set_title_widget = &adw::WindowTitle {
                         set_title: "Install Mod",
                     },
                 },
 
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-                    set_margin_all: 16,
-                    set_spacing: 12,
+                #[wrap(Some)]
+                set_content = &gtk::ScrolledWindow {
+                    set_vexpand: true,
+                    set_hscrollbar_policy: gtk::PolicyType::Never,
 
-                    gtk::Label {
-                        set_label: "Mod Name",
-                        set_halign: gtk::Align::Start,
-                        add_css_class: "heading",
-                    },
+                    adw::Clamp {
+                        set_margin_top: 12,
+                        set_margin_bottom: 12,
+                        set_margin_start: 12,
+                        set_margin_end: 12,
 
-                    #[name = "name_entry"]
-                    gtk::Entry {
-                        set_text: &model.mod_name,
-                        set_hexpand: true,
-                    },
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Vertical,
+                            set_spacing: 12,
 
-                    gtk::Label {
-                        #[watch]
-                        set_visible: model.is_fomod,
-                        set_label: "FOMOD installer will follow after confirming.",
-                        add_css_class: "dim-label",
-                        set_halign: gtk::Align::Start,
-                    },
+                            adw::PreferencesGroup {
+                                set_title: "Mod",
 
-                    adw::Banner {
-                        #[watch]
-                        set_revealed: model.has_root_files && (model.is_bethesda || model.is_aurora),
-                        set_title: "One or more files were auto-assigned to the game root (exe/dll/asi). If this tool expects all its files in the same folder, use \"Set all → D\".",
-                    },
+                                add = &adw::ActionRow {
+                                    set_title: "Name",
+                                    set_activatable: false,
+
+                                    #[name = "name_entry"]
+                                    add_suffix = &gtk::Entry {
+                                        set_text: &model.mod_name,
+                                        set_hexpand: true,
+                                        set_valign: gtk::Align::Center,
+                                    },
+                                },
+                            },
+
+                            adw::Banner {
+                                #[watch]
+                                set_revealed: model.is_fomod,
+                                set_title: "FOMOD installer will follow after confirming.",
+                            },
+
+                            adw::Banner {
+                                #[watch]
+                                set_revealed: model.has_root_files && (model.is_bethesda || model.is_aurora),
+                                set_title: "One or more files were auto-assigned to the game root (exe/dll/asi). If this tool expects all its files in the same folder, use \"Set all → D\".",
+                            },
 
                     // Collapsible file list with per-file Root/Data toggles.
                     // Only shown for Bethesda normal (non-FOMOD) mods with files.
                     // Hidden for REDEngine games: data_subdir="." so there is no
                     // separate Root vs Data distinction — all files deploy to game root.
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 4,
-                        #[watch]
-                        set_visible: !model.is_fomod && !model.file_preview.is_empty(),
+                            adw::PreferencesGroup {
+                                set_title: "Files",
+                                #[watch]
+                                set_visible: !model.is_fomod && !model.file_preview.is_empty(),
 
-                        gtk::Button {
-                            #[watch]
-                            set_label: &if model.files_visible {
-                                format!("Files ({}) ▲", model.file_preview.len())
-                            } else {
-                                format!("Files ({}) ▼", model.file_preview.len())
-                            },
-                            add_css_class: "flat",
-                            set_halign: gtk::Align::Start,
-                            connect_clicked => PreInstallDialogMsg::ToggleFiles,
-                        },
-
-                        gtk::Revealer {
-                            #[watch]
-                            set_reveal_child: model.files_visible,
-
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Vertical,
-                                set_spacing: 6,
-
-                                // "Set all" row and legend — populated imperatively in init()
-                                #[name = "set_all_row"]
-                                gtk::Box {
-                                    set_orientation: gtk::Orientation::Horizontal,
-                                    set_spacing: 8,
+                                add = &gtk::Button {
+                                    #[watch]
+                                    set_label: &if model.files_visible {
+                                        format!("Files ({}) ▲", model.file_preview.len())
+                                    } else {
+                                        format!("Files ({}) ▼", model.file_preview.len())
+                                    },
+                                    add_css_class: "flat",
                                     set_halign: gtk::Align::Start,
+                                    connect_clicked => PreInstallDialogMsg::ToggleFiles,
                                 },
 
-                                gtk::ScrolledWindow {
-                                    set_max_content_height: 500,
-                                    set_propagate_natural_height: true,
-                                    set_hscrollbar_policy: gtk::PolicyType::Never,
+                                add = &gtk::Revealer {
+                                    #[watch]
+                                    set_reveal_child: model.files_visible,
 
-                                    #[name = "files_list"]
-                                    gtk::ListBox {
-                                        set_selection_mode: gtk::SelectionMode::None,
-                                        add_css_class: "boxed-list",
+                                    gtk::Box {
+                                        set_orientation: gtk::Orientation::Vertical,
+                                        set_spacing: 6,
+
+                                        // "Set all" row and legend — populated imperatively in init()
+                                        #[name = "set_all_row"]
+                                        gtk::Box {
+                                            set_orientation: gtk::Orientation::Horizontal,
+                                            set_spacing: 8,
+                                            set_halign: gtk::Align::Start,
+                                        },
+
+                                        gtk::ScrolledWindow {
+                                            set_max_content_height: 500,
+                                            set_propagate_natural_height: true,
+                                            set_hscrollbar_policy: gtk::PolicyType::Never,
+
+                                            #[name = "files_list"]
+                                            gtk::ListBox {
+                                                set_selection_mode: gtk::SelectionMode::None,
+                                                add_css_class: "boxed-list",
+                                            },
+                                        },
                                     },
                                 },
                             },
                         },
                     },
+                },
 
-                    // Action buttons
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Horizontal,
-                        set_halign: gtk::Align::End,
-                        set_spacing: 8,
-                        set_margin_top: 4,
+                add_bottom_bar = &gtk::ActionBar {
+                    pack_start = &gtk::Button {
+                        set_label: "Cancel",
+                        connect_clicked => PreInstallDialogMsg::Cancel,
+                    },
 
-                        gtk::Button {
-                            set_label: "Cancel",
-                            connect_clicked => PreInstallDialogMsg::Cancel,
-                        },
-
-                        gtk::Button {
-                            #[watch]
-                            set_label: if model.is_fomod { "Continue" } else { "Install" },
-                            add_css_class: "suggested-action",
-                            connect_clicked => PreInstallDialogMsg::Confirm,
-                        },
+                    pack_end = &gtk::Button {
+                        #[watch]
+                        set_label: if model.is_fomod { "Continue" } else { "Install" },
+                        add_css_class: "suggested-action",
+                        connect_clicked => PreInstallDialogMsg::Confirm,
                     },
                 },
             },
@@ -261,6 +266,9 @@ impl SimpleComponent for PreInstallDialog {
         for (idx, (path, initial_target)) in model.file_preview.iter().enumerate() {
             let row = adw::ActionRow::new();
             row.set_title(path);
+            row.set_title_lines(1);
+            row.set_activatable(false);
+            row.set_tooltip_text(Some(path));
 
             let check = gtk::CheckButton::new();
             check.set_active(true);
@@ -279,12 +287,14 @@ impl SimpleComponent for PreInstallDialog {
                 btn_data.set_label("D");
                 btn_data.set_tooltip_text(Some("Deploy to Data directory"));
                 btn_data.set_active(*initial_target == InstallTarget::Data);
+                btn_data.add_css_class("dr-btn");
 
                 let btn_root = gtk::ToggleButton::new();
                 btn_root.set_label("R");
                 btn_root.set_tooltip_text(Some("Deploy to game root directory"));
                 btn_root.set_group(Some(&btn_data));
                 btn_root.set_active(*initial_target == InstallTarget::Root);
+                btn_root.add_css_class("dr-btn");
 
                 {
                     let s = sender.input_sender().clone();
@@ -337,6 +347,7 @@ impl SimpleComponent for PreInstallDialog {
             let btn_all_data = gtk::Button::with_label("D");
             btn_all_data.set_tooltip_text(Some("Set all files to Data directory"));
             btn_all_data.add_css_class("flat");
+            btn_all_data.add_css_class("dr-btn");
             {
                 let data_btns = data_btns.clone();
                 let s = sender.input_sender().clone();
@@ -353,6 +364,7 @@ impl SimpleComponent for PreInstallDialog {
             let btn_all_root = gtk::Button::with_label("R");
             btn_all_root.set_tooltip_text(Some("Set all files to game root directory"));
             btn_all_root.add_css_class("flat");
+            btn_all_root.add_css_class("dr-btn");
             {
                 let root_btns = root_btns.clone();
                 let s = sender.input_sender().clone();
