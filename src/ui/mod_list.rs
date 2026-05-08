@@ -1,6 +1,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
+use adw::prelude::*;
 use gtk::prelude::*;
 use relm4::factory::{DynamicIndex, FactoryComponent, FactorySender};
 use relm4::prelude::*;
@@ -46,7 +47,6 @@ pub enum ModListItemKind {
 pub struct ModListItemInit {
     pub kind: ModListItemKind,
     pub visible: bool,
-    pub compact: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -57,7 +57,6 @@ pub struct ModListItem {
     pub kind: ModListItemKind,
     /// Controlled by search filter and group collapse logic.
     pub visible: bool,
-    pub compact: bool,
     pub selection_mode: bool,
     pub selected: bool,
     /// Shared with the row's DragSource; set to true only in selection mode.
@@ -260,66 +259,42 @@ impl FactoryComponent for ModListItem {
                 },
 
                 // ── MOD ROW ──────────────────────────────────────────────
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Horizontal,
-                    set_spacing: 6,
-                    set_margin_start: 8,
-                    set_margin_end: 8,
-                    #[watch]
-                    set_margin_top: if self.compact { 1 } else { 4 },
-                    #[watch]
-                    set_margin_bottom: if self.compact { 1 } else { 4 },
+                #[name = "mod_action_row"]
+                adw::ActionRow {
                     #[watch]
                     set_visible: !self.is_separator(),
+                    #[watch]
+                    set_title: if let ModListItemKind::Mod(r) = &self.kind { r.mod_entry.name.as_str() } else { "" },
+                    #[watch]
+                    set_subtitle: &if let ModListItemKind::Mod(r) = &self.kind {
+                        format_nexus_subtitle(
+                            r.mod_entry.version.as_deref(),
+                            r.mod_entry.author.as_deref(),
+                        )
+                    } else {
+                        String::new()
+                    },
+                    set_title_lines: 1,
+                    set_subtitle_lines: 1,
+                    #[watch]
+                    set_sensitive: if let ModListItemKind::Mod(r) = &self.kind { r.mod_entry.enabled } else { true },
+                    #[watch]
+                    set_tooltip_text: Some(&if let ModListItemKind::Mod(r) = &self.kind {
+                        format_mod_tooltip(&r.mod_entry)
+                    } else {
+                        String::new()
+                    }),
 
-                    gtk::CheckButton {
+                    add_prefix = &gtk::CheckButton {
                         #[watch]
                         set_visible: self.selection_mode,
                         #[watch]
                         set_active: self.selected,
                         set_can_focus: false,
-                    },
-
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Vertical,
-                        set_hexpand: true,
                         set_valign: gtk::Align::Center,
-                        #[watch]
-                        set_sensitive: if let ModListItemKind::Mod(r) = &self.kind { r.mod_entry.enabled } else { true },
-
-                        gtk::Label {
-                            #[watch]
-                            set_label: if let ModListItemKind::Mod(r) = &self.kind { r.mod_entry.name.as_str() } else { "" },
-                            set_halign: gtk::Align::Start,
-                            set_ellipsize: gtk::pango::EllipsizeMode::End,
-                            #[watch]
-                            set_tooltip_text: Some(&if let ModListItemKind::Mod(r) = &self.kind {
-                                format_mod_tooltip(&r.mod_entry)
-                            } else {
-                                String::new()
-                            }),
-                        },
-
-                        gtk::Label {
-                            #[watch]
-                            set_label: &if let ModListItemKind::Mod(r) = &self.kind {
-                                format_nexus_subtitle(
-                                    r.mod_entry.version.as_deref(),
-                                    r.mod_entry.author.as_deref(),
-                                )
-                            } else {
-                                String::new()
-                            },
-                            set_halign: gtk::Align::Start,
-                            set_ellipsize: gtk::pango::EllipsizeMode::End,
-                            add_css_class: "dim-label",
-                            add_css_class: "caption",
-                            #[watch]
-                            set_visible: matches!(&self.kind, ModListItemKind::Mod(r) if r.mod_entry.version.is_some() || r.mod_entry.author.is_some()),
-                        },
                     },
 
-                    gtk::Button {
+                    add_suffix = &gtk::Button {
                         set_icon_name: "view-refresh-symbolic",
                         set_tooltip_text: Some("Reinstall from archive"),
                         set_valign: gtk::Align::Center,
@@ -331,7 +306,7 @@ impl FactoryComponent for ModListItem {
                         }
                     },
 
-                    gtk::Image {
+                    add_suffix = &gtk::Image {
                         set_icon_name: Some("software-update-available-symbolic"),
                         #[watch]
                         set_tooltip_text: Some(&if let ModListItemKind::Mod(r) = &self.kind {
@@ -342,16 +317,18 @@ impl FactoryComponent for ModListItem {
                         #[watch]
                         set_visible: matches!(&self.kind, ModListItemKind::Mod(r) if has_update(&r.mod_entry)),
                         add_css_class: "accent",
+                        set_valign: gtk::Align::Center,
                     },
 
-                    gtk::Label {
+                    add_suffix = &gtk::Label {
                         #[watch]
                         set_label: if let ModListItemKind::Mod(r) = &self.kind { r.priority_label.as_str() } else { "" },
                         add_css_class: "dim-label",
                         add_css_class: "caption",
+                        set_valign: gtk::Align::Center,
                     },
 
-                    gtk::Image {
+                    add_suffix = &gtk::Image {
                         set_icon_name: Some("media-record-symbolic"),
                         #[watch]
                         set_tooltip_text: Some(&if let ModListItemKind::Mod(r) = &self.kind {
@@ -367,9 +344,10 @@ impl FactoryComponent for ModListItem {
                         } else {
                             &["success"]
                         },
+                        set_valign: gtk::Align::Center,
                     },
 
-                    gtk::Image {
+                    add_suffix = &gtk::Image {
                         set_icon_name: Some("emblem-documents-symbolic"),
                         #[watch]
                         set_tooltip_text: Some(&if let ModListItemKind::Mod(r) = &self.kind {
@@ -382,6 +360,7 @@ impl FactoryComponent for ModListItem {
                             &self.kind,
                             ModListItemKind::Mod(r) if r.mod_entry.notes.as_ref().is_some_and(|n| !n.is_empty())
                         ),
+                        set_valign: gtk::Align::Center,
                     },
                 },
             },
@@ -392,7 +371,6 @@ impl FactoryComponent for ModListItem {
         Self {
             kind: init.kind,
             visible: init.visible,
-            compact: init.compact,
             selection_mode: false,
             selected: false,
             drag_enabled: Rc::new(Cell::new(false)),
@@ -599,17 +577,8 @@ impl FactoryComponent for ModListItem {
                     .unwrap();
             });
 
-            if let Some(outer) = root_ref.child().and_downcast::<gtk::Box>()
-                && let Some(mod_row_box) = outer.last_child().and_downcast::<gtk::Box>()
-            {
-                // Insert after reinstall button: selection_cb → name_box → reinstall_btn
-                let reinstall_widget = mod_row_box
-                    .first_child()
-                    .and_then(|c| c.next_sibling())
-                    .and_then(|c| c.next_sibling());
-                mod_row_box.insert_child_after(&rename_btn, reinstall_widget.as_ref());
-                mod_row_box.insert_child_after(&props_btn, Some(&rename_btn));
-            }
+            widgets.mod_action_row.add_suffix(&rename_btn);
+            widgets.mod_action_row.add_suffix(&props_btn);
 
             // Right-click gesture → open Properties dialog
             let right_click = gtk::GestureClick::new();

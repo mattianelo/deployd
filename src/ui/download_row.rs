@@ -1,3 +1,4 @@
+use adw::prelude::*;
 use gtk::prelude::*;
 use relm4::factory::{DynamicIndex, FactoryComponent, FactorySender};
 use relm4::prelude::*;
@@ -34,85 +35,38 @@ impl FactoryComponent for DownloadRow {
     type ParentWidget = gtk::ListBox;
 
     view! {
-        root = gtk::ListBoxRow {
+        root = adw::ActionRow {
             set_selectable: false,
             #[watch]
             set_visible: self.visible,
+            #[watch]
+            set_title: &self.display_name(),
+            #[watch]
+            set_subtitle: &self.download_subtitle(),
+            set_title_lines: 1,
+            set_subtitle_lines: 2,
+            set_activatable: false,
 
-            gtk::Box {
-                set_orientation: gtk::Orientation::Horizontal,
-                set_spacing: 8,
-                set_margin_start: 12,
-                set_margin_end: 12,
-                set_margin_top: 8,
-                set_margin_bottom: 8,
+            add_prefix = &gtk::Image {
+                #[watch]
+                set_icon_name: Some(status_icon(&self.entry.status)),
+                #[watch]
+                set_css_classes: &status_css(&self.entry.status),
+                set_valign: gtk::Align::Center,
+            },
 
-                gtk::Image {
-                    #[watch]
-                    set_icon_name: Some(status_icon(&self.entry.status)),
-                    #[watch]
-                    set_css_classes: &status_css(&self.entry.status),
-                },
-
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-                    set_hexpand: true,
-                    set_valign: gtk::Align::Center,
-                    set_spacing: 2,
-
-                    gtk::Label {
-                        #[watch]
-                        set_label: &self.display_name(),
-                        set_halign: gtk::Align::Start,
-                        set_ellipsize: gtk::pango::EllipsizeMode::End,
-                        set_width_request: 1,
-                    },
-
-                    gtk::Label {
-                        #[watch]
-                        set_label: &self.secondary_label(),
-                        #[watch]
-                        set_visible: self.entry.metadata_fetched
-                            && (self.entry.nexus_file_name.is_some()
-                                || self.entry.version.is_some()),
-                        set_halign: gtk::Align::Start,
-                        set_ellipsize: gtk::pango::EllipsizeMode::End,
-                        add_css_class: "dim-label",
-                        add_css_class: "caption",
-                    },
-
-                    gtk::Label {
-                        #[watch]
-                        set_label: &self.entry.status_msg,
-                        set_halign: gtk::Align::Start,
-                        set_ellipsize: gtk::pango::EllipsizeMode::End,
-                        add_css_class: "dim-label",
-                        add_css_class: "caption",
-                    },
-
-                    gtk::Label {
-                        #[watch]
-                        set_label: self.entry.error_msg.as_deref().unwrap_or(""),
-                        set_halign: gtk::Align::Start,
-                        set_wrap: true,
-                        set_max_width_chars: 30,
-                        add_css_class: "caption",
-                        add_css_class: "error",
-                        #[watch]
-                        set_visible: self.entry.error_msg.is_some(),
-                    },
-
-                    gtk::ProgressBar {
-                        #[watch]
-                        set_fraction: self.entry.progress,
-                        #[watch]
-                        set_visible: self.entry.status == DownloadStatus::Downloading
-                            || self.entry.status == DownloadStatus::Extracting,
-                    },
-                },
+            add_suffix = &gtk::ProgressBar {
+                #[watch]
+                set_fraction: self.entry.progress,
+                #[watch]
+                set_visible: self.entry.status == DownloadStatus::Downloading
+                    || self.entry.status == DownloadStatus::Extracting,
+                set_valign: gtk::Align::Center,
+                set_width_request: 96,
+            },
 
                 // Pause — shown while actively downloading
-                gtk::Button {
+                add_suffix = &gtk::Button {
                     set_icon_name: "media-playback-pause-symbolic",
                     set_tooltip_text: Some("Pause download"),
                     set_valign: gtk::Align::Center,
@@ -126,7 +80,7 @@ impl FactoryComponent for DownloadRow {
                 },
 
                 // Resume — shown when paused
-                gtk::Button {
+                add_suffix = &gtk::Button {
                     set_icon_name: "media-playback-start-symbolic",
                     set_tooltip_text: Some("Resume download"),
                     set_valign: gtk::Align::Center,
@@ -140,7 +94,7 @@ impl FactoryComponent for DownloadRow {
                 },
 
                 // Install — labeled pill shown when ready or failed (not just icon)
-                gtk::Button {
+                add_suffix = &gtk::Button {
                     #[watch]
                     set_label: if self.entry.status == DownloadStatus::Failed {
                         "Retry"
@@ -165,7 +119,7 @@ impl FactoryComponent for DownloadRow {
                 },
 
                 // Reinstall — icon only, shown when installed and archive present
-                gtk::Button {
+                add_suffix = &gtk::Button {
                     set_icon_name: "view-refresh-symbolic",
                     set_tooltip_text: Some("Reinstall (replace existing mod)"),
                     set_valign: gtk::Align::Center,
@@ -180,7 +134,7 @@ impl FactoryComponent for DownloadRow {
                 },
 
                 // Rename — icon only, shown when not active
-                gtk::Button {
+                add_suffix = &gtk::Button {
                     set_icon_name: "document-edit-symbolic",
                     set_tooltip_text: Some("Rename"),
                     set_valign: gtk::Align::Center,
@@ -192,7 +146,6 @@ impl FactoryComponent for DownloadRow {
                         sender.output(DownloadRowOutput::Rename(index.clone())).ok();
                     },
                 },
-            },
         }
     }
 
@@ -343,6 +296,22 @@ impl DownloadRow {
             (None, Some(ver)) => format!("v{ver}"),
             (None, None) => String::new(),
         }
+    }
+
+    fn download_subtitle(&self) -> String {
+        let mut parts = Vec::new();
+        if self.entry.metadata_fetched
+            && (self.entry.nexus_file_name.is_some() || self.entry.version.is_some())
+        {
+            parts.push(self.secondary_label());
+        }
+        if !self.entry.status_msg.is_empty() {
+            parts.push(self.entry.status_msg.clone());
+        }
+        if let Some(error) = &self.entry.error_msg {
+            parts.push(error.clone());
+        }
+        parts.join("\n")
     }
 }
 

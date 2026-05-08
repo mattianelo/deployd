@@ -119,9 +119,6 @@ fn main() {
             font-size: 0.85em;
             transition: background-color 150ms ease, color 150ms ease;
         }
-        .compact-row {
-            min-height: 32px;
-        }
         .dr-btn {
             padding: 2px 8px;
             min-height: 0;

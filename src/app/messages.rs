@@ -278,10 +278,6 @@ pub enum AppMsg {
     PauseDownload(DynamicIndex),
     /// Resume a paused download (download_id).
     ResumeDownload(DynamicIndex),
-    /// Set compact plugin row display mode.
-    SetCompactPluginRows(bool),
-    /// Set compact mod row display mode.
-    SetCompactModRows(bool),
     /// Set and persist the color scheme (0=System, 1=Light, 2=Dark).
     SetColorScheme(u32),
     /// User clicked "Login with Nexus" in the headerbar avatar popover.

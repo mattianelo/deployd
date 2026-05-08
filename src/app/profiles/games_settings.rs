@@ -29,20 +29,12 @@ impl App {
                 .launch((
                     tracker,
                     self.nexus_username.is_some(),
-                    self.compact_plugin_rows,
-                    self.compact_mod_rows,
                     self.color_scheme_idx,
                 ))
                 .forward(sender.input_sender(), |output| match output {
                     SettingsDialogOutput::Closed => AppMsg::SettingsClosed,
                     SettingsDialogOutput::ApiKeyChanged => AppMsg::NexusApiKeyUpdated,
                     SettingsDialogOutput::ManageGames => AppMsg::ManageGamesClicked,
-                    SettingsDialogOutput::SetCompactPluginRows(compact) => {
-                        AppMsg::SetCompactPluginRows(compact)
-                    }
-                    SettingsDialogOutput::SetCompactModRows(compact) => {
-                        AppMsg::SetCompactModRows(compact)
-                    }
                     SettingsDialogOutput::ColorSchemeChanged(idx) => AppMsg::SetColorScheme(idx),
                 }),
         );

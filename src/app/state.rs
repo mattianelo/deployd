@@ -207,10 +207,6 @@ pub struct App {
     /// Drives the headerbar spinner + status label and disables the "Add Mod"
     /// button until the download completes.
     pub(crate) proton_setup: bool,
-    /// Whether plugin list rows should use compact (reduced height) display.
-    pub(crate) compact_plugin_rows: bool,
-    /// Whether mod list rows should use compact (reduced height) display.
-    pub(crate) compact_mod_rows: bool,
     /// Persisted color scheme index: 0=System, 1=Light, 2=Dark.
     pub(crate) color_scheme_idx: u32,
     /// Mod name fetched from Nexus in parallel with archive extraction. Used to

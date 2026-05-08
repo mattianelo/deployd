@@ -220,8 +220,6 @@ pub(super) fn build_model(
         mod_snapshots_list: gtk::ListBox::new(),
         plugin_snapshots_list: gtk::ListBox::new(),
         proton_setup: false,
-        compact_plugin_rows: false,
-        compact_mod_rows: false,
         color_scheme_idx: 0,
         pending_fetched_name: None,
         pending_file_id_needed: None,
@@ -726,22 +724,6 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             None
         };
 
-        let compact_plugin_rows = tracker
-            .get_setting("compact_plugin_rows")
-            .await
-            .ok()
-            .flatten()
-            .map(|v| v == "1")
-            .unwrap_or(false);
-
-        let compact_mod_rows = tracker
-            .get_setting("compact_mod_rows")
-            .await
-            .ok()
-            .flatten()
-            .map(|v| v == "1")
-            .unwrap_or(false);
-
         let color_scheme_idx = tracker
             .get_setting("color_scheme")
             .await
@@ -782,8 +764,6 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             nexus_username,
             nexus_avatar_url,
             nexus_is_premium,
-            compact_plugin_rows,
-            compact_mod_rows,
             color_scheme_idx,
             restored_from_backup,
         })

@@ -1669,8 +1669,6 @@ impl Component for App {
             }
             AppMsg::PauseDownload(idx) => self.handle_pause_download(idx),
             AppMsg::ResumeDownload(idx) => self.handle_resume_download(idx, &sender),
-            AppMsg::SetCompactPluginRows(compact) => self.handle_set_compact_plugin_rows(compact),
-            AppMsg::SetCompactModRows(compact) => self.handle_set_compact_mod_rows(compact),
             AppMsg::SetColorScheme(idx) => self.handle_set_color_scheme(idx),
             AppMsg::NexusLoginClicked => self.handle_nexus_login_clicked(&sender),
             AppMsg::NexusLogoutClicked => self.handle_nexus_logout_clicked(&sender),

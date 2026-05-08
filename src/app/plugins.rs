@@ -72,7 +72,6 @@ impl App {
                         mod_enabled: row.mod_enabled,
                         dirty_info: row.dirty_info.clone(),
                         is_vanilla: row.is_vanilla,
-                        compact: row.compact,
                     })
                 })
                 .collect()
@@ -203,7 +202,6 @@ impl App {
                         mod_enabled: true,
                         dirty_info,
                         is_vanilla: true,
-                        compact: self.compact_plugin_rows,
                     },
                 );
             }
@@ -347,23 +345,6 @@ impl App {
             let val = idx.to_string();
             tokio::spawn(async move {
                 let _ = tracker.set_setting("color_scheme", &val).await;
-            });
-        }
-    }
-
-    pub(crate) fn handle_set_compact_plugin_rows(&mut self, compact: bool) {
-        self.compact_plugin_rows = compact;
-        let mut guard = self.plugins.guard();
-        for i in 0..guard.len() {
-            if let Some(row) = guard.get_mut(i) {
-                row.compact = compact;
-            }
-        }
-        drop(guard);
-        if let Some(tracker) = self.tracker.clone() {
-            let val = if compact { "1" } else { "0" };
-            tokio::spawn(async move {
-                let _ = tracker.set_setting("compact_plugin_rows", val).await;
             });
         }
     }

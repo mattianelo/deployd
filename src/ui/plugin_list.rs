@@ -1,6 +1,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
+use adw::prelude::*;
 use gtk::prelude::*;
 use relm4::factory::{DynamicIndex, FactoryComponent, FactorySender};
 use relm4::prelude::*;
@@ -26,8 +27,6 @@ pub struct PluginRowInit {
     /// Whether this is a vanilla/DLC plugin not managed by Deployd.
     /// Vanilla rows are shown as read-only (checkbox insensitive).
     pub is_vanilla: bool,
-    /// Whether compact (reduced height) display is active when the row is created.
-    pub compact: bool,
 }
 
 #[derive(Debug)]
@@ -49,8 +48,6 @@ pub struct PluginRow {
     pub plugin_type_label: &'static str,
     /// CSS modifier class for the type badge: "plugin-badge-esm" etc.
     pub plugin_type_css: &'static str,
-    /// Whether compact (reduced height) display is active.
-    pub compact: bool,
     pub selection_mode: bool,
     pub selected: bool,
     /// Shared with the row's DragSource; set to true only in selection mode.
@@ -79,95 +76,81 @@ impl FactoryComponent for PluginRow {
     type ParentWidget = gtk::ListBox;
 
     view! {
-        root = gtk::ListBoxRow {
+        root = adw::ActionRow {
             set_selectable: false,
             #[watch]
             set_activatable: self.selection_mode,
             #[watch]
             set_visible: self.visible,
             #[watch]
-            set_css_classes: if self.compact { &["compact-row"] } else { &[] },
+            set_title: &self.display_filename,
+            #[watch]
+            set_subtitle: &self.mod_name,
+            set_title_lines: 1,
+            set_subtitle_lines: 1,
+            #[watch]
+            set_sensitive: self.mod_enabled,
 
-            gtk::Box {
-                set_orientation: gtk::Orientation::Horizontal,
-                set_spacing: 6,
-                set_margin_start: 8,
-                set_margin_end: 8,
+            add_prefix = &gtk::CheckButton {
                 #[watch]
-                set_margin_top: if self.compact { 1 } else { 4 },
+                set_visible: self.selection_mode,
                 #[watch]
-                set_margin_bottom: if self.compact { 1 } else { 4 },
-                // Greys out all child widgets (checkbutton + labels) when the
-                // parent mod is disabled. GTK applies visual dimming automatically.
+                set_active: self.selected,
+                set_can_focus: false,
+                set_valign: gtk::Align::Center,
+            },
+
+            add_prefix = &gtk::Label {
                 #[watch]
-                set_sensitive: self.mod_enabled,
+                set_label: self.plugin_type_label,
+                #[watch]
+                set_css_classes: self.badge_css_classes(),
+                set_valign: gtk::Align::Center,
+            },
 
-                gtk::CheckButton {
-                    #[watch]
-                    set_visible: self.selection_mode,
-                    #[watch]
-                    set_active: self.selected,
-                    set_can_focus: false,
-                },
+            // Dirty edits indicator — red icon shown when the LOOT masterlist flags
+            // this plugin's on-disk CRC. Tooltip shows ITM/UDR/NAV counts + utility.
+            add_suffix = &gtk::Image {
+                set_icon_name: Some("emblem-important-symbolic"),
+                #[watch]
+                set_visible: self.dirty_info.is_some(),
+                #[watch]
+                set_tooltip_text: Some(&match &self.dirty_info {
+                    Some(info) => info.tooltip(),
+                    None => String::new(),
+                }),
+                add_css_class: "error",
+                set_valign: gtk::Align::Center,
+            },
 
-                gtk::Label {
-                    #[watch]
-                    set_label: self.plugin_type_label,
-                    #[watch]
-                    set_css_classes: self.badge_css_classes(),
-                },
+            add_suffix = &gtk::Image {
+                set_icon_name: Some("dialog-warning-symbolic"),
+                #[watch]
+                set_visible: !self.missing_masters.is_empty(),
+                #[watch]
+                set_tooltip_text: Some(&if self.missing_masters.is_empty() {
+                    String::new()
+                } else {
+                    format!("Missing master(s): {}", self.missing_masters.join(", "))
+                }),
+                add_css_class: "warning",
+                set_valign: gtk::Align::Center,
+            },
 
-                gtk::Label {
-                    #[watch]
-                    set_label: &self.display_filename,
-                    #[watch]
-                    set_sensitive: self.plugin.enabled,
-                    set_hexpand: true,
-                    set_halign: gtk::Align::Start,
-                    set_ellipsize: gtk::pango::EllipsizeMode::End,
-                },
+            add_suffix = &gtk::Label {
+                #[watch]
+                set_label: &self.order_label,
+                add_css_class: "dim-label",
+                add_css_class: "caption",
+                set_valign: gtk::Align::Center,
+            },
 
-                // Dirty edits indicator — red icon shown when the LOOT masterlist flags
-                // this plugin's on-disk CRC. Tooltip shows ITM/UDR/NAV counts + utility.
-                gtk::Image {
-                    set_icon_name: Some("emblem-important-symbolic"),
-                    #[watch]
-                    set_visible: self.dirty_info.is_some(),
-                    #[watch]
-                    set_tooltip_text: Some(&match &self.dirty_info {
-                        Some(info) => info.tooltip(),
-                        None => String::new(),
-                    }),
-                    add_css_class: "error",
-                },
-
-                gtk::Image {
-                    set_icon_name: Some("dialog-warning-symbolic"),
-                    #[watch]
-                    set_visible: !self.missing_masters.is_empty(),
-                    #[watch]
-                    set_tooltip_text: Some(&if self.missing_masters.is_empty() {
-                        String::new()
-                    } else {
-                        format!("Missing master(s): {}", self.missing_masters.join(", "))
-                    }),
-                    add_css_class: "warning",
-                },
-
-                gtk::Label {
-                    #[watch]
-                    set_label: &self.order_label,
-                    add_css_class: "dim-label",
-                    add_css_class: "caption",
-                },
-
-                gtk::Label {
-                    #[watch]
-                    set_label: &self.mod_name,
-                    add_css_class: "dim-label",
-                    set_ellipsize: gtk::pango::EllipsizeMode::End,
-                    set_max_width_chars: 20,
-                },
+            add_suffix = &gtk::Image {
+                set_icon_name: Some("object-select-symbolic"),
+                set_tooltip_text: Some("Plugin enabled"),
+                #[watch]
+                set_visible: self.plugin.enabled,
+                set_valign: gtk::Align::Center,
             },
         }
     }
@@ -193,7 +176,6 @@ impl FactoryComponent for PluginRow {
             is_vanilla: init.is_vanilla,
             plugin_type_label,
             plugin_type_css,
-            compact: init.compact,
             selection_mode: false,
             selected: false,
             drag_enabled: Rc::new(Cell::new(false)),

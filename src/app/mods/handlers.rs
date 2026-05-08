@@ -99,7 +99,6 @@ impl App {
                     block.push(ModListItemInit {
                         kind: item.kind,
                         visible: item.visible,
-                        compact: item.compact,
                     });
                 }
             }
@@ -177,7 +176,6 @@ impl App {
                                 reinstall_from_file: init.reinstall_from_file,
                             })),
                             visible: true,
-                            compact: self.compact_mod_rows,
                         })
                 })
                 .collect()
@@ -600,25 +598,6 @@ impl App {
         }
         self.reinstall_mode = true;
         sender.input(AppMsg::FileChosen(path));
-    }
-
-    pub(crate) fn handle_set_compact_mod_rows(&mut self, compact: bool) {
-        self.compact_mod_rows = compact;
-        let mut guard = self.mods.guard();
-        for i in 0..guard.len() {
-            if let Some(row) = guard.get_mut(i)
-                && !row.is_separator()
-            {
-                row.compact = compact;
-            }
-        }
-        drop(guard);
-        if let Some(tracker) = self.tracker.clone() {
-            let val = if compact { "1" } else { "0" };
-            tokio::spawn(async move {
-                let _ = tracker.set_setting("compact_mod_rows", val).await;
-            });
-        }
     }
 
     pub(crate) fn handle_enter_mod_selection_mode(&mut self) {

@@ -78,7 +78,6 @@ impl App {
                         color: g.color.clone(),
                     },
                     visible: true,
-                    compact: false,
                 });
                 group_idx += 1;
             }
@@ -119,7 +118,6 @@ impl App {
                     reinstall_from_file,
                 })),
                 visible,
-                compact: self.compact_mod_rows,
             });
         }
 
@@ -134,7 +132,6 @@ impl App {
                     color: g.color.clone(),
                 },
                 visible: true,
-                compact: false,
             });
             group_idx += 1;
         }
@@ -248,7 +245,6 @@ impl App {
                     mod_enabled: true,
                     dirty_info,
                     is_vanilla: true,
-                    compact: self.compact_plugin_rows,
                 });
             }
         }
@@ -297,7 +293,6 @@ impl App {
                 mod_enabled,
                 dirty_info,
                 is_vanilla: false,
-                compact: self.compact_plugin_rows,
             });
             managed_display_idx += 1;
         }

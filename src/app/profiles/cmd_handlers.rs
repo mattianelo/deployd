@@ -183,8 +183,6 @@ impl App {
 
                 self.rate_limit_info = data.rate_limit_info;
 
-                self.handle_set_compact_plugin_rows(data.compact_plugin_rows);
-                self.handle_set_compact_mod_rows(data.compact_mod_rows);
                 self.handle_set_color_scheme(data.color_scheme_idx);
 
                 if let Some(nxm) = self.pending_nxm.take() {
