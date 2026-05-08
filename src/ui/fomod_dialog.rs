@@ -518,10 +518,8 @@ impl SimpleComponent for FomodDialog {
             set_default_size: (1100, 660),
             set_modal: true,
 
-            gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
-
-                adw::HeaderBar {
+            adw::ToolbarView {
+                add_top_bar = &adw::HeaderBar {
                     #[wrap(Some)]
                     set_title_widget = &adw::WindowTitle {
                         #[watch]
@@ -531,52 +529,52 @@ impl SimpleComponent for FomodDialog {
                     },
                 },
 
-                // Main content: options on the left, image preview on the right.
-                // Built imperatively in init() as gtk::Paned so the options panel
-                // cannot be pushed smaller than its natural size by a wide image.
+                // Main content: adaptive options and preview pages.
                 #[local_ref]
-                content_paned -> gtk::Paned {},
+                #[wrap(Some)]
+                set_content = &content_split -> adw::NavigationSplitView {
+                    set_vexpand: true,
+                    set_collapsed: false,
+                    set_min_sidebar_width: 420.0,
+                    set_max_sidebar_width: 720.0,
+                },
 
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Horizontal,
-                    set_spacing: 8,
-                    set_margin_all: 16,
-                    set_halign: gtk::Align::End,
-
-                    gtk::Button {
+                add_bottom_bar = &gtk::ActionBar {
+                    pack_start = &gtk::Button {
                         set_label: "Cancel",
                         connect_clicked => FomodDialogMsg::Cancel,
                     },
 
-                    gtk::Box {
-                        set_hexpand: true,
-                    },
+                    pack_end = &gtk::Box {
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 8,
 
-                    gtk::Button {
-                        set_label: "Back",
-                        #[watch]
-                        set_sensitive: !model.is_first_step(),
-                        connect_clicked => FomodDialogMsg::PrevStep,
-                    },
+                        gtk::Button {
+                            set_label: "Back",
+                            #[watch]
+                            set_sensitive: !model.is_first_step(),
+                            connect_clicked => FomodDialogMsg::PrevStep,
+                        },
 
-                    gtk::Button {
-                        set_label: "Next",
-                        add_css_class: "suggested-action",
-                        #[watch]
-                        set_visible: !model.is_last_step(),
-                        #[watch]
-                        set_sensitive: model.current_step_valid(),
-                        connect_clicked => FomodDialogMsg::NextStep,
-                    },
+                        gtk::Button {
+                            set_label: "Next",
+                            add_css_class: "suggested-action",
+                            #[watch]
+                            set_visible: !model.is_last_step(),
+                            #[watch]
+                            set_sensitive: model.current_step_valid(),
+                            connect_clicked => FomodDialogMsg::NextStep,
+                        },
 
-                    gtk::Button {
-                        set_label: "Install",
-                        add_css_class: "suggested-action",
-                        #[watch]
-                        set_visible: model.is_last_step(),
-                        #[watch]
-                        set_sensitive: model.current_step_valid(),
-                        connect_clicked => FomodDialogMsg::Confirm,
+                        gtk::Button {
+                            set_label: "Install",
+                            add_css_class: "suggested-action",
+                            #[watch]
+                            set_visible: model.is_last_step(),
+                            #[watch]
+                            set_sensitive: model.current_step_valid(),
+                            connect_clicked => FomodDialogMsg::Confirm,
+                        },
                     },
                 },
             },
@@ -623,23 +621,21 @@ impl SimpleComponent for FomodDialog {
         options_scroll.set_hexpand(true);
         options_scroll.set_vexpand(true);
         options_scroll.set_hscrollbar_policy(gtk::PolicyType::Never);
-        options_scroll.set_margin_start(16);
-        options_scroll.set_margin_end(16);
-        options_scroll.set_margin_top(8);
-        options_scroll.set_margin_bottom(8);
         options_scroll.set_child(Some(&content_box));
 
-        // Paned keeps the options panel from being squeezed by a wide image.
-        // set_shrink_start_child: false → options cannot go below their natural width.
-        // set_resize_end_child: false → extra window width goes to options, not image.
-        let content_paned = gtk::Paned::new(gtk::Orientation::Horizontal);
-        content_paned.set_vexpand(true);
-        content_paned.set_shrink_start_child(false);
-        content_paned.set_shrink_end_child(false);
-        content_paned.set_resize_start_child(true);
-        content_paned.set_resize_end_child(false);
-        content_paned.set_start_child(Some(&options_scroll));
-        content_paned.set_end_child(Some(&image_panel));
+        let options_clamp = adw::Clamp::new();
+        options_clamp.set_margin_top(12);
+        options_clamp.set_margin_bottom(12);
+        options_clamp.set_margin_start(12);
+        options_clamp.set_margin_end(12);
+        options_clamp.set_child(Some(&options_scroll));
+
+        let options_page = adw::NavigationPage::new(&options_clamp, "Options");
+        let preview_page = adw::NavigationPage::new(&image_panel, "Preview");
+
+        let content_split = adw::NavigationSplitView::new();
+        content_split.set_sidebar(Some(&options_page));
+        content_split.set_content(Some(&preview_page));
 
         let mut model = FomodDialog {
             config,
