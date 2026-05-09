@@ -773,6 +773,8 @@ impl Component for App {
                             gtk::Box {
                                 set_orientation: gtk::Orientation::Horizontal,
                                 add_css_class: "headerbar",
+                                set_margin_top: 8,
+                                set_margin_bottom: 4,
                                 #[watch]
                                 set_visible: !model.mod_selection_active,
 
@@ -780,6 +782,7 @@ impl Component for App {
                                     set_label: "Mod Order",
                                     add_css_class: "heading",
                                     set_halign: gtk::Align::Start,
+                                    set_margin_start: 8,
                                 },
 
                                 gtk::Box {

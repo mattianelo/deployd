@@ -108,7 +108,7 @@ impl SimpleComponent for ModPropertiesDialog {
     view! {
         adw::Window {
             set_title: Some("Mod Properties"),
-            set_default_size: (820, 700),
+            set_default_size: (980, 820),
             set_modal: true,
 
             adw::ToolbarView {
@@ -126,7 +126,7 @@ impl SimpleComponent for ModPropertiesDialog {
                     set_hscrollbar_policy: gtk::PolicyType::Never,
 
                     adw::Clamp {
-                        set_maximum_size: 720,
+                        set_maximum_size: 920,
                         set_margin_top: 12,
                         set_margin_bottom: 12,
                         set_margin_start: 12,
@@ -134,55 +134,9 @@ impl SimpleComponent for ModPropertiesDialog {
 
                     gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
-                            set_spacing: 16,
+                            set_spacing: 12,
 
                         adw::PreferencesGroup {
-                            set_title: "Details",
-                            #[name = "name_entry"]
-                            add = &adw::EntryRow {
-                                set_title: "Name",
-                                set_text: &model.name,
-                            },
-
-                            add = &adw::ActionRow {
-                                set_title: "Version",
-                                set_subtitle: model.version.as_deref().unwrap_or("Unknown"),
-                            },
-
-                            add = &adw::ActionRow {
-                                set_title: "Author",
-                                set_subtitle: model.author.as_deref().unwrap_or("Unknown"),
-                            },
-
-                            add = &adw::ActionRow {
-                                set_title: "Installed",
-                                set_subtitle: model.installed_at.as_deref().unwrap_or("Unknown").split('T').next().unwrap_or("Unknown"),
-                            },
-                        },
-
-                        adw::PreferencesGroup {
-                            set_title: "Notes",
-
-                            add = &gtk::ScrolledWindow {
-                                set_min_content_height: 80,
-                                set_max_content_height: 200,
-                                set_hscrollbar_policy: gtk::PolicyType::Never,
-                                add_css_class: "card",
-
-                                #[name = "notes_view"]
-                                gtk::TextView {
-                                    set_wrap_mode: gtk::WrapMode::WordChar,
-                                    set_top_margin: 6,
-                                    set_bottom_margin: 6,
-                                    set_left_margin: 6,
-                                    set_right_margin: 6,
-                                },
-                            },
-                        },
-
-                        adw::PreferencesGroup {
-                            set_title: "Files",
-
                             // Spinner shown while files are loading
                             add = &gtk::Box {
                                 set_orientation: gtk::Orientation::Horizontal,
@@ -247,7 +201,8 @@ impl SimpleComponent for ModPropertiesDialog {
                                         },
 
                                         gtk::ScrolledWindow {
-                                            set_max_content_height: 320,
+                                            set_min_content_height: 360,
+                                            set_max_content_height: 560,
                                             set_propagate_natural_height: true,
                                             set_hscrollbar_policy: gtk::PolicyType::Never,
 
@@ -263,7 +218,6 @@ impl SimpleComponent for ModPropertiesDialog {
                         },
 
                         adw::PreferencesGroup {
-                            set_title: "Conflicts",
                             #[watch]
                             set_visible: !model.override_files.is_empty() || !model.overridden_files.is_empty(),
 
@@ -305,7 +259,8 @@ impl SimpleComponent for ModPropertiesDialog {
                                         },
 
                                         gtk::ScrolledWindow {
-                                            set_max_content_height: 180,
+                                            set_min_content_height: 180,
+                                            set_max_content_height: 280,
                                             set_propagate_natural_height: true,
                                             set_hscrollbar_policy: gtk::PolicyType::Never,
 
@@ -332,7 +287,8 @@ impl SimpleComponent for ModPropertiesDialog {
                                         },
 
                                         gtk::ScrolledWindow {
-                                            set_max_content_height: 180,
+                                            set_min_content_height: 180,
+                                            set_max_content_height: 280,
                                             set_propagate_natural_height: true,
                                             set_hscrollbar_policy: gtk::PolicyType::Never,
 
@@ -343,6 +299,26 @@ impl SimpleComponent for ModPropertiesDialog {
                                             },
                                         },
                                     },
+                                },
+                            },
+                        },
+
+                        adw::PreferencesGroup {
+                            set_title: "Notes",
+
+                            add = &gtk::ScrolledWindow {
+                                set_min_content_height: 64,
+                                set_max_content_height: 120,
+                                set_hscrollbar_policy: gtk::PolicyType::Never,
+                                add_css_class: "card",
+
+                                #[name = "notes_view"]
+                                gtk::TextView {
+                                    set_wrap_mode: gtk::WrapMode::WordChar,
+                                    set_top_margin: 6,
+                                    set_bottom_margin: 6,
+                                    set_left_margin: 6,
+                                    set_right_margin: 6,
                                 },
                             },
                         },
@@ -374,6 +350,30 @@ impl SimpleComponent for ModPropertiesDialog {
                                     add_css_class: "flat",
                                     connect_clicked => ModPropertiesMsg::ScanCacheClicked,
                                 },
+                            },
+                        },
+
+                        adw::PreferencesGroup {
+                            set_title: "Details",
+                            #[name = "name_entry"]
+                            add = &adw::EntryRow {
+                                set_title: "Name",
+                                set_text: &model.name,
+                            },
+
+                            add = &adw::ActionRow {
+                                set_title: "Version",
+                                set_subtitle: model.version.as_deref().unwrap_or("Unknown"),
+                            },
+
+                            add = &adw::ActionRow {
+                                set_title: "Author",
+                                set_subtitle: model.author.as_deref().unwrap_or("Unknown"),
+                            },
+
+                            add = &adw::ActionRow {
+                                set_title: "Installed",
+                                set_subtitle: model.installed_at.as_deref().unwrap_or("Unknown").split('T').next().unwrap_or("Unknown"),
                             },
                         },
 

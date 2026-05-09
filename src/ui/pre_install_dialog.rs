@@ -131,10 +131,9 @@ impl SimpleComponent for PreInstallDialog {
 
                     // Collapsible file list with per-file Root/Data toggles.
                     // Only shown for Bethesda normal (non-FOMOD) mods with files.
-                    // Hidden for REDEngine games: data_subdir="." so there is no
-                    // separate Root vs Data distinction — all files deploy to game root.
+                            // Hidden for REDEngine games: data_subdir="." so there is no
+                            // separate Root vs Data distinction — all files deploy to game root.
                             adw::PreferencesGroup {
-                                set_title: "Files",
                                 #[watch]
                                 set_visible: !model.is_fomod && !model.file_preview.is_empty(),
 

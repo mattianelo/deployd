@@ -123,6 +123,12 @@ fn main() {
         .plain-panel-bg {
             background-color: @window_bg_color;
         }
+        .download-menu-delete {
+            color: @error_color;
+        }
+        .download-menu-delete:hover {
+            background-color: alpha(@error_color, 0.08);
+        }
         .dr-btn {
             padding: 2px 8px;
             min-height: 0;
