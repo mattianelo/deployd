@@ -21,7 +21,7 @@ impl App {
     /// for things that require the user's attention (errors, failures).
     pub(crate) fn push_notification(&mut self, message: &str) {
         let row = adw::ExpanderRow::new();
-        row.set_title(message);
+        row.set_title(&gtk::glib::markup_escape_text(message));
         row.set_title_lines(2);
 
         let dismiss_btn = gtk::Button::new();

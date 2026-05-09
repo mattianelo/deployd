@@ -431,13 +431,13 @@ fn build_group_widget(
 
     for (plugin_idx, plugin) in group.plugins.iter().enumerate() {
         let row = adw::ActionRow::new();
-        row.set_title(&plugin.name);
+        row.set_title(&gtk::glib::markup_escape_text(&plugin.name));
         // Only show description subtitle when it adds information beyond the title.
         // Many FOMODs have descriptions that merely restate the plugin name.
         if !plugin.description.is_empty()
             && plugin.description.to_lowercase() != plugin.name.to_lowercase()
         {
-            row.set_subtitle(&plugin.description);
+            row.set_subtitle(&gtk::glib::markup_escape_text(&plugin.description));
             row.set_subtitle_lines(2);
         }
 
@@ -661,7 +661,10 @@ impl SimpleComponent for FomodDialog {
 
         model.update_preview();
 
-        root.present();
+        gtk::glib::idle_add_local_once({
+            let root = root.clone();
+            move || root.present()
+        });
 
         ComponentParts { model, widgets }
     }

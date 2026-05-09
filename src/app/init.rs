@@ -14,6 +14,7 @@ use crate::core::tracker::Tracker;
 use crate::models::game::{Game, GameEngine};
 use crate::ui::download_row::DownloadRowOutput;
 use crate::ui::mod_list::ModListItemOutput;
+use crate::ui::plugin_list::PluginRowOutput;
 use crate::utils::paths;
 
 use super::free_fns::load_game_data;
@@ -43,12 +44,19 @@ pub(super) fn build_model(
                 ModListItemOutput::SetGroupColor(index, color) => {
                     AppMsg::SetGroupColor(index, color)
                 }
+                ModListItemOutput::SetSelected(index, selected) => {
+                    AppMsg::SetModRowSelected(index, selected)
+                }
             });
 
     let plugins =
         FactoryVecDeque::builder()
             .launch_default()
-            .forward(sender.input_sender(), |output| match output {});
+            .forward(sender.input_sender(), |output| match output {
+                PluginRowOutput::SetSelected(index, selected) => {
+                    AppMsg::SetPluginRowSelected(index, selected)
+                }
+            });
 
     let downloads =
         FactoryVecDeque::builder()
@@ -177,8 +185,10 @@ pub(super) fn build_model(
         rate_limit_info: None,
         collapsed_groups: HashSet::new(),
         mod_selection_active: false,
+        mod_selection_dirty: false,
         selected_mods: HashSet::new(),
         plugin_selection_active: false,
+        plugin_selection_dirty: false,
         selected_plugins: HashSet::new(),
         download_sort: DownloadSort::Default,
         mod_filter: ModFilter::All,

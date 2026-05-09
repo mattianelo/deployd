@@ -373,7 +373,10 @@ impl Component for WelcomeWizard {
 
         model.rebuild_games_list(&sender);
 
-        root.present();
+        gtk::glib::idle_add_local_once({
+            let root = root.clone();
+            move || root.present()
+        });
 
         ComponentParts { model, widgets }
     }

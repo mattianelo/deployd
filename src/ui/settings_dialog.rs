@@ -252,7 +252,10 @@ impl Component for SettingsDialog {
         // Initialise appearance controls with persisted values.
         widgets.color_scheme_combo.set_selected(color_scheme_idx);
 
-        root.present();
+        gtk::glib::idle_add_local_once({
+            let root = root.clone();
+            move || root.present()
+        });
 
         ComponentParts { model, widgets }
     }

@@ -74,7 +74,7 @@ impl SimpleComponent for PreInstallDialog {
     view! {
         adw::Window {
             set_title: Some("Install Mod"),
-            set_default_size: (520, 680),
+            set_default_size: (720, 760),
             set_resizable: true,
             set_modal: true,
 
@@ -265,7 +265,7 @@ impl SimpleComponent for PreInstallDialog {
         // Populate file list with per-row checkboxes and (for Bethesda/Aurora) Data/Root toggles.
         for (idx, (path, initial_target)) in model.file_preview.iter().enumerate() {
             let row = adw::ActionRow::new();
-            row.set_title(path);
+            row.set_title(&gtk::glib::markup_escape_text(path));
             row.set_title_lines(1);
             row.set_activatable(false);
             row.set_tooltip_text(Some(path));
@@ -387,7 +387,10 @@ impl SimpleComponent for PreInstallDialog {
             widgets.set_all_row.append(&all_btn_box);
         }
 
-        root.present();
+        gtk::glib::idle_add_local_once({
+            let root = root.clone();
+            move || root.present()
+        });
 
         ComponentParts { model, widgets }
     }

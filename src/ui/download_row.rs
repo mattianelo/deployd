@@ -40,9 +40,9 @@ impl FactoryComponent for DownloadRow {
             #[watch]
             set_visible: self.visible,
             #[watch]
-            set_title: &self.display_name(),
+            set_title: &gtk::glib::markup_escape_text(&self.display_name()),
             #[watch]
-            set_subtitle: &self.download_subtitle(),
+            set_subtitle: &gtk::glib::markup_escape_text(&self.download_subtitle()),
             set_title_lines: 1,
             set_subtitle_lines: 2,
             set_activatable: false,

@@ -890,7 +890,8 @@ impl Component for App {
                                 },
 
                                 gtk::Button {
-                                    set_label: "Cancel",
+                                    #[watch]
+                                    set_label: if model.mod_selection_dirty { "Done" } else { "Cancel" },
                                     connect_clicked => AppMsg::ExitModSelectionMode,
                                 },
                             },
@@ -1170,7 +1171,8 @@ impl Component for App {
                                 },
 
                                 gtk::Button {
-                                    set_label: "Cancel",
+                                    #[watch]
+                                    set_label: if model.plugin_selection_dirty { "Done" } else { "Cancel" },
                                     connect_clicked => AppMsg::ExitPluginSelectionMode,
                                 },
                             },
@@ -1329,6 +1331,14 @@ impl Component for App {
         let nexus_avatar_widget = &model.nexus_avatar_widget;
 
         let widgets = view_output!();
+        root.set_opacity(0.0);
+        gtk::glib::idle_add_local_once({
+            let root = root.clone();
+            move || {
+                root.set_opacity(1.0);
+                root.present();
+            }
+        });
 
         // NOTE: do NOT set_key_capture_widget(root) here — that routes every window
         // keystroke into the search entry, causing the bar to flicker open/closed
@@ -1675,6 +1685,9 @@ impl Component for App {
             AppMsg::EnterModSelectionMode => self.handle_enter_mod_selection_mode(),
             AppMsg::ExitModSelectionMode => self.handle_exit_mod_selection_mode(),
             AppMsg::ToggleModRowSelected(idx) => self.handle_toggle_mod_row_selected(idx),
+            AppMsg::SetModRowSelected(idx, selected) => {
+                self.handle_set_mod_row_selected(idx.current_index(), selected)
+            }
             AppMsg::EnableSelectedMods => self.handle_enable_selected_mods(&sender),
             AppMsg::DisableSelectedMods => self.handle_disable_selected_mods(&sender),
             AppMsg::RemoveSelectedMods => self.handle_remove_selected_mods(root, &sender),
@@ -1682,6 +1695,9 @@ impl Component for App {
             AppMsg::EnterPluginSelectionMode => self.handle_enter_plugin_selection_mode(),
             AppMsg::ExitPluginSelectionMode => self.handle_exit_plugin_selection_mode(),
             AppMsg::TogglePluginRowSelected(idx) => self.handle_toggle_plugin_row_selected(idx),
+            AppMsg::SetPluginRowSelected(idx, selected) => {
+                self.handle_set_plugin_row_selected(idx.current_index(), selected)
+            }
             AppMsg::EnableSelectedPlugins => self.handle_enable_selected_plugins(&sender),
             AppMsg::DisableSelectedPlugins => self.handle_disable_selected_plugins(&sender),
         }

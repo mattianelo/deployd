@@ -119,8 +119,10 @@ impl GameSetupDialog {
         sender: &ComponentSender<Self>,
     ) -> adw::ExpanderRow {
         let row = adw::ExpanderRow::new();
-        row.set_title(&entry.game.title);
-        row.set_subtitle(&entry.game.path.to_string_lossy());
+        row.set_title(&gtk::glib::markup_escape_text(&entry.game.title));
+        row.set_subtitle(&gtk::glib::markup_escape_text(
+            entry.game.path.to_string_lossy().as_ref(),
+        ));
 
         // Enabled toggle as a check button prefix.
         let check = gtk::CheckButton::new();
@@ -153,7 +155,9 @@ impl GameSetupDialog {
         // Game folder row.
         let path_row = adw::ActionRow::new();
         path_row.set_title("Game Folder");
-        path_row.set_subtitle(&entry.game.path.to_string_lossy());
+        path_row.set_subtitle(&gtk::glib::markup_escape_text(
+            entry.game.path.to_string_lossy().as_ref(),
+        ));
 
         let path_btn = gtk::Button::from_icon_name("folder-symbolic");
         path_btn.set_valign(gtk::Align::Center);
@@ -172,7 +176,9 @@ impl GameSetupDialog {
         let prefix_row = adw::ActionRow::new();
         prefix_row.set_title("Wine Prefix");
         if let Some(ref pfx) = entry.game.wine_prefix {
-            prefix_row.set_subtitle(&pfx.to_string_lossy());
+            prefix_row.set_subtitle(&gtk::glib::markup_escape_text(
+                pfx.to_string_lossy().as_ref(),
+            ));
         } else {
             prefix_row.set_subtitle("Not set");
         }
@@ -195,7 +201,7 @@ impl GameSetupDialog {
         cache_row.set_title("Cache Folder");
         cache_row.set_subtitle_lines(1);
         let cache_subtitle = cache::display_cache_root(cache_dir.as_ref());
-        cache_row.set_subtitle(&cache_subtitle);
+        cache_row.set_subtitle(&gtk::glib::markup_escape_text(&cache_subtitle));
 
         let cache_browse_btn = gtk::Button::from_icon_name("folder-symbolic");
         cache_browse_btn.set_valign(gtk::Align::Center);
@@ -494,7 +500,10 @@ impl Component for GameSetupDialog {
 
         model.rebuild_games(&sender);
 
-        root.present();
+        gtk::glib::idle_add_local_once({
+            let root = root.clone();
+            move || root.present()
+        });
 
         ComponentParts { model, widgets }
     }

@@ -65,7 +65,9 @@ impl PluginRow {
 }
 
 #[derive(Debug)]
-pub enum PluginRowOutput {}
+pub enum PluginRowOutput {
+    SetSelected(DynamicIndex, bool),
+}
 
 #[relm4::factory(pub)]
 impl FactoryComponent for PluginRow {
@@ -83,13 +85,13 @@ impl FactoryComponent for PluginRow {
             #[watch]
             set_visible: self.visible,
             #[watch]
-            set_title: &self.display_filename,
+            set_title: &gtk::glib::markup_escape_text(&self.display_filename),
             #[watch]
-            set_subtitle: &self.mod_name,
+            set_subtitle: &gtk::glib::markup_escape_text(&self.mod_name),
             set_title_lines: 1,
             set_subtitle_lines: 1,
             #[watch]
-            set_sensitive: self.mod_enabled,
+            set_sensitive: self.selection_mode || self.mod_enabled,
 
             add_prefix = &gtk::CheckButton {
                 #[watch]
@@ -98,6 +100,9 @@ impl FactoryComponent for PluginRow {
                 set_active: self.selected,
                 set_can_focus: false,
                 set_valign: gtk::Align::Center,
+                connect_toggled[sender, index] => move |btn| {
+                    sender.output(PluginRowOutput::SetSelected(index.clone(), btn.is_active())).ok();
+                },
             },
 
             add_prefix = &gtk::Label {
@@ -187,7 +192,7 @@ impl FactoryComponent for PluginRow {
         index: &DynamicIndex,
         root: Self::Root,
         _returned_widget: &<Self::ParentWidget as relm4::factory::FactoryView>::ReturnedWidget,
-        _sender: FactorySender<Self>,
+        sender: FactorySender<Self>,
     ) -> Self::Widgets {
         let root_ref = root.clone();
         let widgets = view_output!();

@@ -56,8 +56,8 @@ impl FactoryComponent for ToolRow {
 
     view! {
         adw::ActionRow {
-            set_title: &self.name,
-            set_subtitle: &self.exe_path,
+            set_title: &gtk::glib::markup_escape_text(&self.name),
+            set_subtitle: &gtk::glib::markup_escape_text(&self.exe_path),
             add_prefix = &gtk::Image::from_icon_name(&self.icon_name) {},
 
             add_suffix = &gtk::Button::from_icon_name("folder-symbolic") {
@@ -168,7 +168,10 @@ impl ToolManager {
             );
 
             if let Some(ref path) = resolved {
-                row.set_subtitle(&format!("Found: {}", path.display()));
+                row.set_subtitle(&gtk::glib::markup_escape_text(&format!(
+                    "Found: {}",
+                    path.display()
+                )));
             } else {
                 row.set_subtitle("Not found — browse to locate");
             }
@@ -339,7 +342,10 @@ impl Component for ToolManager {
 
         model.rebuild_presets(&sender);
 
-        root.present();
+        gtk::glib::idle_add_local_once({
+            let root = root.clone();
+            move || root.present()
+        });
 
         ComponentParts { model, widgets }
     }

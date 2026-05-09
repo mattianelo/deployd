@@ -238,7 +238,7 @@ impl SimpleComponent for AbsorbDialog {
             row.add_css_class("monospace");
             row.set_title_lines(1);
             if file.is_managed_plugin {
-                row.set_title(&file.game_rel_original);
+                row.set_title(&gtk::glib::markup_escape_text(&file.game_rel_original));
                 row.set_tooltip_text(Some(&file.game_rel_original));
                 if file.xedit_backup_path.is_some() {
                     // In-place save: both Data and cache already hold the cleaned content;
@@ -257,7 +257,7 @@ impl SimpleComponent for AbsorbDialog {
                     .game_rel_original
                     .strip_prefix("../")
                     .unwrap_or(&file.game_rel_original);
-                row.set_title(display);
+                row.set_title(&gtk::glib::markup_escape_text(display));
                 row.set_tooltip_text(Some(display));
                 if file.game_rel_original.starts_with("../") {
                     row.set_subtitle("Game root file");
@@ -269,7 +269,10 @@ impl SimpleComponent for AbsorbDialog {
             model.file_checks.push(check);
         }
 
-        root.present();
+        gtk::glib::idle_add_local_once({
+            let root = root.clone();
+            move || root.present()
+        });
 
         ComponentParts { model, widgets }
     }

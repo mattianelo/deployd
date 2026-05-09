@@ -287,6 +287,7 @@ pub enum AppMsg {
     EnterModSelectionMode,
     ExitModSelectionMode,
     ToggleModRowSelected(usize),
+    SetModRowSelected(DynamicIndex, bool),
     EnableSelectedMods,
     DisableSelectedMods,
     RemoveSelectedMods,
@@ -294,6 +295,7 @@ pub enum AppMsg {
     EnterPluginSelectionMode,
     ExitPluginSelectionMode,
     TogglePluginRowSelected(usize),
+    SetPluginRowSelected(DynamicIndex, bool),
     EnableSelectedPlugins,
     DisableSelectedPlugins,
 }

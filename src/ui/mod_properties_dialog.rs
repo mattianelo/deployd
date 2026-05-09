@@ -466,7 +466,7 @@ impl SimpleComponent for ModPropertiesDialog {
         ));
         for f in &model.override_files {
             let row = adw::ActionRow::new();
-            row.set_title(f);
+            row.set_title(&gtk::glib::markup_escape_text(f));
             row.set_title_lines(1);
             row.set_activatable(false);
             row.set_tooltip_text(Some(f));
@@ -486,7 +486,7 @@ impl SimpleComponent for ModPropertiesDialog {
         ));
         for f in &model.overridden_files {
             let row = adw::ActionRow::new();
-            row.set_title(f);
+            row.set_title(&gtk::glib::markup_escape_text(f));
             row.set_title_lines(1);
             row.set_activatable(false);
             row.set_tooltip_text(Some(f));
@@ -568,7 +568,7 @@ impl SimpleComponent for ModPropertiesDialog {
 
                 for (idx, (_, display_path)) in self.files.iter().enumerate() {
                     let row = adw::ActionRow::new();
-                    row.set_title(display_path.as_str());
+                    row.set_title(&gtk::glib::markup_escape_text(display_path));
                     row.set_title_lines(1);
                     row.set_activatable(false);
                     row.set_tooltip_text(Some(display_path.as_str()));

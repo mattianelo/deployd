@@ -36,6 +36,9 @@ impl App {
         }
         drop(guard);
         self.needs_deploy = true;
+        if self.plugin_selection_active {
+            self.plugin_selection_dirty = true;
+        }
         self.refresh_plugin_order_labels();
         self.save_plugin_order(sender);
     }
@@ -89,6 +92,9 @@ impl App {
             }
         }
         self.needs_deploy = true;
+        if self.plugin_selection_active {
+            self.plugin_selection_dirty = true;
+        }
         self.refresh_plugin_order_labels();
         self.save_plugin_order(sender);
     }
@@ -351,6 +357,7 @@ impl App {
 
     pub(crate) fn handle_enter_plugin_selection_mode(&mut self) {
         self.plugin_selection_active = true;
+        self.plugin_selection_dirty = false;
         self.selected_plugins.clear();
         let mut g = self.plugins.guard();
         for row in g.iter_mut() {
@@ -362,6 +369,7 @@ impl App {
 
     pub(crate) fn handle_exit_plugin_selection_mode(&mut self) {
         self.plugin_selection_active = false;
+        self.plugin_selection_dirty = false;
         self.selected_plugins.clear();
         let mut g = self.plugins.guard();
         for row in g.iter_mut() {
@@ -388,6 +396,23 @@ impl App {
         }
     }
 
+    pub(crate) fn handle_set_plugin_row_selected(&mut self, idx: usize, selected: bool) {
+        if !self.plugin_selection_active {
+            return;
+        }
+        let mut g = self.plugins.guard();
+        let Some(row) = g.get_mut(idx) else { return };
+        if row.is_vanilla || row.selected == selected {
+            return;
+        }
+        row.selected = selected;
+        if selected {
+            self.selected_plugins.insert(idx);
+        } else {
+            self.selected_plugins.remove(&idx);
+        }
+    }
+
     pub(crate) fn handle_enable_selected_plugins(&mut self, sender: &ComponentSender<Self>) {
         if self.selected_plugins.is_empty() {
             return;
@@ -408,6 +433,7 @@ impl App {
             }
         }
         self.needs_deploy = true;
+        self.plugin_selection_dirty = true;
 
         let _game_id = game.id.clone();
         sender.oneshot_command(async move {
@@ -446,6 +472,7 @@ impl App {
             }
         }
         self.needs_deploy = true;
+        self.plugin_selection_dirty = true;
 
         sender.oneshot_command(async move {
             let result = async {

@@ -175,6 +175,7 @@ pub enum ModListItemOutput {
     DeleteGroup(DynamicIndex),
     RenameGroup(DynamicIndex, String),
     SetGroupColor(DynamicIndex, Option<String>),
+    SetSelected(DynamicIndex, bool),
 }
 
 // ---------------------------------------------------------------------------
@@ -196,6 +197,11 @@ impl FactoryComponent for ModListItem {
             set_activatable: self.selection_mode && !self.is_separator(),
             #[watch]
             set_visible: self.visible,
+            #[watch]
+            set_sensitive: self.selection_mode || match &self.kind {
+                ModListItemKind::Mod(r) => r.mod_entry.enabled,
+                ModListItemKind::Separator { .. } => true,
+            },
             #[watch]
             set_css_classes: match &self.kind {
                 ModListItemKind::Mod(r) if r.mod_entry.enabled && self.selected => &["mod-row", "mod-row-enabled", "mod-row-selected"],
@@ -264,20 +270,22 @@ impl FactoryComponent for ModListItem {
                     #[watch]
                     set_visible: !self.is_separator(),
                     #[watch]
-                    set_title: if let ModListItemKind::Mod(r) = &self.kind { r.mod_entry.name.as_str() } else { "" },
+                    set_title: &if let ModListItemKind::Mod(r) = &self.kind {
+                        gtk::glib::markup_escape_text(&r.mod_entry.name).to_string()
+                    } else {
+                        String::new()
+                    },
                     #[watch]
                     set_subtitle: &if let ModListItemKind::Mod(r) = &self.kind {
-                        format_nexus_subtitle(
+                        gtk::glib::markup_escape_text(&format_nexus_subtitle(
                             r.mod_entry.version.as_deref(),
                             r.mod_entry.author.as_deref(),
-                        )
+                        )).to_string()
                     } else {
                         String::new()
                     },
                     set_title_lines: 1,
                     set_subtitle_lines: 1,
-                    #[watch]
-                    set_sensitive: if let ModListItemKind::Mod(r) = &self.kind { r.mod_entry.enabled } else { true },
                     #[watch]
                     set_tooltip_text: Some(&if let ModListItemKind::Mod(r) = &self.kind {
                         format_mod_tooltip(&r.mod_entry)
@@ -292,6 +300,9 @@ impl FactoryComponent for ModListItem {
                         set_active: self.selected,
                         set_can_focus: false,
                         set_valign: gtk::Align::Center,
+                        connect_toggled[sender, index] => move |btn| {
+                            sender.output(ModListItemOutput::SetSelected(index.clone(), btn.is_active())).ok();
+                        },
                     },
 
                     add_suffix = &gtk::Button {

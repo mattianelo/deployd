@@ -62,6 +62,9 @@ impl App {
         }
         drop(guard);
         self.needs_deploy = true;
+        if self.mod_selection_active {
+            self.mod_selection_dirty = true;
+        }
         self.refresh_priority_labels();
         self.save_group_positions();
         self.save_mod_priorities(sender);
@@ -131,6 +134,9 @@ impl App {
 
         drop(guard);
         self.needs_deploy = true;
+        if self.mod_selection_active {
+            self.mod_selection_dirty = true;
+        }
         self.refresh_priority_labels();
         self.save_group_positions();
         self.save_mod_priorities(sender);
@@ -193,6 +199,9 @@ impl App {
             }
         }
         self.needs_deploy = true;
+        if self.mod_selection_active {
+            self.mod_selection_dirty = true;
+        }
         self.refresh_priority_labels();
         self.save_group_positions();
         self.save_mod_priorities(sender);
@@ -602,6 +611,7 @@ impl App {
 
     pub(crate) fn handle_enter_mod_selection_mode(&mut self) {
         self.mod_selection_active = true;
+        self.mod_selection_dirty = false;
         self.selected_mods.clear();
         let mut g = self.mods.guard();
         for item in g.iter_mut() {
@@ -613,6 +623,7 @@ impl App {
 
     pub(crate) fn handle_exit_mod_selection_mode(&mut self) {
         self.mod_selection_active = false;
+        self.mod_selection_dirty = false;
         self.selected_mods.clear();
         let mut g = self.mods.guard();
         for item in g.iter_mut() {
@@ -633,6 +644,23 @@ impl App {
         }
         item.selected = !item.selected;
         if item.selected {
+            self.selected_mods.insert(idx);
+        } else {
+            self.selected_mods.remove(&idx);
+        }
+    }
+
+    pub(crate) fn handle_set_mod_row_selected(&mut self, idx: usize, selected: bool) {
+        if !self.mod_selection_active {
+            return;
+        }
+        let mut g = self.mods.guard();
+        let Some(item) = g.get_mut(idx) else { return };
+        if item.is_separator() || item.selected == selected {
+            return;
+        }
+        item.selected = selected;
+        if selected {
             self.selected_mods.insert(idx);
         } else {
             self.selected_mods.remove(&idx);
@@ -673,6 +701,7 @@ impl App {
             }
         }
         self.needs_deploy = true;
+        self.mod_selection_dirty = true;
 
         let game_id = game.id.clone();
         let engine = game.engine.clone();
@@ -737,6 +766,7 @@ impl App {
             }
         }
         self.needs_deploy = true;
+        self.mod_selection_dirty = true;
 
         let game_id = game.id.clone();
         let engine = game.engine.clone();
@@ -870,6 +900,7 @@ impl App {
         }
 
         self.needs_deploy = true;
+        self.mod_selection_dirty = true;
         self.save_group_positions();
         self.handle_exit_mod_selection_mode();
     }
