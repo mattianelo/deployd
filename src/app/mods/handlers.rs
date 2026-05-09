@@ -42,6 +42,16 @@ impl App {
         to: usize,
         sender: &ComponentSender<Self>,
     ) {
+        if self.mod_selection_active
+            && self.selected_mods.len() > 1
+            && self.selected_mods.contains(&from)
+        {
+            let mut selected: Vec<usize> = self.selected_mods.iter().copied().collect();
+            selected.sort_unstable();
+            self.handle_move_selected_mods_to(selected, from, to, sender);
+            return;
+        }
+
         let mut guard = self.mods.guard();
         let len = guard.len();
         if from >= len || to > len {
@@ -196,6 +206,16 @@ impl App {
             let mut guard = self.mods.guard();
             for (i, item) in items.into_iter().enumerate() {
                 guard.insert(anchor + i, item);
+            }
+
+            self.selected_mods.clear();
+            for i in anchor..anchor + n {
+                self.selected_mods.insert(i);
+                if let Some(item) = guard.get_mut(i) {
+                    item.selected = true;
+                    item.selection_mode = true;
+                    item.drag_enabled.set(true);
+                }
             }
         }
         self.needs_deploy = true;
