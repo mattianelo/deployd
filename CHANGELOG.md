@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.2.1]
+
+### Fixed
+
+- Mod Order header spacing now matches the sibling Plugin Order and Downloads panels.
+- Downloads context-menu delete action remains visible in AppImage light mode.
+- Mod Properties now prioritizes per-file target and conflict management, gives large file lists
+  more working room, and moves secondary details lower in the dialog.
+- Install Mod and Mod Properties no longer show redundant static section titles above their
+  collapsible file/conflict controls.
+
 ## [2.2.0]
 
 ### Added

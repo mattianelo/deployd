@@ -1,6 +1,6 @@
 name: deployd
 base: core24
-version: '2.2.0'
+version: '2.2.1'
 title: Deployd
 summary: Mod manager for PC games on Linux
 license: GPL-3.0
