@@ -27,7 +27,7 @@ pub use tools::{archive_mod_dir, detect_tool_path, tool_presets_for};
 pub(crate) use wine::linux_path_to_wine_path;
 pub use wine::{
     MissingSnapWineContent, SnapWineStatus, WineConfig, WineLauncher, detect_wine_config, is_snap,
-    missing_snap_wine_message, missing_snap_wine_plugs, proton_runtime_available,
+    missing_snap_wine_commands, missing_snap_wine_message, proton_runtime_available,
     snap_wine_available, snap_wine_status, umu_folders_path,
 };
 

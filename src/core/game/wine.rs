@@ -3,6 +3,13 @@ use std::path::{Path, PathBuf};
 use crate::models::game::Game;
 use crate::utils::paths;
 
+const SNAP_WINE_RUNTIME_PLUG: &str = "deployd:wine-runtime";
+const SNAP_WINE_RUNTIME_PROVIDER: &str = "wine-platform-runtime-core22:wine-runtime-c22";
+const SNAP_WINE_PLATFORM_PLUG: &str = "deployd:wine-stable";
+const SNAP_WINE_PLATFORM_PROVIDER: &str = "wine-platform:wine-base-stable";
+const SNAP_WINE_RUNTIME_AUTO_CONNECTED: bool = true;
+const SNAP_WINE_PLATFORM_AUTO_CONNECTED: bool = false;
+
 pub(crate) fn find_wine_user_dir(game: &Game) -> Option<PathBuf> {
     let prefix = game.wine_prefix.clone()?;
     let users_dir = prefix.join("drive_c/users");
@@ -116,30 +123,50 @@ pub fn snap_wine_status() -> SnapWineStatus {
 }
 
 pub fn missing_snap_wine_message(missing: &MissingSnapWineContent) -> String {
-    let plugs = missing_snap_wine_plugs(missing);
-
-    let commands = plugs
-        .iter()
-        .map(|plug| format!("snap connect {plug}"))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let commands = missing_snap_wine_commands(missing);
+    if commands.is_empty() {
+        return "Deployd needs the Snap Wine content interface to run external tools.\n\n\
+                The Wine runtime content plug normally connects automatically. Wait a moment, \
+                then try launching the tool again."
+            .to_string();
+    }
 
     format!(
         "Deployd needs the Snap Wine content interface to run external tools.\n\n\
-         If you continue, your system will ask for permission to connect the missing plug(s).\n\n\
-         If automatic connection fails, run:\n\n{commands}"
+         Run this command on your system, then restart Deployd so snapd can refresh the app's \
+         content mounts:\n\n{commands}"
     )
 }
 
-pub fn missing_snap_wine_plugs(missing: &MissingSnapWineContent) -> Vec<&'static str> {
-    let mut plugs = Vec::new();
-    if missing.wine_runtime {
-        plugs.push("deployd:wine-runtime");
+pub fn missing_snap_wine_commands(missing: &MissingSnapWineContent) -> String {
+    missing_snap_wine_connections(missing)
+        .iter()
+        .map(|connection| format!("snap connect {} {}", connection.plug, connection.provider))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SnapWineConnection {
+    plug: &'static str,
+    provider: &'static str,
+}
+
+fn missing_snap_wine_connections(missing: &MissingSnapWineContent) -> Vec<SnapWineConnection> {
+    let mut connections = Vec::new();
+    if missing.wine_runtime && !SNAP_WINE_RUNTIME_AUTO_CONNECTED {
+        connections.push(SnapWineConnection {
+            plug: SNAP_WINE_RUNTIME_PLUG,
+            provider: SNAP_WINE_RUNTIME_PROVIDER,
+        });
     }
-    if missing.wine_platform {
-        plugs.push("deployd:wine-10-stable");
+    if missing.wine_platform && !SNAP_WINE_PLATFORM_AUTO_CONNECTED {
+        connections.push(SnapWineConnection {
+            plug: SNAP_WINE_PLATFORM_PLUG,
+            provider: SNAP_WINE_PLATFORM_PROVIDER,
+        });
     }
-    plugs
+    connections
 }
 
 pub fn proton_runtime_available() -> bool {
@@ -286,6 +313,46 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[test]
+    fn missing_snap_wine_commands_include_provider_slots() {
+        let commands = missing_snap_wine_commands(&MissingSnapWineContent {
+            wine_runtime: true,
+            wine_platform: true,
+        });
+
+        assert_eq!(
+            commands,
+            "snap connect deployd:wine-stable wine-platform:wine-base-stable",
+            "content interfaces provided by another snap require an explicit provider slot"
+        );
+    }
+
+    #[test]
+    fn missing_snap_wine_commands_omit_auto_connected_runtime() {
+        let commands = missing_snap_wine_commands(&MissingSnapWineContent {
+            wine_runtime: true,
+            wine_platform: false,
+        });
+
+        assert_eq!(
+            commands, "",
+            "the runtime content plug auto-connects and should not be shown as a manual setup step"
+        );
+    }
+
+    #[test]
+    fn missing_snap_wine_message_mentions_restart_after_manual_connection() {
+        let message = missing_snap_wine_message(&MissingSnapWineContent {
+            wine_runtime: false,
+            wine_platform: true,
+        });
+
+        assert!(
+            message.contains("restart Deployd"),
+            "manual content connections require a new snap mount namespace"
+        );
     }
 
     #[test]

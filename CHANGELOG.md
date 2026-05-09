@@ -27,8 +27,8 @@
   Proton GE stored under Deployd's data directory, while Snap launches only through its Wine content
   interfaces and shows plug-connection guidance when they are unavailable.
 - First-run AppImage Proton GE setup now shows a busy status until UMU finishes preparing the
-  Deployd-managed runtime. The Snap Wine prompt can also launch a password-backed interface
-  connection attempt instead of requiring the user to copy commands into a terminal.
+  Deployd-managed runtime. The Snap Wine prompt now shows the missing interface command with a
+  copy button so users can run it in a terminal before launching again.
 - Plain click replaces the current selection; Ctrl/Shift still extend it.
 - Pressing Escape or clicking an empty area clears the list selection.
 - Version-column migration guard prevents a duplicate-column error on upgrade.
@@ -319,12 +319,13 @@
 
 ### Changed
 
-- **External tool launching refactored** — tools now invoke Proton GE's `wine` binary (`files/bin-wow64/wine`) directly, bypassing pressure-vessel/bwrap entirely. Proton GE is downloaded from GitHub releases on first use. The Snap package uses `wine-platform-runtime-core22` and `wine-9-staging` content plugs in place of the previous bwrap-based approach.
+- **External tool launching refactored** — tools now invoke Proton GE's `wine` binary (`files/bin-wow64/wine`) directly, bypassing pressure-vessel/bwrap entirely. Proton GE is downloaded from GitHub releases on first use. The Snap package uses `wine-platform-runtime-core22` and `wine-platform` content plugs in place of the previous bwrap-based approach.
 - **UI overhaul** — filter chips on the mod list, a persistent status bar, split deploy menu button, and redesigned badges throughout.
 
 ### Fixed
 
 - **Eclipse engine Override deployment preserves subfolders** — the `strip_eclipse_override_wrappers` pass that was flattening unrecognised path components has been removed; subfolder structure is now retained correctly.
+- **Snap Wine interface connection command** — the Snap plug now matches the available `wine-platform:wine-base-stable` provider, and the setup dialog includes explicit provider slots so `snap connect` does not fall back to the system `snapd` content slot.
 - **Wine DLL settings persist across Snap/Wine updates** — DLL overrides are now baked into the Wine prefix registry during setup so Snap or Wine updates cannot re-trigger the Mono/WineCfg dialogs.
 - **AppImage detects WoW64 Proton GE** — the Proton GE detection path now handles the WoW64 layout introduced after the Snap packaging changes.
 - **Aurora engine System/ routing corrected** — external files under `System/` are now detected and routed to the correct deployment path.

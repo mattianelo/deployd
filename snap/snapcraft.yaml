@@ -34,7 +34,7 @@ plugs:
     content: wine-runtime-c22
     target: $SNAP/wine-runtime
     default-provider: wine-platform-runtime-core22:wine-runtime-c22
-  wine-10-stable:
+  wine-stable:
     interface: content
     content: wine-base-stable
     target: $SNAP/wine-platform
@@ -54,7 +54,7 @@ apps:
       - home
       - network
       - wine-runtime
-      - wine-10-stable
+      - wine-stable
     slots: [dbus-deployd]
     desktop: usr/share/applications/deployd.desktop
 
@@ -78,4 +78,3 @@ parts:
       install -Dm755 target/release/deployd "$CRAFT_PART_INSTALL/bin/deployd"
       install -Dm644 data/deployd.desktop \
         "$CRAFT_PART_INSTALL/usr/share/applications/deployd.desktop"
-

@@ -106,63 +106,46 @@ impl App {
 
     pub(crate) fn handle_confirm_snap_wine_setup(
         &mut self,
-        tool_id: String,
+        _tool_id: String,
         missing: game::MissingSnapWineContent,
         root: &adw::ApplicationWindow,
-        sender: &ComponentSender<Self>,
+        _sender: &ComponentSender<Self>,
     ) {
         let dialog = adw::AlertDialog::builder()
             .heading("Connect Snap Wine Interface")
             .body(game::missing_snap_wine_message(&missing))
             .build();
-        dialog.add_response("cancel", "Cancel");
-        dialog.add_response("connect", "Connect & Launch");
-        dialog.set_default_response(Some("connect"));
-        dialog.set_close_response("cancel");
-        dialog.set_response_appearance("connect", adw::ResponseAppearance::Suggested);
+        dialog.add_response("close", "Close");
+        dialog.set_default_response(Some("close"));
+        dialog.set_close_response("close");
 
-        let s = sender.input_sender().clone();
-        dialog.connect_response(None, move |_, response| {
-            if response == "connect" {
-                let _ = s.send(AppMsg::SnapWineSetupConfirmed(
-                    tool_id.clone(),
-                    missing.clone(),
-                ));
-            }
-        });
-        dialog.present(Some(root));
-    }
+        let command = game::missing_snap_wine_commands(&missing);
+        if !command.is_empty() {
+            let command_entry = gtk::Entry::builder()
+                .text(&command)
+                .editable(false)
+                .hexpand(true)
+                .build();
+            command_entry.add_css_class("monospace");
 
-    pub(crate) fn handle_snap_wine_setup_confirmed(
-        &mut self,
-        tool_id: String,
-        missing: game::MissingSnapWineContent,
-        sender: &ComponentSender<Self>,
-    ) {
-        self.proton_setup = true;
-        self.status_msg = Some("Connecting Snap Wine interface…".to_string());
+            let copy_btn = gtk::Button::builder()
+                .icon_name("edit-copy-symbolic")
+                .tooltip_text("Copy command")
+                .build();
+            let command_for_clipboard = command.clone();
+            copy_btn.connect_clicked(move |_| {
+                if let Some(display) = gtk::gdk::Display::default() {
+                    display.clipboard().set_text(&command_for_clipboard);
+                }
+            });
 
-        sender.oneshot_command(async move {
-            let result = connect_snap_wine_interfaces(missing).await;
-            AppCmdMsg::SnapWineConnected { result, tool_id }
-        });
-    }
-
-    pub(crate) fn handle_snap_wine_connected(
-        &mut self,
-        result: Result<(), String>,
-        tool_id: String,
-        sender: &ComponentSender<Self>,
-    ) {
-        self.proton_setup = false;
-        self.status_msg = None;
-
-        match result {
-            Ok(()) => self.handle_launch_tool(tool_id, sender),
-            Err(e) => {
-                self.push_notification(&format!("Could not connect Snap Wine interface: {e}"))
-            }
+            let command_box = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+            command_box.append(&command_entry);
+            command_box.append(&copy_btn);
+            dialog.set_extra_child(Some(&command_box));
         }
+
+        dialog.present(Some(root));
     }
 
     /// Show a one-time Mono install info dialog for Eclipse tools under the Snap wine-runtime.
@@ -384,31 +367,6 @@ impl App {
             AppCmdMsg::ToolLaunched(result)
         });
     }
-}
-
-async fn connect_snap_wine_interfaces(missing: game::MissingSnapWineContent) -> Result<(), String> {
-    let plugs = game::missing_snap_wine_plugs(&missing);
-    if plugs.is_empty() {
-        return Ok(());
-    }
-
-    for plug in plugs {
-        let status = tokio::process::Command::new("pkexec")
-            .arg("snap")
-            .arg("connect")
-            .arg(plug)
-            .status()
-            .await
-            .map_err(|e| format!("failed to start authorization prompt for {plug}: {e}"))?;
-
-        if !status.success() {
-            return Err(format!(
-                "authorization failed for {plug} ({status}). You can connect it manually with: snap connect {plug}"
-            ));
-        }
-    }
-
-    Ok(())
 }
 
 fn monitor_deployd_proton_runtime(sender: relm4::Sender<AppMsg>) {

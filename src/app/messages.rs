@@ -80,8 +80,6 @@ pub enum AppMsg {
     ProtonSetupConfirmed(String),
     /// Show a Snap Wine interface connection dialog.
     ConfirmSnapWineSetup(String, crate::core::game::MissingSnapWineContent),
-    /// User confirmed the Snap Wine interface connection attempt.
-    SnapWineSetupConfirmed(String, crate::core::game::MissingSnapWineContent),
     /// AppImage UMU has finished preparing Proton GE.
     ProtonSetupReady,
     /// Show a one-time Mono install info dialog for Eclipse/Snap tool launches.
@@ -404,10 +402,6 @@ pub enum AppCmdMsg {
     ToolDeleted(Result<String, String>),
     ToolWorkingDirSaved(Result<(), String>),
     ToolLaunched(Result<String, String>),
-    SnapWineConnected {
-        result: Result<(), String>,
-        tool_id: String,
-    },
     /// Files were merged into an existing mod. Carries `(mod_name, files_merged)`.
     ModMerged(Result<(String, usize), String>),
     /// Combined mod+file name fetched after the user supplied a file ID.

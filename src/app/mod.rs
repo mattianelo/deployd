@@ -1471,9 +1471,6 @@ impl Component for App {
             AppMsg::ConfirmSnapWineSetup(tool_id, missing) => {
                 self.handle_confirm_snap_wine_setup(tool_id, missing, root, &sender)
             }
-            AppMsg::SnapWineSetupConfirmed(tool_id, missing) => {
-                self.handle_snap_wine_setup_confirmed(tool_id, missing, &sender)
-            }
             AppMsg::ProtonSetupReady => self.handle_proton_setup_ready(),
             AppMsg::ConfirmMonoPrompt(tool_id, prefix) => {
                 self.handle_confirm_mono_prompt(tool_id, prefix, root, &sender)
@@ -1909,9 +1906,6 @@ impl Component for App {
                 self.handle_cmd_tool_working_dir_saved(result)
             }
             AppCmdMsg::ToolLaunched(result) => self.handle_cmd_tool_launched(result),
-            AppCmdMsg::SnapWineConnected { result, tool_id } => {
-                self.handle_snap_wine_connected(result, tool_id, &sender)
-            }
             AppCmdMsg::ModMerged(result) => self.handle_cmd_mod_merged(result, &sender),
             AppCmdMsg::NxmDownloadComplete(id, result) => {
                 self.handle_cmd_nxm_download_complete(id, result, &sender)
