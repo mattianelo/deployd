@@ -36,7 +36,6 @@ pub(super) fn build_model(
             .launch_default()
             .forward(sender.input_sender(), |output| match output {
                 ModListItemOutput::Reinstall(index) => AppMsg::ReinstallMod(index),
-                ModListItemOutput::RenameMod(index, name) => AppMsg::RenameMod(index, name),
                 ModListItemOutput::OpenProperties(index) => AppMsg::OpenModProperties(index),
                 ModListItemOutput::ToggleGroupCollapse(index) => AppMsg::ToggleGroupCollapse(index),
                 ModListItemOutput::DeleteGroup(index) => AppMsg::DeleteGroup(index),

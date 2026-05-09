@@ -167,7 +167,6 @@ impl ModListItem {
 #[derive(Debug)]
 pub enum ModListItemOutput {
     // From mod rows
-    RenameMod(DynamicIndex, String),
     OpenProperties(DynamicIndex),
     Reinstall(DynamicIndex),
     // From separator rows
@@ -331,12 +330,30 @@ impl FactoryComponent for ModListItem {
                         set_valign: gtk::Align::Center,
                     },
 
-                    add_suffix = &gtk::Label {
+                    add_suffix = &gtk::Image {
+                        set_icon_name: Some("emblem-documents-symbolic"),
                         #[watch]
-                        set_label: if let ModListItemKind::Mod(r) = &self.kind { r.priority_label.as_str() } else { "" },
-                        add_css_class: "dim-label",
-                        add_css_class: "caption",
+                        set_tooltip_text: Some(&if let ModListItemKind::Mod(r) = &self.kind {
+                            r.mod_entry.notes.as_deref().unwrap_or("").to_string()
+                        } else {
+                            String::new()
+                        }),
+                        #[watch]
+                        set_visible: matches!(
+                            &self.kind,
+                            ModListItemKind::Mod(r) if r.mod_entry.notes.as_ref().is_some_and(|n| !n.is_empty())
+                        ),
                         set_valign: gtk::Align::Center,
+                    },
+
+                    add_suffix = &gtk::Button {
+                        set_icon_name: "document-properties-symbolic",
+                        set_tooltip_text: Some("Properties"),
+                        set_valign: gtk::Align::Center,
+                        add_css_class: "flat",
+                        connect_clicked[sender, index] => move |_| {
+                            sender.output(ModListItemOutput::OpenProperties(index.clone())).unwrap();
+                        }
                     },
 
                     add_suffix = &gtk::Image {
@@ -358,19 +375,11 @@ impl FactoryComponent for ModListItem {
                         set_valign: gtk::Align::Center,
                     },
 
-                    add_suffix = &gtk::Image {
-                        set_icon_name: Some("emblem-documents-symbolic"),
+                    add_suffix = &gtk::Label {
                         #[watch]
-                        set_tooltip_text: Some(&if let ModListItemKind::Mod(r) = &self.kind {
-                            r.mod_entry.notes.as_deref().unwrap_or("").to_string()
-                        } else {
-                            String::new()
-                        }),
-                        #[watch]
-                        set_visible: matches!(
-                            &self.kind,
-                            ModListItemKind::Mod(r) if r.mod_entry.notes.as_ref().is_some_and(|n| !n.is_empty())
-                        ),
+                        set_label: if let ModListItemKind::Mod(r) = &self.kind { r.priority_label.as_str() } else { "" },
+                        add_css_class: "dim-label",
+                        add_css_class: "caption",
                         set_valign: gtk::Align::Center,
                     },
                 },
@@ -526,70 +535,6 @@ impl FactoryComponent for ModListItem {
                 ))
             });
             root_ref.add_controller(drag_source);
-
-            // Rename button with popover for mod rows
-            let mod_name = if let ModListItemKind::Mod(r) = &self.kind {
-                r.mod_entry.name.clone()
-            } else {
-                String::new()
-            };
-            let entry = gtk::Entry::builder().text(&mod_name).hexpand(true).build();
-            let apply_btn = gtk::Button::builder()
-                .label("Rename")
-                .css_classes(["suggested-action"])
-                .build();
-            let popover_box = gtk::Box::builder()
-                .orientation(gtk::Orientation::Horizontal)
-                .spacing(4)
-                .margin_start(4)
-                .margin_end(4)
-                .margin_top(4)
-                .margin_bottom(4)
-                .build();
-            popover_box.append(&entry);
-            popover_box.append(&apply_btn);
-            let popover = gtk::Popover::builder().child(&popover_box).build();
-
-            let rename_btn = gtk::MenuButton::builder()
-                .icon_name("document-edit-symbolic")
-                .tooltip_text("Rename mod")
-                .valign(gtk::Align::Center)
-                .css_classes(["flat"])
-                .popover(&popover)
-                .build();
-
-            let idx2 = index.clone();
-            let sender2 = sender.clone();
-            let popover_ref = popover.clone();
-            apply_btn.connect_clicked(move |_| {
-                let new_name = entry.text().to_string();
-                if !new_name.is_empty() {
-                    sender2
-                        .output(ModListItemOutput::RenameMod(idx2.clone(), new_name))
-                        .unwrap();
-                }
-                popover_ref.popdown();
-            });
-
-            // Append rename and properties buttons to the mod row box.
-            // root -> outer_box (vertical) -> last child = mod_row_box
-            let props_btn = gtk::Button::builder()
-                .icon_name("document-properties-symbolic")
-                .tooltip_text("Properties")
-                .valign(gtk::Align::Center)
-                .css_classes(["flat"])
-                .build();
-
-            let idx4 = index.clone();
-            let sender4 = sender.clone();
-            props_btn.connect_clicked(move |_| {
-                sender4
-                    .output(ModListItemOutput::OpenProperties(idx4.clone()))
-                    .unwrap();
-            });
-
-            widgets.mod_action_row.add_suffix(&rename_btn);
-            widgets.mod_action_row.add_suffix(&props_btn);
 
             // Right-click gesture → open Properties dialog
             let right_click = gtk::GestureClick::new();

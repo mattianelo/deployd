@@ -50,7 +50,6 @@ pub enum AppMsg {
         from: usize,
         to: usize,
     },
-    RenameMod(DynamicIndex, String),
     ProfileSelected(u32),
     NewProfileClicked,
     CloneProfileClicked,

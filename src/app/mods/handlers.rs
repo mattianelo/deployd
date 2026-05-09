@@ -323,41 +323,6 @@ impl App {
         });
     }
 
-    pub(crate) fn handle_rename_mod(
-        &mut self,
-        index: DynamicIndex,
-        new_name: String,
-        sender: &ComponentSender<Self>,
-    ) {
-        let idx = index.current_index();
-        let mod_id = {
-            let guard = self.mods.guard();
-            let Some(row) = guard.get(idx) else { return };
-            let Some(id) = row.mod_id() else { return };
-            id.to_string()
-        };
-
-        {
-            let mut guard = self.mods.guard();
-            if let Some(row) = guard.get_mut(idx)
-                && let Some(entry) = row.mod_entry_mut()
-            {
-                entry.name = new_name.clone();
-            }
-        }
-
-        if let Some(tracker) = self.tracker.clone() {
-            sender.oneshot_command(async move {
-                AppCmdMsg::PrioritySaved(
-                    tracker
-                        .update_mod_name(&mod_id, &new_name)
-                        .await
-                        .map_err(|e| e.to_string()),
-                )
-            });
-        }
-    }
-
     pub(crate) fn handle_toggle_group_collapse(&mut self, index: DynamicIndex) {
         let idx = index.current_index();
         let (group_id, new_collapsed) = {

@@ -150,13 +150,6 @@ impl FactoryComponent for PluginRow {
                 set_valign: gtk::Align::Center,
             },
 
-            add_suffix = &gtk::Image {
-                set_icon_name: Some("object-select-symbolic"),
-                set_tooltip_text: Some("Plugin enabled"),
-                #[watch]
-                set_visible: self.plugin.enabled,
-                set_valign: gtk::Align::Center,
-            },
         }
     }
 

@@ -612,18 +612,19 @@ impl Component for App {
                                 },
                             },
 
-                            pack_end = &gtk::Button {
-                                set_icon_name: "go-next-rtl-symbolic",
-                                set_tooltip_text: Some("Hide downloads panel"),
-                                add_css_class: "flat",
-                                connect_clicked[sender] => move |_| {
-                                    sender.input(AppMsg::SetDownloadsVisible(false));
-                                },
-                            },
-
                             pack_end = &gtk::ToggleButton {
-                                set_icon_name: "view-more-symbolic",
-                                set_tooltip_text: Some("Show hidden downloads"),
+                                #[watch]
+                                set_icon_name: if model.show_hidden_downloads {
+                                    "view-conceal-symbolic"
+                                } else {
+                                    "view-reveal-symbolic"
+                                },
+                                #[watch]
+                                set_tooltip_text: Some(if model.show_hidden_downloads {
+                                    "Hide hidden downloads"
+                                } else {
+                                    "Show hidden downloads"
+                                }),
                                 add_css_class: "flat",
                                 #[watch]
                                 set_active: model.show_hidden_downloads,
@@ -864,7 +865,7 @@ impl Component for App {
                                 },
 
                                 gtk::Button {
-                                    set_icon_name: "object-select-symbolic",
+                                    set_icon_name: "selection-mode-symbolic",
                                     set_tooltip_text: Some("Select mods"),
                                     add_css_class: "flat",
                                     connect_clicked => AppMsg::EnterModSelectionMode,
@@ -1143,7 +1144,7 @@ impl Component for App {
                                 },
 
                                 gtk::Button {
-                                    set_icon_name: "object-select-symbolic",
+                                    set_icon_name: "selection-mode-symbolic",
                                     set_tooltip_text: Some("Select plugins"),
                                     add_css_class: "flat",
                                     set_valign: gtk::Align::Center,
@@ -1373,7 +1374,6 @@ impl Component for App {
             AppMsg::MoveSelectedPluginsTo { selected, from, to } => {
                 self.handle_move_selected_plugins_to(selected, from, to, &sender)
             }
-            AppMsg::RenameMod(idx, name) => self.handle_rename_mod(idx, name, &sender),
             AppMsg::ProfileSelected(idx) => self.handle_profile_selected(idx, &sender),
             AppMsg::NewProfileClicked => {
                 self.profile_menu_btn.popdown();
