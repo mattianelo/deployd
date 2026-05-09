@@ -28,7 +28,7 @@ libadwaita, and Rust.
 - **Nexus Mods Integration** — SSO login, NXM deep links, and one-click update checking
 - **FOMOD Installer** — Full wizard with conditional steps, image previews, and DLC-aware auto-selection
 - **Mod Profiles** — Per-game profiles to switch between configurations instantly
-- **Plugin Load Order** — Drag-and-drop `.esp`/`.esm`/`.esl` management written to `plugins.txt`
+- **Plugin Load Order** — Select Mode reorder workflow for `.esp`/`.esm`/`.esl` management written to `plugins.txt`
 - **Conflict Detection** — Per-file visibility into which mods override each other, with a detailed Conflicts section in each mod's Properties dialog (The Witcher 1's Override/ files are matched by filename regardless of subfolder depth)
 - **Priority-Based Deployment** — Hardlink deployment; lower in the list wins conflicts
 - **Tool Launcher** — Run xEdit, LOOT, BodySlide and more through the package-managed Windows runtime
@@ -48,6 +48,8 @@ Deployd uses libadwaita throughout its primary workflows:
 
 - The main Mod Order and Plugin Order panels use adaptive libadwaita navigation, so wide windows
   show both panes side by side while narrow windows collapse cleanly.
+- Select Mode is the v2 reorder workflow for Mod Order and Plugin Order. Enter Select Mode before
+  selecting rows, dragging items, or changing load order.
 - Downloads, notifications, profile actions, deploy actions, snapshots, and Nexus account controls
   use GNOME-style rows, popovers, status pages, and toast feedback.
 - Install-related workflows, including FOMOD, Pre-install, Absorb External Changes, Mod Properties,
@@ -124,7 +126,8 @@ Open **Settings** (gear icon) and log in under **Nexus Mods**:
 Mods are deployed as **hardlinks** into the game's Data directory — originals stay safely in Deployd's cache.
 
 - Toggle individual mods on/off with the switch in each row
-- Drag rows to reorder; mods lower in the list win file conflicts
+- Enter **Select Mode** to reorder mods; in v2, Select Mode is the only way to modify load order
+- Drag selected rows to reorder; mods lower in the list win file conflicts
 - **Deploy** — applies your changes to the game folder
 - **Purge** — removes all Deployd-managed files (only tracked hardlinks; your game files are safe)
 
@@ -132,7 +135,8 @@ Mods are deployed as **hardlinks** into the game's Data directory — originals 
 
 For Bethesda games, manage plugins separately in the **Plugins** tab:
 
-- Drag-and-drop to set load order
+- Enter **Select Mode** to modify plugin load order
+- Drag selected plugins to set load order
 - Toggle plugins on/off individually
 - Load order is written to `plugins.txt` on deploy
 
