@@ -12,8 +12,21 @@ use crate::ui::tool_manager::{ToolManager, ToolManagerOutput};
 use super::super::App;
 use super::super::messages::{AppCmdMsg, AppMsg};
 
+const PROTON_SETUP_BODY: &str = "Proton GE needs to be installed before tools can run. \
+This is a one-time setup handled by UMU Launcher.\n\n\
+The tool will launch automatically when the setup starts.";
+
 impl App {
     pub(crate) fn handle_launch_tool(&mut self, tool_id: String, sender: &ComponentSender<Self>) {
+        self.handle_launch_tool_inner(tool_id, false, sender);
+    }
+
+    fn handle_launch_tool_inner(
+        &mut self,
+        tool_id: String,
+        allow_umu_setup: bool,
+        sender: &ComponentSender<Self>,
+    ) {
         if self.needs_deploy {
             self.push_notification("Deploy your mods before launching tools");
             return;
@@ -27,9 +40,12 @@ impl App {
             return;
         };
 
-        // If Proton GE is not yet installed, prompt to download before launching.
-        // Skip when sommelier is active — Wine comes from the content interface, not Proton GE.
-        if !game::proton_runtime_available() && !game::snap_wine_available() {
+        if let game::SnapWineStatus::Missing(missing) = game::snap_wine_status() {
+            sender.input(AppMsg::ConfirmSnapWineSetup(tool_id, missing));
+            return;
+        }
+
+        if !game::is_snap() && !game::proton_runtime_available() && !allow_umu_setup {
             sender.input(AppMsg::ConfirmProtonSetup(tool_id));
             return;
         }
@@ -37,7 +53,11 @@ impl App {
         let wine_config = match game::detect_wine_config(&game) {
             Some(c) => c,
             None => {
-                self.push_notification("Wine not found. Install wine via your system package manager.");
+                if game::is_snap() {
+                    self.push_notification("Snap Wine runtime not available. Connect the Wine interface and try again.");
+                } else {
+                    self.push_notification("UMU Launcher not found in this AppImage.");
+                }
                 return;
             }
         };
@@ -47,12 +67,15 @@ impl App {
         if game.engine == GameEngine::Eclipse && game::snap_wine_available() {
             let sentinel = wine_config.prefix.join(".deployd_mono_prompt_v1");
             if !sentinel.exists() {
-                sender.input(AppMsg::ConfirmMonoPrompt(tool_id, wine_config.prefix.clone()));
+                sender.input(AppMsg::ConfirmMonoPrompt(
+                    tool_id,
+                    wine_config.prefix.clone(),
+                ));
                 return;
             }
         }
 
-        self.do_launch_tool(tool, game, wine_config, sender);
+        self.do_launch_tool(tool, game, wine_config, allow_umu_setup, sender);
     }
 
     /// Show the first-run Proton GE download confirmation dialog.
@@ -64,25 +87,82 @@ impl App {
     ) {
         let dialog = adw::AlertDialog::builder()
             .heading("First-run Setup Required")
-            .body(
-                "Proton GE (~600 MB) needs to be downloaded before tools can run. \
-                 This is a one-time download.\n\n\
-                 The tool will launch automatically when the download finishes.",
-            )
+            .body(PROTON_SETUP_BODY)
             .build();
         dialog.add_response("cancel", "Cancel");
-        dialog.add_response("download", "Download & Launch");
-        dialog.set_default_response(Some("download"));
+        dialog.add_response("setup", "Set Up & Launch");
+        dialog.set_default_response(Some("setup"));
         dialog.set_close_response("cancel");
-        dialog.set_response_appearance("download", adw::ResponseAppearance::Suggested);
+        dialog.set_response_appearance("setup", adw::ResponseAppearance::Suggested);
 
         let s = sender.input_sender().clone();
         dialog.connect_response(None, move |_, response| {
-            if response == "download" {
+            if response == "setup" {
                 let _ = s.send(AppMsg::ProtonSetupConfirmed(tool_id.clone()));
             }
         });
         dialog.present(Some(root));
+    }
+
+    pub(crate) fn handle_confirm_snap_wine_setup(
+        &mut self,
+        tool_id: String,
+        missing: game::MissingSnapWineContent,
+        root: &adw::ApplicationWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        let dialog = adw::AlertDialog::builder()
+            .heading("Connect Snap Wine Interface")
+            .body(game::missing_snap_wine_message(&missing))
+            .build();
+        dialog.add_response("cancel", "Cancel");
+        dialog.add_response("connect", "Connect & Launch");
+        dialog.set_default_response(Some("connect"));
+        dialog.set_close_response("cancel");
+        dialog.set_response_appearance("connect", adw::ResponseAppearance::Suggested);
+
+        let s = sender.input_sender().clone();
+        dialog.connect_response(None, move |_, response| {
+            if response == "connect" {
+                let _ = s.send(AppMsg::SnapWineSetupConfirmed(
+                    tool_id.clone(),
+                    missing.clone(),
+                ));
+            }
+        });
+        dialog.present(Some(root));
+    }
+
+    pub(crate) fn handle_snap_wine_setup_confirmed(
+        &mut self,
+        tool_id: String,
+        missing: game::MissingSnapWineContent,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.proton_setup = true;
+        self.status_msg = Some("Connecting Snap Wine interface…".to_string());
+
+        sender.oneshot_command(async move {
+            let result = connect_snap_wine_interfaces(missing).await;
+            AppCmdMsg::SnapWineConnected { result, tool_id }
+        });
+    }
+
+    pub(crate) fn handle_snap_wine_connected(
+        &mut self,
+        result: Result<(), String>,
+        tool_id: String,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.proton_setup = false;
+        self.status_msg = None;
+
+        match result {
+            Ok(()) => self.handle_launch_tool(tool_id, sender),
+            Err(e) => {
+                self.push_notification(&format!("Could not connect Snap Wine interface: {e}"))
+            }
+        }
     }
 
     /// Show a one-time Mono install info dialog for Eclipse tools under the Snap wine-runtime.
@@ -122,35 +202,22 @@ impl App {
         dialog.present(Some(root));
     }
 
-    /// User confirmed the Proton GE download — start the async GitHub download.
+    /// User confirmed the AppImage Proton GE setup — launch UMU so it can perform setup.
     pub(crate) fn handle_proton_setup_confirmed(
         &mut self,
         tool_id: String,
         sender: &ComponentSender<Self>,
     ) {
         self.proton_setup = true;
-        self.status_msg = Some("Downloading Proton GE…".to_string());
-
-        sender.oneshot_command(async move {
-            let result = crate::app::downloads::proton_setup::download_proton_ge()
-                .await
-                .map_err(|e| e.to_string());
-            AppCmdMsg::ProtonDownloaded { result, tool_id }
-        });
+        self.status_msg = Some("Setting up Proton GE and launching tool…".to_string());
+        self.handle_launch_tool_inner(tool_id, true, sender);
     }
 
-    /// Proton GE download completed — re-enter the launch flow on success.
-    pub(crate) fn handle_proton_downloaded(
-        &mut self,
-        result: Result<(), String>,
-        tool_id: String,
-        sender: &ComponentSender<Self>,
-    ) {
-        self.proton_setup = false;
-        self.status_msg = None;
-        match result {
-            Ok(()) => self.handle_launch_tool(tool_id, sender),
-            Err(e) => self.push_notification(&format!("Proton GE download failed: {e}")),
+    pub(crate) fn handle_proton_setup_ready(&mut self) {
+        if self.proton_setup {
+            self.proton_setup = false;
+            self.status_msg = None;
+            self.show_toast("Proton GE setup complete");
         }
     }
 
@@ -161,9 +228,7 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         self.proton_setup = false;
-        if self.status_msg.as_deref() == Some("Downloading Proton GE…") {
-            self.status_msg = None;
-        }
+        self.status_msg = None;
 
         self.push_notification(&format!("{tool_name} closed — scanning for changes…"));
         sender.input(AppMsg::ScanExternalFiles);
@@ -288,11 +353,13 @@ impl App {
         tool: crate::models::tool::Tool,
         game: crate::models::game::Game,
         wine_config: crate::core::game::WineConfig,
+        monitor_proton_setup: bool,
         sender: &ComponentSender<Self>,
     ) {
         let tool_name = tool.name.clone();
         let exit_sender = sender.input_sender().clone();
         let exit_tool_name = tool_name.clone();
+        let setup_sender = sender.input_sender().clone();
         let cache_root = self
             .cache_root_for(&game.id)
             .unwrap_or_else(|_| crate::utils::paths::cache_root().unwrap_or_default());
@@ -309,9 +376,60 @@ impl App {
                     })),
                 )
                 .map_err(|e| e.to_string())?;
+                if monitor_proton_setup {
+                    monitor_deployd_proton_runtime(setup_sender);
+                }
                 Ok(tool_name)
             })();
             AppCmdMsg::ToolLaunched(result)
         });
+    }
+}
+
+async fn connect_snap_wine_interfaces(missing: game::MissingSnapWineContent) -> Result<(), String> {
+    let plugs = game::missing_snap_wine_plugs(&missing);
+    if plugs.is_empty() {
+        return Ok(());
+    }
+
+    for plug in plugs {
+        let status = tokio::process::Command::new("pkexec")
+            .arg("snap")
+            .arg("connect")
+            .arg(plug)
+            .status()
+            .await
+            .map_err(|e| format!("failed to start authorization prompt for {plug}: {e}"))?;
+
+        if !status.success() {
+            return Err(format!(
+                "authorization failed for {plug} ({status}). You can connect it manually with: snap connect {plug}"
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn monitor_deployd_proton_runtime(sender: relm4::Sender<AppMsg>) {
+    std::thread::spawn(move || {
+        for _ in 0..1800 {
+            if game::proton_runtime_available() {
+                let _ = sender.send(AppMsg::ProtonSetupReady);
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_secs(1));
+        }
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PROTON_SETUP_BODY;
+
+    #[test]
+    fn proton_setup_message_does_not_claim_a_download_size() {
+        assert!(!PROTON_SETUP_BODY.contains("MB"));
+        assert!(!PROTON_SETUP_BODY.contains("GB"));
     }
 }

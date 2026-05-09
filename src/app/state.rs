@@ -205,7 +205,7 @@ pub struct App {
     pub(crate) mod_snapshots_list: gtk::ListBox,
     /// ListBox holding the plugin order snapshot list (in load popover).
     pub(crate) plugin_snapshots_list: gtk::ListBox,
-    /// True while UMU is downloading Proton GE for first-time tool use.
+    /// True while the external-tool runtime is being prepared.
     /// Drives the headerbar spinner + status label and disables the "Add Mod"
     /// button until the download completes.
     pub(crate) proton_setup: bool,

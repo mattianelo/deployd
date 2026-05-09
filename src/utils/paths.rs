@@ -23,7 +23,7 @@ pub fn lowercase_path_str(rel: &Path) -> String {
 /// Inside a snap `$SNAP_USER_DATA` is revision-specific — it changes on every
 /// `snap install`, wiping out runtimes, the database, and cached mods. We use
 /// `$SNAP_USER_COMMON` instead, which snapd keeps stable across revisions.
-fn deployd_data_dir() -> Result<PathBuf> {
+pub fn deployd_data_dir() -> Result<PathBuf> {
     if let Some(common) = std::env::var_os("SNAP_USER_COMMON") {
         return Ok(PathBuf::from(common).join("deployd"));
     }

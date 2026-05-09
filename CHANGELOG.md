@@ -23,6 +23,12 @@
 
 ### Fixed
 
+- External tool runtime split is now package-specific: AppImage launches through bundled UMU with
+  Proton GE stored under Deployd's data directory, while Snap launches only through its Wine content
+  interfaces and shows plug-connection guidance when they are unavailable.
+- First-run AppImage Proton GE setup now shows a busy status until UMU finishes preparing the
+  Deployd-managed runtime. The Snap Wine prompt can also launch a password-backed interface
+  connection attempt instead of requiring the user to copy commands into a terminal.
 - Plain click replaces the current selection; Ctrl/Shift still extend it.
 - Pressing Escape or clicking an empty area clears the list selection.
 - Version-column migration guard prevents a duplicate-column error on upgrade.
@@ -63,8 +69,6 @@
 - **Experimental features deleted** — Profile Import/Export, Script Extender Launch, and
   Backup & Restore were fully implemented but not production-ready. The implementations,
   their UI surfaces, messages, and backing tracker functions have been removed entirely.
-- **Dead UMU launch path** — `resolve_umu_binary()` and its commented-out call site are
-  removed. UMU is still bundled in the AppImage for manual use.
 - **Compact row settings removed** — mod and plugin lists now use one balanced row density rather
   than separate compact/non-compact modes.
 

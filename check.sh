@@ -2,15 +2,14 @@
 # Run cargo commands inside the deployd build environment (mirrors build-appimage.sh flow).
 # Usage: ./check.sh [check|clippy|test|...] [extra cargo flags]
 #
-# Requires the deployd-appimage-build LXD container (preferred) or the
-# deployd-build-env Docker image.  Run build-appimage.sh first if neither exists.
+# Requires the deployd-appimage-build LXD container. Run build-appimage.sh first
+# if it does not exist. Docker is intentionally not supported by this wrapper.
 set -eu
 # Ignore SIGPIPE so piping output through `tail` doesn't kill the script
 # prematurely when the reader closes early (e.g. `./check.sh clippy 2>&1 | tail -40`).
 trap '' PIPE
 
 REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
-DOCKERFILE="$REPO_ROOT/packaging/appimage/Dockerfile"
 LXD_CONTAINER="deployd-appimage-build"
 CMD="${1:-check}"
 FEATURES="loot,libarchive-fallback"
@@ -34,6 +33,9 @@ fi
 # ── Direct path (inside LXD container) ───────────────────────────────────────
 if [ "${DEPLOYD_NO_DOCKER:-0}" = "1" ]; then
     cd "$REPO_ROOT"
+    if [ "$CMD" = "fmt" ]; then
+        exec cargo fmt "${@:2}"
+    fi
     if [ "$CMD" = "nextest" ]; then
         NEXTEST_SUBCMD="${2:-run}"
         exec cargo nextest "$NEXTEST_SUBCMD" --features "$FEATURES" "${@:3}"
@@ -41,26 +43,6 @@ if [ "${DEPLOYD_NO_DOCKER:-0}" = "1" ]; then
     exec cargo "$CMD" --features "$FEATURES" "${@:2}"
 fi
 
-# ── Docker path (fallback: Docker without LXD) ───────────────────────────────
-DOCKERFILE_HASH=$(sha256sum "$DOCKERFILE" | cut -c1-12)
-IMAGE_TAG="deployd-build-env:${DOCKERFILE_HASH}"
-
-if ! docker image inspect "$IMAGE_TAG" &>/dev/null 2>&1; then
-    IMAGE_TAG="deployd-build-env:latest"
-fi
-
-if [ "$CMD" = "nextest" ]; then
-    NEXTEST_SUBCMD="${2:-run}"
-    CARGO_CMD="cargo nextest $NEXTEST_SUBCMD --features $FEATURES ${*:3}"
-else
-    CARGO_CMD="cargo $CMD --features $FEATURES ${*:2}"
-fi
-if [ "$CMD" = "clippy" ]; then
-    CARGO_CMD="rustup component add clippy 2>/dev/null; $CARGO_CMD"
-fi
-
-docker run --rm \
-    -v "$REPO_ROOT:/workspace:z" \
-    --workdir /workspace \
-    "$IMAGE_TAG" \
-    sh -c "$CARGO_CMD"
+echo "error: LXD is required for ./check.sh; Docker fallback is intentionally disabled." >&2
+echo "hint: ensure 'lxc info' works and the '$LXD_CONTAINER' container exists." >&2
+exit 1

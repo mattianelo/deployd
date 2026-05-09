@@ -1468,6 +1468,13 @@ impl Component for App {
             AppMsg::ProtonSetupConfirmed(tool_id) => {
                 self.handle_proton_setup_confirmed(tool_id, &sender)
             }
+            AppMsg::ConfirmSnapWineSetup(tool_id, missing) => {
+                self.handle_confirm_snap_wine_setup(tool_id, missing, root, &sender)
+            }
+            AppMsg::SnapWineSetupConfirmed(tool_id, missing) => {
+                self.handle_snap_wine_setup_confirmed(tool_id, missing, &sender)
+            }
+            AppMsg::ProtonSetupReady => self.handle_proton_setup_ready(),
             AppMsg::ConfirmMonoPrompt(tool_id, prefix) => {
                 self.handle_confirm_mono_prompt(tool_id, prefix, root, &sender)
             }
@@ -1534,12 +1541,20 @@ impl Component for App {
             AppMsg::ConfirmNexusIdEntry(dl_id, mod_id, domain) => {
                 self.handle_confirm_nexus_id_entry(dl_id, mod_id, domain, &sender)
             }
-            AppMsg::FileIdDialogConfirmed { download_id, file_id, mod_id, domain } => {
-                self.handle_file_id_dialog_confirmed(
-                    download_id, file_id, mod_id, domain, &sender,
-                )
+            AppMsg::FileIdDialogConfirmed {
+                download_id,
+                file_id,
+                mod_id,
+                domain,
+            } => {
+                self.handle_file_id_dialog_confirmed(download_id, file_id, mod_id, domain, &sender)
             }
-            AppMsg::ShowFileIdDialog { download_id, mod_id, domain, partial_name } => {
+            AppMsg::ShowFileIdDialog {
+                download_id,
+                mod_id,
+                domain,
+                partial_name,
+            } => {
                 if let Some(name) = partial_name {
                     self.pending_fetched_name = Some(name);
                 }
@@ -1551,11 +1566,18 @@ impl Component for App {
                 self.show_file_id_dialog(root, &sender);
             }
             AppMsg::DownloadProgress(id, frac, msg) => self.handle_download_progress(id, frac, msg),
-            AppMsg::DownloadNameResolved(id, name, domain, fname, is_primary, file_id, version, author) => {
-                self.handle_download_name_resolved(
-                    id, name, domain, fname, is_primary, file_id, version, author, &sender,
-                )
-            }
+            AppMsg::DownloadNameResolved(
+                id,
+                name,
+                domain,
+                fname,
+                is_primary,
+                file_id,
+                version,
+                author,
+            ) => self.handle_download_name_resolved(
+                id, name, domain, fname, is_primary, file_id, version, author, &sender,
+            ),
             AppMsg::ArchiveMd5Computed(dl_id, md5) => {
                 if let Some(entry) = self.all_downloads.iter_mut().find(|e| e.id == dl_id) {
                     entry.archive_md5 = Some(md5);
@@ -1633,7 +1655,11 @@ impl Component for App {
             AppMsg::ScanModFromCache(mod_id) => self.handle_scan_mod_from_cache(mod_id, &sender),
             AppMsg::OpenPreInstallDialog => self.handle_open_pre_install_dialog(root, &sender),
             AppMsg::OpenPreInstallDialogReplacing(id, priority) => {
-                if self.pending_install.as_ref().is_some_and(|p| p.fomod_config.is_some()) {
+                if self
+                    .pending_install
+                    .as_ref()
+                    .is_some_and(|p| p.fomod_config.is_some())
+                {
                     let old_name = self.mod_name_for_id(&id);
                     if let Some(pending) = &mut self.pending_install {
                         pending.mod_name = old_name;
@@ -1780,18 +1806,39 @@ impl Component for App {
             AppCmdMsg::PendingMetadataFetched(name) => {
                 self.pending_fetched_name = Some(name);
             }
-            AppCmdMsg::PendingFileNameUnresolved { partial_name, download_id, mod_id, domain } => {
+            AppCmdMsg::PendingFileNameUnresolved {
+                partial_name,
+                download_id,
+                mod_id,
+                domain,
+            } => {
                 self.pending_fetched_name = Some(partial_name);
-                self.pending_file_id_needed =
-                    Some(crate::app::types::FileIdNeeded { download_id, mod_id, domain });
+                self.pending_file_id_needed = Some(crate::app::types::FileIdNeeded {
+                    download_id,
+                    mod_id,
+                    domain,
+                });
             }
-            AppCmdMsg::FileIdFetched { combined_name, download_id, version, file_id } => {
+            AppCmdMsg::FileIdFetched {
+                combined_name,
+                download_id,
+                version,
+                file_id,
+            } => {
                 self.pending_file_id_needed = None;
                 if let Some(dl_id) = download_id {
                     // Standalone (right-click) path: update the download entry directly.
                     if let Some(name) = combined_name {
                         self.handle_download_name_resolved(
-                            dl_id.clone(), name, None, None, false, file_id, version, None, &sender,
+                            dl_id.clone(),
+                            name,
+                            None,
+                            None,
+                            false,
+                            file_id,
+                            version,
+                            None,
+                            &sender,
                         );
                     }
                     self.show_toast("Metadata updated");
@@ -1810,9 +1857,7 @@ impl Component for App {
                             .find(|e| {
                                 e.id != dl_id
                                     && e.nexus_ids.as_ref().map(|ids| ids.mod_id) == Some(mod_id)
-                                    && e.nexus_ids
-                                        .as_ref()
-                                        .is_some_and(|ids| ids.file_id == 0)
+                                    && e.nexus_ids.as_ref().is_some_and(|ids| ids.file_id == 0)
                                     && !e.metadata_fetched
                             })
                             .map(|e| e.id.clone());
@@ -1864,6 +1909,9 @@ impl Component for App {
                 self.handle_cmd_tool_working_dir_saved(result)
             }
             AppCmdMsg::ToolLaunched(result) => self.handle_cmd_tool_launched(result),
+            AppCmdMsg::SnapWineConnected { result, tool_id } => {
+                self.handle_snap_wine_connected(result, tool_id, &sender)
+            }
             AppCmdMsg::ModMerged(result) => self.handle_cmd_mod_merged(result, &sender),
             AppCmdMsg::NxmDownloadComplete(id, result) => {
                 self.handle_cmd_nxm_download_complete(id, result, &sender)
@@ -1899,9 +1947,6 @@ impl Component for App {
             AppCmdMsg::SavesSynced(result) => self.handle_cmd_saves_synced(result),
             AppCmdMsg::LastDeployedProfileLoaded(id) => self.last_deployed_profile_id = id,
             AppCmdMsg::AppUpdateResult(result) => self.handle_cmd_app_update_result(result),
-            AppCmdMsg::ProtonDownloaded { result, tool_id } => {
-                self.handle_proton_downloaded(result, tool_id, &sender)
-            }
             AppCmdMsg::FomodSelectionsLoaded(selections) => {
                 self.pending_fomod_selections = selections;
                 self.open_pre_install_dialog(root, &sender);
@@ -1954,7 +1999,10 @@ impl Component for App {
                 self.reload_order_snapshots(&sender);
             }
             AppCmdMsg::NexusAvatarLoaded(bytes) => {
-                crate::dlog!("[avatar] NexusAvatarLoaded: {:?}", bytes.as_ref().map(|b| b.len()));
+                crate::dlog!(
+                    "[avatar] NexusAvatarLoaded: {:?}",
+                    bytes.as_ref().map(|b| b.len())
+                );
                 if let Some(bytes) = bytes {
                     match gtk::gdk::Texture::from_bytes(&gtk::glib::Bytes::from_owned(bytes)) {
                         Ok(texture) => {
@@ -1977,7 +2025,8 @@ impl Component for App {
                 self.nexus_avatar_url = avatar_url.clone();
                 self.nexus_is_premium = is_premium;
                 self.nexus_avatar_widget.set_text(username.as_deref());
-                self.nexus_avatar_widget.set_custom_image(None::<&gtk::gdk::Texture>);
+                self.nexus_avatar_widget
+                    .set_custom_image(None::<&gtk::gdk::Texture>);
                 if let Some(url) = avatar_url {
                     sender.oneshot_command(async move {
                         AppCmdMsg::NexusAvatarLoaded(

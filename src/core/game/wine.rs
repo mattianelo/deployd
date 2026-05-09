@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::models::game::Game;
+use crate::utils::paths;
 
 pub(crate) fn find_wine_user_dir(game: &Game) -> Option<PathBuf> {
     let prefix = game.wine_prefix.clone()?;
@@ -28,8 +29,8 @@ pub(crate) fn find_wine_user_dir(game: &Game) -> Option<PathBuf> {
 /// Which Wine-compatible launcher to use for running Windows tools.
 #[derive(Debug, Clone)]
 pub enum WineLauncher {
-    /// Plain `wine` or `wine64` binary — the tool is invoked directly.
-    Wine(PathBuf),
+    /// UMU Launcher bundled with the AppImage.
+    Umu(PathBuf),
     /// Wine from the snap content interface — binary and library paths come from the mounted
     /// wine-platform and wine-runtime snaps. Sommelier is NOT used as the runner because it
     /// unconditionally overrides WINEPREFIX; we resolve wine directly instead.
@@ -40,18 +41,29 @@ pub enum WineLauncher {
         /// `$SNAP/wine-runtime` directory.
         wine_runtime: PathBuf,
     },
-    // UMU: commented out — pressure-vessel/bwrap blocked on AppImage + Snap strict confinement.
-    // Umu(PathBuf),
 }
 
 #[derive(Debug, Clone)]
 pub struct WineConfig {
     pub prefix: PathBuf,
     pub launcher: WineLauncher,
-    /// Explicit Proton installation directory when known, `None` otherwise.
-    /// For UMU launches the runtime is resolved via the `PROTONPATH` env var
-    /// rather than this field.
-    pub proton_dir: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MissingSnapWineContent {
+    pub wine_runtime: bool,
+    pub wine_platform: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SnapWineStatus {
+    NotSnap,
+    Ready {
+        wine_bin: PathBuf,
+        wine_platform: PathBuf,
+        wine_runtime: PathBuf,
+    },
+    Missing(MissingSnapWineContent),
 }
 
 /// Resolve the Wine/Proton configuration for a game.
@@ -60,49 +72,153 @@ pub struct WineConfig {
 /// 1. Snap content interface (snap only): wine binary from `$SNAP/wine-platform/wine-*/bin/wine`.
 ///    Sommelier is NOT used as the runner — it unconditionally overrides WINEPREFIX, which
 ///    conflicts with deployd's per-game prefix management.
-/// 2. Proton GE direct wine: `files/bin-wow64/wine` from a user-installed Proton GE runtime.
-/// 3. Plain Wine: `wine64` / `wine` on `$PATH`.
+/// 2. AppImage UMU: bundled `umu-run`, with Proton GE managed under Deployd's data directory.
 ///
 /// Returns `None` if no suitable launcher is found or if no wine prefix is configured.
 pub fn detect_wine_config(game: &Game) -> Option<WineConfig> {
     let prefix = game.wine_prefix.clone()?;
-    if let Some((wine_bin, wine_platform, wine_runtime)) = find_snap_wine() {
-        return Some(WineConfig {
-            prefix,
-            launcher: WineLauncher::SnapWine {
-                wine_bin,
-                wine_platform,
-                wine_runtime,
-            },
-            proton_dir: None,
-        });
+
+    match snap_wine_status() {
+        SnapWineStatus::Ready {
+            wine_bin,
+            wine_platform,
+            wine_runtime,
+        } => {
+            return Some(WineConfig {
+                prefix,
+                launcher: WineLauncher::SnapWine {
+                    wine_bin,
+                    wine_platform,
+                    wine_runtime,
+                },
+            });
+        }
+        SnapWineStatus::Missing(_) => return None,
+        SnapWineStatus::NotSnap => {}
     }
-    let proton_dir = find_proton_runtime();
-    let launcher = resolve_launcher(proton_dir.as_deref())?;
-    Some(WineConfig {
+
+    resolve_umu_binary().map(|umu| WineConfig {
         prefix,
-        launcher,
-        proton_dir,
+        launcher: WineLauncher::Umu(umu),
     })
+}
+
+pub fn is_snap() -> bool {
+    std::env::var_os("SNAP").is_some()
+}
+
+pub fn snap_wine_status() -> SnapWineStatus {
+    let Some(snap) = std::env::var_os("SNAP").map(PathBuf::from) else {
+        return SnapWineStatus::NotSnap;
+    };
+
+    snap_wine_status_in(&snap)
+}
+
+pub fn missing_snap_wine_message(missing: &MissingSnapWineContent) -> String {
+    let plugs = missing_snap_wine_plugs(missing);
+
+    let commands = plugs
+        .iter()
+        .map(|plug| format!("snap connect {plug}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!(
+        "Deployd needs the Snap Wine content interface to run external tools.\n\n\
+         If you continue, your system will ask for permission to connect the missing plug(s).\n\n\
+         If automatic connection fails, run:\n\n{commands}"
+    )
+}
+
+pub fn missing_snap_wine_plugs(missing: &MissingSnapWineContent) -> Vec<&'static str> {
+    let mut plugs = Vec::new();
+    if missing.wine_runtime {
+        plugs.push("deployd:wine-runtime");
+    }
+    if missing.wine_platform {
+        plugs.push("deployd:wine-10-stable");
+    }
+    plugs
+}
+
+pub fn proton_runtime_available() -> bool {
+    find_deployd_proton_runtime().is_some()
+}
+
+pub fn find_deployd_proton_runtime() -> Option<PathBuf> {
+    let dir = deployd_compatibilitytools_dir().ok()?;
+    find_proton_runtime_in(&dir)
+}
+
+pub fn deployd_compatibilitytools_dir() -> anyhow::Result<PathBuf> {
+    Ok(paths::deployd_data_dir()?.join("Steam/compatibilitytools.d"))
+}
+
+pub fn umu_folders_path() -> anyhow::Result<PathBuf> {
+    paths::deployd_data_dir()
+}
+
+fn resolve_umu_binary() -> Option<PathBuf> {
+    if let Some(appdir) = std::env::var_os("APPDIR").map(PathBuf::from) {
+        let candidate = appdir.join("usr/bin/umu-run");
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+
+    let path_var = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path_var) {
+        let candidate = dir.join("umu-run");
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+
+    None
 }
 
 /// Find the wine binary from the snap content interface mounts.
 /// Returns `(wine_bin, wine_platform_dir, wine_runtime_dir)`.
 fn find_snap_wine() -> Option<(PathBuf, PathBuf, PathBuf)> {
-    let snap = PathBuf::from(std::env::var_os("SNAP")?);
-    let wine_runtime = snap.join("wine-runtime");
-    if !wine_runtime.is_dir() {
-        return None;
+    match snap_wine_status() {
+        SnapWineStatus::Ready {
+            wine_bin,
+            wine_platform,
+            wine_runtime,
+        } => Some((wine_bin, wine_platform, wine_runtime)),
+        SnapWineStatus::NotSnap | SnapWineStatus::Missing(_) => None,
     }
-    let wine_platform_root = snap.join("wine-platform");
-    for entry in std::fs::read_dir(&wine_platform_root).ok()?.flatten() {
+}
+
+fn find_snap_wine_platform(wine_platform_root: &Path) -> Option<(PathBuf, PathBuf)> {
+    for entry in std::fs::read_dir(wine_platform_root).ok()?.flatten() {
         let platform_dir = entry.path();
         let wine_bin = platform_dir.join("bin/wine");
         if wine_bin.is_file() {
-            return Some((wine_bin, platform_dir, wine_runtime));
+            return Some((wine_bin, platform_dir));
         }
     }
     None
+}
+
+fn snap_wine_status_in(snap: &Path) -> SnapWineStatus {
+    let wine_runtime = snap.join("wine-runtime");
+    let wine_platform_root = snap.join("wine-platform");
+    let wine_runtime_present = wine_runtime.is_dir();
+    let wine_platform = find_snap_wine_platform(&wine_platform_root);
+
+    match (wine_runtime_present, wine_platform) {
+        (true, Some((wine_bin, wine_platform))) => SnapWineStatus::Ready {
+            wine_bin,
+            wine_platform,
+            wine_runtime,
+        },
+        (runtime_present, platform) => SnapWineStatus::Missing(MissingSnapWineContent {
+            wine_runtime: !runtime_present,
+            wine_platform: platform.is_none(),
+        }),
+    }
 }
 
 /// Returns `true` when running in a snap with Wine provided via the content interface.
@@ -111,103 +227,97 @@ pub fn snap_wine_available() -> bool {
     find_snap_wine().is_some()
 }
 
-/// Find the wine binary inside a Proton installation directory.
-///
-/// Prefers the WoW64 build (`files/bin-wow64/wine`) which handles both
-/// 32-bit and 64-bit Windows executables without a separate `wine64`.
-pub(crate) fn resolve_proton_wine_binary(proton_dir: &Path) -> Option<PathBuf> {
-    [
-        proton_dir.join("files/bin-wow64/wine"),
-        proton_dir.join("files/bin/wine64"),
-        proton_dir.join("files/bin/wine"),
-    ]
-    .into_iter()
-    .find(|p| p.is_file())
-}
-
-/// Resolve the best available launcher.
-///
-/// Prefers direct Proton GE wine over system wine.
-/// UMU is commented out — pressure-vessel/bwrap requires CLONE_NEWUSER which
-/// is blocked on AppImage (AppArmor) and Snap (strict confinement).
-fn resolve_launcher(proton_dir: Option<&Path>) -> Option<WineLauncher> {
-    if let Some(dir) = proton_dir
-        && let Some(wine_bin) = resolve_proton_wine_binary(dir)
-    {
-        return Some(WineLauncher::Wine(wine_bin));
-    }
-    resolve_wine_binary().map(WineLauncher::Wine)
-}
-
-/// Find the `wine64` (or `wine`) binary.
-fn resolve_wine_binary() -> Option<PathBuf> {
-    let path_var = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path_var) {
-        for name in ["wine64", "wine"] {
-            let candidate = dir.join(name);
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-        }
-    }
-    None
-}
-
-/// Returns `true` if a usable Proton or Proton GE runtime is already present
-/// in a standard Steam compatibility-tools directory.
-///
-/// When this returns `false` and UMU is the active launcher, deployd shows a
-/// first-run setup dialog before calling `umu-run`, which will download
-/// Proton GE automatically on first use.
-pub fn proton_runtime_available() -> bool {
-    find_proton_runtime().is_some()
-}
-
-/// Search the standard Steam compatibility-tools directories for an installed
-/// Proton or Proton GE runtime.
-///
-/// A directory is accepted as a valid Proton installation if it contains
-/// either a `proton` launcher script or a `files/bin/wine64` binary.
-pub fn find_proton_runtime() -> Option<PathBuf> {
-    let home = dirs::home_dir()?;
-
-    let xdg_data = std::env::var_os("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home.join(".local/share"));
-
-    let mut search_dirs = vec![
-        xdg_data.join("Steam/compatibilitytools.d"),
-        home.join(".steam/steam/compatibilitytools.d"),
-    ];
-
-    // In a snap, XDG_DATA_HOME points to the revision-specific directory and
-    // is wiped on every update. SNAP_USER_COMMON persists across revisions, so
-    // UMU is told to download Proton GE there (see build_umu_command).
-    if let Some(snap_common) = std::env::var_os("SNAP_USER_COMMON") {
-        search_dirs.push(PathBuf::from(snap_common).join("Steam/compatibilitytools.d"));
-    }
-
-    for dir in &search_dirs {
-        let Ok(entries) = std::fs::read_dir(dir) else {
+fn find_proton_runtime_in(dir: &Path) -> Option<PathBuf> {
+    let entries = std::fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
             continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_dir() {
-                continue;
-            }
-            // Accept any directory that looks like a valid Proton installation.
-            // WoW64 builds (Proton GE 9+) use bin-wow64/wine instead of bin/wine64.
-            if path.join("proton").exists()
-                || path.join("files/bin-wow64/wine").exists()
-                || path.join("files/bin/wine64").exists()
-            {
-                return Some(path);
-            }
+        }
+        if path.join("proton").exists()
+            || path.join("files/bin-wow64/wine").exists()
+            || path.join("files/bin/wine64").exists()
+        {
+            return Some(path);
         }
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::tempdir;
+
+    use super::*;
+
+    #[test]
+    fn snap_wine_status_reports_missing_content() -> anyhow::Result<()> {
+        let snap = tempdir()?;
+
+        assert_eq!(
+            snap_wine_status_in(snap.path()),
+            SnapWineStatus::Missing(MissingSnapWineContent {
+                wine_runtime: true,
+                wine_platform: true,
+            })
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn snap_wine_status_resolves_content_mounted_wine() -> anyhow::Result<()> {
+        let snap = tempdir()?;
+        std::fs::create_dir_all(snap.path().join("wine-runtime"))?;
+        std::fs::create_dir_all(snap.path().join("wine-platform/wine-10-stable/bin"))?;
+        std::fs::write(
+            snap.path().join("wine-platform/wine-10-stable/bin/wine"),
+            b"",
+        )?;
+
+        assert_eq!(
+            snap_wine_status_in(snap.path()),
+            SnapWineStatus::Ready {
+                wine_bin: snap.path().join("wine-platform/wine-10-stable/bin/wine"),
+                wine_platform: snap.path().join("wine-platform/wine-10-stable"),
+                wine_runtime: snap.path().join("wine-runtime"),
+            }
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn proton_runtime_search_uses_only_deployd_dir() -> anyhow::Result<()> {
+        let deployd_runtime = tempdir()?;
+        let shared_runtime = tempdir()?;
+        std::fs::create_dir_all(shared_runtime.path().join("GE-Proton/files/bin-wow64"))?;
+        std::fs::write(
+            shared_runtime.path().join("GE-Proton/files/bin-wow64/wine"),
+            b"",
+        )?;
+
+        assert!(
+            find_proton_runtime_in(deployd_runtime.path()).is_none(),
+            "shared Proton runtimes must not be discovered from Deployd's isolated runtime dir"
+        );
+
+        std::fs::create_dir_all(deployd_runtime.path().join("GE-Proton/files/bin-wow64"))?;
+        std::fs::write(
+            deployd_runtime
+                .path()
+                .join("GE-Proton/files/bin-wow64/wine"),
+            b"",
+        )?;
+
+        assert_eq!(
+            find_proton_runtime_in(deployd_runtime.path()),
+            Some(deployd_runtime.path().join("GE-Proton"))
+        );
+
+        Ok(())
+    }
 }
 
 /// Translate a Linux absolute path to its Wine drive-letter form via `<prefix>/dosdevices/`.

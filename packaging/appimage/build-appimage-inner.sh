@@ -84,10 +84,8 @@ fi
 
 # 2c. Bundle umu-run (UMU Launcher)
 # umu-run is a self-contained binary built with PyInstaller; it does not need
-# linuxdeploy shared-library resolution.  On first tool launch deployd will
-# check whether a Proton GE runtime is already present; if not it shows a
-# first-run setup dialog before calling umu-run, which downloads Proton GE
-# automatically.
+# linuxdeploy shared-library resolution. On first tool launch deployd points
+# UMU at Deployd's own data directory so Proton GE is isolated from other apps.
 echo "==> Bundling umu-run into AppDir"
 if [ -f /opt/umu-run ]; then
     cp /opt/umu-run "$APPDIR/usr/bin/umu-run"

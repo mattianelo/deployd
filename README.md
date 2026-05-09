@@ -31,7 +31,7 @@ libadwaita, and Rust.
 - **Plugin Load Order** — Drag-and-drop `.esp`/`.esm`/`.esl` management written to `plugins.txt`
 - **Conflict Detection** — Per-file visibility into which mods override each other, with a detailed Conflicts section in each mod's Properties dialog (The Witcher 1's Override/ files are matched by filename regardless of subfolder depth)
 - **Priority-Based Deployment** — Hardlink deployment; lower in the list wins conflicts
-- **Tool Launcher** — Run xEdit, LOOT, BodySlide and more through Wine/Proton
+- **Tool Launcher** — Run xEdit, LOOT, BodySlide and more through the package-managed Windows runtime
 - **Save Management** — Browse game saves associated with the active profile
 - **Mod Notes** — Attach personal notes to any mod; preview on hover from the list
 - **Notifications Panel** — External changes and alerts collected in a sidebar, with "All Caught Up" state
@@ -146,7 +146,7 @@ The **Saves** tab lists game saves associated with your active profile. Informat
 
 ### 8. External Tools
 
-Launch modding tools through Wine/Proton from the **Tools** panel:
+Launch modding tools through the package-managed runtime from the **Tools** panel:
 
 - Tools inside the game's Proton prefix are detected automatically
 - Add tools manually via the tool manager

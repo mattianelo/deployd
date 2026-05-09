@@ -32,7 +32,11 @@ pub enum AppMsg {
     GameSelected(u32),
     InstallClicked,
     FileChosen(PathBuf),
-    PreInstallConfirmed(String, HashMap<String, InstallTarget>, std::collections::HashSet<String>),
+    PreInstallConfirmed(
+        String,
+        HashMap<String, InstallTarget>,
+        std::collections::HashSet<String>,
+    ),
     PreInstallCancelled,
     FomodConfirmed(fomod_resolver::FomodSelections),
     FomodCancelled,
@@ -70,10 +74,16 @@ pub enum AppMsg {
     /// Fired from the background wait-thread when a launched tool's Wine process exits.
     /// The second field carries the stderr output if the process exited with a non-zero status.
     ToolExited(String, Option<String>),
-    /// Show a first-run Proton GE download confirmation dialog for `tool_id`.
+    /// Show a first-run Proton GE setup confirmation dialog for `tool_id`.
     ConfirmProtonSetup(String),
-    /// User confirmed the first-run Proton GE download; start the download.
+    /// User confirmed the first-run Proton GE setup; launch through UMU.
     ProtonSetupConfirmed(String),
+    /// Show a Snap Wine interface connection dialog.
+    ConfirmSnapWineSetup(String, crate::core::game::MissingSnapWineContent),
+    /// User confirmed the Snap Wine interface connection attempt.
+    SnapWineSetupConfirmed(String, crate::core::game::MissingSnapWineContent),
+    /// AppImage UMU has finished preparing Proton GE.
+    ProtonSetupReady,
     /// Show a one-time Mono install info dialog for Eclipse/Snap tool launches.
     /// Carries `tool_id` and the wine prefix path (used to write the sentinel on confirm).
     ConfirmMonoPrompt(String, std::path::PathBuf),
@@ -154,7 +164,16 @@ pub enum AppMsg {
     },
     DownloadProgress(String, f64, String),
     /// (download_id, mod_name, game_domain, nexus_file_name, nexus_is_primary, resolved_file_id, version, author)
-    DownloadNameResolved(String, String, Option<String>, Option<String>, bool, Option<i64>, Option<String>, Option<String>),
+    DownloadNameResolved(
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        bool,
+        Option<i64>,
+        Option<String>,
+        Option<String>,
+    ),
     /// Notifies that the MD5 of an archive was computed (lazily, during metadata fetch).
     /// Persisted so subsequent fetches skip recomputation.
     ArchiveMd5Computed(String, String),
@@ -372,7 +391,9 @@ pub enum AppCmdMsg {
         result: Result<(), String>,
     },
     PrioritySaved(Result<(), String>),
-    OverridesRefreshed(Result<std::collections::HashMap<String, crate::core::tracker::OverrideInfo>, String>),
+    OverridesRefreshed(
+        Result<std::collections::HashMap<String, crate::core::tracker::OverrideInfo>, String>,
+    ),
     PluginOrderSaved(Result<(), String>),
     ProfileSwitched(Result<(LoadedData, Option<save_manager::SaveSyncResult>), String>),
     ProfileCreated(Result<LoadedData, String>),
@@ -383,6 +404,10 @@ pub enum AppCmdMsg {
     ToolDeleted(Result<String, String>),
     ToolWorkingDirSaved(Result<(), String>),
     ToolLaunched(Result<String, String>),
+    SnapWineConnected {
+        result: Result<(), String>,
+        tool_id: String,
+    },
     /// Files were merged into an existing mod. Carries `(mod_name, files_merged)`.
     ModMerged(Result<(String, usize), String>),
     /// Combined mod+file name fetched after the user supplied a file ID.
@@ -397,7 +422,10 @@ pub enum AppCmdMsg {
     },
     NxmDownloadComplete(String, Result<NxmDownloadResult, String>),
     /// (dl_id, Result<(mod_id, version, author, mod_name, nexus_file_name), err>)
-    NexusMetadataFetched(Option<String>, Result<(String, String, String, String, Option<String>), String>),
+    NexusMetadataFetched(
+        Option<String>,
+        Result<(String, String, String, String, Option<String>), String>,
+    ),
     UpdatesChecked(Result<Vec<(String, String, String)>, String>),
     DownloadsDirUpdated(Option<PathBuf>),
     ExternalScanDone(Result<Vec<ExternalFile>, String>),
@@ -441,12 +469,6 @@ pub enum AppCmdMsg {
     OrderSnapshotDeleted(Result<(), String>),
     /// Result of the self-update AppImage download + replace.
     AppUpdateResult(Result<(), String>),
-    /// Result of downloading + extracting Proton GE from GitHub. Carries the
-    /// `tool_id` to re-enter the launch flow on success.
-    ProtonDownloaded {
-        result: Result<(), String>,
-        tool_id: String,
-    },
     /// Previous FOMOD selections loaded from DB for the reinstall/replace flow.
     /// None = no prior selections stored. Triggers opening the pre-install dialog.
     FomodSelectionsLoaded(Option<Vec<Vec<std::collections::HashSet<usize>>>>),

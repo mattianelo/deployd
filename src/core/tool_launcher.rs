@@ -15,10 +15,7 @@ use crate::utils::paths;
 /// The user is informed via a blocking dialog before launch so they can accept the install prompt.
 const WINE_SILENT_DLL_OVERRIDES: &str = "mshtml=d;winemenubuilder.exe=d";
 
-/// Launch a Windows tool via Wine/Proton.
-///
-/// Invokes the tool directly under the Proton GE wine binary (bypassing
-/// pressure-vessel/bwrap) or falls back to system wine.
+/// Launch a Windows tool via the package-specific runtime.
 ///
 /// `on_exit` is called from a background thread once the process exits.
 pub fn launch_tool(
@@ -39,17 +36,7 @@ pub fn launch_tool(
     ensure_no_x_drive_conflict(wine_config);
 
     let cmd = match &wine_config.launcher {
-        game::WineLauncher::Wine(bin) => {
-            let wine_bin = resolve_wine64(bin);
-            ensure_bethesda_reg_key(game, wine_config, &wine_bin, None);
-            ensure_wine_silent_setup(wine_config, &wine_bin, None);
-            dlog!(
-                "deployd: launching tool '{}' | wine={}",
-                tool.name,
-                wine_bin.display()
-            );
-            build_wine_command(&wine_bin, tool, game, wine_config)
-        }
+        game::WineLauncher::Umu(bin) => build_umu_command(bin, tool, game, wine_config)?,
         game::WineLauncher::SnapWine {
             wine_bin,
             wine_platform,
@@ -75,19 +62,9 @@ pub fn launch_tool(
         }
     };
     spawn_tool(cmd, &tool.name, on_exit)
-
-    // UMU: commented out — pressure-vessel/bwrap blocked on AppImage + Snap.
-    // WineLauncher::Umu(bin) => {
-    //     game::ensure_ini_symlinks(game);
-    //     ensure_bodyslide_config(tool, game, wine_config);
-    //     ensure_named_mods_drive(wine_config);
-    //     ensure_no_x_drive_conflict(wine_config);
-    //     let cmd = build_umu_command(bin, tool, game, wine_config);
-    //     spawn_tool(cmd, &tool.name, on_exit)
-    // }
 }
 
-/// Shared process-spawn logic for both Wine and UMU paths.
+/// Shared process-spawn logic for tool launches.
 ///
 /// `on_exit` receives `Some(error_string)` if the process exited with a non-zero
 /// status or could not be waited on; `None` on clean exit.
@@ -191,44 +168,42 @@ fn build_snap_wine_command(
     cmd
 }
 
-/// Build a command that runs the tool under plain Wine.
-fn build_wine_command(
-    wine_bin: &PathBuf,
+fn build_umu_command(
+    umu_bin: &Path,
     tool: &Tool,
     game: &Game,
     wine_config: &WineConfig,
+) -> Result<Command> {
+    let umu_folders = game::umu_folders_path().context("resolve UMU data directory")?;
+    Ok(build_umu_command_with_folders(
+        umu_bin,
+        tool,
+        game,
+        wine_config,
+        &umu_folders,
+    ))
+}
+
+fn build_umu_command_with_folders(
+    umu_bin: &Path,
+    tool: &Tool,
+    game: &Game,
+    wine_config: &WineConfig,
+    umu_folders: &Path,
 ) -> Command {
     let compat_data = strip_pfx_suffix(&wine_config.prefix);
 
-    let mut cmd = Command::new(wine_bin);
-    // Defensive: GTK accessibility layers or AppImage runtimes may inject LD_PRELOAD
-    // entries that wine's loader cannot handle, causing spurious crashes.
-    cmd.env_remove("LD_PRELOAD");
-    cmd.env("WINEPREFIX", &wine_config.prefix)
+    let mut cmd = Command::new(umu_bin);
+    cmd.env_remove("PYTHONPATH")
+        .env_remove("PYTHONHOME")
+        .env_remove("LD_PRELOAD");
+    cmd.env("GAMEID", "0")
+        .env("WINEPREFIX", &wine_config.prefix)
         .env("WINEDEBUG", "-all")
-        .env("STEAM_COMPAT_DATA_PATH", &compat_data);
-
-    cmd.env("WINEDLLOVERRIDES", WINE_SILENT_DLL_OVERRIDES);
-
-    if let Some(proton_dir) = &wine_config.proton_dir {
-        let lib_dir = proton_dir.join("files/lib");
-        cmd.env(
-            "LD_LIBRARY_PATH",
-            format!(
-                "{}:{}",
-                lib_dir.join("x86_64-linux-gnu").display(),
-                lib_dir.join("i386-linux-gnu").display(),
-            ),
-        );
-        cmd.env(
-            "WINEDLLPATH",
-            format!(
-                "{}:{}",
-                lib_dir.join("vkd3d").display(),
-                lib_dir.join("wine").display(),
-            ),
-        );
-    }
+        .env("STEAM_COMPAT_DATA_PATH", &compat_data)
+        .env("PROTONPATH", "GE-Proton")
+        .env("UMU_FOLDERS_PATH", umu_folders)
+        .env("WINEDLLOVERRIDES", WINE_SILENT_DLL_OVERRIDES);
 
     cmd.arg(&tool.exe_path);
     for arg in tool.custom_args.split_whitespace() {
@@ -238,28 +213,6 @@ fn build_wine_command(
     cmd.current_dir(effective_cwd(tool, game));
     cmd
 }
-
-// UMU: commented out — pressure-vessel/bwrap blocked on AppImage + Snap strict confinement.
-// fn build_umu_command(umu_bin: &Path, tool: &Tool, game: &Game, wine_config: &WineConfig) -> Command {
-//     let proton_path = game::find_proton_runtime()
-//         .map(|p| p.to_string_lossy().into_owned())
-//         .unwrap_or_else(|| "GE-Proton".to_string());
-//     let compat_data = strip_pfx_suffix(&wine_config.prefix);
-//     let mut cmd = Command::new(umu_bin);
-//     cmd.env_remove("PYTHONPATH").env_remove("PYTHONHOME");
-//     cmd.env("GAMEID", "0")
-//         .env("WINEPREFIX", &wine_config.prefix)
-//         .env("STEAM_COMPAT_DATA_PATH", &compat_data)
-//         .env("PROTONPATH", &proton_path);
-//     if let Ok(snap_common) = std::env::var("SNAP_USER_COMMON") {
-//         cmd.env("XDG_DATA_HOME", snap_common);
-//         cmd.env("PRESSURE_VESSEL_UNSHARE_USER", "0");
-//     }
-//     cmd.arg(&tool.exe_path);
-//     for arg in tool.custom_args.split_whitespace() { cmd.arg(arg); }
-//     cmd.current_dir(effective_cwd(tool, game));
-//     cmd
-// }
 
 /// If the prefix path ends with `pfx` (Proton layout), return its parent as
 /// the `STEAM_COMPAT_DATA_PATH` directory.  Otherwise return the path as-is.
@@ -652,5 +605,128 @@ fn patch_xml_value(xml: &str, tag: &str, value: &str) -> String {
              \t<{tag}>{value}</{tag}>\n\
              </Config>\n"
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ffi::OsStr;
+    use std::path::{Path, PathBuf};
+
+    use tempfile::tempdir;
+
+    use super::*;
+    use crate::models::game::{Game, GameEngine};
+
+    fn env_value(cmd: &Command, key: &str) -> Option<PathBuf> {
+        cmd.get_envs()
+            .find_map(|(k, v)| (k == OsStr::new(key)).then(|| v.map(PathBuf::from)))
+            .flatten()
+    }
+
+    fn env_string(cmd: &Command, key: &str) -> Option<String> {
+        cmd.get_envs().find_map(|(k, v)| {
+            (k == OsStr::new(key))
+                .then(|| v.map(|value| value.to_string_lossy().into_owned()))
+                .flatten()
+        })
+    }
+
+    fn game_with_prefix(prefix: &Path) -> Game {
+        Game {
+            id: "skyrim-se".to_string(),
+            title: "Skyrim Special Edition".to_string(),
+            path: prefix.join("game"),
+            data_subdir: "Data".to_string(),
+            engine: GameEngine::Bethesda,
+            wine_prefix: Some(prefix.join("compatdata/pfx")),
+        }
+    }
+
+    fn tool(exe_path: &Path) -> Tool {
+        Tool {
+            id: "xedit".to_string(),
+            game_id: "skyrim-se".to_string(),
+            name: "xEdit".to_string(),
+            exe_path: exe_path.to_string_lossy().into_owned(),
+            icon_name: "application-x-executable-symbolic".to_string(),
+            custom_args: "-quickautoclean".to_string(),
+            sort_order: 0,
+            working_dir: String::new(),
+        }
+    }
+
+    #[test]
+    fn umu_command_uses_deployd_runtime_folder() -> anyhow::Result<()> {
+        let temp = tempdir()?;
+        let game = game_with_prefix(temp.path());
+        let tool = tool(&temp.path().join("tools/SSEEdit.exe"));
+        let wine_config = WineConfig {
+            prefix: game
+                .wine_prefix
+                .clone()
+                .ok_or_else(|| anyhow!("expected wine prefix"))?,
+            launcher: game::WineLauncher::Umu(temp.path().join("AppDir/usr/bin/umu-run")),
+        };
+        let umu_folders = temp.path().join(".local/share/deployd");
+
+        let cmd = build_umu_command_with_folders(
+            temp.path().join("AppDir/usr/bin/umu-run").as_path(),
+            &tool,
+            &game,
+            &wine_config,
+            &umu_folders,
+        );
+
+        assert_eq!(
+            cmd.get_program(),
+            temp.path().join("AppDir/usr/bin/umu-run")
+        );
+        assert_eq!(env_string(&cmd, "PROTONPATH").as_deref(), Some("GE-Proton"));
+        assert_eq!(env_value(&cmd, "UMU_FOLDERS_PATH"), Some(umu_folders));
+        assert_eq!(env_value(&cmd, "WINEPREFIX"), game.wine_prefix);
+        assert_eq!(
+            env_value(&cmd, "STEAM_COMPAT_DATA_PATH"),
+            Some(temp.path().join("compatdata"))
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn umu_command_does_not_reference_shared_steam_runtime() -> anyhow::Result<()> {
+        let temp = tempdir()?;
+        let game = game_with_prefix(temp.path());
+        let tool = tool(&temp.path().join("tools/SSEEdit.exe"));
+        let wine_config = WineConfig {
+            prefix: game
+                .wine_prefix
+                .clone()
+                .ok_or_else(|| anyhow!("expected wine prefix"))?,
+            launcher: game::WineLauncher::Umu(temp.path().join("AppDir/usr/bin/umu-run")),
+        };
+        let umu_folders = temp.path().join(".local/share/deployd");
+
+        let cmd = build_umu_command_with_folders(
+            temp.path().join("AppDir/usr/bin/umu-run").as_path(),
+            &tool,
+            &game,
+            &wine_config,
+            &umu_folders,
+        );
+
+        let env_dump = cmd
+            .get_envs()
+            .filter_map(|(_, v)| v)
+            .map(|v| v.to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(
+            !env_dump.contains(".steam/steam/compatibilitytools.d"),
+            "UMU launch must not point at shared Steam Proton runtimes"
+        );
+
+        Ok(())
     }
 }

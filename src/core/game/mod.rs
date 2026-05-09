@@ -26,7 +26,9 @@ pub use metadata::{
 pub use tools::{archive_mod_dir, detect_tool_path, tool_presets_for};
 pub(crate) use wine::linux_path_to_wine_path;
 pub use wine::{
-    WineConfig, WineLauncher, detect_wine_config, proton_runtime_available, snap_wine_available,
+    MissingSnapWineContent, SnapWineStatus, WineConfig, WineLauncher, detect_wine_config, is_snap,
+    missing_snap_wine_message, missing_snap_wine_plugs, proton_runtime_available,
+    snap_wine_available, snap_wine_status, umu_folders_path,
 };
 
 pub struct KnownGameOption {
@@ -55,4 +57,3 @@ pub fn known_game_options() -> Vec<KnownGameOption> {
         })
         .collect()
 }
-

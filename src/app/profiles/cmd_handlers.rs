@@ -354,6 +354,8 @@ impl App {
                 self.show_toast(&format!("Launched {name}"));
             }
             Err(e) => {
+                self.proton_setup = false;
+                self.status_msg = None;
                 crate::dlog!("deployd: tool launch error: {e}");
                 self.push_notification(&format!("Launch failed: {e}"));
             }
