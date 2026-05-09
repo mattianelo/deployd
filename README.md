@@ -114,6 +114,8 @@ Open **Settings** (gear icon) and log in under **Nexus Mods**:
 - **Local archive** — Drag-and-drop a `.zip`, `.7z`, or `.rar` onto the mod list, or use the **+** button
 - **From Nexus Mods** — Click **Mod Manager Download**; the file downloads into Deployd automatically
 - **FOMOD mods** — A wizard opens automatically if the archive includes a FOMOD installer
+- **File selection** — The Install Mod dialog lets you deselect archive entries before they are
+  cached and deployed
 - **Reinstall** — Use the ↺ button on any mod row to re-extract from its original archive, or use the refresh button in the Downloads panel
 - **Replace** — When a name conflict occurs during install, choose Replace to swap the mod in-place (preserving load order position)
 

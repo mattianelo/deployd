@@ -2,9 +2,11 @@ mod dazip;
 mod file_list;
 mod paths;
 
-pub use paths::auto_detect_install_target;
 pub(crate) use file_list::is_ignorable_file;
-pub(crate) use paths::{apply_redengine_path_fixups, route_aurora_paths, strip_data_subdir_prefix_str};
+pub use paths::auto_detect_install_target;
+pub(crate) use paths::{
+    apply_redengine_path_fixups, route_aurora_paths, strip_data_subdir_prefix_str,
+};
 
 /// Re-scan a staging directory for its current file contents, picking up any
 /// modifications the user made after initial extraction. Returns a fresh
@@ -47,9 +49,9 @@ use crate::core::game::engine_handler;
 use crate::core::rules;
 use crate::core::tracker::Tracker;
 use crate::dlog;
+use crate::models::download::NexusIds;
 use crate::models::game::{Game, GameEngine};
 use crate::models::manifest::ModFile;
-use crate::models::download::NexusIds;
 use crate::models::mod_entry::{InstallTarget, ModEntry};
 use crate::models::plugin::Plugin;
 use crate::utils::paths as utils_paths;
@@ -174,11 +176,23 @@ pub async fn add_mod_with_file_list(
 ) -> Result<AddResult> {
     let mod_id = Uuid::new_v4().to_string();
 
-    let handler = engine_handler::handler_for(&game.engine);
-    let file_list =
-        handler.route_file_list(game, mod_name, stripped_wrapper.as_deref(), file_list, &file_targets);
-
     let game_rules = rules::rules_for_game(&game.id);
+    let file_list = filter_excluded_files(
+        file_list,
+        &game_rules,
+        &game.engine,
+        &game.data_subdir,
+        excluded_files,
+    );
+    let handler = engine_handler::handler_for(&game.engine);
+    let file_list = handler.route_file_list(
+        game,
+        mod_name,
+        stripped_wrapper.as_deref(),
+        file_list,
+        &file_targets,
+    );
+
     let cache_dir = utils_paths::mod_cache_dir_in(cache_root, &mod_id);
     fs::create_dir_all(&cache_dir)
         .with_context(|| format!("Cannot create cache dir: {}", cache_dir.display()))?;
@@ -396,11 +410,23 @@ pub async fn merge_files_into_mod(
     excluded_files: &HashSet<String>,
     on_progress: Option<Box<dyn Fn(usize, usize) + Send>>,
 ) -> Result<usize> {
-    let handler = engine_handler::handler_for(&game.engine);
-    let file_list =
-        handler.route_file_list(game, mod_name, stripped_wrapper.as_deref(), file_list, &file_targets);
-
     let game_rules = rules::rules_for_game(&game.id);
+    let file_list = filter_excluded_files(
+        file_list,
+        &game_rules,
+        &game.engine,
+        &game.data_subdir,
+        excluded_files,
+    );
+    let handler = engine_handler::handler_for(&game.engine);
+    let file_list = handler.route_file_list(
+        game,
+        mod_name,
+        stripped_wrapper.as_deref(),
+        file_list,
+        &file_targets,
+    );
+
     let cache_dir = utils_paths::mod_cache_dir_in(cache_root, existing_mod_id);
     fs::create_dir_all(&cache_dir)
         .with_context(|| format!("Cannot create cache dir: {}", cache_dir.display()))?;
@@ -574,4 +600,92 @@ pub async fn merge_files_into_mod(
 fn is_plugin(rel_path: &str) -> bool {
     let l = rel_path.to_lowercase();
     l.ends_with(".esp") || l.ends_with(".esm") || l.ends_with(".esl")
+}
+
+fn filter_excluded_files(
+    file_list: Vec<(PathBuf, PathBuf)>,
+    rules: &[rules::Rule],
+    engine: &GameEngine,
+    data_subdir: &str,
+    excluded_files: &HashSet<String>,
+) -> Vec<(PathBuf, PathBuf)> {
+    if excluded_files.is_empty() {
+        return file_list;
+    }
+
+    file_list
+        .into_iter()
+        .filter(|(_, dest)| {
+            let key = exclusion_key_for_preview(dest, rules, engine, data_subdir);
+            !excluded_files.contains(&key)
+        })
+        .collect()
+}
+
+fn exclusion_key_for_preview(
+    dest: &Path,
+    rules: &[rules::Rule],
+    engine: &GameEngine,
+    data_subdir: &str,
+) -> String {
+    let raw = dest.to_string_lossy();
+    let s = rules::apply_rules(rules, &raw).replace('\\', "/");
+
+    if *engine == GameEngine::Aurora {
+        let data_prefix = format!("{}/", data_subdir.to_lowercase());
+        let lower_s = s.to_lowercase();
+        if lower_s.starts_with(&data_prefix) {
+            return s[data_prefix.len()..].to_string();
+        }
+    }
+
+    s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pairs(paths: &[&str]) -> Vec<(PathBuf, PathBuf)> {
+        paths
+            .iter()
+            .map(|path| (PathBuf::from("src").join(path), PathBuf::from(path)))
+            .collect()
+    }
+
+    fn dests(file_list: Vec<(PathBuf, PathBuf)>) -> Vec<PathBuf> {
+        file_list.into_iter().map(|(_, dest)| dest).collect()
+    }
+
+    #[test]
+    fn excludes_aurora_bare_file_before_override_routing() {
+        let mut excluded = HashSet::new();
+        excluded.insert("items/foo.uti".to_string());
+
+        let filtered = filter_excluded_files(
+            pairs(&["items/foo.uti", "items/bar.uti"]),
+            &[],
+            &GameEngine::Aurora,
+            "Data",
+            &excluded,
+        );
+
+        assert_eq!(dests(filtered), vec![PathBuf::from("items/bar.uti")]);
+    }
+
+    #[test]
+    fn excludes_aurora_data_prefixed_file_by_preview_key() {
+        let mut excluded = HashSet::new();
+        excluded.insert("system/foo.dll".to_string());
+
+        let filtered = filter_excluded_files(
+            pairs(&["Data/system/foo.dll", "Data/system/bar.dll"]),
+            &[],
+            &GameEngine::Aurora,
+            "Data",
+            &excluded,
+        );
+
+        assert_eq!(dests(filtered), vec![PathBuf::from("Data/system/bar.dll")]);
+    }
 }

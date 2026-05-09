@@ -10,6 +10,8 @@
   more working room, and moves secondary details lower in the dialog.
 - Install Mod and Mod Properties no longer show redundant static section titles above their
   collapsible file/conflict controls.
+- Install Mod now honors deselected files before engine-specific path routing, fixing Witcher 1
+  installs where skipped archive entries could still be cached and deployed.
 
 ## [2.2.0]
 
