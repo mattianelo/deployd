@@ -646,37 +646,9 @@ impl Component for App {
                                 set_margin_start: 4,
                             },
 
-                            pack_end = &gtk::ToggleButton {
-                                #[watch]
-                                set_icon_name: if model.show_hidden_downloads {
-                                    "view-conceal-symbolic"
-                                } else {
-                                    "view-reveal-symbolic"
-                                },
-                                #[watch]
-                                set_tooltip_text: Some(if model.show_hidden_downloads {
-                                    "Hide hidden downloads"
-                                } else {
-                                    "Show hidden downloads"
-                                }),
-                                add_css_class: "flat",
-                                #[watch]
-                                set_active: model.show_hidden_downloads,
-                                connect_toggled[sender] => move |btn| {
-                                    sender.input(AppMsg::SetShowHiddenDownloads(btn.is_active()));
-                                },
-                            },
-
-                            pack_end = &gtk::Button {
-                                set_icon_name: "folder-open-symbolic",
-                                set_tooltip_text: Some("Scan downloads folder"),
-                                add_css_class: "flat",
-                                connect_clicked => AppMsg::ScanDownloadsFolder,
-                            },
-
                             pack_end = &gtk::MenuButton {
                                 set_icon_name: "view-more-symbolic",
-                                set_tooltip_text: Some("More download actions"),
+                                set_tooltip_text: Some("More"),
                                 add_css_class: "flat",
                                 #[wrap(Some)]
                                 set_popover = &gtk::Popover {
@@ -700,9 +672,43 @@ impl Component for App {
                                             set_selected: model.download_sort as u32,
                                             connect_selected_notify[sender] => move |dd| {
                                                 sender.input(AppMsg::DownloadSortChanged(dd.selected()));
+                                                if let Some(popover) = dd
+                                                    .ancestor(gtk::Popover::static_type())
+                                                    .and_downcast::<gtk::Popover>()
+                                                {
+                                                    popover.popdown();
+                                                }
                                             },
                                         },
                                     },
+                                },
+                            },
+
+                            pack_end = &gtk::Button {
+                                set_icon_name: "folder-open-symbolic",
+                                set_tooltip_text: Some("Scan downloads folder"),
+                                add_css_class: "flat",
+                                connect_clicked => AppMsg::ScanDownloadsFolder,
+                            },
+
+                            pack_end = &gtk::ToggleButton {
+                                #[watch]
+                                set_icon_name: if model.show_hidden_downloads {
+                                    "view-conceal-symbolic"
+                                } else {
+                                    "view-reveal-symbolic"
+                                },
+                                #[watch]
+                                set_tooltip_text: Some(if model.show_hidden_downloads {
+                                    "Hide hidden downloads"
+                                } else {
+                                    "Show hidden downloads"
+                                }),
+                                add_css_class: "flat",
+                                #[watch]
+                                set_active: model.show_hidden_downloads,
+                                connect_toggled[sender] => move |btn| {
+                                    sender.input(AppMsg::SetShowHiddenDownloads(btn.is_active()));
                                 },
                             },
                         },
@@ -766,23 +772,21 @@ impl Component for App {
                             // Normal mode header
                             gtk::Box {
                                 set_orientation: gtk::Orientation::Horizontal,
-                                set_margin_top: 8,
-                                set_margin_bottom: 4,
-                                set_margin_start: 8,
-                                set_margin_end: 8,
+                                add_css_class: "headerbar",
                                 #[watch]
                                 set_visible: !model.mod_selection_active,
 
                                 gtk::Label {
                                     set_label: "Mod Order",
                                     add_css_class: "heading",
-                                    set_hexpand: true,
                                     set_halign: gtk::Align::Start,
                                 },
 
                                 gtk::Box {
                                     set_orientation: gtk::Orientation::Horizontal,
                                     set_spacing: 4,
+                                    set_hexpand: true,
+                                    set_halign: gtk::Align::Center,
                                     set_valign: gtk::Align::Center,
 
                                     gtk::Button {
@@ -822,37 +826,42 @@ impl Component for App {
                                     },
                                 },
 
-                                // Add Mod — moved here from headerbar
-                                gtk::Button {
-                                    set_icon_name: "list-add-symbolic",
-                                    set_tooltip_text: Some("Add mod from file"),
-                                    add_css_class: "flat",
-                                    #[watch]
-                                    set_sensitive: !model.is_busy(),
-                                    #[watch]
-                                    set_visible: !model.is_busy(),
-                                    connect_clicked => AppMsg::InstallClicked,
-                                },
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Horizontal,
+                                    set_spacing: 0,
+                                    set_halign: gtk::Align::End,
 
-                                gtk::Button {
-                                    set_icon_name: "selection-mode-symbolic",
-                                    set_tooltip_text: Some("Select mods"),
-                                    add_css_class: "flat",
-                                    connect_clicked => AppMsg::EnterModSelectionMode,
-                                },
+                                    // Add Mod — moved here from headerbar
+                                    gtk::Button {
+                                        set_icon_name: "list-add-symbolic",
+                                        set_tooltip_text: Some("Add mod from file"),
+                                        add_css_class: "flat",
+                                        #[watch]
+                                        set_sensitive: !model.is_busy(),
+                                        #[watch]
+                                        set_visible: !model.is_busy(),
+                                        connect_clicked => AppMsg::InstallClicked,
+                                    },
 
-                                gtk::MenuButton {
-                                    set_icon_name: "view-more-symbolic",
-                                    set_tooltip_text: Some("More mod order actions"),
-                                    add_css_class: "flat",
-                                    set_margin_start: 4,
-                                    #[wrap(Some)]
-                                    set_popover = &gtk::Popover {
+                                    gtk::Button {
+                                        set_icon_name: "selection-mode-symbolic",
+                                        set_tooltip_text: Some("Select mods"),
+                                        add_css_class: "flat",
+                                        connect_clicked => AppMsg::EnterModSelectionMode,
+                                    },
+
+                                    gtk::MenuButton {
+                                        set_icon_name: "view-more-symbolic",
+                                        set_tooltip_text: Some("More mod order actions"),
+                                        add_css_class: "flat",
+                                        set_margin_start: 4,
                                         #[wrap(Some)]
-                                        set_child = &gtk::Box {
-                                            set_orientation: gtk::Orientation::Vertical,
-                                            set_spacing: 6,
-                                            set_margin_all: 8,
+                                        set_popover = &gtk::Popover {
+                                            #[wrap(Some)]
+                                            set_child = &gtk::Box {
+                                                set_orientation: gtk::Orientation::Vertical,
+                                                set_spacing: 6,
+                                                set_margin_all: 8,
 
                                             gtk::Button {
                                                 set_icon_name: "checkbox-checked-symbolic",
@@ -957,6 +966,7 @@ impl Component for App {
                                             },
                                         },
                                     },
+                                },
                                 },
                             },
 

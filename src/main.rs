@@ -116,6 +116,7 @@ fn main() {
         .filter-chip {
             padding: 2px 10px;
             min-height: 0;
+            border-radius: 9999px;
             font-size: 0.85em;
             transition: background-color 150ms ease, color 150ms ease;
         }
