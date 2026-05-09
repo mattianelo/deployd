@@ -119,6 +119,9 @@ fn main() {
             font-size: 0.85em;
             transition: background-color 150ms ease, color 150ms ease;
         }
+        .plain-panel-bg {
+            background-color: @window_bg_color;
+        }
         .dr-btn {
             padding: 2px 8px;
             min-height: 0;

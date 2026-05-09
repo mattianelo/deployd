@@ -234,7 +234,7 @@ fn rebuild_list(
 
         let snap_id = snap.id.clone();
         let s = sender.input_sender().clone();
-        restore_btn.connect_clicked(move |_| {
+        restore_btn.connect_clicked(move |btn| {
             if is_mod {
                 s.send(AppMsg::LoadModOrderSnapshot(snap_id.clone()))
                     .unwrap();
@@ -242,17 +242,29 @@ fn rebuild_list(
                 s.send(AppMsg::LoadPluginOrderSnapshot(snap_id.clone()))
                     .unwrap();
             }
+            if let Some(popover) = btn
+                .ancestor(gtk::Popover::static_type())
+                .and_downcast::<gtk::Popover>()
+            {
+                popover.popdown();
+            }
         });
 
         let snap_id = snap.id.clone();
         let s = sender.input_sender().clone();
-        delete_btn.connect_clicked(move |_| {
+        delete_btn.connect_clicked(move |btn| {
             if is_mod {
                 s.send(AppMsg::DeleteModOrderSnapshot(snap_id.clone()))
                     .unwrap();
             } else {
                 s.send(AppMsg::DeletePluginOrderSnapshot(snap_id.clone()))
                     .unwrap();
+            }
+            if let Some(popover) = btn
+                .ancestor(gtk::Popover::static_type())
+                .and_downcast::<gtk::Popover>()
+            {
+                popover.popdown();
             }
         });
 

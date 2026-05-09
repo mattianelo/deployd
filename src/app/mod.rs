@@ -590,6 +590,7 @@ impl Component for App {
 
                     #[wrap(Some)]
                     set_sidebar = &adw::ToolbarView {
+                        add_css_class: "plain-panel-bg",
 
                         add_top_bar = &adw::HeaderBar {
                             set_centering_policy: adw::CenteringPolicy::Loose,
@@ -597,19 +598,52 @@ impl Component for App {
                             set_decoration_layout: Some(""),
 
                             #[wrap(Some)]
-                            set_title_widget = &adw::WindowTitle {
-                                set_title: "Downloads",
+                            set_title_widget = &gtk::Box {
+                                set_orientation: gtk::Orientation::Horizontal,
+                                set_spacing: 4,
+                                set_halign: gtk::Align::Center,
+
+                                gtk::Button {
+                                    #[watch]
+                                    set_css_classes: if matches!(model.download_filter, DownloadFilter::All) {
+                                        &["pill", "filter-chip", "suggested-action"]
+                                    } else {
+                                        &["pill", "filter-chip"]
+                                    },
+                                    set_label: "All",
+                                    connect_clicked => AppMsg::SetDownloadFilter(DownloadFilter::All),
+                                },
+
+                                gtk::Button {
+                                    #[watch]
+                                    set_css_classes: if matches!(model.download_filter, DownloadFilter::Active) {
+                                        &["pill", "filter-chip", "suggested-action"]
+                                    } else {
+                                        &["pill", "filter-chip"]
+                                    },
+                                    #[watch]
+                                    set_label: &format!("Active ({})", model.active_downloads_count()),
+                                    connect_clicked => AppMsg::SetDownloadFilter(DownloadFilter::Active),
+                                },
+
+                                gtk::Button {
+                                    #[watch]
+                                    set_css_classes: if matches!(model.download_filter, DownloadFilter::Completed) {
+                                        &["pill", "filter-chip", "suggested-action"]
+                                    } else {
+                                        &["pill", "filter-chip"]
+                                    },
+                                    #[watch]
+                                    set_label: &format!("Completed ({})", model.completed_downloads_count()),
+                                    connect_clicked => AppMsg::SetDownloadFilter(DownloadFilter::Completed),
+                                },
                             },
 
-                            pack_start = &gtk::DropDown {
-                                set_model: Some(&gtk::StringList::new(&["Default", "Name", "Status"])),
+                            pack_start = &gtk::Label {
+                                set_label: "Downloads",
+                                add_css_class: "heading",
                                 set_valign: gtk::Align::Center,
-                                set_tooltip_text: Some("Sort downloads"),
-                                #[watch]
-                                set_selected: model.download_sort as u32,
-                                connect_selected_notify[sender] => move |dd| {
-                                    sender.input(AppMsg::DownloadSortChanged(dd.selected()));
-                                },
+                                set_margin_start: 4,
                             },
 
                             pack_end = &gtk::ToggleButton {
@@ -639,6 +673,38 @@ impl Component for App {
                                 add_css_class: "flat",
                                 connect_clicked => AppMsg::ScanDownloadsFolder,
                             },
+
+                            pack_end = &gtk::MenuButton {
+                                set_icon_name: "view-more-symbolic",
+                                set_tooltip_text: Some("More download actions"),
+                                add_css_class: "flat",
+                                #[wrap(Some)]
+                                set_popover = &gtk::Popover {
+                                    #[wrap(Some)]
+                                    set_child = &gtk::Box {
+                                        set_orientation: gtk::Orientation::Vertical,
+                                        set_spacing: 6,
+                                        set_margin_all: 8,
+
+                                        gtk::Label {
+                                            set_label: "Sort downloads",
+                                            set_halign: gtk::Align::Start,
+                                            add_css_class: "caption",
+                                            add_css_class: "dim-label",
+                                        },
+
+                                        gtk::DropDown {
+                                            set_model: Some(&gtk::StringList::new(&["Default", "Name", "Status"])),
+                                            set_valign: gtk::Align::Center,
+                                            #[watch]
+                                            set_selected: model.download_sort as u32,
+                                            connect_selected_notify[sender] => move |dd| {
+                                                sender.input(AppMsg::DownloadSortChanged(dd.selected()));
+                                            },
+                                        },
+                                    },
+                                },
+                            },
                         },
 
                         #[wrap(Some)]
@@ -647,50 +713,7 @@ impl Component for App {
 
                             gtk::Box {
                                 set_orientation: gtk::Orientation::Vertical,
-
-                                gtk::Box {
-                                    set_orientation: gtk::Orientation::Horizontal,
-                                    set_margin_start: 8,
-                                    set_margin_end: 8,
-                                    set_margin_top: 4,
-                                    set_margin_bottom: 4,
-                                    set_spacing: 4,
-
-                                    gtk::Button {
-                                        #[watch]
-                                        set_css_classes: if matches!(model.download_filter, DownloadFilter::All) {
-                                            &["pill", "filter-chip", "suggested-action"]
-                                        } else {
-                                            &["pill", "filter-chip"]
-                                        },
-                                        set_label: "All",
-                                        connect_clicked => AppMsg::SetDownloadFilter(DownloadFilter::All),
-                                    },
-
-                                    gtk::Button {
-                                        #[watch]
-                                        set_css_classes: if matches!(model.download_filter, DownloadFilter::Active) {
-                                            &["pill", "filter-chip", "suggested-action"]
-                                        } else {
-                                            &["pill", "filter-chip"]
-                                        },
-                                        #[watch]
-                                        set_label: &format!("Active ({})", model.active_downloads_count()),
-                                        connect_clicked => AppMsg::SetDownloadFilter(DownloadFilter::Active),
-                                    },
-
-                                    gtk::Button {
-                                        #[watch]
-                                        set_css_classes: if matches!(model.download_filter, DownloadFilter::Completed) {
-                                            &["pill", "filter-chip", "suggested-action"]
-                                        } else {
-                                            &["pill", "filter-chip"]
-                                        },
-                                        #[watch]
-                                        set_label: &format!("Completed ({})", model.completed_downloads_count()),
-                                        connect_clicked => AppMsg::SetDownloadFilter(DownloadFilter::Completed),
-                                    },
-                                },
+                                add_css_class: "plain-panel-bg",
 
                                 #[local_ref]
                                 downloads_scroll -> gtk::ScrolledWindow {
@@ -726,8 +749,9 @@ impl Component for App {
 
                             adw::NavigationSplitView {
                         set_collapsed: false,
-                        set_min_sidebar_width: 360.0,
-                        set_max_sidebar_width: 560.0,
+                        set_min_sidebar_width: 320.0,
+                        set_max_sidebar_width: 1000.0,
+                        set_sidebar_width_fraction: 0.5,
 
                         // LEFT PANEL: Mod Order
                         #[wrap(Some)]
@@ -737,6 +761,7 @@ impl Component for App {
                             #[wrap(Some)]
                             set_child = &gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
+                            add_css_class: "plain-panel-bg",
 
                             // Normal mode header
                             gtk::Box {
@@ -756,25 +781,69 @@ impl Component for App {
                                 },
 
                                 gtk::Box {
-                                    add_css_class: "linked",
+                                    set_orientation: gtk::Orientation::Horizontal,
+                                    set_spacing: 4,
+                                    set_valign: gtk::Align::Center,
 
                                     gtk::Button {
-                                        set_label: "All",
-                                        set_tooltip_text: Some("Enable all mods"),
-                                        connect_clicked => AppMsg::EnableAllMods,
+                                        #[watch]
+                                        set_css_classes: if matches!(model.mod_filter, ModFilter::All) {
+                                            &["pill", "filter-chip", "suggested-action"]
+                                        } else {
+                                            &["pill", "filter-chip"]
+                                        },
+                                        #[watch]
+                                        set_label: &format!("All ({})", model.total_mods_count()),
+                                        connect_clicked => AppMsg::SetModFilter(ModFilter::All),
                                     },
 
                                     gtk::Button {
-                                        set_label: "None",
-                                        set_tooltip_text: Some("Disable all mods"),
-                                        connect_clicked => AppMsg::DisableAllMods,
+                                        #[watch]
+                                        set_css_classes: if matches!(model.mod_filter, ModFilter::Enabled) {
+                                            &["pill", "filter-chip", "suggested-action"]
+                                        } else {
+                                            &["pill", "filter-chip"]
+                                        },
+                                        #[watch]
+                                        set_label: &format!("Enabled ({})", model.enabled_mods_count()),
+                                        connect_clicked => AppMsg::SetModFilter(ModFilter::Enabled),
+                                    },
+
+                                    gtk::Button {
+                                        #[watch]
+                                        set_css_classes: if matches!(model.mod_filter, ModFilter::Issues) {
+                                            &["pill", "filter-chip", "suggested-action"]
+                                        } else {
+                                            &["pill", "filter-chip"]
+                                        },
+                                        #[watch]
+                                        set_label: &format!("Conflicts ({})", model.issues_mods_count()),
+                                        connect_clicked => AppMsg::SetModFilter(ModFilter::Issues),
                                     },
                                 },
 
-                                // Mod order snapshots — save and load in one icon button
+                                // Add Mod — moved here from headerbar
+                                gtk::Button {
+                                    set_icon_name: "list-add-symbolic",
+                                    set_tooltip_text: Some("Add mod from file"),
+                                    add_css_class: "flat",
+                                    #[watch]
+                                    set_sensitive: !model.is_busy(),
+                                    #[watch]
+                                    set_visible: !model.is_busy(),
+                                    connect_clicked => AppMsg::InstallClicked,
+                                },
+
+                                gtk::Button {
+                                    set_icon_name: "selection-mode-symbolic",
+                                    set_tooltip_text: Some("Select mods"),
+                                    add_css_class: "flat",
+                                    connect_clicked => AppMsg::EnterModSelectionMode,
+                                },
+
                                 gtk::MenuButton {
-                                    set_icon_name: "media-floppy-symbolic",
-                                    set_tooltip_text: Some("Mod order snapshots"),
+                                    set_icon_name: "view-more-symbolic",
+                                    set_tooltip_text: Some("More mod order actions"),
                                     add_css_class: "flat",
                                     set_margin_start: 4,
                                     #[wrap(Some)]
@@ -784,6 +853,57 @@ impl Component for App {
                                             set_orientation: gtk::Orientation::Vertical,
                                             set_spacing: 6,
                                             set_margin_all: 8,
+
+                                            gtk::Button {
+                                                set_icon_name: "checkbox-checked-symbolic",
+                                                set_label: "Enable all mods",
+                                                add_css_class: "flat",
+                                                connect_clicked[sender] => move |btn| {
+                                                    sender.input(AppMsg::EnableAllMods);
+                                                    if let Some(popover) = btn
+                                                        .ancestor(gtk::Popover::static_type())
+                                                        .and_downcast::<gtk::Popover>()
+                                                    {
+                                                        popover.popdown();
+                                                    }
+                                                },
+                                            },
+
+                                            gtk::Button {
+                                                set_icon_name: "checkbox-symbolic",
+                                                set_label: "Disable all mods",
+                                                add_css_class: "flat",
+                                                connect_clicked[sender] => move |btn| {
+                                                    sender.input(AppMsg::DisableAllMods);
+                                                    if let Some(popover) = btn
+                                                        .ancestor(gtk::Popover::static_type())
+                                                        .and_downcast::<gtk::Popover>()
+                                                    {
+                                                        popover.popdown();
+                                                    }
+                                                },
+                                            },
+
+                                            gtk::Button {
+                                                set_icon_name: "folder-new-symbolic",
+                                                set_label: "Create mod group",
+                                                add_css_class: "flat",
+                                                #[watch]
+                                                set_sensitive: !model.is_busy(),
+                                                #[watch]
+                                                set_visible: !model.is_busy(),
+                                                connect_clicked[sender] => move |btn| {
+                                                    sender.input(AppMsg::CreateGroup("New Group".to_string()));
+                                                    if let Some(popover) = btn
+                                                        .ancestor(gtk::Popover::static_type())
+                                                        .and_downcast::<gtk::Popover>()
+                                                    {
+                                                        popover.popdown();
+                                                    }
+                                                },
+                                            },
+
+                                            gtk::Separator {},
 
                                             gtk::Label {
                                                 set_label: "Save snapshot",
@@ -838,38 +958,6 @@ impl Component for App {
                                         },
                                     },
                                 },
-
-                                // Add Mod — moved here from headerbar
-                                gtk::Button {
-                                    set_icon_name: "list-add-symbolic",
-                                    set_tooltip_text: Some("Add mod from file"),
-                                    add_css_class: "flat",
-                                    #[watch]
-                                    set_sensitive: !model.is_busy(),
-                                    #[watch]
-                                    set_visible: !model.is_busy(),
-                                    connect_clicked => AppMsg::InstallClicked,
-                                },
-
-                                gtk::Button {
-                                    set_icon_name: "folder-new-symbolic",
-                                    set_tooltip_text: Some("Create mod group"),
-                                    add_css_class: "flat",
-                                    #[watch]
-                                    set_sensitive: !model.is_busy(),
-                                    #[watch]
-                                    set_visible: !model.is_busy(),
-                                    connect_clicked[sender] => move |_| {
-                                        sender.input(AppMsg::CreateGroup("New Group".to_string()));
-                                    },
-                                },
-
-                                gtk::Button {
-                                    set_icon_name: "selection-mode-symbolic",
-                                    set_tooltip_text: Some("Select mods"),
-                                    add_css_class: "flat",
-                                    connect_clicked => AppMsg::EnterModSelectionMode,
-                                },
                             },
 
                             // Selection mode header
@@ -894,52 +982,6 @@ impl Component for App {
                                     #[watch]
                                     set_label: if model.mod_selection_dirty { "Done" } else { "Cancel" },
                                     connect_clicked => AppMsg::ExitModSelectionMode,
-                                },
-                            },
-
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Horizontal,
-                                set_margin_start: 8,
-                                set_margin_end: 8,
-                                set_margin_bottom: 4,
-                                set_spacing: 4,
-                                #[watch]
-                                set_visible: !model.mod_selection_active,
-
-                                gtk::Button {
-                                    #[watch]
-                                    set_css_classes: if matches!(model.mod_filter, ModFilter::All) {
-                                        &["pill", "filter-chip", "suggested-action"]
-                                    } else {
-                                        &["pill", "filter-chip"]
-                                    },
-                                    #[watch]
-                                    set_label: &format!("All ({})", model.total_mods_count()),
-                                    connect_clicked => AppMsg::SetModFilter(ModFilter::All),
-                                },
-
-                                gtk::Button {
-                                    #[watch]
-                                    set_css_classes: if matches!(model.mod_filter, ModFilter::Enabled) {
-                                        &["pill", "filter-chip", "suggested-action"]
-                                    } else {
-                                        &["pill", "filter-chip"]
-                                    },
-                                    #[watch]
-                                    set_label: &format!("Enabled ({})", model.enabled_mods_count()),
-                                    connect_clicked => AppMsg::SetModFilter(ModFilter::Enabled),
-                                },
-
-                                gtk::Button {
-                                    #[watch]
-                                    set_css_classes: if matches!(model.mod_filter, ModFilter::Issues) {
-                                        &["pill", "filter-chip", "suggested-action"]
-                                    } else {
-                                        &["pill", "filter-chip"]
-                                    },
-                                    #[watch]
-                                    set_label: &format!("Issues ({})", model.issues_mods_count()),
-                                    connect_clicked => AppMsg::SetModFilter(ModFilter::Issues),
                                 },
                             },
 
@@ -1038,30 +1080,40 @@ impl Component for App {
                                     set_margin_start: 8,
                                 },
 
-                                gtk::Box {
-                                    add_css_class: "linked",
-                                    set_valign: gtk::Align::Center,
-
-                                    gtk::Button {
-                                        set_label: "All",
-                                        set_tooltip_text: Some("Enable all plugins"),
-                                        connect_clicked => AppMsg::EnableAllPlugins,
-                                    },
-
-                                    gtk::Button {
-                                        set_label: "None",
-                                        set_tooltip_text: Some("Disable all plugins"),
-                                        connect_clicked => AppMsg::DisableAllPlugins,
-                                    },
-                                },
-
-                                // Plugin order snapshots — save and load in one icon button
-                                gtk::MenuButton {
-                                    set_icon_name: "media-floppy-symbolic",
-                                    set_tooltip_text: Some("Plugin order snapshots"),
+                                gtk::ToggleButton {
+                                    set_icon_name: "view-reveal-symbolic",
+                                    set_tooltip_text: Some("Show vanilla / DLC plugins"),
                                     add_css_class: "flat",
                                     set_valign: gtk::Align::Center,
-                                    set_margin_start: 4,
+                                    #[watch]
+                                    set_active: model.show_vanilla_plugins,
+                                    connect_clicked => AppMsg::ToggleShowVanillaPlugins,
+                                },
+
+                                gtk::Button {
+                                    set_icon_name: "view-sort-ascending-symbolic",
+                                    set_tooltip_text: Some("Sort with LOOT"),
+                                    add_css_class: "flat",
+                                    set_valign: gtk::Align::Center,
+                                    set_margin_end: 4,
+                                    connect_clicked => AppMsg::SortWithLoot,
+                                },
+
+                                gtk::Button {
+                                    set_icon_name: "selection-mode-symbolic",
+                                    set_tooltip_text: Some("Select plugins"),
+                                    add_css_class: "flat",
+                                    set_valign: gtk::Align::Center,
+                                    set_margin_end: 4,
+                                    connect_clicked => AppMsg::EnterPluginSelectionMode,
+                                },
+
+                                gtk::MenuButton {
+                                    set_icon_name: "view-more-symbolic",
+                                    set_tooltip_text: Some("More plugin order actions"),
+                                    add_css_class: "flat",
+                                    set_valign: gtk::Align::Center,
+                                    set_margin_end: 4,
                                     #[wrap(Some)]
                                     set_popover = &gtk::Popover {
                                         #[wrap(Some)]
@@ -1069,6 +1121,38 @@ impl Component for App {
                                             set_orientation: gtk::Orientation::Vertical,
                                             set_spacing: 6,
                                             set_margin_all: 8,
+
+                                            gtk::Button {
+                                                set_icon_name: "checkbox-checked-symbolic",
+                                                set_label: "Enable all plugins",
+                                                add_css_class: "flat",
+                                                connect_clicked[sender] => move |btn| {
+                                                    sender.input(AppMsg::EnableAllPlugins);
+                                                    if let Some(popover) = btn
+                                                        .ancestor(gtk::Popover::static_type())
+                                                        .and_downcast::<gtk::Popover>()
+                                                    {
+                                                        popover.popdown();
+                                                    }
+                                                },
+                                            },
+
+                                            gtk::Button {
+                                                set_icon_name: "checkbox-symbolic",
+                                                set_label: "Disable all plugins",
+                                                add_css_class: "flat",
+                                                connect_clicked[sender] => move |btn| {
+                                                    sender.input(AppMsg::DisableAllPlugins);
+                                                    if let Some(popover) = btn
+                                                        .ancestor(gtk::Popover::static_type())
+                                                        .and_downcast::<gtk::Popover>()
+                                                    {
+                                                        popover.popdown();
+                                                    }
+                                                },
+                                            },
+
+                                            gtk::Separator {},
 
                                             gtk::Label {
                                                 set_label: "Save snapshot",
@@ -1122,34 +1206,6 @@ impl Component for App {
                                             },
                                         },
                                     },
-                                },
-
-                                gtk::ToggleButton {
-                                    set_icon_name: "view-reveal-symbolic",
-                                    set_tooltip_text: Some("Show vanilla / DLC plugins"),
-                                    add_css_class: "flat",
-                                    set_valign: gtk::Align::Center,
-                                    #[watch]
-                                    set_active: model.show_vanilla_plugins,
-                                    connect_clicked => AppMsg::ToggleShowVanillaPlugins,
-                                },
-
-                                gtk::Button {
-                                    set_icon_name: "view-sort-ascending-symbolic",
-                                    set_tooltip_text: Some("Sort with LOOT"),
-                                    add_css_class: "flat",
-                                    set_valign: gtk::Align::Center,
-                                    set_margin_end: 4,
-                                    connect_clicked => AppMsg::SortWithLoot,
-                                },
-
-                                gtk::Button {
-                                    set_icon_name: "selection-mode-symbolic",
-                                    set_tooltip_text: Some("Select plugins"),
-                                    add_css_class: "flat",
-                                    set_valign: gtk::Align::Center,
-                                    set_margin_end: 4,
-                                    connect_clicked => AppMsg::EnterPluginSelectionMode,
                                 },
                             },
 

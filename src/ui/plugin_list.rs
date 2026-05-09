@@ -91,7 +91,7 @@ impl FactoryComponent for PluginRow {
             set_title_lines: 1,
             set_subtitle_lines: 1,
             #[watch]
-            set_sensitive: self.selection_mode || self.mod_enabled,
+            set_sensitive: self.selection_mode || (self.mod_enabled && self.plugin.enabled),
 
             add_prefix = &gtk::CheckButton {
                 #[watch]
