@@ -582,6 +582,19 @@ fn extract_7z(
 /// We check two more-reliable signals before trusting `is_directory`:
 /// 1. Windows file attributes — `FILE_ATTRIBUTE_DIRECTORY` (0x10) set → real dir.
 /// 2. Name suffix — directory names in well-formed 7z archives end with `\` or `/`.
+/// Returns `true` if `dest_path` is safely inside `base` with no traversal components.
+/// sevenz_rust2 passes entry names to the extract callback as-is; unlike the `zip` crate's
+/// `mangled_name()`, there is no built-in sanitization, so a crafted archive could supply
+/// a path like `../../etc/passwd` and escape the temp directory.
+fn is_safe_7z_path(dest_path: &Path, base: &Path) -> bool {
+    use std::path::Component;
+    let Ok(rel) = dest_path.strip_prefix(base) else {
+        return false;
+    };
+    rel.components()
+        .all(|c| matches!(c, Component::Normal(_)))
+}
+
 fn is_genuine_7z_dir(entry: &sevenz_rust2::ArchiveEntry) -> bool {
     if !entry.is_directory {
         return false;
@@ -628,10 +641,25 @@ fn extract_7z_native(
     // whether progress reporting is requested. Without this, the default decompress_file
     // misidentifies zero-byte sentinel files (e.g. Domains/.force-install) as directories
     // when the 7z archive lacks the EmptyFiles header attribute.
+    let base = tmp.path().to_path_buf();
     let mut count = 0usize;
-    sevenz_rust2::decompress_with_extract_fn(file, tmp.path(), |entry, reader, dest_path| {
+    sevenz_rust2::decompress_with_extract_fn(file, &base, |entry, reader, dest_path| {
         if is_genuine_7z_dir(entry) {
+            if !is_safe_7z_path(dest_path, &base) {
+                eprintln!(
+                    "[deployd] WARNING: skipping 7z directory with traversal path: {}",
+                    dest_path.display()
+                );
+                return Ok(true);
+            }
             fs::create_dir_all(dest_path)?;
+            return Ok(true);
+        }
+        if !is_safe_7z_path(dest_path, &base) {
+            eprintln!(
+                "[deployd] WARNING: skipping 7z entry with traversal path: {}",
+                dest_path.display()
+            );
             return Ok(true);
         }
         if let Some(parent) = dest_path.parent() {

@@ -9,6 +9,7 @@ fn loot_game_type(game_id: &str) -> Option<libloot::GameType> {
         "skyrim-se" => Some(libloot::GameType::SkyrimSE),
         "fallout-4" => Some(libloot::GameType::Fallout4),
         "fallout-nv" => Some(libloot::GameType::FalloutNV),
+        "starfield" => Some(libloot::GameType::Starfield),
         _ => None,
     }
 }
@@ -24,6 +25,7 @@ fn loot_game_folder(game_id: &str) -> Option<&'static str> {
         "skyrim-se" => Some("Skyrim Special Edition"),
         "fallout-4" => Some("Fallout 4"),
         "fallout-nv" => Some("Fallout New Vegas"),
+        "starfield" => Some("Starfield"),
         _ => None,
     }
 }
@@ -33,6 +35,7 @@ fn loot_masterlist_repo(game_id: &str) -> Option<&'static str> {
         "skyrim-se" => Some("skyrimse"),
         "fallout-4" => Some("fallout4"),
         "fallout-nv" => Some("falloutnv"),
+        "starfield" => Some("starfield"),
         _ => None,
     }
 }
@@ -160,7 +163,9 @@ pub async fn sort_plugins(
             // Load the LOOT masterlist into the database object.
             {
                 let db = game_handle.database();
-                let mut db_w = db.write().expect("libloot database RwLock poisoned");
+                let mut db_w = db
+                    .write()
+                    .map_err(|e| anyhow::anyhow!("libloot database RwLock poisoned: {e}"))?;
                 db_w.load_masterlist(&masterlist_path)
                     .context("Failed to load LOOT masterlist")?;
             }
@@ -216,7 +221,9 @@ pub async fn sort_plugins(
             // Uses the matching dirty entry whose CRC equals the plugin's on-disk CRC.
             let dirty_info: HashMap<String, PluginDirtyInfo> = {
                 let db = game_handle.database();
-                let db_r = db.read().expect("libloot database RwLock poisoned");
+                let db_r = db
+                    .read()
+                    .map_err(|e| anyhow::anyhow!("libloot database RwLock poisoned: {e}"))?;
                 plugin_crcs
                     .iter()
                     .filter_map(|(name, file_crc)| {

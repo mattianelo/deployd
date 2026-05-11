@@ -31,6 +31,14 @@ pub fn read_masters(path: &Path) -> Result<Vec<String>> {
     }
     let data_size = u32::from_le_bytes([header[4], header[5], header[6], header[7]]) as usize;
 
+    // A legitimate TES4 header record is at most a few kilobytes; 1 MiB is a generous cap.
+    // Without this, a crafted file starting with "TES4" and data_size = 0xFFFFFFFF would
+    // trigger a ~4 GiB allocation.
+    const MAX_HEADER_DATA: usize = 1 << 20;
+    if data_size > MAX_HEADER_DATA {
+        return Ok(vec![]);
+    }
+
     let mut data = vec![0u8; data_size];
     if file.read_exact(&mut data).is_err() {
         return Ok(vec![]);

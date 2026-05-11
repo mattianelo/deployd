@@ -36,7 +36,9 @@ pub async fn purge(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result<
     // Restore all vanilla files that were backed up before mod deployment.
     if let Ok(backups) = tracker.get_all_vanilla_backups(&game.id).await {
         for (rel, backup_path) in backups {
-            let deploy_path = resolve_deploy_path(&rel, &game.path, &game_data);
+            let Ok(deploy_path) = resolve_deploy_path(&rel, &game.path, &game_data) else {
+                continue;
+            };
             if deploy_path.exists() {
                 // File already present — nothing to restore; clean up the record.
                 let _ = tracker.delete_vanilla_backup(&game.id, &rel).await;
@@ -126,10 +128,10 @@ pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result
     // Distinguish stale case-variant paths from vanilla game files during removal.
     let deployed_lower: HashSet<String> = deployed
         .iter()
-        .map(|d| {
+        .filter_map(|d| {
             resolve_deploy_path(&d.game_rel_original, &game.path, &game_data)
-                .to_string_lossy()
-                .to_lowercase()
+                .ok()
+                .map(|p| p.to_string_lossy().to_lowercase())
         })
         .collect();
 
@@ -146,7 +148,9 @@ pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result
     // Restore vanilla files for paths that are no longer claimed by any mod.
     for removed_rel in &removed_rels {
         if let Ok(Some(backup_path)) = tracker.get_vanilla_backup(&game.id, removed_rel).await {
-            let deploy_path = resolve_deploy_path(removed_rel, &game.path, &game_data);
+            let Ok(deploy_path) = resolve_deploy_path(removed_rel, &game.path, &game_data) else {
+                continue;
+            };
             if !deploy_path.exists() {
                 // remove_empty_parents may have deleted the parent dir; recreate it.
                 if let Some(parent) = deploy_path.parent() {
@@ -328,7 +332,9 @@ async fn bake_modified_plugins(game: &Game, tracker: &Tracker, game_data: &Path)
         return;
     };
     for (_, ref game_rel_orig, ref cache_path) in plugin_files {
-        let disk_path = resolve_deploy_path(game_rel_orig, &game.path, game_data);
+        let Ok(disk_path) = resolve_deploy_path(game_rel_orig, &game.path, game_data) else {
+            continue;
+        };
         if !disk_path.exists() || !cache_path.exists() {
             continue;
         }
@@ -396,7 +402,9 @@ async fn compute_winners(
 }
 
 fn remove_deployed_file(f: &ModFile, game: &Game, game_data: &PathBuf) {
-    let deploy_path = resolve_deploy_path(&f.game_rel_original, &game.path, game_data);
+    let Ok(deploy_path) = resolve_deploy_path(&f.game_rel_original, &game.path, game_data) else {
+        return;
+    };
     let docs = docs_base(game_data);
     let stop_at: &PathBuf = if f.game_rel_original.starts_with("../") {
         &game.path
@@ -421,13 +429,38 @@ fn remove_deployed_file(f: &ModFile, game: &Game, game_data: &PathBuf) {
     }
 }
 
-fn resolve_deploy_path(game_rel: &str, game_root: &Path, game_data: &Path) -> PathBuf {
+/// Returns `true` if the relative portion of a deploy path contains traversal components.
+/// Each branch of `resolve_deploy_path` has its own legitimate anchor (game_root, docs_base,
+/// or game_data), so we validate the relative part after prefix-stripping in each branch
+/// rather than checking the final absolute path, which would break Eclipse's cross-mount
+/// Wine user-dir paths.
+fn has_deploy_traversal(rel: &str) -> bool {
+    use std::path::Component;
+    Path::new(rel)
+        .components()
+        .any(|c| matches!(c, Component::ParentDir | Component::RootDir))
+}
+
+fn resolve_deploy_path(
+    game_rel: &str,
+    game_root: &Path,
+    game_data: &Path,
+) -> anyhow::Result<PathBuf> {
     if let Some(root_rel) = game_rel.strip_prefix("../") {
-        game_root.join(root_rel)
+        if has_deploy_traversal(root_rel) {
+            anyhow::bail!("path traversal in game-root-relative path: {game_rel}");
+        }
+        Ok(game_root.join(root_rel))
     } else if let Some(docs_rel) = game_rel.strip_prefix(DOCS_PREFIX) {
-        docs_base(game_data).join(docs_rel)
+        if has_deploy_traversal(docs_rel) {
+            anyhow::bail!("path traversal in docs-relative path: {game_rel}");
+        }
+        Ok(docs_base(game_data).join(docs_rel))
     } else {
-        game_data.join(game_rel)
+        if has_deploy_traversal(game_rel) {
+            anyhow::bail!("path traversal in data-relative path: {game_rel}");
+        }
+        Ok(game_data.join(game_rel))
     }
 }
 

@@ -573,11 +573,13 @@ fn write_bodyslide_config(
         let updated = patch_xml_value(&existing, "GameDataPath", game_data_path);
         patch_xml_value(&updated, "TargetGame", target_game)
     } else {
+        let escaped_path = xml_escape(game_data_path);
+        let escaped_game = xml_escape(target_game);
         format!(
             "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\
              <Config>\n\
-             \t<GameDataPath>{game_data_path}</GameDataPath>\n\
-             \t<TargetGame>{target_game}</TargetGame>\n\
+             \t<GameDataPath>{escaped_path}</GameDataPath>\n\
+             \t<TargetGame>{escaped_game}</TargetGame>\n\
              </Config>\n"
         )
     };
@@ -586,23 +588,31 @@ fn write_bodyslide_config(
     Ok(())
 }
 
+fn xml_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
 /// Replace the text content of `<tag>…</tag>` in `xml`.
 /// If the tag is absent, inserts a new element before `</Config>`.
 fn patch_xml_value(xml: &str, tag: &str, value: &str) -> String {
+    let escaped = xml_escape(value);
     let open = format!("<{tag}>");
     let close = format!("</{tag}>");
     if let (Some(start), Some(end)) = (xml.find(&open), xml.find(&close)) {
         let before = &xml[..start + open.len()];
         let after = &xml[end..];
-        format!("{before}{value}{after}")
+        format!("{before}{escaped}{after}")
     } else if let Some(pos) = xml.rfind("</Config>") {
         let (before, after) = xml.split_at(pos);
-        format!("{before}\t<{tag}>{value}</{tag}>\n{after}")
+        format!("{before}\t<{tag}>{escaped}</{tag}>\n{after}")
     } else {
         format!(
             "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\
              <Config>\n\
-             \t<{tag}>{value}</{tag}>\n\
+             \t<{tag}>{escaped}</{tag}>\n\
              </Config>\n"
         )
     }
