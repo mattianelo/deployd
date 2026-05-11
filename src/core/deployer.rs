@@ -172,18 +172,12 @@ pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result
         let cache_file = PathBuf::from(&f.cache_path);
 
         if f.game_rel_lowercase.ends_with('/') {
-            let docs = docs_base(&game_data);
-            let (base, rel): (&PathBuf, &str) =
-                if let Some(root_rel) = f.game_rel_original.strip_prefix("../") {
-                    (&game.path, root_rel.trim_end_matches('/'))
-                } else if let Some(docs_rel) = f.game_rel_original.strip_prefix(DOCS_PREFIX) {
-                    (&docs, docs_rel.trim_end_matches('/'))
-                } else {
-                    (&game_data, f.game_rel_original.trim_end_matches('/'))
-                };
+            let (base, rel, anchor) =
+                split_deploy_target(&f.game_rel_original, &game.path, &game_data)?;
+            let rel = rel.trim_end_matches('/');
             let dir_comps: Vec<&str> = rel.split('/').filter(|s| !s.is_empty()).collect();
             let dir_path = match create_dirs_case_insensitive(
-                base,
+                &base,
                 &dir_comps,
                 &canonical_dirs,
                 &mut dir_cache,
@@ -196,17 +190,11 @@ pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result
             };
             dlog!("[deployd] sentinel dir: {}", dir_path.display());
             let actual_rel = dir_path
-                .strip_prefix(base)
+                .strip_prefix(&base)
                 .unwrap_or(&dir_path)
                 .to_string_lossy()
                 .to_string();
-            let actual_original = if f.game_rel_original.starts_with("../") {
-                format!("../{actual_rel}/")
-            } else if f.game_rel_original.starts_with(DOCS_PREFIX) {
-                format!("{DOCS_PREFIX}{actual_rel}/")
-            } else {
-                format!("{actual_rel}/")
-            };
+            let actual_original = anchor.with_prefix(&format!("{actual_rel}/"));
             newly_linked.push(ModFile {
                 mod_id: f.mod_id.clone(),
                 game_rel_lowercase: f.game_rel_lowercase.clone(),
@@ -216,17 +204,10 @@ pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result
             continue;
         }
 
-        let docs = docs_base(&game_data);
-        let (base, rel): (&PathBuf, &str) =
-            if let Some(root_rel) = f.game_rel_original.strip_prefix("../") {
-                (&game.path, root_rel)
-            } else if let Some(docs_rel) = f.game_rel_original.strip_prefix(DOCS_PREFIX) {
-                (&docs, docs_rel)
-            } else {
-                (&game_data, f.game_rel_original.as_str())
-            };
+        let (base, rel, anchor) =
+            split_deploy_target(&f.game_rel_original, &game.path, &game_data)?;
         let deploy_target =
-            ensure_dirs_case_insensitive(base, rel, &canonical_dirs, &mut dir_cache)?;
+            ensure_dirs_case_insensitive(&base, rel, &canonical_dirs, &mut dir_cache)?;
 
         if deploy_target.exists() {
             // If this file was not previously deployed by deployd it's a vanilla/user
@@ -234,7 +215,10 @@ pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result
             let deploy_target_lower = deploy_target.to_string_lossy().to_lowercase();
             let is_ours = deployed_lower.contains(&deploy_target_lower);
             let is_vanilla = vanilla_snapshot.contains_key(&f.game_rel_lowercase);
-            if !is_ours && is_vanilla && let Ok(backup_dir) = paths::vanilla_backup_dir(&game.id) {
+            if !is_ours
+                && is_vanilla
+                && let Ok(backup_dir) = paths::vanilla_backup_dir(&game.id)
+            {
                 let _ = fs::create_dir_all(&backup_dir);
                 let backup_name = f.game_rel_lowercase.replace('/', "__");
                 let backup_path = backup_dir.join(&backup_name);
@@ -277,15 +261,11 @@ pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result
         })?;
 
         let actual_rel = deploy_target
-            .strip_prefix(base)
+            .strip_prefix(&base)
             .unwrap_or(&deploy_target)
             .to_string_lossy()
             .to_string();
-        let actual_original = if f.game_rel_original.starts_with("../") {
-            format!("../{actual_rel}")
-        } else {
-            actual_rel
-        };
+        let actual_original = anchor.with_prefix(&actual_rel);
         newly_linked.push(ModFile {
             mod_id: f.mod_id.clone(),
             game_rel_lowercase: f.game_rel_lowercase.clone(),
@@ -441,27 +421,48 @@ fn has_deploy_traversal(rel: &str) -> bool {
         .any(|c| matches!(c, Component::ParentDir | Component::RootDir))
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DeployAnchor {
+    GameRoot,
+    Docs,
+    Data,
+}
+
+impl DeployAnchor {
+    fn with_prefix(self, rel: &str) -> String {
+        match self {
+            Self::GameRoot => format!("../{rel}"),
+            Self::Docs => format!("{DOCS_PREFIX}{rel}"),
+            Self::Data => rel.to_string(),
+        }
+    }
+}
+
+fn split_deploy_target<'a>(
+    game_rel: &'a str,
+    game_root: &Path,
+    game_data: &Path,
+) -> anyhow::Result<(PathBuf, &'a str, DeployAnchor)> {
+    let (base, rel, anchor) = if let Some(root_rel) = game_rel.strip_prefix("../") {
+        (game_root.to_path_buf(), root_rel, DeployAnchor::GameRoot)
+    } else if let Some(docs_rel) = game_rel.strip_prefix(DOCS_PREFIX) {
+        (docs_base(game_data), docs_rel, DeployAnchor::Docs)
+    } else {
+        (game_data.to_path_buf(), game_rel, DeployAnchor::Data)
+    };
+    if has_deploy_traversal(rel) {
+        anyhow::bail!("path traversal in deploy path: {game_rel}");
+    }
+    Ok((base, rel, anchor))
+}
+
 fn resolve_deploy_path(
     game_rel: &str,
     game_root: &Path,
     game_data: &Path,
 ) -> anyhow::Result<PathBuf> {
-    if let Some(root_rel) = game_rel.strip_prefix("../") {
-        if has_deploy_traversal(root_rel) {
-            anyhow::bail!("path traversal in game-root-relative path: {game_rel}");
-        }
-        Ok(game_root.join(root_rel))
-    } else if let Some(docs_rel) = game_rel.strip_prefix(DOCS_PREFIX) {
-        if has_deploy_traversal(docs_rel) {
-            anyhow::bail!("path traversal in docs-relative path: {game_rel}");
-        }
-        Ok(docs_base(game_data).join(docs_rel))
-    } else {
-        if has_deploy_traversal(game_rel) {
-            anyhow::bail!("path traversal in data-relative path: {game_rel}");
-        }
-        Ok(game_data.join(game_rel))
-    }
+    let (base, rel, _) = split_deploy_target(game_rel, game_root, game_data)?;
+    Ok(base.join(rel))
 }
 
 fn docs_base(game_data: &Path) -> PathBuf {
@@ -599,5 +600,61 @@ fn remove_empty_parents(dir: &std::path::Path, stop_at: &PathBuf) {
             Some(p) => current = p.to_path_buf(),
             None => break,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::{DOCS_PREFIX, DeployAnchor, resolve_deploy_path, split_deploy_target};
+
+    #[test]
+    fn resolve_deploy_path_rejects_traversal_in_every_anchor() {
+        let game_root = Path::new("/games/Fallout");
+        let game_data = Path::new("/games/Fallout/Data");
+
+        for rel in [
+            "../../outside.txt",
+            "../Data/../outside.txt",
+            "textures/../../outside.txt",
+            "/absolute.txt",
+        ] {
+            assert!(resolve_deploy_path(rel, game_root, game_data).is_err());
+        }
+
+        assert!(
+            resolve_deploy_path(
+                &format!("{DOCS_PREFIX}BioWare/../Settings.xml"),
+                game_root,
+                game_data
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn split_deploy_target_preserves_anchor_prefixes() -> anyhow::Result<()> {
+        let game_root = Path::new("/games/DAO");
+        let game_data = Path::new("/games/DAO/packages/core/override");
+
+        let (base, rel, anchor) =
+            split_deploy_target("../bin_ship/tool.exe", game_root, game_data)?;
+        assert_eq!(base, game_root);
+        assert_eq!(rel, "bin_ship/tool.exe");
+        assert_eq!(anchor, DeployAnchor::GameRoot);
+        assert_eq!(anchor.with_prefix(rel), "../bin_ship/tool.exe");
+
+        let docs_path = format!("{DOCS_PREFIX}BioWare/Settings.xml");
+        let (base, rel, anchor) = split_deploy_target(&docs_path, game_root, game_data)?;
+        assert_eq!(base, Path::new("/games/DAO/packages"));
+        assert_eq!(rel, "BioWare/Settings.xml");
+        assert_eq!(anchor, DeployAnchor::Docs);
+        assert_eq!(
+            anchor.with_prefix(rel),
+            format!("{DOCS_PREFIX}BioWare/Settings.xml")
+        );
+
+        Ok(())
     }
 }
