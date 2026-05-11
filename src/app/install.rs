@@ -16,7 +16,8 @@ use crate::utils::{fomod_resolver, paths};
 use super::App;
 use super::free_fns::load_game_data;
 use super::messages::{AppCmdMsg, AppMsg, PrepareResultMsg};
-use super::types::PendingInstall;
+use super::progress::throttled_install_progress;
+use super::types::{PendingInstall, WorkKind};
 
 impl App {
     pub(crate) fn handle_install_clicked(
@@ -57,17 +58,11 @@ impl App {
             .to_string();
 
         self.installing = true;
-        self.status_msg = Some(format!("Extracting {mod_name}..."));
+        self.begin_work(WorkKind::PreparingArchive, format!("Hashing {mod_name}..."));
 
         let extract_sender = sender.input_sender().clone();
         let on_extract_progress: Option<Box<dyn Fn(usize, usize) + Send>> =
-            Some(Box::new(move |done, total| {
-                let frac = done as f64 / total as f64;
-                let _ = extract_sender.send(AppMsg::InstallProgress(
-                    frac,
-                    format!("Extracting file {done}/{total}"),
-                ));
-            }));
+            Some(throttled_install_progress(extract_sender, "Extracting"));
         let processing_sender = sender.input_sender().clone();
         let on_processing: Option<Box<dyn FnOnce() + Send>> = Some(Box::new(move || {
             let _ = processing_sender.send(AppMsg::InstallProgress(
@@ -78,6 +73,7 @@ impl App {
 
         sender.oneshot_command(async move {
             let result: Result<PrepareResultMsg, String> = async {
+                let timing_start = std::time::Instant::now();
                 let hash_path = path.clone();
                 let archive_path = Some(path.to_string_lossy().to_string());
                 let archive_hash = tokio::task::spawn_blocking(move || {
@@ -85,10 +81,23 @@ impl App {
                 })
                 .await
                 .unwrap_or(None);
+                crate::app::timing::log_phase(
+                    "install.hash_archive",
+                    "manual",
+                    timing_start,
+                    Some(1),
+                );
 
+                let timing_start = std::time::Instant::now();
                 let prepare = installer::prepare_mod(&path, on_extract_progress, on_processing)
                     .await
                     .map_err(|e| format!("{e:#}"))?;
+                crate::app::timing::log_phase(
+                    "install.prepare_archive",
+                    "manual",
+                    timing_start,
+                    None,
+                );
                 match prepare {
                     PrepareResult::Normal {
                         file_list,
@@ -268,20 +277,25 @@ impl App {
         };
 
         self.installing = true;
-        self.status_msg = Some(format!("Installing {}...", pending.mod_name));
+        self.begin_work(
+            WorkKind::Installing,
+            format!("Installing {}...", pending.mod_name),
+        );
+        if let Some(dl_id) = self.active_download_id.clone() {
+            self.update_download_status(
+                &dl_id,
+                crate::models::download::DownloadStatus::Extracting,
+                "Caching files...",
+            );
+        }
 
         let input_sender = sender.input_sender().clone();
         sender.oneshot_command(async move {
             let result: Result<AddResult, String> = async {
                 let progress_sender = input_sender.clone();
                 let on_progress: Option<Box<dyn Fn(usize, usize) + Send>> =
-                    Some(Box::new(move |done, total| {
-                        let frac = done as f64 / total as f64;
-                        let _ = progress_sender.send(AppMsg::InstallProgress(
-                            frac,
-                            format!("Caching file {done}/{total}"),
-                        ));
-                    }));
+                    Some(throttled_install_progress(progress_sender, "Caching"));
+                let timing_start = std::time::Instant::now();
                 let result = installer::add_mod_with_file_list(
                     file_list,
                     &pending.game,
@@ -298,6 +312,12 @@ impl App {
                 )
                 .await
                 .map_err(|e| e.to_string())?;
+                crate::app::timing::log_phase(
+                    "install.cache_files",
+                    &pending.game.id,
+                    timing_start,
+                    Some(result.files_cached),
+                );
                 drop(pending.tmp_dir);
                 if let Some((old_id, old_priority)) = replace_info {
                     let _ = tracker
@@ -394,7 +414,7 @@ impl App {
         let was_reinstall = self.reinstall_mode;
         self.reinstall_mode = false;
         self.installing = false;
-        self.status_msg = None;
+        self.finish_current_work();
 
         if let Some(dl_id) = self.active_download_id.take() {
             let (status, msg) = if was_reinstall {
@@ -440,7 +460,10 @@ impl App {
         };
 
         self.installing = true;
-        self.status_msg = Some(format!("Installing {}...", pending.mod_name));
+        self.begin_work(
+            WorkKind::Installing,
+            format!("Installing {}...", pending.mod_name),
+        );
 
         // Serialize selections before moving into the async block.
         let serialized_selections: Vec<Vec<Vec<usize>>> = selections
@@ -485,13 +508,8 @@ impl App {
                     .collect();
                 let progress_sender = input_sender.clone();
                 let on_progress: Option<Box<dyn Fn(usize, usize) + Send>> =
-                    Some(Box::new(move |done, total| {
-                        let frac = done as f64 / total as f64;
-                        let _ = progress_sender.send(AppMsg::InstallProgress(
-                            frac,
-                            format!("Caching file {done}/{total}"),
-                        ));
-                    }));
+                    Some(throttled_install_progress(progress_sender, "Caching"));
+                let timing_start = std::time::Instant::now();
                 let result = installer::add_mod_with_file_list(
                     file_list,
                     &pending.game,
@@ -512,6 +530,12 @@ impl App {
                     eprintln!("[deployd] FOMOD install error: {msg}");
                     msg
                 })?;
+                crate::app::timing::log_phase(
+                    "install.cache_files",
+                    &pending.game.id,
+                    timing_start,
+                    Some(result.files_cached),
+                );
                 if let Ok(json) = serde_json::to_string(&serialized_selections) {
                     let _ = tracker
                         .save_fomod_selections(&result.mod_entry.id, &json)
@@ -574,7 +598,7 @@ impl App {
         let was_reinstall = self.reinstall_mode;
         self.reinstall_mode = false;
         self.installing = false;
-        self.status_msg = None;
+        self.finish_current_work();
 
         if let Some(dl_id) = self.active_download_id.take() {
             let (status, msg) = if was_reinstall {
@@ -596,7 +620,14 @@ impl App {
         if !self.installing {
             return;
         }
-        self.status_msg = Some(msg.clone());
+        let kind = if msg.starts_with("Extracting") {
+            WorkKind::ExtractingArchive
+        } else if msg.starts_with("Processing") {
+            WorkKind::ProcessingArchive
+        } else {
+            WorkKind::Installing
+        };
+        self.update_work(kind, msg.clone(), Some(fraction));
         if let Some(ref dl_id) = self.active_download_id.clone() {
             if let Some(entry) = self.all_downloads.iter_mut().find(|e| e.id == *dl_id) {
                 entry.progress = fraction;
@@ -639,20 +670,17 @@ impl App {
         };
 
         self.installing = true;
-        self.status_msg = Some(format!("Merging into {}…", mod_name));
+        self.begin_work(
+            WorkKind::Installing,
+            format!("Merging into {}...", mod_name),
+        );
 
         let input_sender = sender.input_sender().clone();
         sender.oneshot_command(async move {
             let result: Result<(String, usize), String> = async {
                 let progress_sender = input_sender.clone();
                 let on_progress: Option<Box<dyn Fn(usize, usize) + Send>> =
-                    Some(Box::new(move |done, total| {
-                        let frac = done as f64 / total as f64;
-                        let _ = progress_sender.send(AppMsg::InstallProgress(
-                            frac,
-                            format!("Caching file {done}/{total}"),
-                        ));
-                    }));
+                    Some(throttled_install_progress(progress_sender, "Caching"));
                 let count = installer::merge_files_into_mod(
                     file_list,
                     &pending.game,
@@ -689,9 +717,6 @@ impl App {
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
-        self.installing = false;
-        self.status_msg = None;
-
         match result {
             Ok(PrepareResultMsg::Normal {
                 file_list,
@@ -770,6 +795,8 @@ impl App {
                                 _ => input_sender.send(AppMsg::PreInstallCancelled),
                             };
                         });
+                        self.installing = false;
+                        self.finish_current_work();
                         dialog.present(Some(root));
                     }
                 } else {
@@ -885,6 +912,8 @@ impl App {
                                 _ => input_sender.send(AppMsg::PreInstallCancelled),
                             };
                         });
+                        self.installing = false;
+                        self.finish_current_work();
                         dialog.present(Some(root));
                     }
                 } else {
@@ -893,6 +922,8 @@ impl App {
                 }
             }
             Err(e) => {
+                self.installing = false;
+                self.finish_current_work();
                 self.reinstall_mode = false;
                 self.pending_fomod_selections = None;
                 if let Some(dl_id) = self.active_download_id.take() {
@@ -923,7 +954,7 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         self.installing = false;
-        self.status_msg = None;
+        self.finish_current_work();
 
         let maybe_archive_hash = match &result {
             Ok(add_result) => add_result.mod_entry.archive_hash.clone(),
@@ -1101,7 +1132,7 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         self.installing = false;
-        self.status_msg = None;
+        self.finish_current_work();
 
         if let Some(dl_id) = self.active_download_id.take() {
             let (status, msg) = if result.is_ok() {
@@ -1230,6 +1261,12 @@ impl App {
         {
             ids.file_id = file_id;
         }
+        self.begin_work(WorkKind::FetchingMetadata, "Fetching Nexus metadata...");
+        self.update_download_status(
+            &download_id,
+            crate::models::download::DownloadStatus::Extracting,
+            "Fetching Nexus metadata...",
+        );
         let partial_name = self.pending_fetched_name.clone();
         let download_id_for_result = (!is_install).then(|| download_id.clone());
         sender.oneshot_command(async move {

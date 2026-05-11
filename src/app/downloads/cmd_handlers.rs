@@ -17,7 +17,7 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         match result {
-            Ok((_mod_id, _version, author, nexus_name, nexus_file_name)) => {
+            Ok((mod_id, version, author, nexus_name, nexus_file_name)) => {
                 // Propagate the fetched name back to the download entry if it was
                 // not already resolved by an earlier mechanism (e.g. NXM auto-fetch).
                 if let Some(ref id) = dl_id {
@@ -66,10 +66,19 @@ impl App {
                         }
                     }
                 }
-                // Reload mods to show updated metadata.
-                // Toast is shown by the caller (start_nexus_metadata_fetch) for user-triggered
-                // fetches; install-path fetches already have their own completion toast.
-                self.reload_mods(sender);
+                let mut guard = self.mods.guard();
+                for i in 0..guard.len() {
+                    if let Some(row) = guard.get_mut(i)
+                        && let Some(init) = row.mod_row_mut()
+                        && init.mod_entry.id == mod_id
+                    {
+                        init.mod_entry.version = Some(version);
+                        if !author.is_empty() {
+                            init.mod_entry.author = Some(author);
+                        }
+                        break;
+                    }
+                }
             }
             Err(e) => {
                 eprintln!("deployd: failed to fetch Nexus metadata: {e}");

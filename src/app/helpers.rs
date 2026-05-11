@@ -16,7 +16,7 @@ use crate::utils::paths;
 
 use super::App;
 use super::messages::AppMsg;
-use super::types::{DownloadFilter, ModFilter, SearchScope};
+use super::types::{DownloadFilter, ModFilter, SearchScope, WorkKind, WorkStatus};
 
 impl App {
     pub(crate) fn selected_game(&self) -> Option<&Game> {
@@ -89,6 +89,8 @@ impl App {
         // If the install-time fetch found the mod name but could not match a Nexus file
         // entry, ask the user to supply a file ID before opening the pre-install dialog.
         if self.pending_file_id_needed.is_some() {
+            self.installing = false;
+            self.finish_current_work();
             self.show_file_id_dialog(root, sender);
             return;
         }
@@ -100,20 +102,22 @@ impl App {
             pending.mod_name = fetched;
         }
         let Some(pending) = &self.pending_install else {
+            self.installing = false;
+            self.finish_current_work();
             return;
         };
         let mod_name = pending.mod_name.clone();
         let is_fomod = pending.fomod_config.is_some();
         let is_bethesda = pending.game.engine == crate::models::game::GameEngine::Bethesda;
         let is_aurora = pending.game.engine == crate::models::game::GameEngine::Aurora;
-        let file_preview = if let Some(ref fl) = pending.file_list {
-            let rules = crate::core::rules::rules_for_game(&pending.game.id);
-            crate::ui::pre_install_dialog::file_preview_from_list(
-                fl,
-                &rules,
-                pending.game.engine.clone(),
-                &pending.game.data_subdir,
-            )
+        let game_id = pending.game.id.clone();
+        let engine = pending.game.engine.clone();
+        let data_subdir = pending.game.data_subdir.clone();
+        let file_list = pending.file_list.clone();
+        self.update_work(WorkKind::PreparingSetup, "Preparing setup screen...", None);
+        let file_preview = if let Some(ref fl) = file_list {
+            let rules = crate::core::rules::rules_for_game(&game_id);
+            crate::ui::pre_install_dialog::file_preview_from_list(fl, &rules, engine, &data_subdir)
         } else {
             vec![]
         };
@@ -146,6 +150,15 @@ impl App {
                     PreInstallDialogOutput::Cancelled => AppMsg::PreInstallCancelled,
                 }),
         );
+        self.installing = false;
+        if let Some(dl_id) = self.active_download_id.clone() {
+            self.update_download_status(
+                &dl_id,
+                crate::models::download::DownloadStatus::Extracting,
+                "Preparing setup screen...",
+            );
+        }
+        self.finish_work(WorkKind::PreparingSetup);
     }
 
     pub(crate) fn has_games(&self) -> bool {
@@ -158,7 +171,63 @@ impl App {
     }
 
     pub(crate) fn is_busy(&self) -> bool {
-        self.installing || self.deploying || self.proton_setup
+        self.installing || self.deploying || self.proton_setup || self.work_status.is_some()
+    }
+
+    pub(crate) fn begin_work(&mut self, kind: WorkKind, message: impl Into<String>) {
+        let message = message.into();
+        self.status_msg = Some(message.clone());
+        self.work_status = Some(WorkStatus {
+            kind,
+            message,
+            progress: None,
+        });
+    }
+
+    pub(crate) fn update_work(
+        &mut self,
+        kind: WorkKind,
+        message: impl Into<String>,
+        progress: Option<f64>,
+    ) {
+        let message = message.into();
+        self.status_msg = Some(message.clone());
+        self.work_status = Some(WorkStatus {
+            kind,
+            message,
+            progress,
+        });
+    }
+
+    pub(crate) fn finish_work(&mut self, kind: WorkKind) {
+        if self
+            .work_status
+            .as_ref()
+            .is_some_and(|status| status.kind == kind)
+        {
+            self.work_status = None;
+            self.status_msg = None;
+        }
+    }
+
+    pub(crate) fn finish_current_work(&mut self) {
+        self.work_status = None;
+        self.status_msg = None;
+    }
+
+    pub(crate) fn busy_message(&self) -> String {
+        if let Some(status) = &self.work_status {
+            if let Some(progress) = status.progress {
+                let pct = (progress.clamp(0.0, 1.0) * 100.0).round() as u8;
+                format!("{} ({pct}%)", status.message)
+            } else {
+                status.message.clone()
+            }
+        } else {
+            self.status_msg
+                .clone()
+                .unwrap_or_else(|| "Working...".to_string())
+        }
     }
 
     /// True when the selected game supports per-profile save management.
@@ -358,7 +427,7 @@ impl App {
                         row.visible = !in_collapsed_group;
                     } else {
                         // Search or filter active: show all matching mods regardless of group.
-                        let name_match = empty || row.mod_name().to_lowercase().contains(&query);
+                        let name_match = empty || row.matches_search(&query);
                         let filter_match = match mod_filter {
                             ModFilter::All => true,
                             ModFilter::Enabled => {
@@ -378,9 +447,7 @@ impl App {
             let mut guard = self.plugins.guard();
             for i in 0..guard.len() {
                 if let Some(row) = guard.get_mut(i) {
-                    row.visible = empty
-                        || row.plugin.filename.to_lowercase().contains(&query)
-                        || row.mod_name.to_lowercase().contains(&query);
+                    row.visible = empty || row.search_key.contains(&query);
                 }
             }
         }
@@ -416,7 +483,6 @@ impl App {
             self.tool_buttons_box.remove(&child);
         }
 
-        let busy = self.is_busy();
         let (visible, overflow) = if self.tools.len() > MAX_VISIBLE {
             self.tools.split_at(MAX_VISIBLE)
         } else {
@@ -427,7 +493,6 @@ impl App {
             let btn = gtk::Button::new();
             btn.set_icon_name(&tool.icon_name);
             btn.set_tooltip_text(Some(&tool.name));
-            btn.set_sensitive(!busy);
             btn.add_css_class("flat");
 
             let tool_id = tool.id.clone();
@@ -448,7 +513,6 @@ impl App {
                 btn.set_icon_name(&tool.icon_name);
                 btn.set_tooltip_text(Some(&tool.name));
                 btn.set_label(&tool.name);
-                btn.set_sensitive(!busy);
                 btn.add_css_class("flat");
 
                 let tool_id = tool.id.clone();
@@ -474,7 +538,6 @@ impl App {
             let overflow_btn = gtk::MenuButton::new();
             overflow_btn.set_icon_name("view-more-symbolic");
             overflow_btn.set_tooltip_text(Some("More tools"));
-            overflow_btn.set_sensitive(!busy);
             overflow_btn.add_css_class("flat");
             overflow_btn.set_popover(Some(&popover));
 

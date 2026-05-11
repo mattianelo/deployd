@@ -34,6 +34,7 @@ pub struct PluginRow {
     pub plugin: Plugin,
     pub display_filename: String,
     pub mod_name: String,
+    pub search_key: String,
     pub order_label: String,
     pub missing_masters: Vec<String>,
     pub visible: bool,
@@ -165,6 +166,7 @@ impl FactoryComponent for PluginRow {
         Self {
             plugin: init.plugin,
             display_filename: init.display_filename,
+            search_key: format!("{} {}", fname_lower, init.mod_name.to_lowercase()),
             mod_name: init.mod_name,
             order_label: init.order_label,
             missing_masters: init.missing_masters,

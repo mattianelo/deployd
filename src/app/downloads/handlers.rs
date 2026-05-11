@@ -10,6 +10,8 @@ use crate::ui::mod_list::ModListItemKind;
 
 use super::super::App;
 use super::super::messages::{AppCmdMsg, AppMsg, PrepareResultMsg};
+use super::super::progress::throttled_download_install_progress;
+use super::super::types::WorkKind;
 
 impl App {
     pub(crate) fn handle_toggle_downloads(&mut self) {
@@ -345,32 +347,38 @@ impl App {
             });
         }
 
-        // Update status to Extracting
-        self.update_download_status(&download_id, DownloadStatus::Extracting, "Extracting...");
+        self.update_download_status(
+            &download_id,
+            DownloadStatus::Extracting,
+            "Hashing archive...",
+        );
 
         // Feed into existing install pipeline
         self.installing = true;
-        self.status_msg = Some("Extracting...".to_string());
+        self.begin_work(WorkKind::PreparingArchive, "Hashing archive...");
 
         let extract_sender = sender.input_sender().clone();
         let on_extract_progress: Option<Box<dyn Fn(usize, usize) + Send>> =
-            Some(Box::new(move |done, total| {
-                let frac = done as f64 / total as f64;
-                let _ = extract_sender.send(AppMsg::InstallProgress(
-                    frac,
-                    format!("Extracting file {done}/{total}"),
-                ));
-            }));
+            Some(throttled_download_install_progress(
+                extract_sender,
+                download_id.clone(),
+                "Extracting archive...",
+            ));
         let processing_sender = sender.input_sender().clone();
+        let processing_download_id = download_id.clone();
         let on_processing: Option<Box<dyn FnOnce() + Send>> = Some(Box::new(move || {
-            let _ = processing_sender.send(AppMsg::InstallProgress(
+            let _ = processing_sender
+                .send(AppMsg::InstallProgress(1.0, "Reading FOMOD...".to_string()));
+            let _ = processing_sender.send(AppMsg::DownloadProgress(
+                processing_download_id,
                 1.0,
-                "Processing mod structure...".to_string(),
+                "Reading FOMOD...".to_string(),
             ));
         }));
 
         sender.oneshot_command(async move {
             let result: Result<PrepareResultMsg, String> = async {
+                let timing_start = std::time::Instant::now();
                 let hash_path = archive_path.clone();
                 let archive_path_str = Some(archive_path.to_string_lossy().to_string());
                 let archive_hash = tokio::task::spawn_blocking(move || {
@@ -378,11 +386,24 @@ impl App {
                 })
                 .await
                 .unwrap_or(None);
+                crate::app::timing::log_phase(
+                    "install.hash_archive",
+                    "download",
+                    timing_start,
+                    Some(1),
+                );
 
+                let timing_start = std::time::Instant::now();
                 let prepare =
                     installer::prepare_mod(&archive_path, on_extract_progress, on_processing)
                         .await
                         .map_err(|e| format!("{e:#}"))?;
+                crate::app::timing::log_phase(
+                    "install.prepare_archive",
+                    "download",
+                    timing_start,
+                    None,
+                );
                 let mod_name = suggested_name;
                 match prepare {
                     PrepareResult::Normal {
@@ -844,6 +865,7 @@ impl App {
         let input_sender = sender.input_sender().clone();
         self.show_toast("Fetching metadata...");
         sender.oneshot_command(async move {
+            let timing_start = std::time::Instant::now();
             let result: Result<(String, String, String), String> = async {
                 let api_key = tracker
                     .get_setting("nexus_api_key")
@@ -1049,10 +1071,13 @@ impl App {
             }
             .await;
             match result {
-                Ok((name, version, author)) => AppCmdMsg::NexusMetadataFetched(
-                    Some(download_id),
-                    Ok((String::new(), version, author, name, None)),
-                ),
+                Ok((name, version, author)) => {
+                    crate::app::timing::log_phase("metadata.fetch", &domain, timing_start, Some(1));
+                    AppCmdMsg::NexusMetadataFetched(
+                        Some(download_id),
+                        Ok((String::new(), version, author, name, None)),
+                    )
+                }
                 Err(e) => AppCmdMsg::NexusMetadataFetched(Some(download_id), Err(e)),
             }
         });

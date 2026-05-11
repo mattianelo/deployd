@@ -1,10 +1,15 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::{Arc, atomic::AtomicBool};
 
+use gtk::glib;
 use relm4::factory::FactoryVecDeque;
 use relm4::prelude::*;
 
-use super::types::{DownloadFilter, DownloadSort, ModFilter, PendingInstall, SearchScope};
+use super::types::{
+    DownloadFilter, DownloadSort, ModFilter, PendingInstall, SearchScope, ToolLaunchSession,
+    WorkStatus,
+};
 use crate::core::detector::ExternalFile;
 use crate::core::tracker::Tracker;
 use crate::models::download::{DownloadEntry, NexusIds};
@@ -46,6 +51,7 @@ pub struct App {
     /// Profile ID that was active during the last successful deploy for the current game.
     pub(crate) last_deployed_profile_id: Option<String>,
     pub(crate) status_msg: Option<String>,
+    pub(crate) work_status: Option<WorkStatus>,
     /// Overlay widget used as a structural content wrapper (no longer used for toasts).
     pub(crate) toast_overlay: adw::ToastOverlay,
     /// Input sender stored at initialization so push_notification can wire dismiss buttons
@@ -77,6 +83,11 @@ pub struct App {
     pub(crate) tool_buttons_box: gtk::Box,
     /// Active tool manager dialog controller.
     pub(crate) tool_manager_dialog: Option<Controller<ToolManager>>,
+    /// Modal dialog shown while a Windows tool is being prepared/launched.
+    pub(crate) tool_launch_dialog: Option<adw::AlertDialog>,
+    /// Cancellation flag for the current tool launch preparation task.
+    pub(crate) tool_launch_cancel: Option<Arc<AtomicBool>>,
+    pub(crate) tool_launch_session: Option<ToolLaunchSession>,
     /// Active game setup dialog controller.
     pub(crate) game_setup_dialog: Option<Controller<GameSetupDialog>>,
     /// Active first-launch welcome wizard controller.
@@ -115,6 +126,8 @@ pub struct App {
     pub(crate) search_active: bool,
     /// Current search query text.
     pub(crate) search_text: String,
+    pub(crate) pending_search_text: Option<String>,
+    pub(crate) search_debounce: Option<glib::SourceId>,
     /// Which panel(s) the search applies to.
     pub(crate) search_scope: SearchScope,
     /// Latest Nexus API rate limit info.

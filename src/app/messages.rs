@@ -16,7 +16,9 @@ use crate::models::plugin::PluginDirtyInfo;
 use crate::models::tool::Tool;
 use crate::utils::fomod_resolver;
 
-use super::types::{DownloadFilter, InitData, LoadedData, ModFilter, NxmDownloadResult};
+use super::types::{
+    DownloadFilter, DownloadScanResult, InitData, LoadedData, ModFilter, NxmDownloadResult,
+};
 
 /// A game entry produced by the game setup dialog or welcome wizard, carrying the user-confirmed configuration.
 #[derive(Debug, Clone)]
@@ -71,9 +73,11 @@ pub enum AppMsg {
     /// persist it as a hint for future sessions.
     GameFolderGranted(PathBuf),
     LaunchTool(String),
+    CancelToolLaunch,
     /// Fired from the background wait-thread when a launched tool's Wine process exits.
     /// The second field carries the stderr output if the process exited with a non-zero status.
     ToolExited(String, Option<String>),
+    ToolSessionStarted(crate::core::tool_launcher::ToolProcessHandle),
     /// Show a first-run Proton GE setup confirmation dialog for `tool_id`.
     ConfirmProtonSetup(String),
     /// User confirmed the first-run Proton GE setup; launch through UMU.
@@ -180,6 +184,7 @@ pub enum AppMsg {
     DownloadSortChanged(u32),
     SearchToggled(bool),
     SearchChanged(String),
+    ApplySearch,
     SearchScopeChanged(u32),
     RateLimitUpdated(crate::core::nexus_api::RateLimitInfo),
     CloseRequested,
@@ -402,6 +407,7 @@ pub enum AppCmdMsg {
     ToolDeleted(Result<String, String>),
     ToolWorkingDirSaved(Result<(), String>),
     ToolLaunched(Result<String, String>),
+    ToolLaunchCancelled(String),
     /// Files were merged into an existing mod. Carries `(mod_name, files_merged)`.
     ModMerged(Result<(String, usize), String>),
     /// Combined mod+file name fetched after the user supplied a file ID.
@@ -422,6 +428,7 @@ pub enum AppCmdMsg {
     ),
     UpdatesChecked(Result<Vec<(String, String, String)>, String>),
     DownloadsDirUpdated(Option<PathBuf>),
+    DownloadsScanned(Result<DownloadScanResult, String>),
     ExternalScanDone(Result<Vec<ExternalFile>, String>),
     /// Result of adopting externally-cleaned managed plugins into the deployd cache.
     ManagedPluginsAdopted(Result<usize, String>),

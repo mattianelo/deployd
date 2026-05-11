@@ -464,7 +464,7 @@ checksum = "26bf8fc351c5ed29b5c2f0cbbac1b209b74f60ecd62e675a998df72c49af5204"
 
 [[package]]
 name = "deployd"
-version = "2.2.1"
+version = "2.2.2"
 dependencies = [
  "anyhow",
  "ashpd",
@@ -478,6 +478,7 @@ dependencies = [
  "glib-build-tools",
  "gtk4",
  "libadwaita",
+ "libc",
  "libloot",
  "md-5",
  "open",

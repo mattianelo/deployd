@@ -36,6 +36,9 @@ libadwaita, and Rust.
 - **Mod Notes** — Attach personal notes to any mod; preview on hover from the list
 - **Notifications Panel** — External changes and alerts collected in a sidebar, with "All Caught Up" state
 - **Download pause/resume** — Active downloads can be paused and resumed mid-transfer
+- **Responsive work feedback** — Long archive, scan, deploy, and runtime setup tasks show clear
+  busy messages while keeping the interface responsive; Downloads rows mirror install phases and
+  External Tools launches stay cancellable through the running Deployd-owned process
 - **GNOME HIG interface** — Libadwaita navigation, adaptive split views, toolbar views,
   status pages, toast feedback, dialogs, list rows, and appearance settings keep Deployd aligned
   with modern GNOME app conventions

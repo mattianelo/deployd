@@ -56,6 +56,7 @@ pub struct ModListItemInit {
 
 pub struct ModListItem {
     pub kind: ModListItemKind,
+    pub search_key: String,
     /// Controlled by search filter and group collapse logic.
     pub visible: bool,
     pub selection_mode: bool,
@@ -122,6 +123,10 @@ impl ModListItem {
         } else {
             ""
         }
+    }
+
+    pub fn matches_search(&self, query: &str) -> bool {
+        query.is_empty() || self.search_key.contains(query)
     }
 
     /// Returns the mod ID for database operations (None for separators).
@@ -389,8 +394,13 @@ impl FactoryComponent for ModListItem {
     }
 
     fn init_model(init: Self::Init, _index: &DynamicIndex, _sender: FactorySender<Self>) -> Self {
+        let search_key = match &init.kind {
+            ModListItemKind::Mod(row) => row.mod_entry.name.to_lowercase(),
+            ModListItemKind::Separator { name, .. } => name.to_lowercase(),
+        };
         Self {
             kind: init.kind,
+            search_key,
             visible: init.visible,
             selection_mode: false,
             selected: false,

@@ -1,4 +1,8 @@
 use std::path::PathBuf;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use adw::prelude::*;
 use gtk::prelude::*;
@@ -11,20 +15,31 @@ use crate::ui::tool_manager::{ToolManager, ToolManagerOutput};
 
 use super::super::App;
 use super::super::messages::{AppCmdMsg, AppMsg};
+use super::super::types::{ToolLaunchSession, ToolSessionState, WorkKind};
 
 const PROTON_SETUP_BODY: &str = "Proton GE needs to be installed before tools can run. \
 This is a one-time setup handled by UMU Launcher.\n\n\
 The tool will launch automatically when the setup starts.";
 
 impl App {
-    pub(crate) fn handle_launch_tool(&mut self, tool_id: String, sender: &ComponentSender<Self>) {
-        self.handle_launch_tool_inner(tool_id, false, sender);
+    pub(crate) fn handle_launch_tool(
+        &mut self,
+        tool_id: String,
+        root: &adw::ApplicationWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        if self.is_busy() {
+            self.push_notification("Wait for the current task to finish before launching tools");
+            return;
+        }
+        self.handle_launch_tool_inner(tool_id, false, root, sender);
     }
 
     fn handle_launch_tool_inner(
         &mut self,
         tool_id: String,
         allow_umu_setup: bool,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         if self.needs_deploy {
@@ -75,7 +90,7 @@ impl App {
             }
         }
 
-        self.do_launch_tool(tool, game, wine_config, allow_umu_setup, sender);
+        self.do_launch_tool(tool, game, wine_config, allow_umu_setup, root, sender);
     }
 
     /// Show the first-run Proton GE download confirmation dialog.
@@ -189,17 +204,21 @@ impl App {
     pub(crate) fn handle_proton_setup_confirmed(
         &mut self,
         tool_id: String,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         self.proton_setup = true;
-        self.status_msg = Some("Setting up Proton GE and launching tool…".to_string());
-        self.handle_launch_tool_inner(tool_id, true, sender);
+        self.begin_work(
+            WorkKind::SettingUpRuntime,
+            "Setting up Proton GE and launching tool...",
+        );
+        self.handle_launch_tool_inner(tool_id, true, root, sender);
     }
 
     pub(crate) fn handle_proton_setup_ready(&mut self) {
         if self.proton_setup {
             self.proton_setup = false;
-            self.status_msg = None;
+            self.finish_work(WorkKind::SettingUpRuntime);
             self.show_toast("Proton GE setup complete");
         }
     }
@@ -210,8 +229,28 @@ impl App {
         _error: Option<String>,
         sender: &ComponentSender<Self>,
     ) {
+        let was_cancelling = self
+            .tool_launch_session
+            .as_ref()
+            .is_some_and(|session| session.state == ToolSessionState::Cancelling);
+        if let Some(session) = self.tool_launch_session.as_ref() {
+            crate::dlog!(
+                "deployd: tool session ended tool_id={} variant={} elapsed_ms={}",
+                session.tool_id,
+                session.package_variant,
+                session.started_at.elapsed().as_millis()
+            );
+        }
+        self.close_tool_launch_dialog();
+        self.tool_launch_session = None;
         self.proton_setup = false;
-        self.status_msg = None;
+        self.finish_work(WorkKind::LaunchingTool);
+        self.finish_work(WorkKind::SettingUpRuntime);
+
+        if was_cancelling {
+            self.push_notification(&format!("{tool_name} stopped"));
+            return;
+        }
 
         self.push_notification(&format!("{tool_name} closed — scanning for changes…"));
         sender.input(AppMsg::ScanExternalFiles);
@@ -330,6 +369,56 @@ impl App {
         }
     }
 
+    pub(crate) fn handle_cancel_tool_launch(&mut self) {
+        if let Some(session) = self.tool_launch_session.as_mut()
+            && let Some(process) = session.process.clone()
+        {
+            session.state = ToolSessionState::Cancelling;
+            session.process = Some(process.clone());
+            let tool_name = session.tool_name.clone();
+            self.update_work(
+                WorkKind::LaunchingTool,
+                format!("Cancelling {tool_name}..."),
+                None,
+            );
+            process.request_stop();
+            return;
+        }
+
+        let had_launch = if let Some(cancel) = self.tool_launch_cancel.take() {
+            cancel.store(true, Ordering::SeqCst);
+            true
+        } else {
+            false
+        };
+        self.close_tool_launch_dialog();
+        self.proton_setup = false;
+        self.finish_work(WorkKind::LaunchingTool);
+        self.finish_work(WorkKind::SettingUpRuntime);
+        if had_launch {
+            self.push_notification("Tool launch cancelled");
+        }
+    }
+
+    pub(crate) fn handle_tool_session_started(
+        &mut self,
+        handle: crate::core::tool_launcher::ToolProcessHandle,
+    ) {
+        if let Some(session) = self.tool_launch_session.as_mut() {
+            session.process = Some(handle);
+            session.state = ToolSessionState::Running;
+            let message = format!("{} is running", session.tool_name);
+            self.update_work(WorkKind::LaunchingTool, message, None);
+        }
+    }
+
+    pub(crate) fn close_tool_launch_dialog(&mut self) {
+        if let Some(dialog) = self.tool_launch_dialog.take() {
+            dialog.close();
+        }
+        self.tool_launch_cancel = None;
+    }
+
     /// Shared inner launch logic used by both the normal path and the UMU-confirmed path.
     fn do_launch_tool(
         &mut self,
@@ -337,6 +426,7 @@ impl App {
         game: crate::models::game::Game,
         wine_config: crate::core::game::WineConfig,
         monitor_proton_setup: bool,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         let tool_name = tool.name.clone();
@@ -347,16 +437,47 @@ impl App {
             .cache_root_for(&game.id)
             .unwrap_or_else(|_| crate::utils::paths::cache_root().unwrap_or_default());
 
+        self.begin_work(
+            WorkKind::LaunchingTool,
+            format!("Launching {}...", tool_name),
+        );
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.tool_launch_cancel = Some(cancel.clone());
+        self.tool_launch_session = Some(ToolLaunchSession {
+            tool_id: tool.id.clone(),
+            tool_name: tool_name.clone(),
+            package_variant: if game::is_snap() { "snap" } else { "appimage" },
+            started_at: std::time::Instant::now(),
+            state: ToolSessionState::Preparing,
+            process: None,
+        });
+        self.show_tool_launch_dialog(root, &tool_name, sender);
         sender.oneshot_command(async move {
+            let launch_cancel = cancel.clone();
+            let session_cancel = cancel.clone();
+            let original_tool_name = tool_name.clone();
+            let spawn_sender = setup_sender.clone();
+            let timing_start = std::time::Instant::now();
+            let timing_game_id = game.id.clone();
             let result: Result<String, String> = (move || {
+                if launch_cancel.load(Ordering::SeqCst) {
+                    return Ok(tool_name);
+                }
                 tool_launcher::launch_tool(
                     &tool,
                     &game,
                     &wine_config,
                     &cache_root,
-                    Some(Box::new(move |error| {
-                        let _ = exit_sender.send(AppMsg::ToolExited(exit_tool_name, error));
-                    })),
+                    Some(launch_cancel.as_ref()),
+                    tool_launcher::ToolLaunchHooks {
+                        cancel: session_cancel,
+                        on_spawn: Some(Box::new(move |handle| {
+                            let _ = spawn_sender.send(AppMsg::ToolSessionStarted(handle));
+                        })),
+                        on_exit: Some(Box::new(move |error| {
+                            let _ = exit_sender.send(AppMsg::ToolExited(exit_tool_name, error));
+                        })),
+                    },
                 )
                 .map_err(|e| e.to_string())?;
                 if monitor_proton_setup {
@@ -364,8 +485,62 @@ impl App {
                 }
                 Ok(tool_name)
             })();
-            AppCmdMsg::ToolLaunched(result)
+            crate::app::timing::log_phase(
+                "tools.launch_prepare",
+                &timing_game_id,
+                timing_start,
+                Some(1),
+            );
+            match result {
+                Ok(name) if cancel.load(Ordering::SeqCst) => AppCmdMsg::ToolLaunchCancelled(name),
+                Err(_) if cancel.load(Ordering::SeqCst) => {
+                    AppCmdMsg::ToolLaunchCancelled(original_tool_name)
+                }
+                other => AppCmdMsg::ToolLaunched(other),
+            }
         });
+    }
+
+    fn show_tool_launch_dialog(
+        &mut self,
+        root: &adw::ApplicationWindow,
+        tool_name: &str,
+        sender: &ComponentSender<Self>,
+    ) {
+        let dialog = adw::AlertDialog::builder()
+            .heading(format!("Launching {tool_name}"))
+            .body("Preparing the Windows runtime and tool environment.")
+            .build();
+        dialog.add_response("cancel", "Cancel");
+        dialog.set_close_response("cancel");
+
+        let content = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(12)
+            .margin_top(6)
+            .margin_bottom(6)
+            .margin_start(6)
+            .margin_end(6)
+            .build();
+        let spinner = gtk::Spinner::builder().spinning(true).build();
+        let label = gtk::Label::builder()
+            .label("Starting Wine/UMU...")
+            .xalign(0.0)
+            .hexpand(true)
+            .build();
+        label.add_css_class("dim-label");
+        content.append(&spinner);
+        content.append(&label);
+        dialog.set_extra_child(Some(&content));
+
+        let input_sender = sender.input_sender().clone();
+        dialog.connect_response(None, move |_, response| {
+            if response == "cancel" {
+                let _ = input_sender.send(AppMsg::CancelToolLaunch);
+            }
+        });
+        dialog.present(Some(root));
+        self.tool_launch_dialog = Some(dialog);
     }
 }
 

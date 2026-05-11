@@ -1,5 +1,8 @@
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, Output, Stdio};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
 
@@ -14,6 +17,50 @@ use crate::utils::paths;
 /// CharGenMorph Compiler require .NET, and wine-mono is not bundled with the Snap wine-runtime.
 /// The user is informed via a blocking dialog before launch so they can accept the install prompt.
 const WINE_SILENT_DLL_OVERRIDES: &str = "mshtml=d;winemenubuilder.exe=d";
+const TOOL_TERMINATE_GRACE: Duration = Duration::from_millis(1500);
+
+#[derive(Debug, Clone)]
+pub struct ToolProcessHandle {
+    pub pid: u32,
+    process_group_id: Option<i32>,
+    cancel: Arc<AtomicBool>,
+}
+
+pub struct ToolLaunchHooks {
+    pub cancel: Arc<AtomicBool>,
+    pub on_spawn: Option<Box<dyn FnOnce(ToolProcessHandle) + Send + 'static>>,
+    pub on_exit: Option<Box<dyn FnOnce(Option<String>) + Send + 'static>>,
+}
+
+impl ToolProcessHandle {
+    pub fn request_stop(&self) {
+        self.cancel.store(true, Ordering::SeqCst);
+        let handle = self.clone();
+        std::thread::spawn(move || {
+            handle.terminate_process_tree();
+        });
+    }
+
+    fn terminate_process_tree(&self) {
+        #[cfg(unix)]
+        {
+            if let Some(pgid) = self.process_group_id {
+                signal_process_group(pgid, libc::SIGTERM);
+                std::thread::sleep(TOOL_TERMINATE_GRACE);
+                if process_group_exists(pgid) {
+                    signal_process_group(pgid, libc::SIGKILL);
+                }
+                return;
+            }
+        }
+
+        signal_process(self.pid, libc::SIGTERM);
+        std::thread::sleep(TOOL_TERMINATE_GRACE);
+        if process_exists(self.pid) {
+            signal_process(self.pid, libc::SIGKILL);
+        }
+    }
+}
 
 /// Launch a Windows tool via the package-specific runtime.
 ///
@@ -23,17 +70,24 @@ pub fn launch_tool(
     game: &Game,
     wine_config: &WineConfig,
     cache_root: &std::path::Path,
-    on_exit: Option<Box<dyn FnOnce(Option<String>) + Send + 'static>>,
+    cancel: Option<&AtomicBool>,
+    hooks: ToolLaunchHooks,
 ) -> Result<u32> {
+    ensure_not_cancelled(cancel)?;
+
     let exe_path = PathBuf::from(&tool.exe_path);
     if !exe_path.exists() {
         return Err(anyhow!("Tool executable not found: {}", tool.exe_path));
     }
 
     game::ensure_ini_symlinks(game);
+    ensure_not_cancelled(cancel)?;
     ensure_bodyslide_config(tool, game, wine_config);
+    ensure_not_cancelled(cancel)?;
     ensure_named_mods_drive(wine_config, cache_root);
+    ensure_not_cancelled(cancel)?;
     ensure_no_x_drive_conflict(wine_config);
+    ensure_not_cancelled(cancel)?;
 
     let cmd = match &wine_config.launcher {
         game::WineLauncher::Umu(bin) => build_umu_command(bin, tool, game, wine_config)?,
@@ -44,8 +98,10 @@ pub fn launch_tool(
         } => {
             let wine_bin = resolve_wine64(wine_bin);
             let ld_lib = snap_ld_library_path(wine_platform, wine_runtime);
-            ensure_bethesda_reg_key(game, wine_config, &wine_bin, Some(&ld_lib));
-            ensure_wine_silent_setup(wine_config, &wine_bin, Some(&ld_lib));
+            ensure_bethesda_reg_key(game, wine_config, &wine_bin, Some(&ld_lib), cancel)?;
+            ensure_not_cancelled(cancel)?;
+            ensure_wine_silent_setup(wine_config, &wine_bin, Some(&ld_lib), cancel)?;
+            ensure_not_cancelled(cancel)?;
             dlog!(
                 "deployd: launching tool '{}' | snap-wine={}",
                 tool.name,
@@ -61,25 +117,38 @@ pub fn launch_tool(
             )
         }
     };
-    spawn_tool(cmd, &tool.name, on_exit)
+    ensure_not_cancelled(cancel)?;
+    spawn_tool(cmd, &tool.name, hooks)
 }
 
 /// Shared process-spawn logic for tool launches.
 ///
 /// `on_exit` receives `Some(error_string)` if the process exited with a non-zero
 /// status or could not be waited on; `None` on clean exit.
-fn spawn_tool(
-    mut cmd: Command,
-    tool_name: &str,
-    on_exit: Option<Box<dyn FnOnce(Option<String>) + Send + 'static>>,
-) -> Result<u32> {
+fn spawn_tool(mut cmd: Command, tool_name: &str, hooks: ToolLaunchHooks) -> Result<u32> {
     cmd.stderr(Stdio::piped());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
 
     let mut child = cmd
         .spawn()
         .map_err(|e| anyhow!("Could not start process for \"{tool_name}\".\nError: {e}"))?;
 
     let pid = child.id();
+    let handle = ToolProcessHandle {
+        pid,
+        #[cfg(unix)]
+        process_group_id: Some(pid as i32),
+        #[cfg(not(unix))]
+        process_group_id: None,
+        cancel: hooks.cancel,
+    };
+    if let Some(cb) = hooks.on_spawn {
+        cb(handle);
+    }
     let name = tool_name.to_owned();
 
     // Drain stderr on a dedicated thread so the subprocess never blocks on a
@@ -115,12 +184,78 @@ fn spawn_tool(
             _ => None,
         };
 
-        if let Some(cb) = on_exit {
+        if let Some(cb) = hooks.on_exit {
             cb(error);
         }
     });
 
     Ok(pid)
+}
+
+fn signal_process(pid: u32, signal: libc::c_int) {
+    // SAFETY: libc::kill is called with a pid returned by std::process::Child::id
+    // and a constant signal. Errors are intentionally ignored because the process
+    // may already have exited by the time cancellation reaches this thread.
+    unsafe {
+        libc::kill(pid as libc::pid_t, signal);
+    }
+}
+
+fn process_exists(pid: u32) -> bool {
+    // SAFETY: signal 0 performs existence/permission probing without delivering a
+    // signal. The pid comes from std::process::Child::id.
+    unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
+}
+
+#[cfg(unix)]
+fn signal_process_group(pgid: i32, signal: libc::c_int) {
+    // SAFETY: negative pid targets the process group created for this child via
+    // CommandExt::process_group(0). It is Deployd-owned and isolated from unrelated
+    // user Wine processes.
+    unsafe {
+        libc::kill(-pgid, signal);
+    }
+}
+
+#[cfg(unix)]
+fn process_group_exists(pgid: i32) -> bool {
+    // SAFETY: signal 0 probes the Deployd-created process group without sending a
+    // real signal.
+    unsafe { libc::kill(-pgid, 0) == 0 }
+}
+
+fn is_cancelled(cancel: Option<&AtomicBool>) -> bool {
+    cancel.is_some_and(|flag| flag.load(Ordering::SeqCst))
+}
+
+fn ensure_not_cancelled(cancel: Option<&AtomicBool>) -> Result<()> {
+    if is_cancelled(cancel) {
+        Err(anyhow!("Tool launch cancelled"))
+    } else {
+        Ok(())
+    }
+}
+
+fn run_output_cancellable(cmd: &mut Command, cancel: Option<&AtomicBool>) -> Result<Output> {
+    ensure_not_cancelled(cancel)?;
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+    let mut child = cmd.spawn().context("start Wine setup command")?;
+    loop {
+        if is_cancelled(cancel) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(anyhow!("Tool launch cancelled"));
+        }
+
+        if child.try_wait()?.is_some() {
+            return child
+                .wait_with_output()
+                .context("collect Wine setup command output");
+        }
+
+        std::thread::sleep(Duration::from_millis(50));
+    }
 }
 
 /// Build a command that runs the tool via Wine from the snap content interface.
@@ -261,9 +396,10 @@ fn ensure_bethesda_reg_key(
     wine_config: &WineConfig,
     launcher_bin: &Path,
     ld_library_path: Option<&str>,
-) {
+    cancel: Option<&AtomicBool>,
+) -> Result<()> {
     let Some((reg_key, wine_path)) = game::missing_bethesda_reg_key(game) else {
-        return; // Key already exists
+        return Ok(()); // Key already exists
     };
 
     dlog!("deployd: adding registry key {reg_key} → {wine_path}");
@@ -291,7 +427,7 @@ fn ensure_bethesda_reg_key(
         cmd.env("LD_LIBRARY_PATH", ld);
     }
     cmd.args(&reg_args);
-    let result = cmd.output();
+    let result = run_output_cancellable(&mut cmd, cancel);
 
     match result {
         Ok(output) if output.status.success() => {
@@ -305,9 +441,13 @@ fn ensure_bethesda_reg_key(
             );
         }
         Err(e) => {
+            if is_cancelled(cancel) {
+                return Err(e);
+            }
             eprintln!("deployd: failed to run wine reg add: {e}");
         }
     }
+    Ok(())
 }
 
 /// Bake DLL overrides into the wine prefix registry so snap/wine updates don't re-show
@@ -322,10 +462,11 @@ fn ensure_wine_silent_setup(
     wine_config: &WineConfig,
     launcher_bin: &Path,
     ld_library_path: Option<&str>,
-) {
+    cancel: Option<&AtomicBool>,
+) -> Result<()> {
     let sentinel_v2 = wine_config.prefix.join(".deployd_wine_setup_v2");
     if sentinel_v2.exists() {
-        return;
+        return Ok(());
     }
 
     // Migrate from v1: delete the stale mscoree=disabled registry key so wine can offer to
@@ -348,7 +489,11 @@ fn ensure_wine_silent_setup(
             "mscoree",
             "/f",
         ]);
-        let _ = cmd.output();
+        if let Err(e) = run_output_cancellable(&mut cmd, cancel)
+            && is_cancelled(cancel)
+        {
+            return Err(e);
+        }
         let _ = std::fs::remove_file(&sentinel_v1);
     }
 
@@ -376,16 +521,20 @@ fn ensure_wine_silent_setup(
             value,
             "/f",
         ]);
-        let result = cmd.output();
+        let result = run_output_cancellable(&mut cmd, cancel);
         if let Err(e) = result {
+            if is_cancelled(cancel) {
+                return Err(e);
+            }
             eprintln!("deployd: wine silent setup reg add ({name}): {e}");
-            return;
+            return Ok(());
         }
     }
 
     if let Err(e) = std::fs::write(&sentinel_v2, b"") {
         eprintln!("deployd: failed to write wine setup sentinel: {e}");
     }
+    Ok(())
 }
 
 /// Determine the working directory to use when launching a tool.
@@ -473,7 +622,7 @@ fn ensure_no_x_drive_conflict(wine_config: &WineConfig) {
     const CANDIDATES: &[char] = &['s', 'g', 'h', 'i', 'j', 'k', 'l', 'n', 'o', 'p', 'q', 'r'];
     let Some(&new_letter) = CANDIDATES
         .iter()
-        .find(|&&c| !dosdevices.join(format!("{c}:")).exists())
+        .find(|&&c| !drive_entry_exists(&dosdevices.join(format!("{c}:"))))
     else {
         eprintln!("deployd: no free drive letter to remap X: — leaving as-is");
         return;
@@ -494,6 +643,10 @@ fn ensure_no_x_drive_conflict(wine_config: &WineConfig) {
             dlog!("deployd: remapped X: → {new_letter}: (Proton reserves X: for runtime)");
         }
     }
+}
+
+fn drive_entry_exists(path: &Path) -> bool {
+    path.symlink_metadata().is_ok()
 }
 
 /// Pre-configure BodySlide's Config.xml with the correct `GameDataPath` and `TargetGame`.
@@ -664,6 +817,38 @@ mod tests {
             sort_order: 0,
             working_dir: String::new(),
         }
+    }
+
+    #[test]
+    fn drive_entry_exists_counts_broken_symlinks() -> anyhow::Result<()> {
+        let temp = tempdir()?;
+        let link = temp.path().join("q:");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(temp.path().join("missing"), &link)?;
+
+        assert!(
+            drive_entry_exists(&link),
+            "broken dosdevices symlinks still occupy their drive letter"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn cancellable_output_checks_cancel_before_spawn() -> anyhow::Result<()> {
+        let cancel = AtomicBool::new(true);
+        let mut cmd = Command::new("deployd-test-command-that-should-not-spawn");
+
+        let Err(err) = run_output_cancellable(&mut cmd, Some(&cancel)) else {
+            return Err(anyhow!("cancelled setup command unexpectedly succeeded"));
+        };
+
+        assert!(
+            err.to_string().contains("cancelled"),
+            "expected cancellation error, got: {err}"
+        );
+
+        Ok(())
     }
 
     #[test]

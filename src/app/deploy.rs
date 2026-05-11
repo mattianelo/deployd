@@ -10,6 +10,7 @@ use crate::utils::paths;
 
 use super::App;
 use super::messages::{AppCmdMsg, AppMsg};
+use super::types::WorkKind;
 
 impl App {
     pub(crate) fn handle_deploy_clicked(
@@ -100,14 +101,19 @@ impl App {
             .unwrap_or_else(|_| paths::cache_root().unwrap_or_default());
 
         self.deploying = true;
-        self.status_msg = Some("Deploying...".to_string());
+        self.begin_work(WorkKind::Deploying, "Deploying...");
         self.auto_save_profile(sender);
 
         sender.oneshot_command(async move {
+            let timing_start = std::time::Instant::now();
+            let game_id = game.id.clone();
             AppCmdMsg::DeployDone(
                 deployer::deploy(&game, &tracker, &cache_root)
                     .await
-                    .map_err(|e| e.to_string()),
+                    .map_err(|e| e.to_string())
+                    .inspect(|_| {
+                        crate::app::timing::log_phase("deploy.apply", &game_id, timing_start, None);
+                    }),
             )
         });
     }
@@ -187,7 +193,7 @@ impl App {
             .unwrap_or_else(|_| paths::cache_root().unwrap_or_default());
 
         self.deploying = true;
-        self.status_msg = Some("Purging...".to_string());
+        self.begin_work(WorkKind::Purging, "Purging...");
 
         sender.oneshot_command(async move {
             AppCmdMsg::PurgeDone(
@@ -251,7 +257,7 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         self.deploying = false;
-        self.status_msg = None;
+        self.finish_work(WorkKind::Deploying);
         match result {
             Ok(deploy_result) => {
                 self.needs_deploy = false;
@@ -300,7 +306,7 @@ impl App {
 
     pub(crate) fn handle_cmd_purge_done(&mut self, result: Result<usize, String>) {
         self.deploying = false;
-        self.status_msg = None;
+        self.finish_work(WorkKind::Purging);
         match result {
             Ok(count) => {
                 self.needs_deploy = true;

@@ -13,6 +13,8 @@ pub mod notifications;
 pub mod order_snapshots;
 pub mod plugins;
 pub mod profiles;
+pub mod progress;
+pub mod timing;
 pub mod types;
 
 pub use self::messages::{AppCmdMsg, AppMsg};
@@ -22,7 +24,7 @@ use gtk::glib;
 use gtk::prelude::*;
 use relm4::prelude::*;
 
-use self::types::{DownloadFilter, ModFilter};
+use self::types::{DownloadFilter, ModFilter, WorkKind};
 
 mod state;
 pub use state::App;
@@ -263,7 +265,7 @@ impl Component for App {
                             gtk::Label {
                                 add_css_class: "caption",
                                 #[watch]
-                                set_label: model.status_msg.as_deref().unwrap_or("Extracting..."),
+                                set_label: &model.busy_message(),
                             },
                         },
                     },
@@ -1463,13 +1465,15 @@ impl Component for App {
             AppMsg::PurgeConfirmed => self.handle_purge_confirmed(&sender),
             AppMsg::GrantGameFolderAccess => self.handle_grant_game_folder_access(root, &sender),
             AppMsg::GameFolderGranted(path) => self.handle_game_folder_granted(path, &sender),
-            AppMsg::LaunchTool(name) => self.handle_launch_tool(name, &sender),
+            AppMsg::LaunchTool(name) => self.handle_launch_tool(name, root, &sender),
+            AppMsg::CancelToolLaunch => self.handle_cancel_tool_launch(),
+            AppMsg::ToolSessionStarted(handle) => self.handle_tool_session_started(handle),
             AppMsg::ToolExited(name, error) => self.handle_tool_exited(name, error, &sender),
             AppMsg::ConfirmProtonSetup(tool_id) => {
                 self.handle_confirm_proton_setup(tool_id, root, &sender)
             }
             AppMsg::ProtonSetupConfirmed(tool_id) => {
-                self.handle_proton_setup_confirmed(tool_id, &sender)
+                self.handle_proton_setup_confirmed(tool_id, root, &sender)
             }
             AppMsg::ConfirmSnapWineSetup(tool_id, missing) => {
                 self.handle_confirm_snap_wine_setup(tool_id, missing, root, &sender)
@@ -1598,6 +1602,7 @@ impl Component for App {
             AppMsg::DownloadSortChanged(idx) => self.handle_download_sort_changed(idx),
             AppMsg::SearchToggled(active) => self.handle_search_toggled(active),
             AppMsg::SearchChanged(text) => self.handle_search_changed(text),
+            AppMsg::ApplySearch => self.handle_apply_search(),
             AppMsg::SearchScopeChanged(idx) => self.handle_search_scope_changed(idx),
             AppMsg::RateLimitUpdated(info) => self.handle_rate_limit_updated(info),
             AppMsg::CloseRequested => self.handle_close_requested(root, &sender),
@@ -1752,10 +1757,16 @@ impl Component for App {
             AppMsg::DeleteModOrderSnapshot(id) => self.handle_delete_order_snapshot(id, &sender),
             AppMsg::DeletePluginOrderSnapshot(id) => self.handle_delete_order_snapshot(id, &sender),
             AppMsg::SetModFilter(filter) => {
+                if self.mod_filter == filter {
+                    return;
+                }
                 self.mod_filter = filter;
                 self.apply_search_filter();
             }
             AppMsg::SetDownloadFilter(filter) => {
+                if self.download_filter == filter {
+                    return;
+                }
                 self.download_filter = filter;
                 self.apply_search_filter();
             }
@@ -1825,6 +1836,7 @@ impl Component for App {
                 version,
                 file_id,
             } => {
+                self.finish_work(WorkKind::FetchingMetadata);
                 self.pending_file_id_needed = None;
                 if let Some(dl_id) = download_id {
                     // Standalone (right-click) path: update the download entry directly.
@@ -1909,6 +1921,7 @@ impl Component for App {
                 self.handle_cmd_tool_working_dir_saved(result)
             }
             AppCmdMsg::ToolLaunched(result) => self.handle_cmd_tool_launched(result),
+            AppCmdMsg::ToolLaunchCancelled(name) => self.handle_cmd_tool_launch_cancelled(name),
             AppCmdMsg::ModMerged(result) => self.handle_cmd_mod_merged(result, &sender),
             AppCmdMsg::NxmDownloadComplete(id, result) => {
                 self.handle_cmd_nxm_download_complete(id, result, &sender)
@@ -1918,6 +1931,9 @@ impl Component for App {
             }
             AppCmdMsg::UpdatesChecked(result) => self.handle_cmd_updates_checked(result, &sender),
             AppCmdMsg::DownloadsDirUpdated(dir) => self.handle_cmd_downloads_dir_updated(dir),
+            AppCmdMsg::DownloadsScanned(result) => {
+                self.handle_cmd_downloads_scanned(result, &sender)
+            }
             AppCmdMsg::ExternalScanDone(result) => self.handle_cmd_external_scan_done(result),
             AppCmdMsg::ManagedPluginsAdopted(result) => {
                 self.handle_cmd_managed_plugins_adopted(result, &sender)

@@ -120,6 +120,7 @@ impl App {
                 && let crate::ui::mod_list::ModListItemKind::Mod(row) = &mut item.kind
             {
                 row.mod_entry.name = name.clone();
+                item.search_key = name.to_lowercase();
                 row.mod_entry.install_target = install_target.clone();
                 row.mod_entry.notes = if notes.is_empty() {
                     None

@@ -4,7 +4,7 @@ use relm4::prelude::*;
 use super::super::App;
 use super::super::free_fns::{fetch_avatar_bytes, load_game_data};
 use super::super::messages::{AppCmdMsg, AppMsg};
-use super::super::types::{InitData, LoadedData};
+use super::super::types::{InitData, LoadedData, WorkKind};
 
 impl App {
     pub(crate) fn handle_cmd_initialized(
@@ -352,14 +352,38 @@ impl App {
         match result {
             Ok(name) => {
                 self.show_toast(&format!("Launched {name}"));
+                if let Some(session) = self.tool_launch_session.as_ref() {
+                    self.update_work(
+                        WorkKind::LaunchingTool,
+                        format!("{} is running", session.tool_name),
+                        None,
+                    );
+                } else {
+                    self.close_tool_launch_dialog();
+                    self.finish_work(WorkKind::LaunchingTool);
+                }
+                if self.proton_setup {
+                    self.begin_work(WorkKind::SettingUpRuntime, "Finishing Proton GE setup...");
+                }
             }
             Err(e) => {
+                self.close_tool_launch_dialog();
+                self.tool_launch_session = None;
+                self.finish_work(WorkKind::LaunchingTool);
                 self.proton_setup = false;
-                self.status_msg = None;
+                self.finish_work(WorkKind::SettingUpRuntime);
                 crate::dlog!("deployd: tool launch error: {e}");
                 self.push_notification(&format!("Launch failed: {e}"));
             }
         }
+    }
+
+    pub(crate) fn handle_cmd_tool_launch_cancelled(&mut self, _name: String) {
+        self.close_tool_launch_dialog();
+        self.tool_launch_session = None;
+        self.proton_setup = false;
+        self.finish_work(WorkKind::LaunchingTool);
+        self.finish_work(WorkKind::SettingUpRuntime);
     }
 
     pub(crate) fn handle_cmd_save_mode_toggled(

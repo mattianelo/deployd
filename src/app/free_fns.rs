@@ -1,4 +1,7 @@
 use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
+use std::time::SystemTime;
 
 use gtk::prelude::{ListModelExt, WidgetExt};
 
@@ -8,6 +11,17 @@ use crate::models::game::Game;
 use crate::models::profile::SaveMode;
 
 use super::types::LoadedData;
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+struct VanillaHeaderCacheKey {
+    game_id: String,
+    path: PathBuf,
+    modified: Option<SystemTime>,
+    len: u64,
+}
+
+static VANILLA_HEADER_CACHE: OnceLock<Mutex<HashMap<VanillaHeaderCacheKey, usize>>> =
+    OnceLock::new();
 
 /// Extracts the 10-digit Nexus CDN timestamp appended to downloaded filenames
 /// (e.g. `ModName-12345-1.0-1604483725.7z` → `Some(1604483725)`).
@@ -242,15 +256,15 @@ pub(crate) async fn load_game_data(
 
     // Read TES4 master counts for every vanilla/on-disk plugin so they can be sorted by
     // dependency depth (root masters with 0 declared masters first, DLCs after).
-    let vanilla_plugin_master_counts: HashMap<String, usize> = vanilla_plugins
-        .iter()
-        .map(|name| {
-            let count = crate::utils::plugin_header::read_masters(&data_dir.join(name))
-                .map(|m| m.len())
-                .unwrap_or(0);
-            (name.to_lowercase(), count)
-        })
-        .collect();
+    let timing_start = std::time::Instant::now();
+    let vanilla_plugin_master_counts =
+        cached_vanilla_plugin_master_counts(game_id, &data_dir, &vanilla_plugins);
+    crate::app::timing::log_phase(
+        "plugins.vanilla_header_counts",
+        game_id,
+        timing_start,
+        Some(vanilla_plugins.len()),
+    );
 
     // Managed plugins whose on-disk file was originally a vanilla game file: deployd backed
     // up the original before overwriting it (e.g. a user-cleaned Fallout4.esm installed as a mod).
@@ -282,6 +296,45 @@ pub(crate) async fn load_game_data(
         vanilla_plugin_master_counts,
         vanilla_derived_plugins,
     })
+}
+
+fn cached_vanilla_plugin_master_counts(
+    game_id: &str,
+    data_dir: &Path,
+    vanilla_plugins: &HashSet<String>,
+) -> HashMap<String, usize> {
+    let cache = VANILLA_HEADER_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    vanilla_plugins
+        .iter()
+        .map(|name| {
+            let path = data_dir.join(name);
+            let key = std::fs::metadata(&path)
+                .ok()
+                .map(|metadata| VanillaHeaderCacheKey {
+                    game_id: game_id.to_string(),
+                    path: path.clone(),
+                    modified: metadata.modified().ok(),
+                    len: metadata.len(),
+                });
+
+            let count = key
+                .as_ref()
+                .and_then(|key| cache.lock().ok().and_then(|cache| cache.get(key).copied()))
+                .unwrap_or_else(|| {
+                    let count = crate::utils::plugin_header::read_masters(&path)
+                        .map(|masters| masters.len())
+                        .unwrap_or(0);
+                    if let Some(key) = key
+                        && let Ok(mut cache) = cache.lock()
+                    {
+                        cache.insert(key, count);
+                    }
+                    count
+                });
+
+            (name.to_lowercase(), count)
+        })
+        .collect()
 }
 
 /// Fetch avatar image bytes from a URL. Returns None on any error so the caller

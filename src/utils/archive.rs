@@ -579,10 +579,8 @@ fn extract_7z(
 /// misidentifies sentinel files like `.force-install` that mod authors use to force a
 /// directory to be included in the archive.
 ///
-/// We check two more-reliable signals before trusting `is_directory`:
-/// 1. Windows file attributes — `FILE_ATTRIBUTE_DIRECTORY` (0x10) set → real dir.
-/// 2. Name suffix — directory names in well-formed 7z archives end with `\` or `/`.
 /// Returns `true` if `dest_path` is safely inside `base` with no traversal components.
+///
 /// sevenz_rust2 passes entry names to the extract callback as-is; unlike the `zip` crate's
 /// `mangled_name()`, there is no built-in sanitization, so a crafted archive could supply
 /// a path like `../../etc/passwd` and escape the temp directory.
@@ -594,6 +592,10 @@ fn is_safe_7z_path(dest_path: &Path, base: &Path) -> bool {
     rel.components().all(|c| matches!(c, Component::Normal(_)))
 }
 
+/// We check two more-reliable signals before trusting `is_directory`:
+///
+/// 1. Windows file attributes — `FILE_ATTRIBUTE_DIRECTORY` (0x10) set → real dir.
+/// 2. Name suffix — directory names in well-formed 7z archives end with `\` or `/`.
 fn is_genuine_7z_dir(entry: &sevenz_rust2::ArchiveEntry) -> bool {
     if !entry.is_directory {
         return false;

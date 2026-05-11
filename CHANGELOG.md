@@ -1,5 +1,33 @@
 # Changelog
 
+## [2.2.2]
+
+### Added
+
+- Performance feedback is more cohesive during long-running work: install, extraction, caching,
+  deploy, purge, downloads-folder scan, and first-run runtime setup now share the same header busy
+  status language.
+- Downloads-folder scanning now runs off the GTK thread, and install progress updates are throttled
+  so large archives no longer flood the UI with per-file updates.
+- Downloads rows mirror install phase status for archive hashing, extraction, setup preparation,
+  caching, and Nexus metadata fetches, so installs started from the Downloads panel remain visible
+  even when the header focus changes.
+- Debug builds now log lightweight slow-phase timing for install, scan, deploy, plugin-header, and
+  tool-launch preparation paths without recording user paths or API tokens.
+
+### Fixed
+
+- Search typing is debounced to reduce list-filter stalls while keeping filter chips immediate.
+- Tool launches no longer try to reuse a Wine drive letter occupied by a broken `dosdevices`
+  symlink, avoiding noisy `failed to create q: drive: File exists` messages after BodySlide runs.
+- Tool launch buttons no longer remain stuck disabled after being rebuilt during a busy state, and
+  normal launches now show a blocking launch dialog with spinner, status text, and Cancel while
+  Wine/UMU starts the tool.
+- External Tools launches are tracked as managed sessions; Cancel now stops pre-spawn setup and can
+  terminate the Deployd-owned Wine/UMU process group after the tool has spawned.
+- Vanilla/DLC plugin header master counts are cached by game, path, mtime, and file length to avoid
+  repeated TES4 header reads during ordinary reloads.
+
 ## [2.2.1]
 
 ### Fixed

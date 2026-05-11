@@ -45,6 +45,53 @@ pub enum DownloadFilter {
     Completed,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WorkKind {
+    PreparingArchive,
+    ExtractingArchive,
+    ProcessingArchive,
+    PreparingSetup,
+    Installing,
+    FetchingMetadata,
+    ScanningDownloads,
+    Deploying,
+    Purging,
+    SettingUpRuntime,
+    LaunchingTool,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct WorkStatus {
+    pub(crate) kind: WorkKind,
+    pub(crate) message: String,
+    pub(crate) progress: Option<f64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ToolSessionState {
+    Preparing,
+    Running,
+    Cancelling,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ToolLaunchSession {
+    pub(crate) tool_id: String,
+    pub(crate) tool_name: String,
+    pub(crate) package_variant: &'static str,
+    pub(crate) started_at: std::time::Instant,
+    pub(crate) state: ToolSessionState,
+    pub(crate) process: Option<crate::core::tool_launcher::ToolProcessHandle>,
+}
+
+#[derive(Debug)]
+pub(crate) struct DownloadScanResult {
+    pub(crate) entries: Vec<DownloadEntry>,
+    pub(crate) removed_ids: Vec<String>,
+    pub(crate) to_persist: Vec<DownloadEntry>,
+    pub(crate) new_count: usize,
+}
+
 pub(crate) struct PendingInstall {
     pub(crate) tmp_dir: TempDir,
     pub(crate) mod_name: String,
