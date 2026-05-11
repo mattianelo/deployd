@@ -135,13 +135,20 @@ pub async fn reset_game_cache(
 fn validate_same_filesystem(new_dir: &Path, game_path: &Path) -> Result<()> {
     use std::os::unix::fs::MetadataExt;
 
-    let new_meta = std::fs::metadata(new_dir).or_else(|_| {
-        // Directory may not exist yet; check its parent instead.
-        new_dir
-            .parent()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no parent"))
-            .and_then(std::fs::metadata)
-    }).with_context(|| format!("Cannot stat '{}': directory or parent must exist", new_dir.display()))?;
+    let new_meta = std::fs::metadata(new_dir)
+        .or_else(|_| {
+            // Directory may not exist yet; check its parent instead.
+            new_dir
+                .parent()
+                .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no parent"))
+                .and_then(std::fs::metadata)
+        })
+        .with_context(|| {
+            format!(
+                "Cannot stat '{}': directory or parent must exist",
+                new_dir.display()
+            )
+        })?;
 
     let game_meta = std::fs::metadata(game_path)
         .with_context(|| format!("Cannot stat game path '{}'", game_path.display()))?;

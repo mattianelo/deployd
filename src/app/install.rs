@@ -69,13 +69,12 @@ impl App {
                 ));
             }));
         let processing_sender = sender.input_sender().clone();
-        let on_processing: Option<Box<dyn FnOnce() + Send>> =
-            Some(Box::new(move || {
-                let _ = processing_sender.send(AppMsg::InstallProgress(
-                    1.0,
-                    "Processing mod structure...".to_string(),
-                ));
-            }));
+        let on_processing: Option<Box<dyn FnOnce() + Send>> = Some(Box::new(move || {
+            let _ = processing_sender.send(AppMsg::InstallProgress(
+                1.0,
+                "Processing mod structure...".to_string(),
+            ));
+        }));
 
         sender.oneshot_command(async move {
             let result: Result<PrepareResultMsg, String> = async {
@@ -514,7 +513,9 @@ impl App {
                     msg
                 })?;
                 if let Ok(json) = serde_json::to_string(&serialized_selections) {
-                    let _ = tracker.save_fomod_selections(&result.mod_entry.id, &json).await;
+                    let _ = tracker
+                        .save_fomod_selections(&result.mod_entry.id, &json)
+                        .await;
                 }
                 drop(pending.tmp_dir);
                 if let Some((old_id, old_priority)) = replace_info {
@@ -700,10 +701,9 @@ impl App {
                 archive_hash,
                 archive_path,
             }) => {
-                let game = self
-                    .selected_game()
-                    .cloned()
-                    .expect("PrepareResult received without a selected game — UI invariant violated");
+                let game = self.selected_game().cloned().expect(
+                    "PrepareResult received without a selected game — UI invariant violated",
+                );
                 self.pending_install = Some(PendingInstall {
                     tmp_dir,
                     mod_name: mod_name.clone(),
@@ -761,10 +761,12 @@ impl App {
                         dialog.connect_response(None, move |_, response| {
                             let _ = match response {
                                 "alongside" => input_sender.send(AppMsg::OpenPreInstallDialog),
-                                "replace" => input_sender.send(AppMsg::OpenPreInstallDialogReplacing(
-                                    old_mod_id.clone(),
-                                    old_priority,
-                                )),
+                                "replace" => {
+                                    input_sender.send(AppMsg::OpenPreInstallDialogReplacing(
+                                        old_mod_id.clone(),
+                                        old_priority,
+                                    ))
+                                }
                                 _ => input_sender.send(AppMsg::PreInstallCancelled),
                             };
                         });
@@ -783,10 +785,9 @@ impl App {
                 archive_hash,
                 archive_path,
             }) => {
-                let game = self
-                    .selected_game()
-                    .cloned()
-                    .expect("PrepareResult received without a selected game — UI invariant violated");
+                let game = self.selected_game().cloned().expect(
+                    "PrepareResult received without a selected game — UI invariant violated",
+                );
                 self.pending_install = Some(PendingInstall {
                     tmp_dir,
                     mod_name: mod_name.clone(),
@@ -875,10 +876,12 @@ impl App {
                         dialog.connect_response(None, move |_, response| {
                             let _ = match response {
                                 "alongside" => input_sender.send(AppMsg::OpenPreInstallDialog),
-                                "replace" => input_sender.send(AppMsg::OpenPreInstallDialogReplacing(
-                                    old_mod_id.clone(),
-                                    old_priority,
-                                )),
+                                "replace" => {
+                                    input_sender.send(AppMsg::OpenPreInstallDialogReplacing(
+                                        old_mod_id.clone(),
+                                        old_priority,
+                                    ))
+                                }
                                 _ => input_sender.send(AppMsg::PreInstallCancelled),
                             };
                         });
@@ -1020,13 +1023,19 @@ impl App {
                         add_result.mod_entry.nexus_domain.as_deref(),
                     )
                 {
-                    let tracker = self.tracker.clone().expect("tracker not initialized at absorb result handling");
+                    let tracker = self
+                        .tracker
+                        .clone()
+                        .expect("tracker not initialized at absorb result handling");
                     let mod_id = add_result.mod_entry.id.clone();
                     let domain = nexus_domain.to_string();
                     let nexus_file_id = add_result.mod_entry.nexus_file_id;
                     let dl_id_for_metadata = metadata_dl_id;
                     sender.oneshot_command(async move {
-                        let result: Result<(String, String, String, String, Option<String>), String> = async {
+                        let result: Result<
+                            (String, String, String, String, Option<String>),
+                            String,
+                        > = async {
                             let api_key = tracker
                                 .get_setting("nexus_api_key")
                                 .await
@@ -1052,10 +1061,8 @@ impl App {
                                         .get_mod_files(&domain, nexus_mod_id)
                                         .await
                                         .map_err(|e| e.to_string())?;
-                                    let matched = files_resp
-                                        .files
-                                        .into_iter()
-                                        .find(|f| f.file_id == fid);
+                                    let matched =
+                                        files_resp.files.into_iter().find(|f| f.file_id == fid);
                                     let version = matched
                                         .as_ref()
                                         .and_then(|f| f.version.clone())
@@ -1069,7 +1076,13 @@ impl App {
                                 .set_mod_installed_version(&mod_id, &installed_version)
                                 .await
                                 .map_err(|e| e.to_string())?;
-                            Ok((mod_id, installed_version, info.author, info.name, nexus_file_name))
+                            Ok((
+                                mod_id,
+                                installed_version,
+                                info.author,
+                                info.name,
+                                nexus_file_name,
+                            ))
                         }
                         .await;
                         AppCmdMsg::NexusMetadataFetched(dl_id_for_metadata, result)

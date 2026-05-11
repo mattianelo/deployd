@@ -41,8 +41,14 @@ impl Tracker {
 
     /// Load cached Nexus user info: (username, avatar_url).
     pub async fn load_nexus_user(&self) -> Result<(Option<String>, Option<String>)> {
-        let name = self.get_setting("nexus_username").await?.filter(|s| !s.is_empty());
-        let avatar = self.get_setting("nexus_avatar_url").await?.filter(|s| !s.is_empty());
+        let name = self
+            .get_setting("nexus_username")
+            .await?
+            .filter(|s| !s.is_empty());
+        let avatar = self
+            .get_setting("nexus_avatar_url")
+            .await?
+            .filter(|s| !s.is_empty());
         Ok((name, avatar))
     }
 

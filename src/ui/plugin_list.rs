@@ -198,7 +198,9 @@ impl FactoryComponent for PluginRow {
             let idx = index.clone();
             let drag_enabled = self.drag_enabled.clone();
             drag_source.connect_prepare(move |_src, _x, _y| {
-                if !drag_enabled.get() { return None; }
+                if !drag_enabled.get() {
+                    return None;
+                }
                 let current = idx.current_index();
                 Some(gtk::gdk::ContentProvider::for_value(
                     &format!("plugin:{current}").to_value(),

@@ -591,8 +591,7 @@ fn is_safe_7z_path(dest_path: &Path, base: &Path) -> bool {
     let Ok(rel) = dest_path.strip_prefix(base) else {
         return false;
     };
-    rel.components()
-        .all(|c| matches!(c, Component::Normal(_)))
+    rel.components().all(|c| matches!(c, Component::Normal(_)))
 }
 
 fn is_genuine_7z_dir(entry: &sevenz_rust2::ArchiveEntry) -> bool {

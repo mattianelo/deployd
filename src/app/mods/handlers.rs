@@ -9,10 +9,10 @@ use crate::core::game;
 use crate::ui::mod_list::{ModListItemInit, ModListItemKind, ModRowInit};
 use crate::utils::paths;
 
-use super::super::messages::AppMsg;
 use super::super::App;
 use super::super::free_fns::load_game_data;
 use super::super::messages::AppCmdMsg;
+use super::super::messages::AppMsg;
 
 impl App {
     pub(crate) fn handle_game_selected(&mut self, idx: u32, sender: &ComponentSender<Self>) {
@@ -261,9 +261,10 @@ impl App {
             let guard = self.mods.guard();
             (0..guard.len())
                 .filter_map(|i| {
-                    guard.get(i).and_then(|r| r.mod_row()).map(|r| {
-                        (r.mod_entry.id.clone(), r.mod_entry.name.clone())
-                    })
+                    guard
+                        .get(i)
+                        .and_then(|r| r.mod_row())
+                        .map(|r| (r.mod_entry.id.clone(), r.mod_entry.name.clone()))
                 })
                 .collect()
         };
@@ -319,9 +320,10 @@ impl App {
             let guard = self.mods.guard();
             (0..guard.len())
                 .filter_map(|i| {
-                    guard.get(i).and_then(|r| r.mod_row()).map(|r| {
-                        (r.mod_entry.id.clone(), r.mod_entry.name.clone())
-                    })
+                    guard
+                        .get(i)
+                        .and_then(|r| r.mod_row())
+                        .map(|r| (r.mod_entry.id.clone(), r.mod_entry.name.clone()))
                 })
                 .collect()
         };
@@ -494,9 +496,8 @@ impl App {
         {
             let mut guard = self.mods.guard();
             if let Some(item) = guard.get_mut(idx)
-                && let crate::ui::mod_list::ModListItemKind::Separator {
-                    color: c, ..
-                } = &mut item.kind
+                && let crate::ui::mod_list::ModListItemKind::Separator { color: c, .. } =
+                    &mut item.kind
             {
                 *c = color.clone();
             }
@@ -656,8 +657,12 @@ impl App {
         if self.selected_mods.is_empty() {
             return;
         }
-        let Some(tracker) = self.tracker.clone() else { return };
-        let Some(game) = self.selected_game().cloned() else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
 
         let indices: Vec<usize> = self.selected_mods.iter().copied().collect();
         let mut mod_ids: Vec<String> = Vec::new();
@@ -665,8 +670,12 @@ impl App {
         {
             let mut guard = self.mods.guard();
             for &idx in &indices {
-                let Some(item) = guard.get_mut(idx) else { continue };
-                let Some(entry) = item.mod_entry_mut() else { continue };
+                let Some(item) = guard.get_mut(idx) else {
+                    continue;
+                };
+                let Some(entry) = item.mod_entry_mut() else {
+                    continue;
+                };
                 entry.enabled = true;
                 mod_ids.push(entry.id.clone());
             }
@@ -678,9 +687,7 @@ impl App {
                 let matches = guard
                     .get(i)
                     .is_some_and(|r| mod_id_set.contains(&r.plugin.mod_id));
-                if matches
-                    && let Some(row) = guard.get_mut(i)
-                {
+                if matches && let Some(row) = guard.get_mut(i) {
                     row.mod_enabled = true;
                 }
             }
@@ -694,9 +701,10 @@ impl App {
             let guard = self.mods.guard();
             (0..guard.len())
                 .filter_map(|i| {
-                    guard.get(i).and_then(|r| r.mod_row()).map(|r| {
-                        (r.mod_entry.id.clone(), r.mod_entry.name.clone())
-                    })
+                    guard
+                        .get(i)
+                        .and_then(|r| r.mod_row())
+                        .map(|r| (r.mod_entry.id.clone(), r.mod_entry.name.clone()))
                 })
                 .collect()
         };
@@ -721,8 +729,12 @@ impl App {
         if self.selected_mods.is_empty() {
             return;
         }
-        let Some(tracker) = self.tracker.clone() else { return };
-        let Some(game) = self.selected_game().cloned() else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
 
         let indices: Vec<usize> = self.selected_mods.iter().copied().collect();
         let mut mod_ids: Vec<String> = Vec::new();
@@ -730,8 +742,12 @@ impl App {
         {
             let mut guard = self.mods.guard();
             for &idx in &indices {
-                let Some(item) = guard.get_mut(idx) else { continue };
-                let Some(entry) = item.mod_entry_mut() else { continue };
+                let Some(item) = guard.get_mut(idx) else {
+                    continue;
+                };
+                let Some(entry) = item.mod_entry_mut() else {
+                    continue;
+                };
                 entry.enabled = false;
                 mod_ids.push(entry.id.clone());
             }
@@ -743,9 +759,7 @@ impl App {
                 let matches = guard
                     .get(i)
                     .is_some_and(|r| mod_id_set.contains(&r.plugin.mod_id));
-                if matches
-                    && let Some(row) = guard.get_mut(i)
-                {
+                if matches && let Some(row) = guard.get_mut(i) {
                     row.mod_enabled = false;
                 }
             }
@@ -759,9 +773,10 @@ impl App {
             let guard = self.mods.guard();
             (0..guard.len())
                 .filter_map(|i| {
-                    guard.get(i).and_then(|r| r.mod_row()).map(|r| {
-                        (r.mod_entry.id.clone(), r.mod_entry.name.clone())
-                    })
+                    guard
+                        .get(i)
+                        .and_then(|r| r.mod_row())
+                        .map(|r| (r.mod_entry.id.clone(), r.mod_entry.name.clone()))
                 })
                 .collect()
         };
@@ -792,7 +807,11 @@ impl App {
             return;
         }
         let dialog = adw::AlertDialog::builder()
-            .heading(format!("Remove {} Mod{}?", n, if n == 1 { "" } else { "s" }))
+            .heading(format!(
+                "Remove {} Mod{}?",
+                n,
+                if n == 1 { "" } else { "s" }
+            ))
             .body("This will delete the selected mods and cannot be undone.")
             .build();
         dialog.add_response("cancel", "Cancel");
@@ -810,7 +829,9 @@ impl App {
     }
 
     pub(crate) fn handle_confirm_remove_selected_mods(&mut self, sender: &ComponentSender<Self>) {
-        let Some(tracker) = self.tracker.clone() else { return };
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
         let cache_root = self
             .selected_game()
             .and_then(|g| self.cache_root_for(&g.id).ok())
@@ -841,11 +862,7 @@ impl App {
             {
                 let mut guard = self.plugins.guard();
                 let to_remove: Vec<usize> = (0..guard.len())
-                    .filter(|&i| {
-                        guard
-                            .get(i)
-                            .is_some_and(|row| row.plugin.mod_id == mod_id)
-                    })
+                    .filter(|&i| guard.get(i).is_some_and(|row| row.plugin.mod_id == mod_id))
                     .collect();
                 for i in to_remove.into_iter().rev() {
                     guard.remove(i);

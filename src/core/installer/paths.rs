@@ -511,4 +511,3 @@ pub(crate) fn strip_data_subdir_prefix_str(rel: &str, data_subdir: &str) -> Stri
         rel.to_string()
     }
 }
-

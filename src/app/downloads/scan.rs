@@ -134,8 +134,11 @@ impl App {
                     .to_string_lossy()
                     .to_string();
 
-                let nexus_ids = parse_nexus_mod_id(&file_name)
-                    .map(|mod_id| NexusIds { mod_id, file_id: 0, domain: domain.to_string() });
+                let nexus_ids = parse_nexus_mod_id(&file_name).map(|mod_id| NexusIds {
+                    mod_id,
+                    file_id: 0,
+                    domain: domain.to_string(),
+                });
 
                 let download_id = uuid::Uuid::new_v4().to_string();
                 let entry = DownloadEntry {
@@ -207,8 +210,11 @@ impl App {
                     .to_string_lossy()
                     .to_string();
 
-                let nexus_ids = parse_nexus_mod_id(&file_name)
-                    .map(|mod_id| NexusIds { mod_id, file_id: 0, domain: String::new() });
+                let nexus_ids = parse_nexus_mod_id(&file_name).map(|mod_id| NexusIds {
+                    mod_id,
+                    file_id: 0,
+                    domain: String::new(),
+                });
 
                 let download_id = uuid::Uuid::new_v4().to_string();
                 let entry = DownloadEntry {

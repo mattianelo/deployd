@@ -82,20 +82,17 @@ impl App {
                         let guard = self.mods.guard();
                         (0..guard.len())
                             .filter_map(|i| {
-                                guard.get(i).and_then(|r| r.mod_row()).map(|r| {
-                                    (r.mod_entry.id.clone(), r.mod_entry.name.clone())
-                                })
+                                guard
+                                    .get(i)
+                                    .and_then(|r| r.mod_row())
+                                    .map(|r| (r.mod_entry.id.clone(), r.mod_entry.name.clone()))
                             })
                             .collect()
                     };
                     sender.oneshot_command(async move {
                         AppCmdMsg::OverridesRefreshed(
                             tracker
-                                .compute_overrides(
-                                    &game_id,
-                                    game::handler_for(&engine),
-                                    &mod_names,
-                                )
+                                .compute_overrides(&game_id, game::handler_for(&engine), &mod_names)
                                 .await
                                 .map_err(|e| e.to_string()),
                         )
@@ -130,30 +127,25 @@ impl App {
         let mut guard = self.mods.guard();
         let len = guard.len();
         for i in 0..len {
-            let needs_update = guard
-                .get(i)
-                .and_then(|r| r.mod_row())
-                .is_some_and(|r| {
-                    let info = overrides.get(&r.mod_entry.id);
-                    r.overrides != info.map_or(0, |i| i.overrides)
-                        || r.overridden_by != info.map_or(0, |i| i.overridden_by)
-                });
+            let needs_update = guard.get(i).and_then(|r| r.mod_row()).is_some_and(|r| {
+                let info = overrides.get(&r.mod_entry.id);
+                r.overrides != info.map_or(0, |i| i.overrides)
+                    || r.overridden_by != info.map_or(0, |i| i.overridden_by)
+            });
             if needs_update
                 && let Some(row) = guard.get_mut(i)
                 && let Some(init) = row.mod_row_mut()
             {
-                    let id = init.mod_entry.id.clone();
-                    let info = overrides.get(&id);
-                    init.overrides = info.map_or(0, |i| i.overrides);
-                    init.overridden_by = info.map_or(0, |i| i.overridden_by);
-                    init.override_files =
-                        info.map_or_else(Vec::new, |i| i.override_files.clone());
-                    init.overridden_files =
-                        info.map_or_else(Vec::new, |i| i.overridden_files.clone());
-                    init.conflicting_mod_names =
-                        info.map_or_else(Vec::new, |i| i.conflicting_mod_names.clone());
-                    init.conflicted_by_mod_names =
-                        info.map_or_else(Vec::new, |i| i.conflicted_by_mod_names.clone());
+                let id = init.mod_entry.id.clone();
+                let info = overrides.get(&id);
+                init.overrides = info.map_or(0, |i| i.overrides);
+                init.overridden_by = info.map_or(0, |i| i.overridden_by);
+                init.override_files = info.map_or_else(Vec::new, |i| i.override_files.clone());
+                init.overridden_files = info.map_or_else(Vec::new, |i| i.overridden_files.clone());
+                init.conflicting_mod_names =
+                    info.map_or_else(Vec::new, |i| i.conflicting_mod_names.clone());
+                init.conflicted_by_mod_names =
+                    info.map_or_else(Vec::new, |i| i.conflicted_by_mod_names.clone());
             }
         }
     }

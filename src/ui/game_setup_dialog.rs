@@ -571,7 +571,10 @@ impl Component for GameSetupDialog {
                 let game_id = entry.game.id.clone();
                 self.game_cache_dirs.insert(game_id.clone(), path.clone());
                 self.rebuild_games(&sender);
-                let _ = sender.output(GameSetupOutput::CacheDirChangeRequested { game_id, new_dir: path });
+                let _ = sender.output(GameSetupOutput::CacheDirChangeRequested {
+                    game_id,
+                    new_dir: path,
+                });
             }
 
             GameSetupMsg::ResetCacheDir(idx) => {
@@ -611,8 +614,7 @@ impl Component for GameSetupDialog {
                 let input = sender.input_sender().clone();
                 sender.oneshot_command(async move {
                     if let Ok(Some(path)) =
-                        crate::utils::portal::select_folder("Select Game Installation Folder")
-                            .await
+                        crate::utils::portal::select_folder("Select Game Installation Folder").await
                     {
                         let _ = input.send(GameSetupMsg::NewPathChosen(path));
                     }

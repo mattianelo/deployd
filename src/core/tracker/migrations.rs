@@ -83,11 +83,9 @@ pub(super) async fn migrate_version_columns(pool: &SqlitePool) -> Result<()> {
     .execute(pool)
     .await?;
 
-    sqlx::query(
-        "INSERT INTO settings (key, value) VALUES ('migration_version_columns_done', '1')",
-    )
-    .execute(pool)
-    .await?;
+    sqlx::query("INSERT INTO settings (key, value) VALUES ('migration_version_columns_done', '1')")
+        .execute(pool)
+        .await?;
 
     Ok(())
 }

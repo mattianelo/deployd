@@ -427,7 +427,10 @@ mod tests {
     #[tokio::test]
     async fn single_mod_same_filename_no_self_conflict() {
         let tracker = make_tracker().await;
-        tracker.insert_mod(&mod_entry("a", "ModA", 1)).await.unwrap();
+        tracker
+            .insert_mod(&mod_entry("a", "ModA", 1))
+            .await
+            .unwrap();
         insert_file(&tracker, "a", "override/readme.xml").await;
         insert_file(&tracker, "a", "override/sub/readme.xml").await;
 
@@ -438,7 +441,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(result.is_empty(), "single mod must not conflict with itself");
+        assert!(
+            result.is_empty(),
+            "single mod must not conflict with itself"
+        );
     }
 
     /// Two distinct mods sharing an Override/ filename must produce a conflict
@@ -446,8 +452,14 @@ mod tests {
     #[tokio::test]
     async fn two_mods_same_filename_conflict_reported() {
         let tracker = make_tracker().await;
-        tracker.insert_mod(&mod_entry("a", "ModA", 2)).await.unwrap();
-        tracker.insert_mod(&mod_entry("b", "ModB", 1)).await.unwrap();
+        tracker
+            .insert_mod(&mod_entry("a", "ModA", 2))
+            .await
+            .unwrap();
+        tracker
+            .insert_mod(&mod_entry("b", "ModB", 1))
+            .await
+            .unwrap();
         insert_file(&tracker, "a", "override/items.xml").await;
         insert_file(&tracker, "b", "override/sub/items.xml").await;
 
@@ -475,8 +487,14 @@ mod tests {
     #[tokio::test]
     async fn ignored_filename_not_reported_as_conflict() {
         let tracker = make_tracker().await;
-        tracker.insert_mod(&mod_entry("a", "ModA", 2)).await.unwrap();
-        tracker.insert_mod(&mod_entry("b", "ModB", 1)).await.unwrap();
+        tracker
+            .insert_mod(&mod_entry("a", "ModA", 2))
+            .await
+            .unwrap();
+        tracker
+            .insert_mod(&mod_entry("b", "ModB", 1))
+            .await
+            .unwrap();
         insert_file(&tracker, "a", "override/readme.txt").await;
         insert_file(&tracker, "b", "override/readme.txt").await;
 
@@ -490,6 +508,9 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(result.is_empty(), "readme.txt must not appear as a conflict");
+        assert!(
+            result.is_empty(),
+            "readme.txt must not appear as a conflict"
+        );
     }
 }

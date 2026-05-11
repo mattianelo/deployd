@@ -1,7 +1,10 @@
 use anyhow::{Context, Result, bail};
 
 fn validate_domain(domain: &str) -> Result<()> {
-    if domain.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+    if domain
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
         Ok(())
     } else {
         bail!("invalid game domain in NXM link: {domain:?}")

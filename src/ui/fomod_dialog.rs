@@ -7,10 +7,10 @@ use gtk::prelude::*;
 use relm4::prelude::*;
 use walkdir::WalkDir;
 
-use crate::utils::paths::lowercase_path_str;
 use crate::utils::fomod_resolver::{
     FomodGroupType, FomodSelections, FomodUiConfig, FomodUiGroup, FomodUiPlugin,
 };
+use crate::utils::paths::lowercase_path_str;
 
 pub struct FomodDialogInit {
     pub config: FomodUiConfig,

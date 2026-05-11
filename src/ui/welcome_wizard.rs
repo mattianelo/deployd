@@ -309,7 +309,9 @@ impl Component for WelcomeWizard {
         // ── Directories page ──────────────────────────────────────────────────
         let dirs_group = adw::PreferencesGroup::new();
         dirs_group.set_title("Directories");
-        dirs_group.set_description(Some("Set the installation folder and Wine prefix for each selected game."));
+        dirs_group.set_description(Some(
+            "Set the installation folder and Wine prefix for each selected game.",
+        ));
         dirs_group.add(&dirs_list);
 
         let dirs_vbox = gtk::Box::new(gtk::Orientation::Vertical, 12);

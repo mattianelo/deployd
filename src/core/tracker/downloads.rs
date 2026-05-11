@@ -118,10 +118,13 @@ impl Tracker {
                     {
                         return None;
                     }
-                    let nexus_ids = nexus_mod_id
-                        .zip(nexus_file_id)
-                        .zip(nexus_domain)
-                        .map(|((mod_id, file_id), domain)| NexusIds { mod_id, file_id, domain });
+                    let nexus_ids = nexus_mod_id.zip(nexus_file_id).zip(nexus_domain).map(
+                        |((mod_id, file_id), domain)| NexusIds {
+                            mod_id,
+                            file_id,
+                            domain,
+                        },
+                    );
                     let status =
                         DownloadStatus::from_db_str(status_str.as_deref().unwrap_or("downloaded"));
                     let status_msg = status.default_status_msg().to_string();

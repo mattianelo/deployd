@@ -78,7 +78,11 @@ impl App {
                 // offer the dialog so the user can at least store the file_id for the next retry.
                 if let Some(ref id) = dl_id
                     && let Some(entry) = self.all_downloads.iter().find(|e| &e.id == id)
-                    && let Some(NexusIds { mod_id, file_id: 0, ref domain }) = entry.nexus_ids
+                    && let Some(NexusIds {
+                        mod_id,
+                        file_id: 0,
+                        ref domain,
+                    }) = entry.nexus_ids
                 {
                     let _ = sender.input_sender().send(AppMsg::ShowFileIdDialog {
                         download_id: id.clone(),
@@ -223,7 +227,9 @@ impl App {
     pub(crate) fn handle_cmd_app_update_result(&mut self, result: Result<(), String>) {
         match result {
             Ok(()) => {
-                self.push_notification("Update downloaded. Restart deployd to use the new version.");
+                self.push_notification(
+                    "Update downloaded. Restart deployd to use the new version.",
+                );
             }
             Err(e) => {
                 self.push_notification(&format!("Update failed: {e}"));

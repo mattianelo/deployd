@@ -109,7 +109,9 @@ where
             Ok(Some(v))
         }
         fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<Self::Value, E> {
-            i64::try_from(v).map(Some).map_err(|_| E::custom("timestamp out of i64 range"))
+            i64::try_from(v)
+                .map(Some)
+                .map_err(|_| E::custom("timestamp out of i64 range"))
         }
         fn visit_f64<E: serde::de::Error>(self, v: f64) -> Result<Self::Value, E> {
             if v >= i64::MIN as f64 && v <= i64::MAX as f64 {

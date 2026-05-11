@@ -417,9 +417,16 @@ impl App {
         if self.selected_plugins.is_empty() {
             return;
         }
-        let Some(tracker) = self.tracker.clone() else { return };
-        let Some(game) = self.selected_game().cloned() else { return };
-        let profile_id = self.profiles.get(self.active_profile_idx).map(|p| p.id.clone());
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
+        let profile_id = self
+            .profiles
+            .get(self.active_profile_idx)
+            .map(|p| p.id.clone());
 
         let indices: Vec<usize> = self.selected_plugins.iter().copied().collect();
         let mut plugin_ids: Vec<String> = Vec::new();
@@ -427,7 +434,9 @@ impl App {
         {
             let mut guard = self.plugins.guard();
             for &idx in &indices {
-                let Some(row) = guard.get_mut(idx) else { continue };
+                let Some(row) = guard.get_mut(idx) else {
+                    continue;
+                };
                 row.plugin.enabled = true;
                 plugin_ids.push(row.plugin.id.clone());
             }
@@ -456,9 +465,16 @@ impl App {
         if self.selected_plugins.is_empty() {
             return;
         }
-        let Some(tracker) = self.tracker.clone() else { return };
-        let Some(game) = self.selected_game().cloned() else { return };
-        let profile_id = self.profiles.get(self.active_profile_idx).map(|p| p.id.clone());
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
+        let profile_id = self
+            .profiles
+            .get(self.active_profile_idx)
+            .map(|p| p.id.clone());
 
         let indices: Vec<usize> = self.selected_plugins.iter().copied().collect();
         let mut plugin_ids: Vec<String> = Vec::new();
@@ -466,7 +482,9 @@ impl App {
         {
             let mut guard = self.plugins.guard();
             for &idx in &indices {
-                let Some(row) = guard.get_mut(idx) else { continue };
+                let Some(row) = guard.get_mut(idx) else {
+                    continue;
+                };
                 row.plugin.enabled = false;
                 plugin_ids.push(row.plugin.id.clone());
             }

@@ -343,5 +343,4 @@ impl Tracker {
             save_synced_at: None,
         })
     }
-
 }

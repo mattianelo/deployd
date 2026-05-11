@@ -323,8 +323,7 @@ mod tests {
         });
 
         assert_eq!(
-            commands,
-            "snap connect deployd:wine-stable wine-platform:wine-base-stable",
+            commands, "snap connect deployd:wine-stable wine-platform:wine-base-stable",
             "content interfaces provided by another snap require an explicit provider slot"
         );
     }

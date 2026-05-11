@@ -28,8 +28,9 @@ pub struct ModRowInit {
 }
 
 /// Preset group colors. Stored as short name strings; rendered via CSS classes.
-pub const GROUP_COLOR_NAMES: &[&str] =
-    &["red", "orange", "yellow", "green", "teal", "blue", "purple", "pink"];
+pub const GROUP_COLOR_NAMES: &[&str] = &[
+    "red", "orange", "yellow", "green", "teal", "blue", "purple", "pink",
+];
 
 /// What kind of list item this is.
 pub enum ModListItemKind {
@@ -100,15 +101,15 @@ impl ModListItem {
         let mut classes = vec!["group-color-dot"];
         if let ModListItemKind::Separator { color: Some(c), .. } = &self.kind {
             match c.as_str() {
-                "red"    => classes.push("color-red"),
+                "red" => classes.push("color-red"),
                 "orange" => classes.push("color-orange"),
                 "yellow" => classes.push("color-yellow"),
-                "green"  => classes.push("color-green"),
-                "teal"   => classes.push("color-teal"),
-                "blue"   => classes.push("color-blue"),
+                "green" => classes.push("color-green"),
+                "teal" => classes.push("color-teal"),
+                "blue" => classes.push("color-blue"),
                 "purple" => classes.push("color-purple"),
-                "pink"   => classes.push("color-pink"),
-                _        => {}
+                "pink" => classes.push("color-pink"),
+                _ => {}
             }
         }
         classes
@@ -414,7 +415,9 @@ impl FactoryComponent for ModListItem {
             let idx = index.clone();
             let drag_enabled = self.drag_enabled.clone();
             drag_source.connect_prepare(move |_src, _x, _y| {
-                if !drag_enabled.get() { return None; }
+                if !drag_enabled.get() {
+                    return None;
+                }
                 let current = idx.current_index();
                 Some(gtk::gdk::ContentProvider::for_value(
                     &format!("group:{current}").to_value(),
@@ -466,7 +469,8 @@ impl FactoryComponent for ModListItem {
                 let s = sender.clone();
                 let p = popover.clone();
                 clear_btn.connect_clicked(move |_| {
-                    s.output(ModListItemOutput::SetGroupColor(idx.clone(), None)).ok();
+                    s.output(ModListItemOutput::SetGroupColor(idx.clone(), None))
+                        .ok();
                     p.popdown();
                 });
                 color_row.append(&clear_btn);
@@ -481,7 +485,11 @@ impl FactoryComponent for ModListItem {
                 let p = popover.clone();
                 let name = color_name.to_string();
                 swatch.connect_clicked(move |_| {
-                    s.output(ModListItemOutput::SetGroupColor(idx.clone(), Some(name.clone()))).ok();
+                    s.output(ModListItemOutput::SetGroupColor(
+                        idx.clone(),
+                        Some(name.clone()),
+                    ))
+                    .ok();
                     p.popdown();
                 });
                 color_row.append(&swatch);
@@ -528,7 +536,9 @@ impl FactoryComponent for ModListItem {
             let idx = index.clone();
             let drag_enabled = self.drag_enabled.clone();
             drag_source.connect_prepare(move |_src, _x, _y| {
-                if !drag_enabled.get() { return None; }
+                if !drag_enabled.get() {
+                    return None;
+                }
                 let current = idx.current_index();
                 Some(gtk::gdk::ContentProvider::for_value(
                     &format!("mod:{current}").to_value(),

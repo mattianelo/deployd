@@ -134,7 +134,14 @@ impl App {
                 // fid == 0 is the disk-scan sentinel (file ID unknown).
                 // Prefer an exact archive_hash match; fall back to the count heuristic
                 // when no hash is available.
-                (Some((mid, 0)), Some(NexusIds { mod_id: emid, file_id: 0, .. })) => {
+                (
+                    Some((mid, 0)),
+                    Some(NexusIds {
+                        mod_id: emid,
+                        file_id: 0,
+                        ..
+                    }),
+                ) => {
                     mid == *emid
                         && if let Some(mod_hash) = mod_archive_hash {
                             entry.archive_hash.as_deref() == Some(mod_hash)
@@ -142,9 +149,14 @@ impl App {
                             !fid_zero_ambiguous
                         }
                 }
-                (Some((mid, fid)), Some(NexusIds { mod_id: emid, file_id: efid, .. })) => {
-                    mid == *emid && fid == *efid
-                }
+                (
+                    Some((mid, fid)),
+                    Some(NexusIds {
+                        mod_id: emid,
+                        file_id: efid,
+                        ..
+                    }),
+                ) => mid == *emid && fid == *efid,
                 // For non-Nexus mods match by name (case-insensitive)
                 (None, None) => entry.mod_name.to_lowercase() == mod_name.to_lowercase(),
                 _ => false,

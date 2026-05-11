@@ -31,7 +31,12 @@ impl App {
         self.reload_mods_impl(sender, true, false);
     }
 
-    fn reload_mods_impl(&self, sender: &ComponentSender<Self>, sync_txt: bool, preserve_collapsed: bool) {
+    fn reload_mods_impl(
+        &self,
+        sender: &ComponentSender<Self>,
+        sync_txt: bool,
+        preserve_collapsed: bool,
+    ) {
         if let (Some(tracker), Some(game)) = (self.tracker.clone(), self.selected_game().cloned()) {
             sender.oneshot_command(async move {
                 let result = async { load_game_data(&tracker, &game, sync_txt).await };
@@ -413,9 +418,10 @@ impl App {
             .collect();
         let mod_names: HashMap<String, String> = (0..guard.len())
             .filter_map(|i| {
-                guard.get(i).and_then(|r| r.mod_row()).map(|r| {
-                    (r.mod_entry.id.clone(), r.mod_entry.name.clone())
-                })
+                guard
+                    .get(i)
+                    .and_then(|r| r.mod_row())
+                    .map(|r| (r.mod_entry.id.clone(), r.mod_entry.name.clone()))
             })
             .collect();
         drop(guard);

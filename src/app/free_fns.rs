@@ -14,7 +14,10 @@ use super::types::LoadedData;
 /// This timestamp corresponds to `NexusFileEntry::uploaded_timestamp` and is used
 /// as a tiebreaker when multiple Nexus files normalize to the same base name.
 pub(crate) fn extract_nexus_timestamp(filename: &str) -> Option<i64> {
-    let stem = filename.rsplit_once('.').map(|(l, _)| l).unwrap_or(filename);
+    let stem = filename
+        .rsplit_once('.')
+        .map(|(l, _)| l)
+        .unwrap_or(filename);
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let re = RE.get_or_init(|| regex::Regex::new(r"-(\d{10})$").unwrap());
     re.captures(stem)
@@ -93,7 +96,8 @@ pub(crate) fn update_drop_indicator(list_box: &gtk::ListBox, y: f64) {
     // If the cursor is past the last row, show a drop-below indicator on it.
     let row = list_box.row_at_y(y as i32).or_else(|| {
         let n = list_box.observe_children().n_items();
-        n.checked_sub(1).and_then(|i| list_box.row_at_index(i as i32))
+        n.checked_sub(1)
+            .and_then(|i| list_box.row_at_index(i as i32))
     });
     if let Some(row) = row {
         if row.has_css_class("mod-separator-row") {
@@ -306,6 +310,9 @@ pub(crate) async fn fetch_avatar_bytes(url: &str) -> Option<Vec<u8>> {
         .map_err(|e| crate::dlog!("[avatar] failed to read body: {e}"))
         .ok()
         .map(|b| b.to_vec());
-    crate::dlog!("[avatar] got {} bytes", bytes.as_ref().map_or(0, |b| b.len()));
+    crate::dlog!(
+        "[avatar] got {} bytes",
+        bytes.as_ref().map_or(0, |b| b.len())
+    );
     bytes
 }

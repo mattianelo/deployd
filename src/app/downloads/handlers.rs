@@ -256,7 +256,11 @@ impl App {
         // mod name (and file name) from Nexus in parallel with archive extraction
         // so the pre-install dialog can propose the real name.
         if !metadata_fetched
-            && let Some(NexusIds { mod_id: nexus_mod_id, file_id: nexus_file_id, ref domain }) = nexus_ids
+            && let Some(NexusIds {
+                mod_id: nexus_mod_id,
+                file_id: nexus_file_id,
+                ref domain,
+            }) = nexus_ids
             && let Some(tracker) = self.tracker.clone()
         {
             let domain = domain.clone();
@@ -295,15 +299,13 @@ impl App {
                                 let raw = archive_filename.as_deref().unwrap_or("");
                                 let fname_norm =
                                     crate::app::free_fns::normalize_nexus_filename(raw);
-                                let local_ts =
-                                    crate::app::free_fns::extract_nexus_timestamp(raw);
+                                let local_ts = crate::app::free_fns::extract_nexus_timestamp(raw);
                                 let candidates: Vec<_> = resp
                                     .files
                                     .into_iter()
                                     .filter(|f| {
-                                        crate::app::free_fns::normalize_nexus_filename(
-                                            &f.file_name,
-                                        ) == fname_norm
+                                        crate::app::free_fns::normalize_nexus_filename(&f.file_name)
+                                            == fname_norm
                                     })
                                     .collect();
                                 local_ts
@@ -360,13 +362,12 @@ impl App {
                 ));
             }));
         let processing_sender = sender.input_sender().clone();
-        let on_processing: Option<Box<dyn FnOnce() + Send>> =
-            Some(Box::new(move || {
-                let _ = processing_sender.send(AppMsg::InstallProgress(
-                    1.0,
-                    "Processing mod structure...".to_string(),
-                ));
-            }));
+        let on_processing: Option<Box<dyn FnOnce() + Send>> = Some(Box::new(move || {
+            let _ = processing_sender.send(AppMsg::InstallProgress(
+                1.0,
+                "Processing mod structure...".to_string(),
+            ));
+        }));
 
         sender.oneshot_command(async move {
             let result: Result<PrepareResultMsg, String> = async {
@@ -473,14 +474,21 @@ impl App {
                 entry.author = author.clone();
             }
             if let Some(fid) = resolved_file_id
-                && let Some(NexusIds { file_id: ref mut stored_fid, .. }) = entry.nexus_ids
+                && let Some(NexusIds {
+                    file_id: ref mut stored_fid,
+                    ..
+                }) = entry.nexus_ids
                 && *stored_fid == 0
             {
                 *stored_fid = fid;
             }
             if let Some(ref domain) = game_domain {
                 entry.game_domain = Some(domain.clone());
-                if let Some(NexusIds { domain: ref mut dom, .. }) = entry.nexus_ids {
+                if let Some(NexusIds {
+                    domain: ref mut dom,
+                    ..
+                }) = entry.nexus_ids
+                {
                     *dom = domain.clone();
                 }
                 // Auto-move archive from flat root to per-game subfolder
@@ -526,14 +534,21 @@ impl App {
                         row.entry.author = author.clone();
                     }
                     if let Some(fid) = resolved_file_id
-                        && let Some(NexusIds { file_id: ref mut stored_fid, .. }) = row.entry.nexus_ids
+                        && let Some(NexusIds {
+                            file_id: ref mut stored_fid,
+                            ..
+                        }) = row.entry.nexus_ids
                         && *stored_fid == 0
                     {
                         *stored_fid = fid;
                     }
                     if let Some(ref domain) = game_domain {
                         row.entry.game_domain = Some(domain.clone());
-                        if let Some(NexusIds { domain: ref mut dom, .. }) = row.entry.nexus_ids {
+                        if let Some(NexusIds {
+                            domain: ref mut dom,
+                            ..
+                        }) = row.entry.nexus_ids
+                        {
                             *dom = domain.clone();
                         }
                     }
@@ -544,7 +559,11 @@ impl App {
         // Propagate resolved version and author to the installed mod row so the Mod Order panel shows them.
         if let Some(ref v) = version
             && let Some(entry) = self.all_downloads.iter().find(|e| e.id == download_id)
-            && let Some(NexusIds { mod_id: nxs_mod_id, file_id: nxs_file_id, .. }) = entry.nexus_ids
+            && let Some(NexusIds {
+                mod_id: nxs_mod_id,
+                file_id: nxs_file_id,
+                ..
+            }) = entry.nexus_ids
             && nxs_file_id != 0
             && let Some(tracker) = self.tracker.clone()
             && let Some(game) = self.selected_game().cloned()
@@ -558,13 +577,22 @@ impl App {
                 if let Some(ref a) = author_db {
                     tracker
                         .update_mod_version_author_by_nexus_ids(
-                            &game_id, nxs_mod_id, nxs_file_id, &version_db, a,
+                            &game_id,
+                            nxs_mod_id,
+                            nxs_file_id,
+                            &version_db,
+                            a,
                         )
                         .await
                         .ok();
                 } else {
                     tracker
-                        .update_mod_version_by_nexus_ids(&game_id, nxs_mod_id, nxs_file_id, &version_db)
+                        .update_mod_version_by_nexus_ids(
+                            &game_id,
+                            nxs_mod_id,
+                            nxs_file_id,
+                            &version_db,
+                        )
                         .await
                         .ok();
                 }
@@ -679,7 +707,11 @@ impl App {
         domain: String,
         sender: &ComponentSender<Self>,
     ) {
-        let new_nexus_ids = Some(NexusIds { mod_id, file_id: 0, domain });
+        let new_nexus_ids = Some(NexusIds {
+            mod_id,
+            file_id: 0,
+            domain,
+        });
 
         // Update backing store
         if let Some(entry) = self.all_downloads.iter_mut().find(|e| e.id == download_id) {
@@ -720,12 +752,29 @@ impl App {
     ///
     /// Looks up the entry in `self.all_downloads` to collect the required fields,
     /// then dispatches the oneshot command that calls the API.
-    pub(crate) fn start_nexus_metadata_fetch(&mut self, download_id: String, sender: &ComponentSender<Self>) {
-        let (nexus_mod_id, nexus_file_id, stored_domain, archive_filename, archive_hash, archive_md5, archive_path) = {
+    pub(crate) fn start_nexus_metadata_fetch(
+        &mut self,
+        download_id: String,
+        sender: &ComponentSender<Self>,
+    ) {
+        let (
+            nexus_mod_id,
+            nexus_file_id,
+            stored_domain,
+            archive_filename,
+            archive_hash,
+            archive_md5,
+            archive_path,
+        ) = {
             let Some(entry) = self.all_downloads.iter().find(|e| e.id == download_id) else {
                 return;
             };
-            let Some(NexusIds { mod_id: nexus_mod_id, file_id: nexus_file_id, ref domain }) = entry.nexus_ids else {
+            let Some(NexusIds {
+                mod_id: nexus_mod_id,
+                file_id: nexus_file_id,
+                ref domain,
+            }) = entry.nexus_ids
+            else {
                 return;
             };
             let archive_filename = entry
@@ -865,8 +914,8 @@ impl App {
                                         )
                                         .await
                                         .map_err(|e| e.to_string())?;
-                                    let iv = resolved_version
-                                        .unwrap_or_else(|| mod_version.clone());
+                                    let iv =
+                                        resolved_version.unwrap_or_else(|| mod_version.clone());
                                     tracker
                                         .set_mod_installed_version(mod_id, &iv)
                                         .await
@@ -876,9 +925,7 @@ impl App {
                             }
                         }
                         Err(e) => {
-                            eprintln!(
-                                "deployd: md5_search failed (non-fatal, falling back): {e}"
-                            );
+                            eprintln!("deployd: md5_search failed (non-fatal, falling back): {e}");
                         }
                     }
                 }
@@ -912,15 +959,13 @@ impl App {
                                 let raw = archive_filename.as_deref().unwrap_or("");
                                 let fname_norm =
                                     crate::app::free_fns::normalize_nexus_filename(raw);
-                                let local_ts =
-                                    crate::app::free_fns::extract_nexus_timestamp(raw);
+                                let local_ts = crate::app::free_fns::extract_nexus_timestamp(raw);
                                 let candidates: Vec<_> = files
                                     .files
                                     .into_iter()
                                     .filter(|f| {
-                                        crate::app::free_fns::normalize_nexus_filename(
-                                            &f.file_name,
-                                        ) == fname_norm
+                                        crate::app::free_fns::normalize_nexus_filename(&f.file_name)
+                                            == fname_norm
                                     })
                                     .collect();
                                 local_ts
@@ -952,9 +997,8 @@ impl App {
                 let resolved_file_id = file_info.as_ref().map(|f| f.file_id);
                 let nexus_is_primary = file_info.as_ref().map(|f| f.is_primary).unwrap_or(false);
                 // When we tried to match by filename but got nothing, ask the user for the file ID.
-                let unresolved = nexus_file_id == 0
-                    && archive_filename.is_some()
-                    && file_info.is_none();
+                let unresolved =
+                    nexus_file_id == 0 && archive_filename.is_some() && file_info.is_none();
                 // Capture before DownloadNameResolved moves info.name
                 let mod_version = info.version.clone();
                 let mod_author = info.author.clone();
@@ -1005,12 +1049,10 @@ impl App {
             }
             .await;
             match result {
-                Ok((name, version, author)) => {
-                    AppCmdMsg::NexusMetadataFetched(
-                        Some(download_id),
-                        Ok((String::new(), version, author, name, None)),
-                    )
-                }
+                Ok((name, version, author)) => AppCmdMsg::NexusMetadataFetched(
+                    Some(download_id),
+                    Ok((String::new(), version, author, name, None)),
+                ),
                 Err(e) => AppCmdMsg::NexusMetadataFetched(Some(download_id), Err(e)),
             }
         });
@@ -1048,7 +1090,12 @@ impl App {
             return;
         }
         // Re-request the NXM download URL from Nexus and re-enqueue
-        if let Some(NexusIds { mod_id, file_id, ref domain }) = nexus_ids {
+        if let Some(NexusIds {
+            mod_id,
+            file_id,
+            ref domain,
+        }) = nexus_ids
+        {
             let uri = format!("nxm://{domain}/mods/{mod_id}/files/{file_id}");
             sender.input(AppMsg::NxmLinkReceived(uri));
         }
@@ -1133,7 +1180,9 @@ impl App {
             let guard = self.downloads.guard();
             guard.get(idx).map(|r| r.entry.id.clone())
         };
-        let Some(download_id) = download_id else { return };
+        let Some(download_id) = download_id else {
+            return;
+        };
 
         if let Some(entry) = self.all_downloads.iter_mut().find(|e| e.id == download_id) {
             entry.hidden = !entry.hidden;

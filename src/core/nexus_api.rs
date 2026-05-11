@@ -142,7 +142,10 @@ impl NexusClient {
         &self,
         domain: &str,
         md5: &str,
-    ) -> Result<(Vec<crate::models::nexus::Md5SearchResult>, Option<RateLimitInfo>)> {
+    ) -> Result<(
+        Vec<crate::models::nexus::Md5SearchResult>,
+        Option<RateLimitInfo>,
+    )> {
         let resp = self
             .client
             .get(format!(
@@ -183,7 +186,9 @@ impl NexusClient {
         .context("failed to construct download URL")?;
 
         if let (Some(k), Some(e)) = (key, expires) {
-            url.query_pairs_mut().append_pair("key", k).append_pair("expires", e);
+            url.query_pairs_mut()
+                .append_pair("key", k)
+                .append_pair("expires", e);
         }
 
         let resp = self

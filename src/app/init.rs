@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use adw;
 use gtk::glib;
@@ -349,7 +349,6 @@ fn half_row_index(row: &gtk::ListBoxRow, y: f64, list_len: usize) -> usize {
     }
 }
 
-
 /// Attaches drag-and-drop `DropTarget` controllers to the mod and plugin list widgets.
 pub(super) fn wire_drag_drop(
     sender: &ComponentSender<App>,
@@ -450,8 +449,7 @@ pub(super) fn wire_drag_drop(
                 let scroll_ref = scroll_motion.clone();
                 let id = glib::timeout_add_local(std::time::Duration::from_millis(16), move || {
                     let cur = vadj.value();
-                    let next = (cur + delta)
-                        .clamp(vadj.lower(), vadj.upper() - vadj.page_size());
+                    let next = (cur + delta).clamp(vadj.lower(), vadj.upper() - vadj.page_size());
                     vadj.set_value(next);
                     if scroll_ref.borrow().is_none() {
                         glib::ControlFlow::Break
@@ -577,9 +575,8 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
         // Apply a staged full-backup restore if one was queued on the previous run.
         let pending = paths::pending_restore_path().map_err(|e| e.to_string())?;
         if pending.exists() {
-            std::fs::rename(&pending, &db_path).map_err(|e| {
-                format!("Failed to apply pending restore: {e}")
-            })?;
+            std::fs::rename(&pending, &db_path)
+                .map_err(|e| format!("Failed to apply pending restore: {e}"))?;
             // Write a marker so load_init_data can show the post-restore banner.
             let marker = paths::post_restore_marker_path().map_err(|e| e.to_string())?;
             let _ = std::fs::File::create(&marker);
@@ -697,7 +694,8 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
                     }
                     _ => {
                         let rl = tracker.load_rate_limits().await.unwrap_or(None);
-                        let (name, avatar) = tracker.load_nexus_user().await.unwrap_or((None, None));
+                        let (name, avatar) =
+                            tracker.load_nexus_user().await.unwrap_or((None, None));
                         let premium = tracker
                             .get_setting("nexus_is_premium")
                             .await
@@ -745,7 +743,10 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
         let restored_from_backup = paths::post_restore_marker_path()
             .ok()
             .filter(|p| p.exists())
-            .map(|p| { let _ = std::fs::remove_file(&p); true })
+            .map(|p| {
+                let _ = std::fs::remove_file(&p);
+                true
+            })
             .unwrap_or(false);
 
         Ok::<_, String>(InitData {
