@@ -252,13 +252,29 @@ pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result
             }
         }
 
-        fs::hard_link(&cache_file, &deploy_target).with_context(|| {
-            format!(
-                "Hardlink failed: {} → {}",
-                cache_file.display(),
-                deploy_target.display()
-            )
-        })?;
+        // Try hardlink first (zero-copy, same inode). Game dirs accessed via a
+        // separate filesystem permission (e.g. Steam Snap) are on a
+        // different bind-mount from the cache, so hard_link returns EXDEV
+        // (errno=18). Fall back to a plain copy in that case.
+        if let Err(e) = fs::hard_link(&cache_file, &deploy_target) {
+            if e.raw_os_error() == Some(18) {
+                fs::copy(&cache_file, &deploy_target).with_context(|| {
+                    format!(
+                        "Copy fallback failed: {} → {}",
+                        cache_file.display(),
+                        deploy_target.display()
+                    )
+                })?;
+            } else {
+                return Err(e).with_context(|| {
+                    format!(
+                        "Hardlink failed: {} → {}",
+                        cache_file.display(),
+                        deploy_target.display()
+                    )
+                });
+            }
+        }
 
         let actual_rel = deploy_target
             .strip_prefix(&base)
