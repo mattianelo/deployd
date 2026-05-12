@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Copyright 2025 Mattianelo -->
 <component type="desktop-application">
-  <id>deployd</id>
+  <id>io.mattianelo.deployd</id>
 
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-only</project_license>
@@ -9,7 +9,7 @@
   <name>Deployd</name>
   <summary>Linux-native mod manager for Bethesda and REDEngine games</summary>
 
-  <developer id="mattianelo">
+  <developer id="io.mattianelo">
     <name>Mattianelo</name>
   </developer>
 
@@ -35,7 +35,7 @@
     </ul>
   </description>
 
-  <launchable type="desktop-id">deployd.desktop</launchable>
+  <launchable type="desktop-id">io.mattianelo.deployd.desktop</launchable>
 
   <url type="homepage">https://www.nexusmods.com/site/mods/174218</url>
   <url type="bugtracker">https://gitlab.com/mattianelo/deployd/-/issues</url>

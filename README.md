@@ -162,6 +162,9 @@ Launch modding tools through the package-managed runtime from the **Tools** pane
 - Each tool supports custom arguments and a working directory
 - In the Snap package, tools run through the Wine platform content snaps; if either content plug is
   disconnected, Deployd shows the exact `snap connect` command with the provider slot included
+- The Snap package owns the `io.mattianelo.deployd` session D-Bus name for
+  single-instance activation and NXM link forwarding; this interface requires manual Snap Store
+  review
 
 ---
 

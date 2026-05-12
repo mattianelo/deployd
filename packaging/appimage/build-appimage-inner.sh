@@ -12,6 +12,7 @@ mkdir -p /build
 export CARGO_TARGET_DIR=/build/target
 APPDIR=/build/AppDir
 APP_ID="deployd"
+DESKTOP_ID="io.mattianelo.deployd"
 OUTPUT="$REPO_ROOT/Deployd-x86_64.AppImage"
 
 DEBUG=0
@@ -46,7 +47,7 @@ rm -rf "$APPDIR"
 linuxdeploy \
     --appdir "$APPDIR" \
     --executable "$BINARY" \
-    --desktop-file "data/$APP_ID.desktop" \
+    --desktop-file "data/$DESKTOP_ID.desktop" \
     --icon-file "data/icons/hicolor/scalable/apps/$APP_ID.svg" \
     --plugin gtk
 
@@ -102,7 +103,7 @@ chmod +x "$APPDIR/AppRun"
 
 # 4. AppStream metainfo
 mkdir -p "$APPDIR/usr/share/metainfo"
-cp "data/$APP_ID.metainfo.xml" "$APPDIR/usr/share/metainfo/"
+cp "data/$DESKTOP_ID.metainfo.xml" "$APPDIR/usr/share/metainfo/"
 
 # 5. Package (zstd compression)
 echo "==> Packaging -> $OUTPUT"

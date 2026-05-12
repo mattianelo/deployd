@@ -8,6 +8,7 @@ set -e
 
 APPDIR="${APPDIR:-$(cd "$(dirname "$0")" && pwd)}"
 APP_ID="deployd"
+DESKTOP_ID="io.mattianelo.deployd"
 MARKER_DIR="$HOME/.local/share/deployd"
 MARKER="$MARKER_DIR/.appimage-registration"
 CURRENT_APPIMAGE="${APPIMAGE:-$0}"
@@ -23,15 +24,15 @@ register_integration() {
     mkdir -p "$APPS_DIR" "$ICON_DIR" "$MARKER_DIR"
 
     sed "s|Exec=deployd|Exec=$CURRENT_APPIMAGE|g" \
-        "$APPDIR/usr/share/applications/$APP_ID.desktop" \
-        > "$APPS_DIR/$APP_ID.desktop"
+        "$APPDIR/usr/share/applications/$DESKTOP_ID.desktop" \
+        > "$APPS_DIR/$DESKTOP_ID.desktop"
 
     cp "$APPDIR/usr/share/icons/hicolor/scalable/apps/$APP_ID.svg" \
         "$ICON_DIR/$APP_ID.svg"
 
     update-desktop-database "$APPS_DIR" 2>/dev/null || true
     gtk-update-icon-cache -f "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
-    xdg-mime default "$APP_ID.desktop" x-scheme-handler/nxm 2>/dev/null || true
+    xdg-mime default "$DESKTOP_ID.desktop" x-scheme-handler/nxm 2>/dev/null || true
 
     echo "$CURRENT_APPIMAGE" > "$MARKER"
 }

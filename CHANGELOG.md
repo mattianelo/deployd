@@ -17,6 +17,9 @@
 
 ### Fixed
 
+- Snap now claims the `io.mattianelo.deployd` session D-Bus name instead
+  of `app.deployd`, and its desktop/AppStream IDs match that reverse-DNS
+  identity for manual Snap Store review.
 - Search typing is debounced to reduce list-filter stalls while keeping filter chips immediate.
 - Tool launches no longer try to reuse a Wine drive letter occupied by a broken `dosdevices`
   symlink, avoiding noisy `failed to create q: drive: File exists` messages after BodySlide runs.

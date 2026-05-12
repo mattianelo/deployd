@@ -76,7 +76,7 @@ fn main() {
     }
 
     let gtk_app = libadwaita::Application::builder()
-        .application_id("app.deployd")
+        .application_id("io.mattianelo.deployd")
         .flags(gio::ApplicationFlags::HANDLES_COMMAND_LINE)
         .build();
 

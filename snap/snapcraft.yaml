@@ -44,7 +44,7 @@ slots:
   dbus-deployd:
     interface: dbus
     bus: session
-    name: app.deployd
+    name: io.mattianelo.deployd
 
 apps:
   deployd:
@@ -56,14 +56,14 @@ apps:
       - wine-runtime
       - wine-stable
     slots: [dbus-deployd]
-    common-id: deployd
-    desktop: usr/share/applications/deployd.desktop
+    common-id: io.mattianelo.deployd
+    desktop: usr/share/applications/io.mattianelo.deployd.desktop
 
 parts:
   deployd:
     plugin: rust
     source: .
-    parse-info: [usr/share/metainfo/deployd.metainfo.xml]
+    parse-info: [usr/share/metainfo/io.mattianelo.deployd.metainfo.xml]
     build-packages:
       - libgtk-4-dev
       - libadwaita-1-dev
@@ -78,9 +78,9 @@ parts:
     override-build: |
       cargo build --release --features loot,libarchive-fallback
       install -Dm755 target/release/deployd "$CRAFT_PART_INSTALL/bin/deployd"
-      install -Dm644 data/deployd.desktop \
-        "$CRAFT_PART_INSTALL/usr/share/applications/deployd.desktop"
+      install -Dm644 data/io.mattianelo.deployd.desktop \
+        "$CRAFT_PART_INSTALL/usr/share/applications/io.mattianelo.deployd.desktop"
       install -Dm644 data/icons/hicolor/scalable/apps/deployd.svg \
         "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/scalable/apps/deployd.svg"
-      install -Dm644 data/deployd.metainfo.xml \
-        "$CRAFT_PART_INSTALL/usr/share/metainfo/deployd.metainfo.xml"
+      install -Dm644 data/io.mattianelo.deployd.metainfo.xml \
+        "$CRAFT_PART_INSTALL/usr/share/metainfo/io.mattianelo.deployd.metainfo.xml"

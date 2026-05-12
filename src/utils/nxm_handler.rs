@@ -46,7 +46,7 @@ pub fn ensure_registered() {
         exe = exe.display()
     );
 
-    let desktop_path = apps_dir.join("deployd.desktop");
+    let desktop_path = apps_dir.join("io.mattianelo.deployd.desktop");
     if fs::write(&desktop_path, &desktop_content).is_err() {
         return;
     }
@@ -55,6 +55,10 @@ pub fn ensure_registered() {
         .arg(&apps_dir)
         .status();
     let _ = Command::new("xdg-mime")
-        .args(["default", "deployd.desktop", "x-scheme-handler/nxm"])
+        .args([
+            "default",
+            "io.mattianelo.deployd.desktop",
+            "x-scheme-handler/nxm",
+        ])
         .status();
 }
