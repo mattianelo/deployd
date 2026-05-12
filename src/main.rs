@@ -17,10 +17,18 @@ fn main() {
     gio::resources_register_include!("resources.gresource")
         .expect("failed to register app resources");
 
-    // Suppress "Theme parser error" GTK warnings emitted when the host system
-    // theme contains CSS features our bundled GTK (AppImage) doesn't recognise.
+    // Suppress GTK noise that is not actionable from app code.
     // GTK4 routes these through GLib's structured logging path, so we must use
     // log_set_writer_func — log_set_handler only catches old-style g_log() calls.
+    //
+    // Suppressed patterns:
+    //   "Theme parser error"    — host theme CSS uses features our bundled GTK
+    //                             (AppImage) doesn't recognise; harmless.
+    //   "Trying to measure"     — Snap's Wayland compositor hands GTK an initial
+    //   "Allocation width too   allocation smaller than libadwaita's own widget
+    //    small"                  minimums; unfixable from app code.
+    //   "Finalizing AdwAction   libadwaita popover-teardown ordering changed
+    //    Row"                    between versions; not a leak we control.
     glib::log_set_writer_func(|level, fields| {
         let domain = fields
             .iter()
@@ -34,8 +42,10 @@ fn main() {
             .unwrap_or("");
 
         if domain == "Gtk"
-            && level == glib::LogLevel::Warning
-            && message.contains("Theme parser error")
+            && (message.contains("Theme parser error")
+                || message.contains("Trying to measure")
+                || message.contains("Allocation width too small")
+                || message.contains("Finalizing AdwActionRow"))
         {
             return glib::LogWriterOutput::Handled;
         }
