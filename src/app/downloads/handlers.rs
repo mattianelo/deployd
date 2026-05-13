@@ -936,12 +936,6 @@ impl App {
                                         )
                                         .await
                                         .map_err(|e| e.to_string())?;
-                                    let iv =
-                                        resolved_version.unwrap_or_else(|| mod_version.clone());
-                                    tracker
-                                        .set_mod_installed_version(mod_id, &iv)
-                                        .await
-                                        .map_err(|e| e.to_string())?;
                                 }
                                 return Ok((mod_info.name, mod_version, mod_author));
                             }
@@ -1050,7 +1044,11 @@ impl App {
                         info.name
                     )));
                 }
-                // Mirror NXM auto-path: write metadata back to the installed mod row.
+                // Mirror NXM auto-path: write mod-page metadata (latest_version/author/summary)
+                // back to the installed mod row. The per-file installed version is written by
+                // handle_download_name_resolved via update_mod_version_by_nexus_ids, which is
+                // keyed on (game_id, nexus_mod_id, nexus_file_id) so an older-version fetch
+                // does not overwrite the currently installed version.
                 if let Some(ref mod_id) = installed_mod_id {
                     tracker
                         .update_mod_nexus_metadata(
@@ -1059,11 +1057,6 @@ impl App {
                             &mod_author,
                             info.summary.as_deref().unwrap_or(""),
                         )
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    let installed_version = resolved_version.unwrap_or_else(|| mod_version.clone());
-                    tracker
-                        .set_mod_installed_version(mod_id, &installed_version)
                         .await
                         .map_err(|e| e.to_string())?;
                 }

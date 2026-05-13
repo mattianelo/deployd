@@ -17,6 +17,11 @@
 
 ### Fixed
 
+- Fetching metadata for an older version of an already-installed mod no longer overwrites the
+  installed mod's version. The Downloads panel previously wrote the resolved version to the
+  mods table keyed on mod id alone, so a later Mod Order reload would surface the older version
+  in place of the actually installed one. The version write now flows exclusively through the
+  file-id-aware path that matches on `(game_id, nexus_mod_id, nexus_file_id)`.
 - Snap now claims the `io.mattianelo.deployd` session D-Bus name instead
   of `app.deployd`, and its desktop/AppStream IDs match that reverse-DNS
   identity for manual Snap Store review.
