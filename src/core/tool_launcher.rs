@@ -3,6 +3,7 @@ use std::process::{Command, Output, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
+use std::{ffi::OsStr, fs::OpenOptions, io::Write};
 
 use anyhow::{Context, Result, anyhow};
 
@@ -126,6 +127,7 @@ pub fn launch_tool(
 /// `on_exit` receives `Some(error_string)` if the process exited with a non-zero
 /// status or could not be waited on; `None` on clean exit.
 fn spawn_tool(mut cmd: Command, tool_name: &str, hooks: ToolLaunchHooks) -> Result<u32> {
+    log_tool_command(tool_name, &cmd);
     cmd.stderr(Stdio::piped());
     #[cfg(unix)]
     {
@@ -138,6 +140,9 @@ fn spawn_tool(mut cmd: Command, tool_name: &str, hooks: ToolLaunchHooks) -> Resu
         .map_err(|e| anyhow!("Could not start process for \"{tool_name}\".\nError: {e}"))?;
 
     let pid = child.id();
+    diagnostic_log(&format!(
+        "deployd-tool-debug: spawned '{tool_name}' pid={pid}"
+    ));
     let handle = ToolProcessHandle {
         pid,
         #[cfg(unix)]
@@ -168,6 +173,19 @@ fn spawn_tool(mut cmd: Command, tool_name: &str, hooks: ToolLaunchHooks) -> Resu
             .and_then(|h| h.join().ok())
             .filter(|s| !s.is_empty());
 
+        match &wait_result {
+            Ok(status) => diagnostic_log(&format!(
+                "deployd-tool-debug: '{name}' wait status={status}"
+            )),
+            Err(e) => diagnostic_log(&format!("deployd-tool-debug: '{name}' wait failed: {e}")),
+        }
+        if let Some(s) = &stderr {
+            diagnostic_log(&format!(
+                "deployd-tool-debug: '{name}' stderr tail:\n{}",
+                tail_for_log(s)
+            ));
+        }
+
         let error = match wait_result {
             Ok(status) if !status.success() => {
                 if let Some(s) = &stderr {
@@ -190,6 +208,85 @@ fn spawn_tool(mut cmd: Command, tool_name: &str, hooks: ToolLaunchHooks) -> Resu
     });
 
     Ok(pid)
+}
+
+fn log_tool_command(tool_name: &str, cmd: &Command) {
+    diagnostic_log(&format!(
+        "deployd-tool-debug: launching '{tool_name}' program={}",
+        cmd.get_program().to_string_lossy()
+    ));
+    let args = cmd
+        .get_args()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    diagnostic_log(&format!("deployd-tool-debug: args={args:?}"));
+    diagnostic_log(&format!(
+        "deployd-tool-debug: cwd={}",
+        cmd.get_current_dir()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "<inherit>".to_string())
+    ));
+
+    for key in [
+        "APPDIR",
+        "APPIMAGE",
+        "GDK_PIXBUF_MODULEDIR",
+        "GDK_PIXBUF_MODULE_FILE",
+        "GIO_MODULE_DIR",
+        "GI_TYPELIB_PATH",
+        "GSETTINGS_SCHEMA_DIR",
+        "GTK_PATH",
+        "LD_LIBRARY_PATH",
+        "LD_PRELOAD",
+        "PROTONPATH",
+        "STEAM_COMPAT_DATA_PATH",
+        "UMU_FOLDERS_PATH",
+        "WINEDLLOVERRIDES",
+        "WINEDEBUG",
+        "WINEPREFIX",
+    ] {
+        diagnostic_log(&format!(
+            "deployd-tool-debug: env {key}={}",
+            command_env_value(cmd, key)
+        ));
+    }
+}
+
+fn command_env_value(cmd: &Command, key: &str) -> String {
+    if let Some((_, value)) = cmd.get_envs().find(|(k, _)| *k == OsStr::new(key)) {
+        return value
+            .map(|v| v.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "<removed>".to_string());
+    }
+
+    std::env::var(key).unwrap_or_else(|_| "<unset>".to_string())
+}
+
+fn diagnostic_log(message: &str) {
+    eprintln!("{message}");
+
+    let Ok(data_dir) = paths::deployd_data_dir() else {
+        return;
+    };
+    let _ = std::fs::create_dir_all(&data_dir);
+    let log_path = data_dir.join("tool-launch-debug.log");
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_path) {
+        let _ = writeln!(file, "{message}");
+    }
+}
+
+fn tail_for_log(text: &str) -> String {
+    const MAX_CHARS: usize = 20_000;
+    let len = text.chars().count();
+    if len <= MAX_CHARS {
+        return text.to_string();
+    }
+
+    let tail = text
+        .chars()
+        .skip(len.saturating_sub(MAX_CHARS))
+        .collect::<String>();
+    format!("<truncated to last {MAX_CHARS} chars>\n{tail}")
 }
 
 fn signal_process(pid: u32, signal: libc::c_int) {
@@ -295,7 +392,7 @@ fn build_snap_wine_command(
         cmd.env("LIBDRM_AMDGPU_IDS", ids_path);
     }
 
-    cmd.arg(&tool.exe_path);
+    cmd.arg(effective_tool_exe_path(tool));
     for arg in tool.custom_args.split_whitespace() {
         cmd.arg(arg);
     }
@@ -340,7 +437,7 @@ fn build_umu_command_with_folders(
         .env("UMU_FOLDERS_PATH", umu_folders)
         .env("WINEDLLOVERRIDES", WINE_SILENT_DLL_OVERRIDES);
 
-    cmd.arg(&tool.exe_path);
+    cmd.arg(effective_tool_exe_path(tool));
     for arg in tool.custom_args.split_whitespace() {
         cmd.arg(arg);
     }
@@ -551,6 +648,31 @@ fn effective_cwd(tool: &Tool, game: &Game) -> PathBuf {
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| game.path.clone())
+}
+
+fn effective_tool_exe_path(tool: &Tool) -> PathBuf {
+    let exe_path = PathBuf::from(&tool.exe_path);
+    if !is_legacy_bodyslide_exe(&exe_path) {
+        return exe_path;
+    }
+
+    let x64_path = exe_path.with_file_name("BodySlide x64.exe");
+    if x64_path.is_file() {
+        diagnostic_log(&format!(
+            "deployd-tool-debug: using BodySlide x64 sibling instead of {}",
+            exe_path.display()
+        ));
+        x64_path
+    } else {
+        exe_path
+    }
+}
+
+fn is_legacy_bodyslide_exe(exe_path: &Path) -> bool {
+    exe_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case("BodySlide.exe"))
 }
 
 /// If `wine_bin` points to `wine` and a `wine64` sibling exists, prefer `wine64`.
@@ -819,6 +941,19 @@ mod tests {
         }
     }
 
+    fn bodyslide_tool(exe_path: &Path) -> Tool {
+        Tool {
+            id: "bodyslide".to_string(),
+            game_id: "skyrim-se".to_string(),
+            name: "BodySlide".to_string(),
+            exe_path: exe_path.to_string_lossy().into_owned(),
+            icon_name: "avatar-default-symbolic".to_string(),
+            custom_args: String::new(),
+            sort_order: 0,
+            working_dir: String::new(),
+        }
+    }
+
     #[test]
     fn drive_entry_exists_counts_broken_symlinks() -> anyhow::Result<()> {
         let temp = tempdir()?;
@@ -883,6 +1018,40 @@ mod tests {
         assert_eq!(
             env_value(&cmd, "STEAM_COMPAT_DATA_PATH"),
             Some(temp.path().join("compatdata"))
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn umu_command_prefers_bodyslide_x64_sibling() -> anyhow::Result<()> {
+        let temp = tempdir()?;
+        let game = game_with_prefix(temp.path());
+        let tool_dir = temp.path().join("tools/BodySlide");
+        std::fs::create_dir_all(&tool_dir)?;
+        std::fs::write(tool_dir.join("BodySlide.exe"), b"")?;
+        std::fs::write(tool_dir.join("BodySlide x64.exe"), b"")?;
+        let tool = bodyslide_tool(&tool_dir.join("BodySlide.exe"));
+        let wine_config = WineConfig {
+            prefix: game
+                .wine_prefix
+                .clone()
+                .ok_or_else(|| anyhow!("expected wine prefix"))?,
+            launcher: game::WineLauncher::Umu(temp.path().join("AppDir/usr/bin/umu-run")),
+        };
+
+        let cmd = build_umu_command_with_folders(
+            temp.path().join("AppDir/usr/bin/umu-run").as_path(),
+            &tool,
+            &game,
+            &wine_config,
+            &temp.path().join(".local/share/deployd"),
+        );
+
+        let x64_path = tool_dir.join("BodySlide x64.exe");
+        assert!(
+            cmd.get_args().any(|arg| arg == x64_path.as_os_str()),
+            "saved BodySlide.exe tools should launch the x64 sibling when present"
         );
 
         Ok(())

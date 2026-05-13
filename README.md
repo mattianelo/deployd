@@ -160,6 +160,8 @@ Launch modding tools through the package-managed runtime from the **Tools** pane
 - Tools inside the game's Proton prefix are detected automatically
 - Add tools manually via the tool manager
 - Each tool supports custom arguments and a working directory
+- BodySlide launches prefer the 64-bit executable when both `BodySlide.exe` and
+  `BodySlide x64.exe` are present
 - In the Snap package, tools run through the Wine platform content snaps; if either content plug is
   disconnected, Deployd shows the exact `snap connect` command with the provider slot included
 - The Snap package owns the `io.mattianelo.deployd` session D-Bus name for

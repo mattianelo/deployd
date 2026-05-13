@@ -28,6 +28,8 @@
 - Search typing is debounced to reduce list-filter stalls while keeping filter chips immediate.
 - Tool launches no longer try to reuse a Wine drive letter occupied by a broken `dosdevices`
   symlink, avoiding noisy `failed to create q: drive: File exists` messages after BodySlide runs.
+- BodySlide detection and launch now prefer `BodySlide x64.exe` over the 32-bit `BodySlide.exe`,
+  avoiding 32-bit GLX failures in UMU/pressure-vessel when opening Preview.
 - Tool launch buttons no longer remain stuck disabled after being rebuilt during a busy state, and
   normal launches now show a blocking launch dialog with spinner, status text, and Cancel while
   Wine/UMU starts the tool.

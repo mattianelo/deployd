@@ -187,21 +187,46 @@ pub fn detect_tool_path(
 fn search_dir_for_exes(root: &Path, exe_names: &[&str], max_depth: usize) -> Option<PathBuf> {
     use walkdir::WalkDir;
 
-    for entry in WalkDir::new(root)
+    let candidates = WalkDir::new(root)
         .max_depth(max_depth)
         .follow_links(false)
         .into_iter()
         .filter_map(|e| e.ok())
-    {
-        if entry.file_type().is_file()
-            && let Some(name) = entry.file_name().to_str()
-        {
-            for exe in exe_names {
-                if name.eq_ignore_ascii_case(exe) {
-                    return Some(entry.into_path());
-                }
+        .filter(|entry| entry.file_type().is_file())
+        .collect::<Vec<_>>();
+
+    for exe in exe_names {
+        for entry in &candidates {
+            if let Some(name) = entry.file_name().to_str()
+                && name.eq_ignore_ascii_case(exe)
+            {
+                return Some(entry.path().to_path_buf());
             }
         }
     }
+
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::tempdir;
+
+    use super::*;
+
+    #[test]
+    fn search_prefers_earlier_exe_name_over_walk_order() -> anyhow::Result<()> {
+        let temp = tempdir()?;
+        let tool_dir = temp.path().join("Data/Tools/BodySlide");
+        std::fs::create_dir_all(&tool_dir)?;
+        std::fs::write(tool_dir.join("BodySlide.exe"), b"")?;
+        std::fs::write(tool_dir.join("BodySlide x64.exe"), b"")?;
+
+        let found = search_dir_for_exes(temp.path(), &["BodySlide x64.exe", "BodySlide.exe"], 5)
+            .ok_or_else(|| anyhow::anyhow!("expected BodySlide executable"))?;
+
+        assert_eq!(found, tool_dir.join("BodySlide x64.exe"));
+
+        Ok(())
+    }
 }
