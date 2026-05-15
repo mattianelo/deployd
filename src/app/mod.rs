@@ -1249,7 +1249,8 @@ impl Component for App {
                                 },
                             },
 
-                            gtk::ScrolledWindow {
+                            #[local_ref]
+                            plugin_scroll -> gtk::ScrolledWindow {
                                 set_vexpand: true,
                                 set_hscrollbar_policy: gtk::PolicyType::Never,
 
@@ -1388,6 +1389,7 @@ impl Component for App {
         let game_dropdown = &model.game_dropdown;
         let tool_buttons_box = &model.tool_buttons_box;
         let mod_scroll = &model.mod_scroll;
+        let plugin_scroll = &model.plugin_scroll;
         let downloads_scroll = &model.downloads_scroll;
         let deploy_options_btn = &model.deploy_options_btn;
         let notifications_menu_btn = &model.notifications_menu_btn;

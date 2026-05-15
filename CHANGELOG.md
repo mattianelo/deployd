@@ -23,6 +23,8 @@
 
 - Plugin Order grouped drag now uses Deployd's app-owned Select Mode state, so dragging a selected
   plugin moves the whole selected block and keeps that block selected after the drop.
+- Plugin Order stays in Select Mode after grouped drops and preserves the scroll position instead
+  of jumping back to the top of the list.
 - Fetching metadata for an older version of an already-installed mod no longer overwrites the
   installed mod's version. The Downloads panel previously wrote the resolved version to the
   mods table keyed on mod id alone, so a later Mod Order reload would surface the older version

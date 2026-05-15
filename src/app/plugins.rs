@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
 use adw;
+use gtk::glib;
+use gtk::prelude::*;
 use relm4::prelude::*;
 
 use crate::core::game;
@@ -77,6 +79,8 @@ impl App {
         if selected.iter().enumerate().all(|(i, &s)| anchor + i == s) {
             return;
         }
+        let vadj = self.plugin_scroll.vadjustment();
+        let saved_pos = vadj.value();
 
         let items: Vec<PluginRowInit> = {
             let guard = self.plugins.guard();
@@ -115,12 +119,17 @@ impl App {
                 let selected = i >= anchor && i < anchor + n;
                 if let Some(row) = guard.get_mut(i) {
                     row.selected = selected;
+                    row.selection_mode = self.plugin_selection_active;
+                    row.drag_enabled.set(self.plugin_selection_active);
                 }
                 if selected {
                     self.selected_plugins.insert(i);
                 }
             }
         }
+        glib::idle_add_local_once(move || {
+            vadj.set_value(saved_pos);
+        });
         self.needs_deploy = true;
         if self.plugin_selection_active {
             self.plugin_selection_dirty = true;

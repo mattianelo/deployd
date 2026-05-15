@@ -130,6 +130,7 @@ pub(super) fn build_model(
     let tool_buttons_box = gtk::Box::new(gtk::Orientation::Horizontal, 4);
     let profile_rename_entry = gtk::Entry::builder().hexpand(true).build();
     let mod_scroll = gtk::ScrolledWindow::new();
+    let plugin_scroll = gtk::ScrolledWindow::new();
     let downloads_scroll = gtk::ScrolledWindow::new();
 
     let model = App {
@@ -205,6 +206,7 @@ pub(super) fn build_model(
         reinstall_mode: false,
         pending_scroll_restore: None,
         mod_scroll,
+        plugin_scroll,
         downloads_scroll,
         #[cfg(feature = "loot")]
         dirty_plugins: HashMap::new(),

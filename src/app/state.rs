@@ -153,6 +153,8 @@ pub struct App {
     pub(crate) pending_scroll_restore: Option<f64>,
     /// ScrolledWindow wrapping the mod list — held so we can restore scroll position.
     pub(crate) mod_scroll: gtk::ScrolledWindow,
+    /// ScrolledWindow wrapping the plugin list — held so grouped moves can preserve position.
+    pub(crate) plugin_scroll: gtk::ScrolledWindow,
     /// ScrolledWindow wrapping the downloads list — held so we can restore scroll position.
     pub(crate) downloads_scroll: gtk::ScrolledWindow,
     /// Dirty-edit info keyed by lowercase plugin filename, from the LOOT masterlist.
