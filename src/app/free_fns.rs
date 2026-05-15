@@ -92,6 +92,22 @@ pub(crate) fn parse_nexus_mod_id(filename: &str) -> Option<i64> {
     None
 }
 
+/// Parse a Nexus mod ID from direct user input.
+///
+/// Accepts a bare positive integer or a Nexus URL whose path contains the mod ID
+/// as a numeric segment, such as `https://www.nexusmods.com/witcher/mods/101`.
+pub(crate) fn parse_nexus_mod_id_from_input(raw: &str) -> Option<i64> {
+    let raw = raw.trim();
+    if let Ok(id) = raw.parse::<i64>() {
+        return (id > 0).then_some(id);
+    }
+
+    let path = raw.split(['?', '#']).next().unwrap_or(raw);
+    path.trim_end_matches('/')
+        .rsplit('/')
+        .find_map(|seg| seg.parse::<i64>().ok().filter(|&id| id > 0))
+}
+
 /// Clear all drop indicator CSS classes from a ListBox's rows.
 pub(crate) fn clear_drop_indicators(list_box: &gtk::ListBox) {
     let mut idx = 0;
@@ -368,4 +384,43 @@ pub(crate) async fn fetch_avatar_bytes(url: &str) -> Option<Vec<u8>> {
         bytes.as_ref().map_or(0, |b| b.len())
     );
     bytes
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_nexus_mod_id_from_input;
+
+    #[test]
+    fn parses_bare_nexus_mod_id() {
+        assert_eq!(parse_nexus_mod_id_from_input("101"), Some(101));
+        assert_eq!(parse_nexus_mod_id_from_input("  101  "), Some(101));
+    }
+
+    #[test]
+    fn parses_nexus_mod_id_from_url() {
+        assert_eq!(
+            parse_nexus_mod_id_from_input("https://www.nexusmods.com/witcher/mods/101"),
+            Some(101)
+        );
+        assert_eq!(
+            parse_nexus_mod_id_from_input(
+                "https://www.nexusmods.com/skyrimspecialedition/mods/12604/"
+            ),
+            Some(12604)
+        );
+        assert_eq!(
+            parse_nexus_mod_id_from_input(
+                "https://www.nexusmods.com/skyrimspecialedition/mods/12604?tab=files"
+            ),
+            Some(12604)
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_nexus_mod_id_input() {
+        assert_eq!(parse_nexus_mod_id_from_input(""), None);
+        assert_eq!(parse_nexus_mod_id_from_input("0"), None);
+        assert_eq!(parse_nexus_mod_id_from_input("-1"), None);
+        assert_eq!(parse_nexus_mod_id_from_input("not a nexus id"), None);
+    }
 }

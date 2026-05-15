@@ -14,9 +14,15 @@
   even when the header focus changes.
 - Debug builds now log lightweight slow-phase timing for install, scan, deploy, plugin-header, and
   tool-launch preparation paths without recording user paths or API tokens.
+- Mod Properties now lets users correct the Nexus Mod ID for an installed mod when filename or
+  download metadata detection picked the wrong Nexus page.
+- Nexus file-requirements work is tracked in `docs/nexus-file-requirements.md` as an API discovery
+  backlog before any dependency-warning UI is implemented.
 
 ### Fixed
 
+- Plugin Order grouped drag now uses Deployd's app-owned Select Mode state, so dragging a selected
+  plugin moves the whole selected block and keeps that block selected after the drop.
 - Fetching metadata for an older version of an already-installed mod no longer overwrites the
   installed mod's version. The Downloads panel previously wrote the resolved version to the
   mods table keyed on mod id alone, so a later Mod Order reload would surface the older version

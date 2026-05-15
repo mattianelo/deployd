@@ -25,6 +25,16 @@ impl App {
         if from >= len || to >= len || from == to {
             return;
         }
+        if self.plugin_selection_active
+            && self.selected_plugins.contains(&from)
+            && self.selected_plugins.len() > 1
+        {
+            drop(guard);
+            let mut selected: Vec<usize> = self.selected_plugins.iter().copied().collect();
+            selected.sort_unstable();
+            self.handle_move_selected_plugins_to(selected, from, to, sender);
+            return;
+        }
         if from < to {
             for i in from..to {
                 guard.swap(i, i + 1);
@@ -51,6 +61,13 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         let len = self.plugins.guard().len();
+        let selected: Vec<usize> = {
+            let guard = self.plugins.guard();
+            selected
+                .into_iter()
+                .filter(|&idx| guard.get(idx).is_some_and(|row| !row.is_vanilla))
+                .collect()
+        };
         let n = selected.len();
         if n == 0 || to >= len {
             return;
@@ -89,6 +106,19 @@ impl App {
             let mut guard = self.plugins.guard();
             for (i, item) in items.into_iter().enumerate() {
                 guard.insert(anchor + i, item);
+            }
+        }
+        self.selected_plugins.clear();
+        {
+            let mut guard = self.plugins.guard();
+            for i in 0..guard.len() {
+                let selected = i >= anchor && i < anchor + n;
+                if let Some(row) = guard.get_mut(i) {
+                    row.selected = selected;
+                }
+                if selected {
+                    self.selected_plugins.insert(i);
+                }
             }
         }
         self.needs_deploy = true;

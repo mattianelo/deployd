@@ -207,6 +207,8 @@ pub enum AppMsg {
         mod_idx: usize,
         name: String,
         notes: String,
+        nexus_mod_id: Option<i64>,
+        nexus_id_changed: bool,
         install_target: InstallTarget,
         /// Per-file targets: current game_rel_lowercase → desired InstallTarget.
         file_targets: HashMap<String, InstallTarget>,
@@ -398,6 +400,10 @@ pub enum AppCmdMsg {
         Result<std::collections::HashMap<String, crate::core::tracker::OverrideInfo>, String>,
     ),
     PluginOrderSaved(Result<(), String>),
+    ModNexusMetadataRefreshed {
+        mod_id: String,
+        result: Result<(String, String, String), String>,
+    },
     ProfileSwitched(Result<(LoadedData, Option<save_manager::SaveSyncResult>), String>),
     ProfileCreated(Result<LoadedData, String>),
     ProfileCloned(Result<LoadedData, String>),

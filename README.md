@@ -25,7 +25,8 @@ libadwaita, and Rust.
 ## Features
 
 - **Game Setup Wizard** — A first-run wizard guides you through selecting your games and pointing Deployd to their installation folder and Wine prefix
-- **Nexus Mods Integration** — SSO login, NXM deep links, and one-click update checking
+- **Nexus Mods Integration** — SSO login, NXM deep links, one-click update checking,
+  and manual Nexus Mod ID correction from Mod Properties
 - **FOMOD Installer** — Full wizard with conditional steps, image previews, and DLC-aware auto-selection
 - **Mod Profiles** — Per-game profiles to switch between configurations instantly
 - **Plugin Load Order** — Select Mode reorder workflow for `.esp`/`.esm`/`.esl` management written to `plugins.txt`
@@ -52,7 +53,8 @@ Deployd uses libadwaita throughout its primary workflows:
 - The main Mod Order and Plugin Order panels use adaptive libadwaita navigation, so wide windows
   show both panes side by side while narrow windows collapse cleanly.
 - Select Mode is the v2 reorder workflow for Mod Order and Plugin Order. Enter Select Mode before
-  selecting rows, dragging items, or changing load order.
+  selecting rows, dragging items, or changing load order. Dragging a selected plugin moves the
+  selected plugin block together.
 - Downloads, notifications, profile actions, deploy actions, snapshots, and Nexus account controls
   use GNOME-style rows, popovers, status pages, and toast feedback.
 - Install-related workflows, including FOMOD, Pre-install, Absorb External Changes, Mod Properties,

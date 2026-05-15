@@ -1618,15 +1618,22 @@ impl Component for App {
                 mod_idx,
                 name,
                 notes,
+                nexus_mod_id,
+                nexus_id_changed,
                 install_target,
                 file_targets,
             } => self.handle_mod_properties_applied(
-                mod_id,
-                mod_idx,
-                name,
-                notes,
-                install_target,
-                file_targets,
+                self::mods::properties::AppliedModProperties {
+                    mod_id,
+                    mod_idx,
+                    name,
+                    notes,
+                    nexus_mod_id,
+                    nexus_id_changed,
+                    install_target,
+                    file_targets,
+                },
+                &sender,
             ),
             AppMsg::ModPropertiesCancelled => self.handle_mod_properties_cancelled(),
             AppMsg::ScanExternalFiles => self.handle_scan_external_files(&sender),
@@ -1910,6 +1917,9 @@ impl Component for App {
                 self.handle_cmd_overrides_refreshed(result, &sender)
             }
             AppCmdMsg::PluginOrderSaved(result) => self.handle_cmd_plugin_order_saved(result),
+            AppCmdMsg::ModNexusMetadataRefreshed { mod_id, result } => {
+                self.handle_cmd_mod_nexus_metadata_refreshed(mod_id, result)
+            }
             AppCmdMsg::ProfileSwitched(result) => self.handle_cmd_profile_switched(result, &sender),
             AppCmdMsg::ProfileCreated(result) => self.handle_cmd_profile_created(result, &sender),
             AppCmdMsg::ProfileCloned(result) => self.handle_cmd_profile_cloned(result, &sender),

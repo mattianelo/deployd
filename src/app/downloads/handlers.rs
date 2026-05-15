@@ -696,7 +696,8 @@ impl App {
                         return;
                     }
                     let raw = text_entry.text().to_string();
-                    let Some(mod_id) = parse_nexus_mod_id_from_input(&raw) else {
+                    let Some(mod_id) = crate::app::free_fns::parse_nexus_mod_id_from_input(&raw)
+                    else {
                         return;
                     };
                     let _ = input_sender.send(AppMsg::ConfirmNexusIdEntry(
@@ -1221,22 +1222,4 @@ impl App {
         self.show_hidden_downloads = show;
         self.rebuild_downloads_view();
     }
-}
-
-/// Parse a Nexus mod ID from user input.
-///
-/// Accepts a bare integer (`101`) or a Nexus URL
-/// (`https://www.nexusmods.com/witcher/mods/101`).
-/// Returns `None` if the input cannot be parsed.
-fn parse_nexus_mod_id_from_input(raw: &str) -> Option<i64> {
-    let raw = raw.trim();
-    // Try bare integer first
-    if let Ok(id) = raw.parse::<i64>() {
-        return if id > 0 { Some(id) } else { None };
-    }
-    // Try to extract trailing integer from a URL path
-    // e.g. "https://www.nexusmods.com/witcher/mods/101"
-    raw.trim_end_matches('/')
-        .rsplit('/')
-        .find_map(|seg| seg.parse::<i64>().ok().filter(|&id| id > 0))
 }

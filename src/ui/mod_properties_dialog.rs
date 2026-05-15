@@ -36,6 +36,10 @@ pub struct ModPropertiesDialog {
     cache_root: std::path::PathBuf,
     name: String,
     notes: String,
+    nexus_mod_id: Option<i64>,
+    nexus_mod_id_original: Option<i64>,
+    nexus_mod_id_text: String,
+    nexus_id_invalid: bool,
     install_target: InstallTarget,
     version: Option<String>,
     author: Option<String>,
@@ -72,6 +76,7 @@ pub struct ModPropertiesDialog {
 pub enum ModPropertiesMsg {
     NameChanged(String),
     NotesChanged(String),
+    NexusModIdChanged(String),
     SetFileTarget(usize, InstallTarget),
     SetAllFileTargets(InstallTarget),
     ToggleFiles,
@@ -89,6 +94,8 @@ pub enum ModPropertiesOutput {
     Applied {
         name: String,
         notes: String,
+        nexus_mod_id: Option<i64>,
+        nexus_id_changed: bool,
         install_target: InstallTarget,
         /// Maps current game_rel_lowercase → desired InstallTarget for every file.
         file_targets: HashMap<String, InstallTarget>,
@@ -361,6 +368,20 @@ impl SimpleComponent for ModPropertiesDialog {
                                 set_text: &model.name,
                             },
 
+                            #[name = "nexus_mod_id_entry"]
+                            add = &adw::EntryRow {
+                                set_title: "Nexus Mod ID",
+                                set_text: &model.nexus_mod_id_text,
+                            },
+
+                            add = &gtk::Label {
+                                set_label: "Enter a numeric Nexus mod ID or Nexus mod URL.",
+                                add_css_class: "error",
+                                set_halign: gtk::Align::Start,
+                                #[watch]
+                                set_visible: model.nexus_id_invalid,
+                            },
+
                             add = &adw::ActionRow {
                                 set_title: "Version",
                                 set_subtitle: model.version.as_deref().unwrap_or("Unknown"),
@@ -425,6 +446,13 @@ impl SimpleComponent for ModPropertiesDialog {
             cache_root,
             name: mod_entry.name,
             notes: mod_entry.notes.unwrap_or_default(),
+            nexus_mod_id: mod_entry.nexus_mod_id,
+            nexus_mod_id_original: mod_entry.nexus_mod_id,
+            nexus_mod_id_text: mod_entry
+                .nexus_mod_id
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
+            nexus_id_invalid: false,
             install_target: mod_entry.install_target,
             version: mod_entry.version,
             author: mod_entry.author,
@@ -502,6 +530,15 @@ impl SimpleComponent for ModPropertiesDialog {
         }
 
         {
+            let input_sender = sender.input_sender().clone();
+            widgets.nexus_mod_id_entry.connect_changed(move |entry| {
+                let _ = input_sender.send(ModPropertiesMsg::NexusModIdChanged(
+                    entry.text().to_string(),
+                ));
+            });
+        }
+
+        {
             let buffer = widgets.notes_view.buffer();
             buffer.set_text(&model.notes);
             let input_sender = sender.input_sender().clone();
@@ -528,6 +565,10 @@ impl SimpleComponent for ModPropertiesDialog {
             }
             ModPropertiesMsg::NotesChanged(notes) => {
                 self.notes = notes;
+            }
+            ModPropertiesMsg::NexusModIdChanged(raw) => {
+                self.nexus_mod_id_text = raw;
+                self.nexus_id_invalid = false;
             }
             ModPropertiesMsg::SetFileTarget(idx, target) => {
                 if let Some(t) = self.file_targets.get_mut(idx) {
@@ -702,6 +743,19 @@ impl SimpleComponent for ModPropertiesDialog {
                 self.files_loading = false;
             }
             ModPropertiesMsg::Apply => {
+                let raw_nexus_id = self.nexus_mod_id_text.trim();
+                let parsed_nexus_id = if raw_nexus_id.is_empty() {
+                    None
+                } else {
+                    match crate::app::free_fns::parse_nexus_mod_id_from_input(raw_nexus_id) {
+                        Some(id) => Some(id),
+                        None => {
+                            self.nexus_id_invalid = true;
+                            return;
+                        }
+                    }
+                };
+                self.nexus_mod_id = parsed_nexus_id;
                 self.window.set_visible(false);
                 let file_targets: HashMap<String, InstallTarget> = self
                     .files
@@ -712,6 +766,8 @@ impl SimpleComponent for ModPropertiesDialog {
                 let _ = sender.output(ModPropertiesOutput::Applied {
                     name: self.name.clone(),
                     notes: self.notes.clone(),
+                    nexus_mod_id: self.nexus_mod_id,
+                    nexus_id_changed: self.nexus_mod_id != self.nexus_mod_id_original,
                     install_target: self.install_target.clone(),
                     file_targets,
                 });

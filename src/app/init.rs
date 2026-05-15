@@ -500,18 +500,8 @@ pub(super) fn wire_drag_drop(
         if let Some(row) = list_box.row_at_y(y as i32) {
             let len = list_box.observe_children().n_items() as usize;
             let to = half_row_index(&row, y, len);
-            let mut selected: Vec<usize> = list_box
-                .selected_rows()
-                .iter()
-                .map(|r| gtk::prelude::ListBoxRowExt::index(r) as usize)
-                .collect();
             list_box.unselect_all();
-            if selected.contains(&from) && selected.len() > 1 {
-                selected.sort_unstable();
-                plugin_sender
-                    .send(AppMsg::MoveSelectedPluginsTo { selected, from, to })
-                    .unwrap();
-            } else if from != to {
+            if from != to {
                 plugin_sender.send(AppMsg::MovePluginTo(from, to)).unwrap();
             }
         }

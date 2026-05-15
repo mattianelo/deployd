@@ -155,6 +155,29 @@ impl Tracker {
         Ok(())
     }
 
+    /// Update the Nexus coordinates attached to an installed mod.
+    pub async fn update_mod_nexus_ids(
+        &self,
+        mod_id: &str,
+        nexus_mod_id: Option<i64>,
+        nexus_file_id: Option<i64>,
+        nexus_domain: Option<&str>,
+    ) -> Result<()> {
+        sqlx::query(
+            "UPDATE mods
+             SET nexus_mod_id = ?, nexus_file_id = ?, nexus_domain = ?
+             WHERE id = ?",
+        )
+        .bind(nexus_mod_id)
+        .bind(nexus_file_id)
+        .bind(nexus_domain)
+        .bind(mod_id)
+        .execute(&self.pool)
+        .await
+        .context("Failed to update mod Nexus IDs")?;
+        Ok(())
+    }
+
     pub async fn save_fomod_selections(&self, mod_id: &str, json: &str) -> Result<()> {
         sqlx::query("UPDATE mods SET fomod_selections = ? WHERE id = ?")
             .bind(json)
@@ -182,5 +205,65 @@ impl Tracker {
             .into_iter()
             .filter(|m| m.nexus_mod_id.is_some())
             .collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn make_tracker() -> Result<Tracker> {
+        let tracker = Tracker::open("sqlite::memory:").await?;
+        sqlx::query(
+            "INSERT INTO games (id, title, path, data_subdir)
+             VALUES ('g', 'Test', '/tmp/g', 'Data')",
+        )
+        .execute(&tracker.pool)
+        .await?;
+        Ok(tracker)
+    }
+
+    fn mod_entry(id: &str) -> ModEntry {
+        ModEntry {
+            id: id.to_string(),
+            game_id: "g".to_string(),
+            name: "Test Mod".to_string(),
+            archive_hash: None,
+            archive_path: None,
+            installed_at: None,
+            enabled: true,
+            priority: 0,
+            nexus_mod_id: None,
+            nexus_file_id: None,
+            nexus_domain: None,
+            version: None,
+            author: None,
+            nexus_description: None,
+            latest_version: None,
+            install_target: InstallTarget::Data,
+            notes: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn updates_nexus_ids_without_changing_mod_identity() -> Result<()> {
+        let tracker = make_tracker().await?;
+        tracker.insert_mod(&mod_entry("mod-a")).await?;
+
+        tracker
+            .update_mod_nexus_ids("mod-a", Some(101), None, Some("witcher"))
+            .await?;
+
+        let mods = tracker.list_mods("g").await?;
+        assert_eq!(mods.len(), 1);
+        let mod_entry = mods
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("expected one mod entry"))?;
+        assert_eq!(mod_entry.id, "mod-a");
+        assert_eq!(mod_entry.nexus_mod_id, Some(101));
+        assert_eq!(mod_entry.nexus_file_id, None);
+        assert_eq!(mod_entry.nexus_domain.as_deref(), Some("witcher"));
+        Ok(())
     }
 }
