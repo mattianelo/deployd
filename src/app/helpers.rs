@@ -151,7 +151,7 @@ impl App {
                 }),
         );
         self.installing = false;
-        if let Some(dl_id) = self.active_download_id.clone() {
+        if let Some(dl_id) = self.active_install_download_id.clone() {
             self.update_download_status(
                 &dl_id,
                 crate::models::download::DownloadStatus::Extracting,

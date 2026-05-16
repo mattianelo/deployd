@@ -281,7 +281,7 @@ impl App {
             WorkKind::Installing,
             format!("Installing {}...", pending.mod_name),
         );
-        if let Some(dl_id) = self.active_download_id.clone() {
+        if let Some(dl_id) = self.active_install_download_id.clone() {
             self.update_download_status(
                 &dl_id,
                 crate::models::download::DownloadStatus::Extracting,
@@ -416,19 +416,12 @@ impl App {
         self.installing = false;
         self.finish_current_work();
 
-        if let Some(dl_id) = self.active_download_id.take() {
-            let (status, msg) = if was_reinstall {
-                (
-                    crate::models::download::DownloadStatus::Installed,
-                    "Installed",
-                )
-            } else {
-                (
-                    crate::models::download::DownloadStatus::Downloaded,
-                    "Ready to install",
-                )
-            };
-            self.update_download_status(&dl_id, status, msg);
+        if let Some(dl_id) = self.active_install_download_id.take() {
+            let status = crate::models::download::DownloadStatus::restored_after_cancelled_install(
+                was_reinstall,
+            );
+            let msg = status.default_status_msg().to_string();
+            self.update_download_status(&dl_id, status, &msg);
         }
     }
 
@@ -464,6 +457,13 @@ impl App {
             WorkKind::Installing,
             format!("Installing {}...", pending.mod_name),
         );
+        if let Some(dl_id) = self.active_install_download_id.clone() {
+            self.update_download_status(
+                &dl_id,
+                crate::models::download::DownloadStatus::Extracting,
+                "Caching files...",
+            );
+        }
 
         // Serialize selections before moving into the async block.
         let serialized_selections: Vec<Vec<Vec<usize>>> = selections
@@ -600,19 +600,12 @@ impl App {
         self.installing = false;
         self.finish_current_work();
 
-        if let Some(dl_id) = self.active_download_id.take() {
-            let (status, msg) = if was_reinstall {
-                (
-                    crate::models::download::DownloadStatus::Installed,
-                    "Installed",
-                )
-            } else {
-                (
-                    crate::models::download::DownloadStatus::Downloaded,
-                    "Ready to install",
-                )
-            };
-            self.update_download_status(&dl_id, status, msg);
+        if let Some(dl_id) = self.active_install_download_id.take() {
+            let status = crate::models::download::DownloadStatus::restored_after_cancelled_install(
+                was_reinstall,
+            );
+            let msg = status.default_status_msg().to_string();
+            self.update_download_status(&dl_id, status, &msg);
         }
     }
 
@@ -628,7 +621,7 @@ impl App {
             WorkKind::Installing
         };
         self.update_work(kind, msg.clone(), Some(fraction));
-        if let Some(ref dl_id) = self.active_download_id.clone() {
+        if let Some(ref dl_id) = self.active_install_download_id.clone() {
             if let Some(entry) = self.all_downloads.iter_mut().find(|e| e.id == *dl_id) {
                 entry.progress = fraction;
                 entry.status_msg = msg.clone();
@@ -674,6 +667,13 @@ impl App {
             WorkKind::Installing,
             format!("Merging into {}...", mod_name),
         );
+        if let Some(dl_id) = self.active_install_download_id.clone() {
+            self.update_download_status(
+                &dl_id,
+                crate::models::download::DownloadStatus::Extracting,
+                "Caching files...",
+            );
+        }
 
         let input_sender = sender.input_sender().clone();
         sender.oneshot_command(async move {
@@ -926,7 +926,7 @@ impl App {
                 self.finish_current_work();
                 self.reinstall_mode = false;
                 self.pending_fomod_selections = None;
-                if let Some(dl_id) = self.active_download_id.take() {
+                if let Some(dl_id) = self.active_install_download_id.take() {
                     self.update_download_status(
                         &dl_id,
                         crate::models::download::DownloadStatus::Failed,
@@ -960,9 +960,9 @@ impl App {
             Ok(add_result) => add_result.mod_entry.archive_hash.clone(),
             Err(_) => None,
         };
-        let metadata_dl_id = self.active_download_id.clone();
+        let metadata_dl_id = self.active_install_download_id.clone();
 
-        if let Some(dl_id) = self.active_download_id.take() {
+        if let Some(dl_id) = self.active_install_download_id.take() {
             let (status, msg) = if result.is_ok() {
                 (
                     crate::models::download::DownloadStatus::Installed,
@@ -1134,7 +1134,7 @@ impl App {
         self.installing = false;
         self.finish_current_work();
 
-        if let Some(dl_id) = self.active_download_id.take() {
+        if let Some(dl_id) = self.active_install_download_id.take() {
             let (status, msg) = if result.is_ok() {
                 (
                     crate::models::download::DownloadStatus::Installed,
@@ -1262,11 +1262,7 @@ impl App {
             ids.file_id = file_id;
         }
         self.begin_work(WorkKind::FetchingMetadata, "Fetching Nexus metadata...");
-        self.update_download_status(
-            &download_id,
-            crate::models::download::DownloadStatus::Extracting,
-            "Fetching Nexus metadata...",
-        );
+        self.begin_download_metadata_fetch(&download_id);
         let partial_name = self.pending_fetched_name.clone();
         let download_id_for_result = (!is_install).then(|| download_id.clone());
         sender.oneshot_command(async move {

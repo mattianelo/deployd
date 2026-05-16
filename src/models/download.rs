@@ -49,6 +49,21 @@ impl DownloadStatus {
             Self::Failed => "Install failed",
         }
     }
+
+    pub fn restored_after_cancelled_install(was_reinstall: bool) -> Self {
+        if was_reinstall {
+            Self::Installed
+        } else {
+            Self::Downloaded
+        }
+    }
+
+    pub fn restored_after_metadata_fetch(previous: &Self) -> Self {
+        match previous {
+            Self::Downloading | Self::Extracting => Self::Downloaded,
+            stable => stable.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -120,5 +135,50 @@ impl DownloadEntry {
             self.status,
             DownloadStatus::Downloaded | DownloadStatus::Failed
         ) && self.archive_path.is_some()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DownloadStatus;
+
+    #[test]
+    fn cancelled_fresh_install_returns_to_downloaded() {
+        assert_eq!(
+            DownloadStatus::restored_after_cancelled_install(false),
+            DownloadStatus::Downloaded
+        );
+    }
+
+    #[test]
+    fn cancelled_reinstall_returns_to_installed() {
+        assert_eq!(
+            DownloadStatus::restored_after_cancelled_install(true),
+            DownloadStatus::Installed
+        );
+    }
+
+    #[test]
+    fn metadata_fetch_restores_stable_status() {
+        assert_eq!(
+            DownloadStatus::restored_after_metadata_fetch(&DownloadStatus::Installed),
+            DownloadStatus::Installed
+        );
+        assert_eq!(
+            DownloadStatus::restored_after_metadata_fetch(&DownloadStatus::Failed),
+            DownloadStatus::Failed
+        );
+    }
+
+    #[test]
+    fn metadata_fetch_busy_status_falls_back_to_downloaded() {
+        assert_eq!(
+            DownloadStatus::restored_after_metadata_fetch(&DownloadStatus::Downloading),
+            DownloadStatus::Downloaded
+        );
+        assert_eq!(
+            DownloadStatus::restored_after_metadata_fetch(&DownloadStatus::Extracting),
+            DownloadStatus::Downloaded
+        );
     }
 }

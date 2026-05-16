@@ -1849,6 +1849,7 @@ impl Component for App {
                 self.pending_file_id_needed = None;
                 if let Some(dl_id) = download_id {
                     // Standalone (right-click) path: update the download entry directly.
+                    self.finish_download_metadata_fetch(&dl_id);
                     if let Some(name) = combined_name {
                         self.handle_download_name_resolved(
                             dl_id.clone(),

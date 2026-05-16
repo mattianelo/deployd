@@ -251,7 +251,7 @@ impl App {
 
         // Store nexus_ids for the PendingInstall handoff
         self.pending_nexus_ids = nexus_ids.clone();
-        self.active_download_id = Some(download_id.clone());
+        self.active_install_download_id = Some(download_id.clone());
         self.pending_fetched_name = None;
 
         // If nexus IDs are known but metadata hasn't been fetched yet, fetch the
@@ -864,6 +864,7 @@ impl App {
         };
 
         let input_sender = sender.input_sender().clone();
+        self.begin_download_metadata_fetch(&download_id);
         self.show_toast("Fetching metadata...");
         sender.oneshot_command(async move {
             let timing_start = std::time::Instant::now();

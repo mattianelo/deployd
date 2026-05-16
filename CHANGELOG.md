@@ -34,6 +34,9 @@
   of `app.deployd`, and its desktop/AppStream IDs match that reverse-DNS
   identity for manual Snap Store review.
 - Search typing is debounced to reduce list-filter stalls while keeping filter chips immediate.
+- Downloads rows no longer stay stuck in a busy state when a download completes during another
+  install, or when Nexus metadata fetching succeeds or fails after temporarily showing row-level
+  progress.
 - Tool launches no longer try to reuse a Wine drive letter occupied by a broken `dosdevices`
   symlink, avoiding noisy `failed to create q: drive: File exists` messages after BodySlide runs.
 - BodySlide detection and launch now prefer `BodySlide x64.exe` over the 32-bit `BodySlide.exe`,

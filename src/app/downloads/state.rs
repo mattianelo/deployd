@@ -231,4 +231,28 @@ impl App {
             self.refresh_download_counts();
         }
     }
+
+    pub(crate) fn begin_download_metadata_fetch(&mut self, download_id: &str) {
+        if let Some(entry) = self.all_downloads.iter().find(|e| e.id == download_id)
+            && !entry.is_active()
+        {
+            self.metadata_fetch_previous_status
+                .entry(download_id.to_string())
+                .or_insert_with(|| entry.status.clone());
+        }
+        self.update_download_status(
+            download_id,
+            DownloadStatus::Extracting,
+            "Fetching Nexus metadata...",
+        );
+    }
+
+    pub(crate) fn finish_download_metadata_fetch(&mut self, download_id: &str) {
+        let Some(status) = self.metadata_fetch_previous_status.remove(download_id) else {
+            return;
+        };
+        let status = DownloadStatus::restored_after_metadata_fetch(&status);
+        let msg = status.default_status_msg().to_string();
+        self.update_download_status(download_id, status, &msg);
+    }
 }

@@ -55,7 +55,6 @@ impl App {
         }
         self.refresh_download_counts();
         self.downloads_visible = true;
-        self.active_download_id = Some(download_id.clone());
 
         let input_sender = sender.input_sender().clone();
         sender.oneshot_command(async move {

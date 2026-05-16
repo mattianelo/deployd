@@ -110,8 +110,11 @@ pub struct App {
     pub(crate) all_downloads: Vec<DownloadEntry>,
     /// Whether the downloads sidebar is visible.
     pub(crate) downloads_visible: bool,
-    /// ID of the currently active download (for status updates).
-    pub(crate) active_download_id: Option<String>,
+    /// Download entry currently flowing through the install/pre-install pipeline.
+    pub(crate) active_install_download_id: Option<String>,
+    /// Previous stable row status for standalone metadata fetches.
+    pub(crate) metadata_fetch_previous_status:
+        HashMap<String, crate::models::download::DownloadStatus>,
     /// Cached count of active downloads for current game (for sidebar view).
     pub(crate) active_download_count: usize,
     /// Count of active downloads across ALL games (for headerbar indicator).

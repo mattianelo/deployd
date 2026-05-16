@@ -21,6 +21,7 @@ impl App {
                 // Propagate the fetched name back to the download entry if it was
                 // not already resolved by an earlier mechanism (e.g. NXM auto-fetch).
                 if let Some(ref id) = dl_id {
+                    self.finish_download_metadata_fetch(id);
                     let needs_update = self
                         .all_downloads
                         .iter()
@@ -83,6 +84,9 @@ impl App {
             Err(e) => {
                 eprintln!("deployd: failed to fetch Nexus metadata: {e}");
                 self.push_notification(&format!("Metadata fetch failed: {e}"));
+                if let Some(ref id) = dl_id {
+                    self.finish_download_metadata_fetch(id);
+                }
                 // For disk-scanned entries with a known mod_id but unresolved file_id,
                 // offer the dialog so the user can at least store the file_id for the next retry.
                 if let Some(ref id) = dl_id
@@ -150,6 +154,7 @@ impl App {
                     .find(|e| e.id == nxm_result.download_id)
                 {
                     entry.status = DownloadStatus::Downloaded;
+                    entry.progress = 1.0;
                     entry.status_msg = "Download complete".to_string();
                     entry.archive_path = Some(nxm_result.archive_path.clone());
                     entry.nexus_ids = new_nexus_ids.clone();
@@ -165,6 +170,7 @@ impl App {
                         && row.entry.id == nxm_result.download_id
                     {
                         row.entry.status = DownloadStatus::Downloaded;
+                        row.entry.progress = 1.0;
                         row.entry.status_msg = "Download complete".to_string();
                         row.entry.archive_path = Some(nxm_result.archive_path.clone());
                         row.entry.nexus_ids = new_nexus_ids;
@@ -176,12 +182,6 @@ impl App {
                     }
                 }
                 drop(guard);
-                // Only clear active_download_id if it belongs to this download.
-                // If a concurrent extraction is in progress it will have overwritten
-                // active_download_id with its own ID — don't clobber that.
-                if self.active_download_id.as_deref() == Some(nxm_download_id.as_str()) {
-                    self.active_download_id = None;
-                }
                 // When this was the last active download, rebuild the view so the
                 // sort order and filter chips (Active/Completed) reflect the new status.
                 if !self.all_downloads.iter().any(|e| e.is_active()) {
@@ -208,17 +208,12 @@ impl App {
             }
             Err(e) => {
                 // Mark the specific NXM download as failed using the id that was
-                // captured in the async closure, not active_download_id (which
-                // may have been overwritten by a concurrent extraction).
+                // captured in the async closure.
                 self.update_download_status(
                     &nxm_download_id,
                     DownloadStatus::Failed,
                     &format!("Failed: {e}"),
                 );
-                // Only clear active_download_id if it still refers to this download.
-                if self.active_download_id.as_deref() == Some(nxm_download_id.as_str()) {
-                    self.active_download_id = None;
-                }
 
                 self.push_notification(&format!("Download failed: {e}"));
             }

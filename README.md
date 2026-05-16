@@ -39,7 +39,8 @@ libadwaita, and Rust.
 - **Download pause/resume** — Active downloads can be paused and resumed mid-transfer
 - **Responsive work feedback** — Long archive, scan, deploy, and runtime setup tasks show clear
   busy messages while keeping the interface responsive; Downloads rows mirror install phases and
-  External Tools launches stay cancellable through the running Deployd-owned process
+  Nexus metadata work without leaving completed downloads or installs stuck as active; External
+  Tools launches stay cancellable through the running Deployd-owned process
 - **GNOME HIG interface** — Libadwaita navigation, adaptive split views, toolbar views,
   status pages, toast feedback, dialogs, list rows, and appearance settings keep Deployd aligned
   with modern GNOME app conventions
