@@ -20,7 +20,7 @@
       handles Nexus Mods downloads via SSO login and NXM links, and deploys mods
       as hardlinks for safe, non-destructive mod management.
     </p>
-    <p>Version 2.2.2.</p>
+    <p>Version 2.2.3.</p>
     <ul>
       <li>Supports Skyrim SE, Fallout 4, Fallout: New Vegas, Starfield, The Witcher 3, and Cyberpunk 2077</li>
       <li>Game detection from Steam and Heroic Launcher (GOG/Epic)</li>
@@ -37,7 +37,7 @@
 
   <launchable type="desktop-id">io.mattianelo.deployd.desktop</launchable>
 
-  <url type="homepage">https://www.nexusmods.com/site/mods/174218</url>
+  <url type="homepage">https://www.nexusmods.com/skyrimspecialedition/mods/174218</url>
   <url type="bugtracker">https://gitlab.com/mattianelo/deployd/-/issues</url>
   <url type="contact">https://gitlab.com/mattianelo/deployd/-/issues</url>
   <url type="vcs-browser">https://gitlab.com/mattianelo/deployd</url>
@@ -63,8 +63,19 @@
     <keyword>Heroic</keyword>
   </keywords>
 
+  <screenshots>
+    <screenshot type="default">
+      <caption>Main window with mod order, plugin order, downloads, and notifications panels.</caption>
+      <image type="source" width="1920" height="1048">screenshots/main-window.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Main window showing the first-run instructions and game setup flow.</caption>
+      <image type="source" width="1920" height="1048">screenshots/main-window-instructions.png</image>
+    </screenshot>
+  </screenshots>
+
   <releases>
-    <release version="2.2.2" date="2026-05-11" type="stable">
+    <release version="2.2.3" date="2026-05-16" type="stable">
       <description>
         <p>Improves long-running work feedback for installs, downloads scans, deploys, metadata
         fetches, and external tool launches. Downloads rows now mirror install phases, progress

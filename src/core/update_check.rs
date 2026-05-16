@@ -1,10 +1,10 @@
 use reqwest::Client;
 
 const NEXUS_API_BASE: &str = "https://api.nexusmods.com/v1";
-pub const NEXUS_DOMAIN: &str = "site";
+pub const NEXUS_DOMAIN: &str = "skyrimspecialedition";
 pub const NEXUS_MOD_ID: i64 = 174218;
 
-pub const NEXUS_PAGE_URL: &str = "https://www.nexusmods.com/site/mods/174218";
+pub const NEXUS_PAGE_URL: &str = "https://www.nexusmods.com/skyrimspecialedition/mods/174218";
 
 pub struct ReleaseInfo {
     pub version: String,

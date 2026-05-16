@@ -1,13 +1,13 @@
 name: deployd
 base: core24
-version: '2.2.2'
+version: '2.2.3'
 adopt-info: deployd
 title: Deployd
 license: GPL-3.0
 contact: https://gitlab.com/mattianelo/deployd/-/issues
 issues: https://gitlab.com/mattianelo/deployd/-/issues
 source-code: https://gitlab.com/mattianelo/deployd
-website: https://www.nexusmods.com/site/mods/174218
+website: https://www.nexusmods.com/skyrimspecialedition/mods/174218
 donation: https://ko-fi.com/mattianelo
 description: |
   Deployd is a non-destructive mod manager for PC games running on Linux.
@@ -84,3 +84,7 @@ parts:
         "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/scalable/apps/deployd.svg"
       install -Dm644 data/io.mattianelo.deployd.metainfo.xml \
         "$CRAFT_PART_INSTALL/usr/share/metainfo/io.mattianelo.deployd.metainfo.xml"
+      install -Dm644 data/screenshots/main-window.png \
+        "$CRAFT_PART_INSTALL/usr/share/metainfo/screenshots/main-window.png"
+      install -Dm644 data/screenshots/main-window-instructions.png \
+        "$CRAFT_PART_INSTALL/usr/share/metainfo/screenshots/main-window-instructions.png"
