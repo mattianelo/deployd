@@ -443,11 +443,15 @@ impl App {
         fraction: f64,
         msg: String,
     ) {
-        // Update backing store
-        if let Some(entry) = self.all_downloads.iter_mut().find(|e| e.id == download_id) {
-            entry.progress = fraction;
-            entry.status_msg = msg.clone();
+        let Some(entry) = self.all_downloads.iter_mut().find(|e| e.id == download_id) else {
+            return;
+        };
+        if !entry.is_active() {
+            return;
         }
+        entry.progress = fraction;
+        entry.status_msg = msg.clone();
+
         // Update factory
         let mut guard = self.downloads.guard();
         for i in 0..guard.len() {

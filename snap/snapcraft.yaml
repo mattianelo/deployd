@@ -86,5 +86,3 @@ parts:
         "$CRAFT_PART_INSTALL/usr/share/metainfo/io.mattianelo.deployd.metainfo.xml"
       install -Dm644 data/screenshots/main-window.png \
         "$CRAFT_PART_INSTALL/usr/share/metainfo/screenshots/main-window.png"
-      install -Dm644 data/screenshots/main-window-instructions.png \
-        "$CRAFT_PART_INSTALL/usr/share/metainfo/screenshots/main-window-instructions.png"
