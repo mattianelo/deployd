@@ -5,7 +5,12 @@ use gtk::gio;
 use gtk::prelude::*;
 use relm4::prelude::*;
 
+use crate::core::game;
 use crate::core::migration_export::{ExportGameRequest, export_game_bundle};
+use crate::core::migration_import::{
+    PreviewConflict, PreviewImportRequest, PreviewImportResult, ValidationItem,
+    preview_import_bundle,
+};
 use crate::models::game::GameEngine;
 use crate::ui::game_setup_dialog::{GameSetupDialog, GameSetupOutput};
 use crate::ui::settings_dialog::{SettingsDialog, SettingsDialogOutput};
@@ -33,11 +38,13 @@ impl App {
                     tracker,
                     self.nexus_username.is_some(),
                     self.color_scheme_idx,
+                    game::is_snap(),
                 ))
                 .forward(sender.input_sender(), |output| match output {
                     SettingsDialogOutput::Closed => AppMsg::SettingsClosed,
                     SettingsDialogOutput::ApiKeyChanged => AppMsg::NexusApiKeyUpdated,
                     SettingsDialogOutput::ManageGames => AppMsg::ManageGamesClicked,
+                    SettingsDialogOutput::PreviewAppImageExport => AppMsg::PreviewAppImageExport,
                     SettingsDialogOutput::ColorSchemeChanged(idx) => AppMsg::SetColorScheme(idx),
                 }),
         );
@@ -271,6 +278,79 @@ impl App {
         }
     }
 
+    pub(crate) fn handle_preview_appimage_export(
+        &mut self,
+        root: &adw::ApplicationWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        if !game::is_snap() {
+            self.push_notification("AppImage export preview is only available from the Snap.");
+            return;
+        }
+        let dialog = gtk::FileDialog::builder()
+            .title("Preview AppImage Export")
+            .modal(true)
+            .build();
+
+        let filter = gtk::FileFilter::new();
+        filter.add_pattern("*.deployd-export.zip");
+        filter.add_pattern("*.zip");
+        filter.set_name(Some("Deployd Export Bundle"));
+        let filters = gio::ListStore::new::<gtk::FileFilter>();
+        filters.append(&filter);
+        dialog.set_filters(Some(&filters));
+
+        let input_sender = sender.input_sender().clone();
+        dialog.open(Some(root), None::<&gio::Cancellable>, move |result| {
+            if let Ok(file) = result
+                && let Some(path) = file.path()
+            {
+                input_sender
+                    .send(AppMsg::PreviewAppImageExportChosen(path))
+                    .ok();
+            }
+        });
+    }
+
+    pub(crate) fn handle_preview_appimage_export_chosen(
+        &mut self,
+        bundle_path: PathBuf,
+        sender: &ComponentSender<Self>,
+    ) {
+        if !game::is_snap() {
+            self.push_notification("AppImage export preview is only available from the Snap.");
+            return;
+        }
+        let Some(tracker) = self.tracker.clone() else {
+            self.push_notification("Database not ready yet.");
+            return;
+        };
+
+        self.begin_work(
+            WorkKind::PreviewingMigration,
+            "Previewing AppImage export...",
+        );
+        sender.oneshot_command(async move {
+            AppCmdMsg::AppImageExportPreviewed(
+                preview_import_bundle(&tracker, PreviewImportRequest { bundle_path })
+                    .await
+                    .map_err(|e| e.to_string()),
+            )
+        });
+    }
+
+    pub(crate) fn handle_cmd_appimage_export_previewed(
+        &mut self,
+        result: Result<PreviewImportResult, String>,
+        root: &adw::ApplicationWindow,
+    ) {
+        self.finish_work(WorkKind::PreviewingMigration);
+        match result {
+            Ok(result) => show_migration_preview_dialog(root, &result),
+            Err(e) => show_invalid_migration_preview_dialog(root, &e),
+        }
+    }
+
     pub(crate) fn handle_games_configured(
         &mut self,
         configs: Vec<crate::app::messages::GameConfig>,
@@ -477,6 +557,84 @@ impl App {
         self.selected_game_idx = new_idx;
         self.game_dropdown.set_selected(new_idx as u32);
         sender.input(AppMsg::GameSelected(new_idx as u32));
+    }
+}
+
+fn show_migration_preview_dialog(root: &adw::ApplicationWindow, result: &PreviewImportResult) {
+    let status = match result.conflict {
+        PreviewConflict::NewGame => "Ready to preview",
+        PreviewConflict::ExistingGame => "Already managed in Snap",
+    };
+    let counts = &result.counts;
+    let mut body = format!(
+        "{}\n\nGame ID: {}\nSource Deployd: {}\nStatus: {}\n\nContents:\n- Mods: {}\n- Plugins: {}\n- Profiles: {}\n- Tools: {}\n- Downloads: {}\n- Cache files: {}\n- Vanilla backups: {}\n- Save snapshots: {}\n\nNeeds confirmation later:\n{}",
+        result.manifest.game_title,
+        result.manifest.game_id,
+        result.manifest.deployd_version,
+        status,
+        counts.mods,
+        counts.plugins,
+        counts.profiles,
+        counts.tools,
+        counts.downloads,
+        counts.cache_files,
+        counts.vanilla_backups,
+        counts.save_snapshots,
+        result
+            .validation_items
+            .iter()
+            .map(validation_item_label)
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+
+    if result.conflict == PreviewConflict::ExistingGame {
+        body.push_str(
+            "\n\nThis game already exists in the Snap. A later import phase will skip it by default unless an explicit merge or replace choice is implemented.",
+        );
+    }
+
+    if !result.warnings.is_empty() {
+        body.push_str("\n\nWarnings:");
+        for warning in result.warnings.iter().take(5) {
+            body.push_str("\n- ");
+            body.push_str(warning);
+        }
+        if result.warnings.len() > 5 {
+            body.push_str(&format!(
+                "\n- {} more warning(s)",
+                result.warnings.len() - 5
+            ));
+        }
+    }
+
+    let dialog = adw::AlertDialog::builder()
+        .heading("AppImage Export Preview")
+        .body(body)
+        .build();
+    dialog.add_response("close", "Close");
+    dialog.set_close_response("close");
+    dialog.present(Some(root));
+}
+
+fn show_invalid_migration_preview_dialog(root: &adw::ApplicationWindow, error: &str) {
+    let dialog = adw::AlertDialog::builder()
+        .heading("Invalid Export Bundle")
+        .body(format!(
+            "Deployd could not preview this export bundle.\n\n{error}"
+        ))
+        .build();
+    dialog.add_response("close", "Close");
+    dialog.set_close_response("close");
+    dialog.present(Some(root));
+}
+
+fn validation_item_label(item: &ValidationItem) -> &'static str {
+    match item {
+        ValidationItem::NeedsGameFolderConfirmation => "- Game folder",
+        ValidationItem::NeedsWinePrefixConfirmation => "- Wine prefix",
+        ValidationItem::NeedsDownloadsFolderConfirmation => "- Downloads folder",
+        ValidationItem::ToolsNeedSnapRuntimeRebind => "- External tools through Snap Wine runtime",
     }
 }
 

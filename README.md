@@ -94,7 +94,7 @@ If you select a cache directory on a different filesystem than the game folder, 
 
 The AppImage can create a per-game Snap migration bundle from **Settings → Manage Games → Export for Snap**. The bundle contains the selected game's database slice, cached mod files, vanilla backups, and profile save snapshots.
 
-The Snap cannot read the AppImage's hidden `~/.local/share/deployd/` data directly, so this export only writes a user-chosen `.deployd-export.zip` file. Snap-side import, path validation, downloads folder confirmation, and Snap Wine runtime tool rebinding are handled separately.
+The Snap cannot read the AppImage's hidden `~/.local/share/deployd/` data directly, so this export only writes a user-chosen `.deployd-export.zip` file. The Snap can preview that bundle from **Settings → Migration → Preview AppImage Export** to show the exported game, counts, warnings, and path confirmations that will be required later. Actual Snap-side import, path validation, downloads folder confirmation, and Snap Wine runtime tool rebinding are handled separately.
 
 ---
 

@@ -4,7 +4,9 @@ pub mod game;
 pub mod installer;
 #[cfg(feature = "loot")]
 pub mod loot_sort;
+pub mod migration_bundle;
 pub mod migration_export;
+pub mod migration_import;
 pub mod mod_folders;
 pub mod nexus_api;
 pub mod nxm;

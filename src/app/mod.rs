@@ -1535,6 +1535,10 @@ impl Component for App {
                 game_id,
                 output_path,
             } => self.handle_export_game_for_snap_chosen(game_id, output_path, &sender),
+            AppMsg::PreviewAppImageExport => self.handle_preview_appimage_export(root, &sender),
+            AppMsg::PreviewAppImageExportChosen(bundle_path) => {
+                self.handle_preview_appimage_export_chosen(bundle_path, &sender)
+            }
             AppMsg::NexusApiKeyUpdated => self.handle_nexus_api_key_updated(&sender),
             AppMsg::NxmLinkReceived(link) => self.handle_nxm_link_received(link, &sender),
             AppMsg::CheckUpdatesClicked => self.handle_check_updates(&sender),
@@ -1924,6 +1928,9 @@ impl Component for App {
             }
             AppCmdMsg::GameExportedForSnap(result) => {
                 self.handle_cmd_game_exported_for_snap(result)
+            }
+            AppCmdMsg::AppImageExportPreviewed(result) => {
+                self.handle_cmd_appimage_export_previewed(result, root)
             }
             AppCmdMsg::PrioritySaved(result) => self.handle_cmd_priority_saved(result, &sender),
             AppCmdMsg::OverridesRefreshed(result) => {

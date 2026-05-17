@@ -3,17 +3,17 @@ use std::io::{Seek, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
-use serde::Serialize;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use tempfile::TempDir;
 use walkdir::WalkDir;
 use zip::write::SimpleFileOptions;
 
 use crate::core::game;
+use crate::core::migration_bundle::{
+    EXPORT_SCHEMA_VERSION, ExportManifest, SOURCE_PACKAGE_APPIMAGE,
+};
 use crate::models::game::Game;
 use crate::utils::paths;
-
-const EXPORT_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone)]
 pub struct ExportGameRequest {
@@ -27,20 +27,6 @@ pub struct ExportGameRequest {
 pub struct ExportGameResult {
     pub output_path: PathBuf,
     pub warnings: Vec<String>,
-}
-
-#[derive(Debug, Serialize)]
-struct ExportManifest {
-    schema_version: u32,
-    deployd_version: &'static str,
-    source_package: &'static str,
-    exported_at: String,
-    game_id: String,
-    game_title: String,
-    original_game_path: String,
-    original_wine_prefix: Option<String>,
-    advisory_downloads_dir: String,
-    warnings: Vec<String>,
 }
 
 pub async fn export_game_bundle(request: ExportGameRequest) -> Result<ExportGameResult> {
@@ -69,8 +55,8 @@ pub async fn export_game_bundle(request: ExportGameRequest) -> Result<ExportGame
 
     let manifest = ExportManifest {
         schema_version: EXPORT_SCHEMA_VERSION,
-        deployd_version: env!("CARGO_PKG_VERSION"),
-        source_package: "appimage",
+        deployd_version: env!("CARGO_PKG_VERSION").to_string(),
+        source_package: SOURCE_PACKAGE_APPIMAGE.to_string(),
         exported_at: chrono::Utc::now().to_rfc3339(),
         game_id: request.game.id.clone(),
         game_title: request.game.title.clone(),
@@ -501,8 +487,8 @@ mod tests {
     fn manifest_marks_appimage_source() -> Result<()> {
         let manifest = ExportManifest {
             schema_version: EXPORT_SCHEMA_VERSION,
-            deployd_version: env!("CARGO_PKG_VERSION"),
-            source_package: "appimage",
+            deployd_version: env!("CARGO_PKG_VERSION").to_string(),
+            source_package: SOURCE_PACKAGE_APPIMAGE.to_string(),
             exported_at: "2026-05-16T00:00:00Z".to_string(),
             game_id: "skyrim-se".to_string(),
             game_title: "Skyrim".to_string(),

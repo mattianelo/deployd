@@ -136,6 +136,10 @@ pub enum AppMsg {
         game_id: String,
         output_path: std::path::PathBuf,
     },
+    /// User wants to preview an AppImage export bundle from the Snap.
+    PreviewAppImageExport,
+    /// User selected an AppImage export bundle to preview.
+    PreviewAppImageExportChosen(std::path::PathBuf),
     /// Emitted by SettingsDialog whenever the Nexus API key is set or cleared.
     NexusApiKeyUpdated,
     NxmLinkReceived(String),
@@ -404,6 +408,8 @@ pub enum AppCmdMsg {
     },
     /// Result of writing an AppImage-to-Snap export bundle.
     GameExportedForSnap(Result<crate::core::migration_export::ExportGameResult, String>),
+    /// Result of reading an AppImage-to-Snap export bundle without importing it.
+    AppImageExportPreviewed(Result<crate::core::migration_import::PreviewImportResult, String>),
     PrioritySaved(Result<(), String>),
     OverridesRefreshed(
         Result<std::collections::HashMap<String, crate::core::tracker::OverrideInfo>, String>,

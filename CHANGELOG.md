@@ -8,6 +8,9 @@
   Games with that game's database slice, cached mod files, vanilla backups, and profile save
   snapshots. Snap-side import, path validation, downloads-folder confirmation, and runtime tool
   rebinding remain separate migration work.
+- Snap builds can preview AppImage migration bundles from Settings without importing them, showing
+  the exported game, content counts, warnings, existing-game conflicts, and required later path/tool
+  confirmations.
 - Performance feedback is more cohesive during long-running work: install, extraction, caching,
   deploy, purge, downloads-folder scan, and first-run runtime setup now share the same header busy
   status language.

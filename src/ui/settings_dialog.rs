@@ -17,6 +17,7 @@ pub struct SettingsDialog {
     test_button: gtk::Button,
     save_button: gtk::Button,
     downloads_dir: String,
+    can_preview_appimage_export: bool,
 }
 
 #[derive(Debug)]
@@ -26,6 +27,7 @@ pub enum SettingsMsg {
     Close,
     BrowseDownloadsDir,
     DownloadsDirChosen(PathBuf),
+    PreviewAppImageExport,
     ManageGames,
     SetColorScheme(u32),
 }
@@ -46,14 +48,16 @@ pub enum SettingsDialogOutput {
     ApiKeyChanged,
     /// User wants to open the game setup dialog.
     ManageGames,
+    /// User wants to preview an AppImage export bundle.
+    PreviewAppImageExport,
     /// User changed the color scheme (0=System, 1=Light, 2=Dark).
     ColorSchemeChanged(u32),
 }
 
 #[relm4::component(pub)]
 impl Component for SettingsDialog {
-    /// (tracker, is_logged_in, color_scheme_idx)
-    type Init = (Tracker, bool, u32);
+    /// (tracker, is_logged_in, color_scheme_idx, can_preview_appimage_export)
+    type Init = (Tracker, bool, u32, bool);
     type Input = SettingsMsg;
     type Output = SettingsDialogOutput;
     type CommandOutput = SettingsCmdMsg;
@@ -145,6 +149,24 @@ impl Component for SettingsDialog {
                     },
                 },
 
+                // Migration section
+                add = &adw::PreferencesGroup {
+                    set_title: "Migration",
+                    #[watch]
+                    set_visible: model.can_preview_appimage_export,
+
+                    add = &adw::ActionRow {
+                        set_title: "Preview AppImage Export",
+                        set_subtitle: "Inspect a migration bundle before importing it",
+                        set_activatable: true,
+                        connect_activated => SettingsMsg::PreviewAppImageExport,
+
+                        add_suffix = &gtk::Image::from_icon_name("document-open-symbolic") {
+                            set_valign: gtk::Align::Center,
+                        },
+                    },
+                },
+
                 // Appearance section
                 add = &adw::PreferencesGroup {
                     set_title: "Appearance",
@@ -185,7 +207,7 @@ impl Component for SettingsDialog {
     }
 
     fn init(
-        (tracker, is_logged_in, color_scheme_idx): Self::Init,
+        (tracker, is_logged_in, color_scheme_idx, can_preview_appimage_export): Self::Init,
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
@@ -204,6 +226,7 @@ impl Component for SettingsDialog {
             test_button,
             save_button,
             downloads_dir: default_dir,
+            can_preview_appimage_export,
         };
 
         let api_key_row = &model.api_key_row;
@@ -352,6 +375,10 @@ impl Component for SettingsDialog {
             }
             SettingsMsg::ManageGames => {
                 let _ = sender.output(SettingsDialogOutput::ManageGames);
+                root.close();
+            }
+            SettingsMsg::PreviewAppImageExport => {
+                let _ = sender.output(SettingsDialogOutput::PreviewAppImageExport);
                 root.close();
             }
             SettingsMsg::SetColorScheme(idx) => {
