@@ -54,6 +54,7 @@ pub(crate) enum WorkKind {
     Installing,
     FetchingMetadata,
     ScanningDownloads,
+    ExportingMigration,
     Deploying,
     Purging,
     SettingUpRuntime,

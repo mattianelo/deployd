@@ -4,6 +4,10 @@
 
 ### Added
 
+- AppImage-to-Snap migration export creates a per-game `.deployd-export.zip` bundle from Manage
+  Games with that game's database slice, cached mod files, vanilla backups, and profile save
+  snapshots. Snap-side import, path validation, downloads-folder confirmation, and runtime tool
+  rebinding remain separate migration work.
 - Performance feedback is more cohesive during long-running work: install, extraction, caching,
   deploy, purge, downloads-folder scan, and first-run runtime setup now share the same header busy
   status language.

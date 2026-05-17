@@ -129,6 +129,13 @@ pub enum AppMsg {
     CacheDirResetRequested {
         game_id: String,
     },
+    /// User requested an AppImage-to-Snap export for a managed game.
+    ExportGameForSnap(String),
+    /// User chose the destination for the AppImage-to-Snap export bundle.
+    ExportGameForSnapChosen {
+        game_id: String,
+        output_path: std::path::PathBuf,
+    },
     /// Emitted by SettingsDialog whenever the Nexus API key is set or cleared.
     NexusApiKeyUpdated,
     NxmLinkReceived(String),
@@ -395,6 +402,8 @@ pub enum AppCmdMsg {
         game_id: String,
         result: Result<(), String>,
     },
+    /// Result of writing an AppImage-to-Snap export bundle.
+    GameExportedForSnap(Result<crate::core::migration_export::ExportGameResult, String>),
     PrioritySaved(Result<(), String>),
     OverridesRefreshed(
         Result<std::collections::HashMap<String, crate::core::tracker::OverrideInfo>, String>,

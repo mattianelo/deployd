@@ -1,9 +1,11 @@
 use std::path::PathBuf;
 
 use adw::prelude::*;
+use gtk::gio;
 use gtk::prelude::*;
 use relm4::prelude::*;
 
+use crate::core::migration_export::{ExportGameRequest, export_game_bundle};
 use crate::models::game::GameEngine;
 use crate::ui::game_setup_dialog::{GameSetupDialog, GameSetupOutput};
 use crate::ui::settings_dialog::{SettingsDialog, SettingsDialogOutput};
@@ -11,6 +13,7 @@ use crate::ui::welcome_wizard::{WelcomeWizard, WelcomeWizardOutput};
 
 use super::super::App;
 use super::super::messages::{AppCmdMsg, AppMsg};
+use super::super::types::WorkKind;
 
 impl App {
     pub(crate) fn handle_settings_clicked(
@@ -135,11 +138,12 @@ impl App {
     ) {
         let detected: Vec<crate::models::game::Game> = self.games.clone();
         let cache_dirs = self.game_cache_dirs.clone();
+        let can_export_for_snap = self.running_as_appimage && std::env::var_os("SNAP").is_none();
 
         self.game_setup_dialog = Some(
             GameSetupDialog::builder()
                 .transient_for(root)
-                .launch((detected, vec![], cache_dirs))
+                .launch((detected, vec![], cache_dirs, can_export_for_snap))
                 .forward(sender.input_sender(), |output| match output {
                     GameSetupOutput::Confirmed {
                         enabled,
@@ -152,8 +156,119 @@ impl App {
                     GameSetupOutput::CacheDirResetRequested { game_id } => {
                         AppMsg::CacheDirResetRequested { game_id }
                     }
+                    GameSetupOutput::ExportForSnapRequested { game_id } => {
+                        AppMsg::ExportGameForSnap(game_id)
+                    }
                 }),
         );
+    }
+
+    pub(crate) fn handle_export_game_for_snap(
+        &mut self,
+        game_id: String,
+        root: &adw::ApplicationWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        if !self.running_as_appimage || std::env::var_os("SNAP").is_some() {
+            self.push_notification("Snap migration export is only available from the AppImage.");
+            return;
+        }
+        let Some(game) = self.games.iter().find(|g| g.id == game_id) else {
+            self.push_notification("Game is no longer managed.");
+            return;
+        };
+
+        let dialog = gtk::FileDialog::builder()
+            .title(format!("Export {} for Snap", game.title))
+            .modal(true)
+            .initial_name(format!(
+                "{}.deployd-export.zip",
+                export_file_stem(&game.title)
+            ))
+            .build();
+
+        let filter = gtk::FileFilter::new();
+        filter.add_pattern("*.deployd-export.zip");
+        filter.add_pattern("*.zip");
+        filter.set_name(Some("Deployd Export Bundle"));
+        let filters = gio::ListStore::new::<gtk::FileFilter>();
+        filters.append(&filter);
+        dialog.set_filters(Some(&filters));
+
+        let input_sender = sender.input_sender().clone();
+        dialog.save(Some(root), None::<&gio::Cancellable>, move |result| {
+            if let Ok(file) = result
+                && let Some(path) = file.path()
+            {
+                let output_path = normalize_export_path(path);
+                input_sender
+                    .send(AppMsg::ExportGameForSnapChosen {
+                        game_id: game_id.clone(),
+                        output_path,
+                    })
+                    .ok();
+            }
+        });
+    }
+
+    pub(crate) fn handle_export_game_for_snap_chosen(
+        &mut self,
+        game_id: String,
+        output_path: PathBuf,
+        sender: &ComponentSender<Self>,
+    ) {
+        if !self.running_as_appimage || std::env::var_os("SNAP").is_some() {
+            self.push_notification("Snap migration export is only available from the AppImage.");
+            return;
+        }
+        let Some(game) = self.games.iter().find(|g| g.id == game_id).cloned() else {
+            self.push_notification("Game is no longer managed.");
+            return;
+        };
+        let Ok(cache_root) = self.cache_root_for(&game.id) else {
+            self.push_notification("Cannot resolve this game's cache folder.");
+            return;
+        };
+
+        self.begin_work(
+            WorkKind::ExportingMigration,
+            format!("Exporting {} for Snap...", game.title),
+        );
+
+        let request = ExportGameRequest {
+            game,
+            cache_root,
+            downloads_dir: self.downloads_dir.clone(),
+            output_path,
+        };
+        sender.oneshot_command(async move {
+            AppCmdMsg::GameExportedForSnap(
+                export_game_bundle(request).await.map_err(|e| e.to_string()),
+            )
+        });
+    }
+
+    pub(crate) fn handle_cmd_game_exported_for_snap(
+        &mut self,
+        result: Result<crate::core::migration_export::ExportGameResult, String>,
+    ) {
+        self.finish_work(WorkKind::ExportingMigration);
+        match result {
+            Ok(result) => {
+                let mut message =
+                    format!("Export bundle saved to {}", result.output_path.display());
+                if !result.warnings.is_empty() {
+                    message.push_str(&format!(" ({} warning(s))", result.warnings.len()));
+                    for warning in result.warnings.iter().take(3) {
+                        self.push_notification(&format!("Export warning: {warning}"));
+                    }
+                }
+                self.show_toast(&message);
+            }
+            Err(e) => {
+                self.push_notification(&format!("Export failed: {e}"));
+            }
+        }
     }
 
     pub(crate) fn handle_games_configured(
@@ -363,4 +478,39 @@ impl App {
         self.game_dropdown.set_selected(new_idx as u32);
         sender.input(AppMsg::GameSelected(new_idx as u32));
     }
+}
+
+fn export_file_stem(title: &str) -> String {
+    let stem: String = title
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let collapsed = stem
+        .split('-')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+    if collapsed.is_empty() {
+        "deployd-game".to_string()
+    } else {
+        collapsed
+    }
+}
+
+fn normalize_export_path(mut path: PathBuf) -> PathBuf {
+    if path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.ends_with(".deployd-export.zip"))
+    {
+        return path;
+    }
+    path.set_extension("deployd-export.zip");
+    path
 }

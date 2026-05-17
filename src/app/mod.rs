@@ -1528,6 +1528,13 @@ impl Component for App {
             AppMsg::CacheDirResetRequested { game_id } => {
                 self.handle_cache_dir_reset_requested(game_id, &sender)
             }
+            AppMsg::ExportGameForSnap(game_id) => {
+                self.handle_export_game_for_snap(game_id, root, &sender)
+            }
+            AppMsg::ExportGameForSnapChosen {
+                game_id,
+                output_path,
+            } => self.handle_export_game_for_snap_chosen(game_id, output_path, &sender),
             AppMsg::NexusApiKeyUpdated => self.handle_nexus_api_key_updated(&sender),
             AppMsg::NxmLinkReceived(link) => self.handle_nxm_link_received(link, &sender),
             AppMsg::CheckUpdatesClicked => self.handle_check_updates(&sender),
@@ -1914,6 +1921,9 @@ impl Component for App {
             } => self.handle_cmd_cache_dir_moved(game_id, new_dir, result),
             AppCmdMsg::CacheDirReset { game_id, result } => {
                 self.handle_cmd_cache_dir_reset(game_id, result)
+            }
+            AppCmdMsg::GameExportedForSnap(result) => {
+                self.handle_cmd_game_exported_for_snap(result)
             }
             AppCmdMsg::PrioritySaved(result) => self.handle_cmd_priority_saved(result, &sender),
             AppCmdMsg::OverridesRefreshed(result) => {
