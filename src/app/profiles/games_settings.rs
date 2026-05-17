@@ -5,11 +5,12 @@ use gtk::gio;
 use gtk::prelude::*;
 use relm4::prelude::*;
 
+use crate::app::types::PendingMigrationImport;
 use crate::core::game;
 use crate::core::migration_export::{ExportGameRequest, export_game_bundle};
 use crate::core::migration_import::{
-    PreviewConflict, PreviewImportRequest, PreviewImportResult, ValidationItem,
-    preview_import_bundle,
+    ImportBundleRequest, PreviewConflict, PreviewImportRequest, PreviewImportResult,
+    ValidationItem, import_bundle, preview_import_bundle,
 };
 use crate::models::game::GameEngine;
 use crate::ui::game_setup_dialog::{GameSetupDialog, GameSetupOutput};
@@ -343,12 +344,196 @@ impl App {
         &mut self,
         result: Result<PreviewImportResult, String>,
         root: &adw::ApplicationWindow,
+        sender: &ComponentSender<Self>,
     ) {
         self.finish_work(WorkKind::PreviewingMigration);
         match result {
-            Ok(result) => show_migration_preview_dialog(root, &result),
+            Ok(result) => show_migration_preview_dialog(root, &result, sender),
             Err(e) => show_invalid_migration_preview_dialog(root, &e),
         }
+    }
+
+    pub(crate) fn handle_import_appimage_export(
+        &mut self,
+        bundle_path: PathBuf,
+        root: &adw::ApplicationWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        if !game::is_snap() {
+            self.push_notification("AppImage export import is only available from the Snap.");
+            return;
+        }
+        self.pending_migration_import = Some(PendingMigrationImport {
+            bundle_path,
+            confirmed_game_path: None,
+            confirmed_wine_prefix: None,
+        });
+        self.select_import_game_folder(root, sender);
+    }
+
+    pub(crate) fn handle_import_game_folder_chosen(
+        &mut self,
+        path: PathBuf,
+        root: &adw::ApplicationWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        let Some(pending) = self.pending_migration_import.as_mut() else {
+            return;
+        };
+        pending.confirmed_game_path = Some(path);
+        self.select_import_wine_prefix(root, sender);
+    }
+
+    pub(crate) fn handle_import_wine_prefix_chosen(
+        &mut self,
+        path: PathBuf,
+        root: &adw::ApplicationWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        let Some(pending) = self.pending_migration_import.as_mut() else {
+            return;
+        };
+        pending.confirmed_wine_prefix = Some(path);
+        self.select_import_downloads_folder(root, sender);
+    }
+
+    pub(crate) fn handle_import_downloads_dir_chosen(
+        &mut self,
+        downloads_dir: PathBuf,
+        sender: &ComponentSender<Self>,
+    ) {
+        if !game::is_snap() {
+            self.push_notification("AppImage export import is only available from the Snap.");
+            return;
+        }
+        let Some(pending) = self.pending_migration_import.take() else {
+            return;
+        };
+        let Some(confirmed_game_path) = pending.confirmed_game_path else {
+            self.push_notification("Import cancelled: game folder was not confirmed.");
+            return;
+        };
+        let Some(confirmed_wine_prefix) = pending.confirmed_wine_prefix else {
+            self.push_notification("Import cancelled: Wine prefix was not confirmed.");
+            return;
+        };
+        let Some(tracker) = self.tracker.clone() else {
+            self.push_notification("Database not ready yet.");
+            return;
+        };
+
+        self.begin_work(WorkKind::ImportingMigration, "Importing AppImage export...");
+        let request = ImportBundleRequest {
+            bundle_path: pending.bundle_path,
+            confirmed_game_path,
+            confirmed_wine_prefix,
+            confirmed_downloads_dir: downloads_dir,
+        };
+        sender.oneshot_command(async move {
+            AppCmdMsg::AppImageExportImported(
+                import_bundle(&tracker, request)
+                    .await
+                    .map_err(|e| e.to_string()),
+            )
+        });
+    }
+
+    pub(crate) fn handle_cmd_appimage_export_imported(
+        &mut self,
+        result: Result<crate::core::migration_import::ImportBundleResult, String>,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.finish_work(WorkKind::ImportingMigration);
+        match result {
+            Ok(result) => {
+                let imported_id = result.game.id.clone();
+                self.downloads_dir = result.downloads_dir.clone();
+                if self.games.iter().all(|game| game.id != imported_id) {
+                    self.game_model.append(&result.game.title);
+                    self.games.push(result.game.clone());
+                }
+                if let Some(idx) = self.games.iter().position(|game| game.id == imported_id) {
+                    self.selected_game_idx = idx;
+                    self.game_dropdown.set_selected(idx as u32);
+                    sender.input(AppMsg::GameSelected(idx as u32));
+                }
+                if !result.warnings.is_empty() {
+                    for warning in result.warnings.iter().take(3) {
+                        self.push_notification(&format!("Import warning: {warning}"));
+                    }
+                }
+                let mut message = format!(
+                    "Imported {} ({} mod(s), {} profile(s))",
+                    result.game.title, result.counts.mods, result.counts.profiles
+                );
+                if !result.warnings.is_empty() {
+                    message.push_str(&format!(" ({} warning(s))", result.warnings.len()));
+                }
+                self.show_toast(&message);
+            }
+            Err(e) => {
+                self.push_notification(&format!("Import failed: {e}"));
+            }
+        }
+    }
+
+    fn select_import_game_folder(
+        &self,
+        root: &adw::ApplicationWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        let dialog = gtk::FileDialog::builder()
+            .title("Confirm Imported Game Folder")
+            .modal(true)
+            .build();
+        let input_sender = sender.input_sender().clone();
+        dialog.select_folder(Some(root), None::<&gio::Cancellable>, move |result| {
+            if let Ok(file) = result
+                && let Some(path) = file.path()
+            {
+                input_sender.send(AppMsg::ImportGameFolderChosen(path)).ok();
+            }
+        });
+    }
+
+    fn select_import_wine_prefix(
+        &self,
+        root: &adw::ApplicationWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        let dialog = gtk::FileDialog::builder()
+            .title("Confirm Imported Wine Prefix")
+            .modal(true)
+            .build();
+        let input_sender = sender.input_sender().clone();
+        dialog.select_folder(Some(root), None::<&gio::Cancellable>, move |result| {
+            if let Ok(file) = result
+                && let Some(path) = file.path()
+            {
+                input_sender.send(AppMsg::ImportWinePrefixChosen(path)).ok();
+            }
+        });
+    }
+
+    fn select_import_downloads_folder(
+        &self,
+        root: &adw::ApplicationWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        let dialog = gtk::FileDialog::builder()
+            .title("Confirm Downloads Folder")
+            .modal(true)
+            .build();
+        let input_sender = sender.input_sender().clone();
+        dialog.select_folder(Some(root), None::<&gio::Cancellable>, move |result| {
+            if let Ok(file) = result
+                && let Some(path) = file.path()
+            {
+                input_sender
+                    .send(AppMsg::ImportDownloadsDirChosen(path))
+                    .ok();
+            }
+        });
     }
 
     pub(crate) fn handle_games_configured(
@@ -560,7 +745,11 @@ impl App {
     }
 }
 
-fn show_migration_preview_dialog(root: &adw::ApplicationWindow, result: &PreviewImportResult) {
+fn show_migration_preview_dialog(
+    root: &adw::ApplicationWindow,
+    result: &PreviewImportResult,
+    sender: &ComponentSender<App>,
+) {
     let status = match result.conflict {
         PreviewConflict::NewGame => "Ready to preview",
         PreviewConflict::ExistingGame => "Already managed in Snap",
@@ -613,7 +802,20 @@ fn show_migration_preview_dialog(root: &adw::ApplicationWindow, result: &Preview
         .body(body)
         .build();
     dialog.add_response("close", "Close");
+    if result.conflict == PreviewConflict::NewGame {
+        dialog.add_response("import", "Import");
+        dialog.set_response_appearance("import", adw::ResponseAppearance::Suggested);
+    }
     dialog.set_close_response("close");
+    let bundle_path = result.bundle_path.clone();
+    let input_sender = sender.input_sender().clone();
+    dialog.connect_response(None, move |_, response| {
+        if response == "import" {
+            input_sender
+                .send(AppMsg::ImportAppImageExport(bundle_path.clone()))
+                .ok();
+        }
+    });
     dialog.present(Some(root));
 }
 

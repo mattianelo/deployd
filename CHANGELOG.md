@@ -11,6 +11,10 @@
 - Snap builds can preview AppImage migration bundles from Settings without importing them, showing
   the exported game, content counts, warnings, existing-game conflicts, and required later path/tool
   confirmations.
+- Snap builds can now import a previewed AppImage migration bundle for a new game after confirming
+  Snap-visible game, Wine prefix, and downloads folders. Import copies cache, vanilla backups, and
+  save snapshots into Snap-owned storage, skips AppImage external tools, clears stale download
+  archive paths, and refuses existing-game bundles without overwriting Snap state.
 - Performance feedback is more cohesive during long-running work: install, extraction, caching,
   deploy, purge, downloads-folder scan, and first-run runtime setup now share the same header busy
   status language.

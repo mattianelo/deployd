@@ -2,13 +2,16 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use sqlx::{Row, Sqlite, Transaction};
 use tempfile::TempDir;
 use zip::ZipArchive;
 
 use crate::core::migration_bundle::ExportManifest;
 use crate::core::tracker::Tracker;
+use crate::models::game::{Game, GameEngine};
+use crate::utils::paths;
 
 #[derive(Debug, Clone)]
 pub struct PreviewImportRequest {
@@ -17,10 +20,27 @@ pub struct PreviewImportRequest {
 
 #[derive(Debug, Clone)]
 pub struct PreviewImportResult {
+    pub bundle_path: PathBuf,
     pub manifest: ExportManifest,
     pub counts: PreviewCounts,
     pub conflict: PreviewConflict,
     pub validation_items: Vec<ValidationItem>,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ImportBundleRequest {
+    pub bundle_path: PathBuf,
+    pub confirmed_game_path: PathBuf,
+    pub confirmed_wine_prefix: PathBuf,
+    pub confirmed_downloads_dir: PathBuf,
+}
+
+#[derive(Debug, Clone)]
+pub struct ImportBundleResult {
+    pub game: Game,
+    pub downloads_dir: PathBuf,
+    pub counts: PreviewCounts,
     pub warnings: Vec<String>,
 }
 
@@ -66,12 +86,7 @@ pub async fn preview_import_bundle(
     let counts = read_preview_counts(&pool, extracted.bundle_files).await?;
     pool.close().await;
 
-    let exists = tracker
-        .load_persisted_games()
-        .await
-        .context("Failed to check existing Snap games")?
-        .into_iter()
-        .any(|game| game.id == extracted.manifest.game_id);
+    let exists = tracker_game_exists(tracker, &extracted.manifest.game_id).await?;
 
     let mut warnings = extracted.manifest.warnings.clone();
     if exists {
@@ -91,6 +106,7 @@ pub async fn preview_import_bundle(
     }
 
     Ok(PreviewImportResult {
+        bundle_path: request.bundle_path,
         manifest: extracted.manifest,
         counts,
         conflict: if exists {
@@ -103,10 +119,94 @@ pub async fn preview_import_bundle(
     })
 }
 
+pub async fn import_bundle(
+    tracker: &Tracker,
+    request: ImportBundleRequest,
+) -> Result<ImportBundleResult> {
+    validate_required_confirmation(&request.confirmed_game_path, "game folder")?;
+    validate_required_confirmation(&request.confirmed_wine_prefix, "Wine prefix")?;
+    validate_required_confirmation(&request.confirmed_downloads_dir, "downloads folder")?;
+
+    let staged = tokio::task::spawn_blocking({
+        let bundle_path = request.bundle_path.clone();
+        move || extract_import_bundle(&bundle_path)
+    })
+    .await
+    .context("Import task failed")??;
+
+    if tracker_game_exists(tracker, &staged.manifest.game_id).await? {
+        bail!(
+            "Game {} is already managed in this Snap. Import was skipped.",
+            staged.manifest.game_title
+        );
+    }
+
+    let export_url = sqlite_url_read_only(&staged.export_db);
+    let export_pool = open_sqlite_pool(&export_url).await?;
+    let counts = read_preview_counts(&export_pool, staged.bundle_files).await?;
+
+    let import_paths = ImportPaths::new(&staged.manifest.game_id)?;
+    let imported_game = read_imported_game(
+        &export_pool,
+        &staged.manifest,
+        &request.confirmed_game_path,
+        &request.confirmed_wine_prefix,
+    )
+    .await?;
+    validate_export_dependencies(&export_pool, &staged.payload_root, &import_paths).await?;
+    validate_import_collisions(tracker, &export_pool, &staged.manifest.game_id).await?;
+
+    let copied_paths = copy_payload_to_snap(&staged.payload_root, &staged.manifest.game_id)?;
+    let mut warnings = staged.manifest.warnings.clone();
+    if counts.tools > 0 {
+        warnings.push(format!(
+            "{} external tool(s) were skipped. Re-add tools in the Snap so they use the Snap Wine runtime.",
+            counts.tools
+        ));
+    }
+    if counts.downloads > 0 {
+        warnings.push(
+            "Download archive paths were cleared. Re-select or rescan the downloads folder before reinstalling from downloads."
+                .to_string(),
+        );
+    }
+
+    let import_result = import_database_rows(
+        tracker,
+        &export_pool,
+        &staged.manifest,
+        &imported_game,
+        &import_paths,
+        &request.confirmed_downloads_dir,
+    )
+    .await;
+    export_pool.close().await;
+
+    if let Err(error) = import_result {
+        cleanup_copied_payload(&copied_paths);
+        return Err(error);
+    }
+
+    Ok(ImportBundleResult {
+        game: imported_game,
+        downloads_dir: request.confirmed_downloads_dir,
+        counts,
+        warnings,
+    })
+}
+
 struct ExtractedPreview {
     _work: TempDir,
     manifest: ExportManifest,
     export_db: PathBuf,
+    bundle_files: BundleFileCounts,
+}
+
+struct ExtractedImport {
+    _work: TempDir,
+    manifest: ExportManifest,
+    export_db: PathBuf,
+    payload_root: PathBuf,
     bundle_files: BundleFileCounts,
 }
 
@@ -159,6 +259,86 @@ fn extract_preview_bundle(bundle_path: &Path) -> Result<ExtractedPreview> {
     })
 }
 
+fn extract_import_bundle(bundle_path: &Path) -> Result<ExtractedImport> {
+    let file = fs::File::open(bundle_path)
+        .with_context(|| format!("Failed to open {}", bundle_path.display()))?;
+    let mut archive = ZipArchive::new(file).context("Failed to read export bundle")?;
+
+    let mut manifest_bytes = Vec::new();
+    archive
+        .by_name("manifest.json")
+        .context("Export bundle is missing manifest.json")?
+        .read_to_end(&mut manifest_bytes)
+        .context("Failed to read export manifest")?;
+    let manifest: ExportManifest =
+        serde_json::from_slice(&manifest_bytes).context("Invalid export manifest")?;
+    manifest.validate()?;
+
+    if archive.by_name("data/export.db").is_err() {
+        bail!("Export bundle is missing data/export.db");
+    }
+
+    let work = TempDir::new().context("Failed to create import work directory")?;
+    let payload_root = work.path().join("payload");
+    fs::create_dir_all(&payload_root).context("Failed to create import payload directory")?;
+    let data_dir = payload_root.join("data");
+    fs::create_dir_all(&data_dir).context("Failed to create import data directory")?;
+    let export_db = data_dir.join("export.db");
+
+    let mut bundle_files = BundleFileCounts::default();
+    for idx in 0..archive.len() {
+        let mut entry = archive.by_index(idx)?;
+        if entry.is_dir() {
+            continue;
+        }
+        let Some(enclosed) = entry.enclosed_name() else {
+            bail!("Export bundle contains an unsafe path: {}", entry.name());
+        };
+        let name = enclosed.to_string_lossy().replace('\\', "/");
+        if name == "manifest.json" {
+            continue;
+        }
+        if name == "data/export.db" {
+            copy_zip_entry(&mut entry, &export_db)?;
+        } else if name.starts_with("cache/") {
+            bundle_files.cache_files += 1;
+            copy_zip_entry(&mut entry, &payload_root.join(enclosed))?;
+        } else if name.starts_with("vanilla-backup/") {
+            bundle_files.vanilla_backups += 1;
+            copy_zip_entry(&mut entry, &payload_root.join(enclosed))?;
+        } else if name.starts_with(&format!("saves/{}/", manifest.game_id)) {
+            bundle_files.save_snapshots += 1;
+            copy_zip_entry(&mut entry, &payload_root.join(enclosed))?;
+        } else {
+            bail!("Export bundle contains unsupported entry: {name}");
+        }
+    }
+
+    if !export_db.is_file() {
+        bail!("Export bundle is missing data/export.db");
+    }
+
+    Ok(ExtractedImport {
+        _work: work,
+        manifest,
+        export_db,
+        payload_root,
+        bundle_files,
+    })
+}
+
+fn copy_zip_entry(entry: &mut zip::read::ZipFile<'_>, target: &Path) -> Result<()> {
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create {}", parent.display()))?;
+    }
+    let mut file = fs::File::create(target)
+        .with_context(|| format!("Failed to create {}", target.display()))?;
+    std::io::copy(entry, &mut file)
+        .with_context(|| format!("Failed to extract {}", target.display()))?;
+    Ok(())
+}
+
 async fn read_preview_counts(
     pool: &sqlx::SqlitePool,
     bundle_files: BundleFileCounts,
@@ -206,6 +386,806 @@ async fn count_rows(pool: &sqlx::SqlitePool, table: &str) -> Result<i64> {
         .with_context(|| format!("Failed to count {table}"))
 }
 
+fn validate_required_confirmation(path: &Path, label: &str) -> Result<()> {
+    if path.as_os_str().is_empty() {
+        bail!("Import requires a confirmed {label}");
+    }
+    Ok(())
+}
+
+async fn tracker_game_exists(tracker: &Tracker, game_id: &str) -> Result<bool> {
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM games WHERE id = ?")
+        .bind(game_id)
+        .fetch_one(&tracker.pool)
+        .await
+        .context("Failed to check existing Snap game")?;
+    Ok(count > 0)
+}
+
+#[derive(Debug, Clone)]
+struct ImportPaths {
+    cache_root: PathBuf,
+    backup_root: PathBuf,
+}
+
+impl ImportPaths {
+    fn new(game_id: &str) -> Result<Self> {
+        Ok(Self {
+            cache_root: paths::cache_root().context("Cannot resolve Snap cache folder")?,
+            backup_root: paths::vanilla_backup_dir(game_id)
+                .context("Cannot resolve Snap vanilla backup folder")?,
+        })
+    }
+}
+
+async fn read_imported_game(
+    pool: &sqlx::SqlitePool,
+    manifest: &ExportManifest,
+    confirmed_game_path: &Path,
+    confirmed_wine_prefix: &Path,
+) -> Result<Game> {
+    let row = sqlx::query(
+        "SELECT id, title, data_subdir, engine
+         FROM games
+         WHERE id = ?",
+    )
+    .bind(&manifest.game_id)
+    .fetch_optional(pool)
+    .await
+    .context("Failed to read exported game row")?
+    .ok_or_else(|| anyhow!("Export database does not contain the exported game row"))?;
+
+    let id: String = row.get("id");
+    let title: Option<String> = row.get("title");
+    let data_subdir: Option<String> = row.get("data_subdir");
+    let engine: Option<String> = row.get("engine");
+    Ok(Game {
+        id,
+        title: title.unwrap_or_else(|| manifest.game_title.clone()),
+        path: confirmed_game_path.to_path_buf(),
+        data_subdir: data_subdir.unwrap_or_else(|| "Data".to_string()),
+        engine: parse_game_engine(engine.as_deref()),
+        wine_prefix: Some(confirmed_wine_prefix.to_path_buf()),
+    })
+}
+
+fn parse_game_engine(engine: Option<&str>) -> GameEngine {
+    match engine {
+        Some("redengine") => GameEngine::REDEngine,
+        Some("eclipse") => GameEngine::Eclipse,
+        Some("aurora") => GameEngine::Aurora,
+        _ => GameEngine::Bethesda,
+    }
+}
+
+fn game_engine_db_value(engine: &GameEngine) -> &'static str {
+    match engine {
+        GameEngine::REDEngine => "redengine",
+        GameEngine::Eclipse => "eclipse",
+        GameEngine::Aurora => "aurora",
+        GameEngine::Bethesda => "bethesda",
+    }
+}
+
+async fn validate_export_dependencies(
+    pool: &sqlx::SqlitePool,
+    payload_root: &Path,
+    import_paths: &ImportPaths,
+) -> Result<()> {
+    for table in ["mod_files", "deployed_files"] {
+        let sql = format!("SELECT cache_path FROM {table}");
+        let rows: Vec<(Option<String>,)> = sqlx::query_as(&sql)
+            .fetch_all(pool)
+            .await
+            .with_context(|| format!("Failed to read {table} cache paths"))?;
+        for (cache_path,) in rows {
+            let Some(cache_path) = cache_path else {
+                continue;
+            };
+            let staged = staged_cache_path(payload_root, &cache_path)?;
+            if !staged.is_file() {
+                bail!(
+                    "Export bundle is missing a cached mod file referenced by {table}: {}",
+                    cache_path
+                );
+            }
+            rewrite_cache_path(&cache_path, import_paths)?;
+        }
+    }
+
+    let rows: Vec<(String,)> = sqlx::query_as("SELECT backup_path FROM vanilla_backups")
+        .fetch_all(pool)
+        .await
+        .context("Failed to read vanilla backup paths")?;
+    for (backup_path,) in rows {
+        let staged = staged_backup_path(payload_root, &backup_path)?;
+        if !staged.is_file() {
+            bail!("Export bundle is missing a vanilla backup referenced by the DB: {backup_path}");
+        }
+        rewrite_backup_path(&backup_path, import_paths)?;
+    }
+
+    Ok(())
+}
+
+async fn validate_import_collisions(
+    tracker: &Tracker,
+    export_pool: &sqlx::SqlitePool,
+    game_id: &str,
+) -> Result<()> {
+    if tracker_game_exists(tracker, game_id).await? {
+        bail!("Game {game_id} already exists in the Snap database");
+    }
+    if let Some((table, id)) = [
+        id_collision(tracker, export_pool, "mods", "id").await?,
+        id_collision(tracker, export_pool, "plugins", "id").await?,
+        id_collision(tracker, export_pool, "profiles", "id").await?,
+        id_collision(tracker, export_pool, "mod_groups", "id").await?,
+        id_collision(tracker, export_pool, "order_snapshots", "id").await?,
+        id_collision(tracker, export_pool, "download_entries", "id").await?,
+    ]
+    .into_iter()
+    .flatten()
+    .next()
+    {
+        bail!("Import would overwrite existing Snap {table} row with id {id}");
+    }
+    Ok(())
+}
+
+async fn id_collision(
+    tracker: &Tracker,
+    export_pool: &sqlx::SqlitePool,
+    table: &str,
+    column: &str,
+) -> Result<Option<(String, String)>> {
+    let export_sql = format!("SELECT {column} FROM {table}");
+    let ids: Vec<(String,)> = sqlx::query_as(&export_sql)
+        .fetch_all(export_pool)
+        .await
+        .with_context(|| format!("Failed to read exported {table} ids"))?;
+    let active_sql = format!("SELECT COUNT(*) FROM {table} WHERE {column} = ?");
+    for (id,) in ids {
+        let count: i64 = sqlx::query_scalar(&active_sql)
+            .bind(&id)
+            .fetch_one(&tracker.pool)
+            .await
+            .with_context(|| format!("Failed to check active {table} id collisions"))?;
+        if count > 0 {
+            return Ok(Some((table.to_string(), id)));
+        }
+    }
+    Ok(None)
+}
+
+#[derive(Debug, Default)]
+struct CopiedPayload {
+    paths: Vec<PathBuf>,
+}
+
+fn copy_payload_to_snap(payload_root: &Path, game_id: &str) -> Result<CopiedPayload> {
+    let mut copied = CopiedPayload::default();
+    let result = copy_payload_to_snap_inner(payload_root, game_id, &mut copied);
+    if let Err(error) = result {
+        cleanup_copied_payload(&copied);
+        return Err(error);
+    }
+    Ok(copied)
+}
+
+fn copy_payload_to_snap_inner(
+    payload_root: &Path,
+    game_id: &str,
+    copied: &mut CopiedPayload,
+) -> Result<()> {
+    let cache_root = paths::cache_root().context("Cannot resolve Snap cache folder")?;
+    let cache_stage = payload_root.join("cache");
+    if cache_stage.exists() {
+        fs::create_dir_all(&cache_root)
+            .with_context(|| format!("Failed to create {}", cache_root.display()))?;
+        for entry in fs::read_dir(&cache_stage)
+            .with_context(|| format!("Failed to read {}", cache_stage.display()))?
+        {
+            let entry = entry?;
+            let source = entry.path();
+            if !entry.file_type()?.is_dir() {
+                bail!(
+                    "Export cache contains unsupported file at {}",
+                    source.display()
+                );
+            }
+            let dest = cache_root.join(entry.file_name());
+            if dest.exists() {
+                bail!(
+                    "Import would overwrite existing Snap cache folder {}",
+                    dest.display()
+                );
+            }
+            copy_dir_recursive(&source, &dest)?;
+            copied.paths.push(dest);
+        }
+    }
+
+    let backup_stage = payload_root.join("vanilla-backup");
+    if backup_stage.exists() {
+        let dest = paths::vanilla_backup_dir(game_id)?;
+        if dest.exists() {
+            bail!(
+                "Import would overwrite existing Snap vanilla backup folder {}",
+                dest.display()
+            );
+        }
+        copy_dir_recursive(&backup_stage, &dest)?;
+        copied.paths.push(dest);
+    }
+
+    let saves_stage = payload_root.join("saves").join(game_id);
+    if saves_stage.exists() {
+        let dest = paths::saves_root()?.join(game_id);
+        if dest.exists() {
+            bail!(
+                "Import would overwrite existing Snap save snapshot folder {}",
+                dest.display()
+            );
+        }
+        copy_dir_recursive(&saves_stage, &dest)?;
+        copied.paths.push(dest);
+    }
+
+    Ok(())
+}
+
+fn cleanup_copied_payload(copied: &CopiedPayload) {
+    for path in copied.paths.iter().rev() {
+        if let Err(e) = fs::remove_dir_all(path) {
+            eprintln!(
+                "Failed to clean incomplete import path {}: {e}",
+                path.display()
+            );
+        }
+    }
+}
+
+fn copy_dir_recursive(source: &Path, dest: &Path) -> Result<()> {
+    fs::create_dir_all(dest)
+        .with_context(|| format!("Failed to create directory {}", dest.display()))?;
+    for entry in walkdir::WalkDir::new(source).min_depth(1) {
+        let entry = entry?;
+        let rel = entry
+            .path()
+            .strip_prefix(source)
+            .context("Failed to compute relative copy path")?;
+        let target = dest.join(rel);
+        if entry.file_type().is_dir() {
+            fs::create_dir_all(&target)
+                .with_context(|| format!("Failed to create directory {}", target.display()))?;
+        } else if entry.file_type().is_file() {
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent)
+                    .with_context(|| format!("Failed to create directory {}", parent.display()))?;
+            }
+            fs::copy(entry.path(), &target).with_context(|| {
+                format!(
+                    "Failed to copy {} to {}",
+                    entry.path().display(),
+                    target.display()
+                )
+            })?;
+        }
+    }
+    Ok(())
+}
+
+async fn import_database_rows(
+    tracker: &Tracker,
+    export_pool: &sqlx::SqlitePool,
+    manifest: &ExportManifest,
+    game: &Game,
+    import_paths: &ImportPaths,
+    confirmed_downloads_dir: &Path,
+) -> Result<()> {
+    let mut tx = tracker
+        .pool
+        .begin()
+        .await
+        .context("Failed to begin import")?;
+
+    import_game_row(&mut tx, game).await?;
+    import_mod_groups(&mut tx, export_pool).await?;
+    import_mods(&mut tx, export_pool).await?;
+    import_mod_files(&mut tx, export_pool, import_paths).await?;
+    import_plugins(&mut tx, export_pool).await?;
+    import_plugin_masters(&mut tx, export_pool).await?;
+    import_deployed_files(&mut tx, export_pool, import_paths).await?;
+    import_profiles(&mut tx, export_pool).await?;
+    import_profile_mods(&mut tx, export_pool).await?;
+    import_profile_plugins(&mut tx, export_pool).await?;
+    import_vanilla_files(&mut tx, export_pool).await?;
+    import_order_snapshots(&mut tx, export_pool).await?;
+    import_order_snapshot_entries(&mut tx, export_pool).await?;
+    import_vanilla_backups(&mut tx, export_pool, import_paths).await?;
+    import_download_entries(&mut tx, export_pool).await?;
+    import_settings(&mut tx, &manifest.game_id, confirmed_downloads_dir).await?;
+
+    tx.commit()
+        .await
+        .context("Failed to commit AppImage export import")?;
+    Ok(())
+}
+
+async fn import_game_row(tx: &mut Transaction<'_, Sqlite>, game: &Game) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO games (id, title, path, data_subdir, wine_prefix, engine, custom, hidden)
+         VALUES (?, ?, ?, ?, ?, ?, 1, 0)",
+    )
+    .bind(&game.id)
+    .bind(&game.title)
+    .bind(game.path.to_string_lossy().as_ref())
+    .bind(&game.data_subdir)
+    .bind(
+        game.wine_prefix
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned()),
+    )
+    .bind(game_engine_db_value(&game.engine))
+    .execute(&mut **tx)
+    .await
+    .context("Failed to import game row")?;
+    Ok(())
+}
+
+async fn import_mod_groups(
+    tx: &mut Transaction<'_, Sqlite>,
+    pool: &sqlx::SqlitePool,
+) -> Result<()> {
+    let rows = sqlx::query("SELECT id, game_id, name, position, collapsed, color FROM mod_groups")
+        .fetch_all(pool)
+        .await
+        .context("Failed to read exported mod groups")?;
+    for row in rows {
+        sqlx::query(
+            "INSERT INTO mod_groups (id, game_id, name, position, collapsed, color)
+             VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .bind(row.get::<String, _>("id"))
+        .bind(row.get::<String, _>("game_id"))
+        .bind(row.get::<String, _>("name"))
+        .bind(row.get::<f64, _>("position"))
+        .bind(row.get::<i32, _>("collapsed"))
+        .bind(row.get::<Option<String>, _>("color"))
+        .execute(&mut **tx)
+        .await
+        .context("Failed to import mod group")?;
+    }
+    Ok(())
+}
+
+async fn import_mods(tx: &mut Transaction<'_, Sqlite>, pool: &sqlx::SqlitePool) -> Result<()> {
+    let rows = sqlx::query(
+        "SELECT id, game_id, name, archive_hash, archive_path, installed_at, enabled, priority,
+                nexus_mod_id, nexus_file_id, nexus_domain, version, author, latest_version,
+                nexus_description, group_id, install_target, notes, fomod_selections
+         FROM mods",
+    )
+    .fetch_all(pool)
+    .await
+    .context("Failed to read exported mods")?;
+    for row in rows {
+        sqlx::query(
+            "INSERT INTO mods
+             (id, game_id, name, archive_hash, archive_path, installed_at, enabled, priority,
+              nexus_mod_id, nexus_file_id, nexus_domain, version, author, latest_version,
+              nexus_description, group_id, install_target, notes, fomod_selections)
+             VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(row.get::<String, _>("id"))
+        .bind(row.get::<Option<String>, _>("game_id"))
+        .bind(row.get::<Option<String>, _>("name"))
+        .bind(row.get::<Option<String>, _>("archive_hash"))
+        .bind(row.get::<Option<String>, _>("installed_at"))
+        .bind(row.get::<bool, _>("enabled"))
+        .bind(row.get::<i32, _>("priority"))
+        .bind(row.get::<Option<i64>, _>("nexus_mod_id"))
+        .bind(row.get::<Option<i64>, _>("nexus_file_id"))
+        .bind(row.get::<Option<String>, _>("nexus_domain"))
+        .bind(row.get::<Option<String>, _>("version"))
+        .bind(row.get::<Option<String>, _>("author"))
+        .bind(row.get::<Option<String>, _>("latest_version"))
+        .bind(row.get::<Option<String>, _>("nexus_description"))
+        .bind(row.get::<Option<String>, _>("group_id"))
+        .bind(row.get::<Option<String>, _>("install_target"))
+        .bind(row.get::<Option<String>, _>("notes"))
+        .bind(row.get::<Option<String>, _>("fomod_selections"))
+        .execute(&mut **tx)
+        .await
+        .context("Failed to import mod")?;
+    }
+    Ok(())
+}
+
+async fn import_mod_files(
+    tx: &mut Transaction<'_, Sqlite>,
+    pool: &sqlx::SqlitePool,
+    import_paths: &ImportPaths,
+) -> Result<()> {
+    let rows = sqlx::query(
+        "SELECT mod_id, game_rel_lowercase, game_rel_original, cache_path FROM mod_files",
+    )
+    .fetch_all(pool)
+    .await
+    .context("Failed to read exported mod files")?;
+    for row in rows {
+        let cache_path = row.get::<Option<String>, _>("cache_path");
+        let rewritten = cache_path
+            .as_deref()
+            .map(|path| rewrite_cache_path(path, import_paths))
+            .transpose()?;
+        sqlx::query(
+            "INSERT INTO mod_files
+             (mod_id, game_rel_lowercase, game_rel_original, cache_path)
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind(row.get::<String, _>("mod_id"))
+        .bind(row.get::<String, _>("game_rel_lowercase"))
+        .bind(row.get::<String, _>("game_rel_original"))
+        .bind(rewritten.map(|path| path.to_string_lossy().into_owned()))
+        .execute(&mut **tx)
+        .await
+        .context("Failed to import mod file")?;
+    }
+    Ok(())
+}
+
+async fn import_plugins(tx: &mut Transaction<'_, Sqlite>, pool: &sqlx::SqlitePool) -> Result<()> {
+    let rows = sqlx::query("SELECT id, mod_id, filename, load_order, enabled FROM plugins")
+        .fetch_all(pool)
+        .await
+        .context("Failed to read exported plugins")?;
+    for row in rows {
+        sqlx::query(
+            "INSERT INTO plugins (id, mod_id, filename, load_order, enabled)
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(row.get::<String, _>("id"))
+        .bind(row.get::<String, _>("mod_id"))
+        .bind(row.get::<String, _>("filename"))
+        .bind(row.get::<i32, _>("load_order"))
+        .bind(row.get::<bool, _>("enabled"))
+        .execute(&mut **tx)
+        .await
+        .context("Failed to import plugin")?;
+    }
+    Ok(())
+}
+
+async fn import_plugin_masters(
+    tx: &mut Transaction<'_, Sqlite>,
+    pool: &sqlx::SqlitePool,
+) -> Result<()> {
+    let rows = sqlx::query("SELECT plugin_id, master FROM plugin_masters")
+        .fetch_all(pool)
+        .await
+        .context("Failed to read exported plugin masters")?;
+    for row in rows {
+        sqlx::query("INSERT INTO plugin_masters (plugin_id, master) VALUES (?, ?)")
+            .bind(row.get::<String, _>("plugin_id"))
+            .bind(row.get::<String, _>("master"))
+            .execute(&mut **tx)
+            .await
+            .context("Failed to import plugin master")?;
+    }
+    Ok(())
+}
+
+async fn import_deployed_files(
+    tx: &mut Transaction<'_, Sqlite>,
+    pool: &sqlx::SqlitePool,
+    import_paths: &ImportPaths,
+) -> Result<()> {
+    let rows = sqlx::query(
+        "SELECT game_id, game_rel_lowercase, game_rel_original, mod_id, cache_path
+         FROM deployed_files",
+    )
+    .fetch_all(pool)
+    .await
+    .context("Failed to read exported deployed files")?;
+    for row in rows {
+        let cache_path = rewrite_cache_path(&row.get::<String, _>("cache_path"), import_paths)?;
+        sqlx::query(
+            "INSERT INTO deployed_files
+             (game_id, game_rel_lowercase, game_rel_original, mod_id, cache_path)
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(row.get::<String, _>("game_id"))
+        .bind(row.get::<String, _>("game_rel_lowercase"))
+        .bind(row.get::<String, _>("game_rel_original"))
+        .bind(row.get::<String, _>("mod_id"))
+        .bind(cache_path.to_string_lossy().into_owned())
+        .execute(&mut **tx)
+        .await
+        .context("Failed to import deployed file")?;
+    }
+    Ok(())
+}
+
+async fn import_profiles(tx: &mut Transaction<'_, Sqlite>, pool: &sqlx::SqlitePool) -> Result<()> {
+    let rows = sqlx::query("SELECT id, game_id, name, is_active, save_mode FROM profiles")
+        .fetch_all(pool)
+        .await
+        .context("Failed to read exported profiles")?;
+    for row in rows {
+        sqlx::query(
+            "INSERT INTO profiles (id, game_id, name, is_active, save_mode)
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(row.get::<String, _>("id"))
+        .bind(row.get::<String, _>("game_id"))
+        .bind(row.get::<String, _>("name"))
+        .bind(row.get::<bool, _>("is_active"))
+        .bind(row.get::<String, _>("save_mode"))
+        .execute(&mut **tx)
+        .await
+        .context("Failed to import profile")?;
+    }
+    Ok(())
+}
+
+async fn import_profile_mods(
+    tx: &mut Transaction<'_, Sqlite>,
+    pool: &sqlx::SqlitePool,
+) -> Result<()> {
+    let rows = sqlx::query("SELECT profile_id, mod_id, enabled, priority FROM profile_mods")
+        .fetch_all(pool)
+        .await
+        .context("Failed to read exported profile mods")?;
+    for row in rows {
+        sqlx::query(
+            "INSERT INTO profile_mods (profile_id, mod_id, enabled, priority)
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind(row.get::<String, _>("profile_id"))
+        .bind(row.get::<String, _>("mod_id"))
+        .bind(row.get::<bool, _>("enabled"))
+        .bind(row.get::<i32, _>("priority"))
+        .execute(&mut **tx)
+        .await
+        .context("Failed to import profile mod")?;
+    }
+    Ok(())
+}
+
+async fn import_profile_plugins(
+    tx: &mut Transaction<'_, Sqlite>,
+    pool: &sqlx::SqlitePool,
+) -> Result<()> {
+    let rows =
+        sqlx::query("SELECT profile_id, plugin_id, enabled, load_order FROM profile_plugins")
+            .fetch_all(pool)
+            .await
+            .context("Failed to read exported profile plugins")?;
+    for row in rows {
+        sqlx::query(
+            "INSERT INTO profile_plugins (profile_id, plugin_id, enabled, load_order)
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind(row.get::<String, _>("profile_id"))
+        .bind(row.get::<String, _>("plugin_id"))
+        .bind(row.get::<bool, _>("enabled"))
+        .bind(row.get::<i32, _>("load_order"))
+        .execute(&mut **tx)
+        .await
+        .context("Failed to import profile plugin")?;
+    }
+    Ok(())
+}
+
+async fn import_vanilla_files(
+    tx: &mut Transaction<'_, Sqlite>,
+    pool: &sqlx::SqlitePool,
+) -> Result<()> {
+    let rows =
+        sqlx::query("SELECT game_id, game_rel_lowercase, file_size, mtime_secs FROM vanilla_files")
+            .fetch_all(pool)
+            .await
+            .context("Failed to read exported vanilla files")?;
+    for row in rows {
+        sqlx::query(
+            "INSERT INTO vanilla_files
+             (game_id, game_rel_lowercase, file_size, mtime_secs)
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind(row.get::<String, _>("game_id"))
+        .bind(row.get::<String, _>("game_rel_lowercase"))
+        .bind(row.get::<Option<i64>, _>("file_size"))
+        .bind(row.get::<Option<i64>, _>("mtime_secs"))
+        .execute(&mut **tx)
+        .await
+        .context("Failed to import vanilla file")?;
+    }
+    Ok(())
+}
+
+async fn import_order_snapshots(
+    tx: &mut Transaction<'_, Sqlite>,
+    pool: &sqlx::SqlitePool,
+) -> Result<()> {
+    let rows = sqlx::query("SELECT id, game_id, name, kind, created_at FROM order_snapshots")
+        .fetch_all(pool)
+        .await
+        .context("Failed to read exported order snapshots")?;
+    for row in rows {
+        sqlx::query(
+            "INSERT INTO order_snapshots (id, game_id, name, kind, created_at)
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(row.get::<String, _>("id"))
+        .bind(row.get::<String, _>("game_id"))
+        .bind(row.get::<String, _>("name"))
+        .bind(row.get::<String, _>("kind"))
+        .bind(row.get::<String, _>("created_at"))
+        .execute(&mut **tx)
+        .await
+        .context("Failed to import order snapshot")?;
+    }
+    Ok(())
+}
+
+async fn import_order_snapshot_entries(
+    tx: &mut Transaction<'_, Sqlite>,
+    pool: &sqlx::SqlitePool,
+) -> Result<()> {
+    let rows = sqlx::query("SELECT snapshot_id, entry_id, position FROM order_snapshot_entries")
+        .fetch_all(pool)
+        .await
+        .context("Failed to read exported order snapshot entries")?;
+    for row in rows {
+        sqlx::query(
+            "INSERT INTO order_snapshot_entries (snapshot_id, entry_id, position)
+             VALUES (?, ?, ?)",
+        )
+        .bind(row.get::<String, _>("snapshot_id"))
+        .bind(row.get::<String, _>("entry_id"))
+        .bind(row.get::<i32, _>("position"))
+        .execute(&mut **tx)
+        .await
+        .context("Failed to import order snapshot entry")?;
+    }
+    Ok(())
+}
+
+async fn import_vanilla_backups(
+    tx: &mut Transaction<'_, Sqlite>,
+    pool: &sqlx::SqlitePool,
+    import_paths: &ImportPaths,
+) -> Result<()> {
+    let rows = sqlx::query("SELECT game_id, game_rel_path, backup_path FROM vanilla_backups")
+        .fetch_all(pool)
+        .await
+        .context("Failed to read exported vanilla backups")?;
+    for row in rows {
+        let backup_path = rewrite_backup_path(&row.get::<String, _>("backup_path"), import_paths)?;
+        sqlx::query(
+            "INSERT INTO vanilla_backups (game_id, game_rel_path, backup_path)
+             VALUES (?, ?, ?)",
+        )
+        .bind(row.get::<String, _>("game_id"))
+        .bind(row.get::<String, _>("game_rel_path"))
+        .bind(backup_path.to_string_lossy().into_owned())
+        .execute(&mut **tx)
+        .await
+        .context("Failed to import vanilla backup")?;
+    }
+    Ok(())
+}
+
+async fn import_download_entries(
+    tx: &mut Transaction<'_, Sqlite>,
+    pool: &sqlx::SqlitePool,
+) -> Result<()> {
+    let rows = sqlx::query(
+        "SELECT id, mod_name, nexus_mod_id, nexus_file_id, nexus_domain, game_domain,
+                metadata_fetched, nexus_file_name, nexus_is_primary, status, archive_hash,
+                archive_md5, version, author, hidden
+         FROM download_entries",
+    )
+    .fetch_all(pool)
+    .await
+    .context("Failed to read exported download entries")?;
+    for row in rows {
+        sqlx::query(
+            "INSERT INTO download_entries
+             (id, mod_name, archive_path, nexus_mod_id, nexus_file_id, nexus_domain, game_domain,
+              metadata_fetched, nexus_file_name, nexus_is_primary, status, archive_hash,
+              archive_md5, version, author, hidden)
+             VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(row.get::<String, _>("id"))
+        .bind(row.get::<String, _>("mod_name"))
+        .bind(row.get::<Option<i64>, _>("nexus_mod_id"))
+        .bind(row.get::<Option<i64>, _>("nexus_file_id"))
+        .bind(row.get::<Option<String>, _>("nexus_domain"))
+        .bind(row.get::<Option<String>, _>("game_domain"))
+        .bind(row.get::<bool, _>("metadata_fetched"))
+        .bind(row.get::<Option<String>, _>("nexus_file_name"))
+        .bind(row.get::<bool, _>("nexus_is_primary"))
+        .bind(row.get::<Option<String>, _>("status"))
+        .bind(row.get::<Option<String>, _>("archive_hash"))
+        .bind(row.get::<Option<String>, _>("archive_md5"))
+        .bind(row.get::<Option<String>, _>("version"))
+        .bind(row.get::<Option<String>, _>("author"))
+        .bind(row.get::<bool, _>("hidden"))
+        .execute(&mut **tx)
+        .await
+        .context("Failed to import download entry")?;
+    }
+    Ok(())
+}
+
+async fn import_settings(
+    tx: &mut Transaction<'_, Sqlite>,
+    game_id: &str,
+    confirmed_downloads_dir: &Path,
+) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO settings (key, value) VALUES ('last_game_id', ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    )
+    .bind(game_id)
+    .execute(&mut **tx)
+    .await
+    .context("Failed to store imported game selection")?;
+
+    sqlx::query(
+        "INSERT INTO settings (key, value) VALUES ('downloads_dir', ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    )
+    .bind(confirmed_downloads_dir.to_string_lossy().as_ref())
+    .execute(&mut **tx)
+    .await
+    .context("Failed to store confirmed downloads folder")?;
+
+    let cache_key = format!("cache_dir_{game_id}");
+    sqlx::query("DELETE FROM settings WHERE key = ?")
+        .bind(cache_key)
+        .execute(&mut **tx)
+        .await
+        .context("Failed to clear imported AppImage cache override")?;
+    Ok(())
+}
+
+fn staged_cache_path(payload_root: &Path, bundle_path: &str) -> Result<PathBuf> {
+    Ok(payload_root.join(bundle_relative_path(bundle_path, "cache")?))
+}
+
+fn staged_backup_path(payload_root: &Path, bundle_path: &str) -> Result<PathBuf> {
+    Ok(payload_root.join(bundle_relative_path(bundle_path, "vanilla-backup")?))
+}
+
+fn rewrite_cache_path(bundle_path: &str, import_paths: &ImportPaths) -> Result<PathBuf> {
+    let rel = strip_bundle_prefix(bundle_path, "cache")?;
+    Ok(import_paths.cache_root.join(rel))
+}
+
+fn rewrite_backup_path(bundle_path: &str, import_paths: &ImportPaths) -> Result<PathBuf> {
+    let rel = strip_bundle_prefix(bundle_path, "vanilla-backup")?;
+    Ok(import_paths.backup_root.join(rel))
+}
+
+fn bundle_relative_path(bundle_path: &str, prefix: &str) -> Result<PathBuf> {
+    Ok(PathBuf::from(prefix).join(strip_bundle_prefix(bundle_path, prefix)?))
+}
+
+fn strip_bundle_prefix(bundle_path: &str, prefix: &str) -> Result<PathBuf> {
+    let normalized = bundle_path.replace('\\', "/");
+    let rel = normalized
+        .strip_prefix(&format!("{prefix}/"))
+        .ok_or_else(|| anyhow!("Expected bundle-relative {prefix} path, got {bundle_path}"))?;
+    if rel.is_empty() || rel.split('/').any(|part| part == ".." || part.is_empty()) {
+        bail!("Unsafe bundle-relative path: {bundle_path}");
+    }
+    Ok(PathBuf::from(rel))
+}
+
 async fn open_sqlite_pool(url: &str) -> Result<sqlx::SqlitePool> {
     let opts = url
         .parse::<SqliteConnectOptions>()
@@ -227,7 +1207,10 @@ mod tests {
     use crate::core::migration_bundle::{EXPORT_SCHEMA_VERSION, SOURCE_PACKAGE_APPIMAGE};
     use crate::core::tracker::Tracker;
     use std::io::Write;
+    use std::sync::Mutex;
     use zip::write::SimpleFileOptions;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[tokio::test]
     async fn previews_valid_bundle() -> Result<()> {
@@ -386,11 +1369,233 @@ mod tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn imports_new_game_into_snap_owned_state() -> Result<()> {
+        let _guard = ENV_LOCK
+            .lock()
+            .map_err(|_| anyhow!("test environment lock was poisoned"))?;
+        let fixture = PreviewFixture::new().await?;
+        let snap_common = fixture._temp.path().join("snap-common");
+        let _env = EnvVarGuard::set("SNAP_USER_COMMON", &snap_common);
+        fixture.write_bundle(|manifest| manifest).await?;
+
+        let result = import_bundle(
+            &fixture.snap_tracker,
+            ImportBundleRequest {
+                bundle_path: fixture.bundle_path.clone(),
+                confirmed_game_path: fixture._temp.path().join("snap-visible-game"),
+                confirmed_wine_prefix: fixture._temp.path().join("snap-visible-prefix"),
+                confirmed_downloads_dir: fixture._temp.path().join("Downloads"),
+            },
+        )
+        .await?;
+
+        assert_eq!(result.game.id, "skyrim-se");
+        assert_eq!(result.counts.mods, 1);
+        let games = fixture.snap_tracker.load_persisted_games().await?;
+        assert_eq!(games.len(), 1);
+        assert_eq!(
+            games[0].path,
+            fixture._temp.path().join("snap-visible-game")
+        );
+        let tools: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tools")
+            .fetch_one(&fixture.snap_tracker.pool)
+            .await?;
+        assert_eq!(tools, 0, "external tools must be skipped during import");
+        let archive_path: Option<String> =
+            sqlx::query_scalar("SELECT archive_path FROM download_entries WHERE id = 'download-1'")
+                .fetch_one(&fixture.snap_tracker.pool)
+                .await?;
+        assert!(
+            archive_path.is_none(),
+            "download archive paths must be cleared"
+        );
+        let cache_path: String =
+            sqlx::query_scalar("SELECT cache_path FROM mod_files WHERE mod_id = 'mod-1'")
+                .fetch_one(&fixture.snap_tracker.pool)
+                .await?;
+        let expected_cache = snap_common
+            .join("deployd")
+            .join("cache")
+            .join("mod-1")
+            .join("file.txt");
+        assert_eq!(PathBuf::from(cache_path), expected_cache);
+        assert!(expected_cache.is_file(), "cache file should be copied");
+        let backup_path: String = sqlx::query_scalar(
+            "SELECT backup_path FROM vanilla_backups WHERE game_id = 'skyrim-se'",
+        )
+        .fetch_one(&fixture.snap_tracker.pool)
+        .await?;
+        let expected_backup = snap_common
+            .join("deployd")
+            .join("skyrim-se")
+            .join("vanilla-backup")
+            .join("file.txt");
+        assert_eq!(PathBuf::from(backup_path), expected_backup);
+        assert!(expected_backup.is_file(), "vanilla backup should be copied");
+        assert!(
+            snap_common
+                .join("deployd")
+                .join("saves")
+                .join("skyrim-se")
+                .join("profile-1")
+                .join("save.ess")
+                .is_file(),
+            "save snapshots should be copied"
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn refuses_existing_game_import_without_writing_snap_state() -> Result<()> {
+        let _guard = ENV_LOCK
+            .lock()
+            .map_err(|_| anyhow!("test environment lock was poisoned"))?;
+        let fixture = PreviewFixture::new().await?;
+        let snap_common = fixture._temp.path().join("snap-common");
+        let _env = EnvVarGuard::set("SNAP_USER_COMMON", &snap_common);
+        fixture.write_bundle(|manifest| manifest).await?;
+        fixture
+            .snap_tracker
+            .upsert_game(
+                "skyrim-se",
+                "Skyrim",
+                Path::new("/snap-visible/skyrim"),
+                "Data",
+                "bethesda",
+                Some(Path::new("/snap-visible/prefix")),
+                true,
+            )
+            .await?;
+
+        let err = import_bundle(
+            &fixture.snap_tracker,
+            ImportBundleRequest {
+                bundle_path: fixture.bundle_path.clone(),
+                confirmed_game_path: fixture._temp.path().join("snap-visible-game"),
+                confirmed_wine_prefix: fixture._temp.path().join("snap-visible-prefix"),
+                confirmed_downloads_dir: fixture._temp.path().join("Downloads"),
+            },
+        )
+        .await
+        .expect_err("existing Snap games must not be imported over");
+
+        assert!(err.to_string().contains("already managed"));
+        let games = fixture.snap_tracker.load_persisted_games().await?;
+        assert_eq!(games.len(), 1);
+        assert!(
+            !snap_common
+                .join("deployd")
+                .join("cache")
+                .join("mod-1")
+                .exists(),
+            "existing-game refusal must happen before copying files"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rejects_import_without_required_confirmations() -> Result<()> {
+        let fixture = PreviewFixture::new().await?;
+        let err = import_bundle(
+            &fixture.snap_tracker,
+            ImportBundleRequest {
+                bundle_path: fixture.bundle_path.clone(),
+                confirmed_game_path: PathBuf::new(),
+                confirmed_wine_prefix: fixture._temp.path().join("prefix"),
+                confirmed_downloads_dir: fixture._temp.path().join("Downloads"),
+            },
+        )
+        .await
+        .expect_err("missing game folder confirmation should reject");
+        assert!(err.to_string().contains("confirmed game folder"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rejects_primary_key_collision_without_writing_game() -> Result<()> {
+        let _guard = ENV_LOCK
+            .lock()
+            .map_err(|_| anyhow!("test environment lock was poisoned"))?;
+        let fixture = PreviewFixture::new().await?;
+        let snap_common = fixture._temp.path().join("snap-common");
+        let _env = EnvVarGuard::set("SNAP_USER_COMMON", &snap_common);
+        fixture.write_bundle(|manifest| manifest).await?;
+        sqlx::query(
+            "INSERT INTO mods (id, game_id, name, priority)
+             VALUES ('mod-1', 'other-game', 'Existing Mod', 0)",
+        )
+        .execute(&fixture.snap_tracker.pool)
+        .await?;
+
+        let err = import_bundle(
+            &fixture.snap_tracker,
+            ImportBundleRequest {
+                bundle_path: fixture.bundle_path.clone(),
+                confirmed_game_path: fixture._temp.path().join("snap-visible-game"),
+                confirmed_wine_prefix: fixture._temp.path().join("snap-visible-prefix"),
+                confirmed_downloads_dir: fixture._temp.path().join("Downloads"),
+            },
+        )
+        .await
+        .expect_err("colliding imported IDs should reject");
+
+        assert!(
+            err.to_string()
+                .contains("would overwrite existing Snap mods")
+        );
+        let imported_game: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM games WHERE id = 'skyrim-se'")
+                .fetch_one(&fixture.snap_tracker.pool)
+                .await?;
+        assert_eq!(imported_game, 0);
+        assert!(
+            !snap_common
+                .join("deployd")
+                .join("cache")
+                .join("mod-1")
+                .exists(),
+            "collision refusal must happen before copying files"
+        );
+        Ok(())
+    }
+
     struct PreviewFixture {
         _temp: TempDir,
         bundle_path: PathBuf,
         export_db: PathBuf,
         snap_tracker: Tracker,
+    }
+
+    struct EnvVarGuard {
+        key: &'static str,
+        original: Option<std::ffi::OsString>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: &Path) -> Self {
+            let original = std::env::var_os(key);
+            // SAFETY: tests that mutate process environment hold ENV_LOCK, so
+            // no other migration_import test reads or writes SNAP_USER_COMMON concurrently.
+            unsafe {
+                std::env::set_var(key, value);
+            }
+            Self { key, original }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            // SAFETY: EnvVarGuard is only created while ENV_LOCK is held by the
+            // owning test, preventing concurrent environment access in this module.
+            unsafe {
+                match &self.original {
+                    Some(value) => std::env::set_var(self.key, value),
+                    None => std::env::remove_var(self.key),
+                }
+            }
+        }
     }
 
     impl PreviewFixture {
@@ -465,36 +1670,125 @@ mod tests {
     }
 
     async fn create_export_db(url: &str) -> Result<()> {
-        let pool = open_sqlite_pool(url).await?;
-        for stmt in [
-            "CREATE TABLE mods (id TEXT PRIMARY KEY, game_id TEXT, name TEXT)",
-            "CREATE TABLE plugins (id TEXT PRIMARY KEY, mod_id TEXT, filename TEXT)",
-            "CREATE TABLE profiles (id TEXT PRIMARY KEY, game_id TEXT, name TEXT)",
-            "CREATE TABLE tools (id TEXT PRIMARY KEY, game_id TEXT, name TEXT)",
-            "CREATE TABLE download_entries (id TEXT PRIMARY KEY, mod_name TEXT)",
-        ] {
-            sqlx::query(stmt).execute(&pool).await?;
-        }
-        sqlx::query("INSERT INTO mods (id, game_id, name) VALUES ('mod-1', 'skyrim-se', 'Mod')")
-            .execute(&pool)
+        let tracker = Tracker::open(url).await?;
+        tracker
+            .upsert_game(
+                "skyrim-se",
+                "Skyrim Special Edition",
+                Path::new("/games/skyrim"),
+                "Data",
+                "bethesda",
+                Some(Path::new("/prefix/skyrim")),
+                true,
+            )
             .await?;
         sqlx::query(
-            "INSERT INTO plugins (id, mod_id, filename) VALUES ('plugin-1', 'mod-1', 'a.esp')",
+            "INSERT INTO mod_groups (id, game_id, name, position, collapsed, color)
+             VALUES ('group-1', 'skyrim-se', 'Group', 0.0, 0, 'blue')",
         )
-        .execute(&pool)
+        .execute(&tracker.pool)
         .await?;
         sqlx::query(
-            "INSERT INTO profiles (id, game_id, name) VALUES ('profile-1', 'skyrim-se', 'Default')",
+            "INSERT INTO mods
+             (id, game_id, name, archive_hash, archive_path, installed_at, enabled, priority,
+              nexus_mod_id, nexus_file_id, nexus_domain, version, author, latest_version,
+              nexus_description, group_id, install_target, notes, fomod_selections)
+             VALUES
+             ('mod-1', 'skyrim-se', 'Mod', 'hash', '/downloads/mod.zip', 'now', 1, 0,
+              101, 202, 'skyrimspecialedition', '1.0', 'Author', '1.1',
+              'Description', 'group-1', 'data', 'Notes', '{\"choices\":[]}')",
         )
-        .execute(&pool)
+        .execute(&tracker.pool)
         .await?;
-        sqlx::query("INSERT INTO tools (id, game_id, name) VALUES ('tool-1', 'skyrim-se', 'Tool')")
-            .execute(&pool)
+        sqlx::query(
+            "INSERT INTO mod_files (mod_id, game_rel_lowercase, game_rel_original, cache_path)
+             VALUES ('mod-1', 'file.txt', 'file.txt', 'cache/mod-1/file.txt')",
+        )
+        .execute(&tracker.pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO plugins (id, mod_id, filename, load_order, enabled)
+             VALUES ('plugin-1', 'mod-1', 'a.esp', 0, 1)",
+        )
+        .execute(&tracker.pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO plugin_masters (plugin_id, master)
+             VALUES ('plugin-1', 'Skyrim.esm')",
+        )
+        .execute(&tracker.pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO deployed_files
+             (game_id, game_rel_lowercase, game_rel_original, mod_id, cache_path)
+             VALUES ('skyrim-se', 'file.txt', 'file.txt', 'mod-1', 'cache/mod-1/file.txt')",
+        )
+        .execute(&tracker.pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO profiles (id, game_id, name, is_active, save_mode)
+             VALUES ('profile-1', 'skyrim-se', 'Default', 1, 'profile')",
+        )
+        .execute(&tracker.pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO profile_mods (profile_id, mod_id, enabled, priority)
+             VALUES ('profile-1', 'mod-1', 1, 0)",
+        )
+        .execute(&tracker.pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO profile_plugins (profile_id, plugin_id, enabled, load_order)
+             VALUES ('profile-1', 'plugin-1', 1, 0)",
+        )
+        .execute(&tracker.pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO vanilla_files (game_id, game_rel_lowercase, file_size, mtime_secs)
+             VALUES ('skyrim-se', 'skyrim.esm', 42, 123)",
+        )
+        .execute(&tracker.pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO order_snapshots (id, game_id, name, kind, created_at)
+             VALUES ('snapshot-1', 'skyrim-se', 'Snapshot', 'mods', 'now')",
+        )
+        .execute(&tracker.pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO order_snapshot_entries (snapshot_id, entry_id, position)
+             VALUES ('snapshot-1', 'mod-1', 0)",
+        )
+        .execute(&tracker.pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO vanilla_backups (game_id, game_rel_path, backup_path)
+             VALUES ('skyrim-se', 'file.txt', 'vanilla-backup/file.txt')",
+        )
+        .execute(&tracker.pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO download_entries
+             (id, mod_name, archive_path, nexus_mod_id, nexus_file_id, nexus_domain, game_domain,
+              metadata_fetched, nexus_file_name, nexus_is_primary, status, archive_hash,
+              archive_md5, version, author, hidden)
+             VALUES
+             ('download-1', 'Mod', '/downloads/mod.zip', 101, 202, 'skyrimspecialedition',
+              'skyrimspecialedition', 1, 'mod.zip', 1, 'installed', 'hash', 'md5',
+              '1.0', 'Author', 0)",
+        )
+        .execute(&tracker.pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO tools (id, game_id, name, exe_path, icon_name, custom_args, sort_order, working_dir)
+             VALUES ('tool-1', 'skyrim-se', 'Tool', '/tools/tool.exe', 'application-x-executable-symbolic', '', 0, '')",
+        )
+        .execute(&tracker.pool)
+        .await?;
+        sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+            .execute(&tracker.pool)
             .await?;
-        sqlx::query("INSERT INTO download_entries (id, mod_name) VALUES ('download-1', 'Mod')")
-            .execute(&pool)
-            .await?;
-        pool.close().await;
+        tracker.pool.close().await;
         Ok(())
     }
 }

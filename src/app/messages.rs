@@ -140,6 +140,14 @@ pub enum AppMsg {
     PreviewAppImageExport,
     /// User selected an AppImage export bundle to preview.
     PreviewAppImageExportChosen(std::path::PathBuf),
+    /// User chose to import a previewed AppImage export bundle.
+    ImportAppImageExport(std::path::PathBuf),
+    /// User confirmed the game folder for an AppImage export import.
+    ImportGameFolderChosen(std::path::PathBuf),
+    /// User confirmed the Wine prefix for an AppImage export import.
+    ImportWinePrefixChosen(std::path::PathBuf),
+    /// User confirmed the downloads folder for an AppImage export import.
+    ImportDownloadsDirChosen(std::path::PathBuf),
     /// Emitted by SettingsDialog whenever the Nexus API key is set or cleared.
     NexusApiKeyUpdated,
     NxmLinkReceived(String),
@@ -410,6 +418,8 @@ pub enum AppCmdMsg {
     GameExportedForSnap(Result<crate::core::migration_export::ExportGameResult, String>),
     /// Result of reading an AppImage-to-Snap export bundle without importing it.
     AppImageExportPreviewed(Result<crate::core::migration_import::PreviewImportResult, String>),
+    /// Result of importing an AppImage-to-Snap export bundle into Snap state.
+    AppImageExportImported(Result<crate::core::migration_import::ImportBundleResult, String>),
     PrioritySaved(Result<(), String>),
     OverridesRefreshed(
         Result<std::collections::HashMap<String, crate::core::tracker::OverrideInfo>, String>,

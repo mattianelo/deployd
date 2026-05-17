@@ -7,8 +7,8 @@ use relm4::factory::FactoryVecDeque;
 use relm4::prelude::*;
 
 use super::types::{
-    DownloadFilter, DownloadSort, ModFilter, PendingInstall, SearchScope, ToolLaunchSession,
-    WorkStatus,
+    DownloadFilter, DownloadSort, ModFilter, PendingInstall, PendingMigrationImport, SearchScope,
+    ToolLaunchSession, WorkStatus,
 };
 use crate::core::detector::ExternalFile;
 use crate::core::tracker::Tracker;
@@ -94,6 +94,8 @@ pub struct App {
     pub(crate) welcome_wizard: Option<Controller<WelcomeWizard>>,
     /// Active settings dialog controller.
     pub(crate) settings_dialog: Option<Controller<SettingsDialog>>,
+    /// AppImage export import flow currently waiting on Snap-visible path confirmations.
+    pub(crate) pending_migration_import: Option<PendingMigrationImport>,
     /// Active mod properties dialog controller.
     pub(crate) mod_properties_dialog: Option<Controller<ModPropertiesDialog>>,
     /// Active external-file absorption dialog controller.

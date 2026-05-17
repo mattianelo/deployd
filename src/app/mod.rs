@@ -1539,6 +1539,18 @@ impl Component for App {
             AppMsg::PreviewAppImageExportChosen(bundle_path) => {
                 self.handle_preview_appimage_export_chosen(bundle_path, &sender)
             }
+            AppMsg::ImportAppImageExport(bundle_path) => {
+                self.handle_import_appimage_export(bundle_path, root, &sender)
+            }
+            AppMsg::ImportGameFolderChosen(path) => {
+                self.handle_import_game_folder_chosen(path, root, &sender)
+            }
+            AppMsg::ImportWinePrefixChosen(path) => {
+                self.handle_import_wine_prefix_chosen(path, root, &sender)
+            }
+            AppMsg::ImportDownloadsDirChosen(path) => {
+                self.handle_import_downloads_dir_chosen(path, &sender)
+            }
             AppMsg::NexusApiKeyUpdated => self.handle_nexus_api_key_updated(&sender),
             AppMsg::NxmLinkReceived(link) => self.handle_nxm_link_received(link, &sender),
             AppMsg::CheckUpdatesClicked => self.handle_check_updates(&sender),
@@ -1930,7 +1942,10 @@ impl Component for App {
                 self.handle_cmd_game_exported_for_snap(result)
             }
             AppCmdMsg::AppImageExportPreviewed(result) => {
-                self.handle_cmd_appimage_export_previewed(result, root)
+                self.handle_cmd_appimage_export_previewed(result, root, &sender)
+            }
+            AppCmdMsg::AppImageExportImported(result) => {
+                self.handle_cmd_appimage_export_imported(result, &sender)
             }
             AppCmdMsg::PrioritySaved(result) => self.handle_cmd_priority_saved(result, &sender),
             AppCmdMsg::OverridesRefreshed(result) => {
