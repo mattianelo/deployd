@@ -75,6 +75,8 @@ By default Deployd stores all cached mod files in `~/.local/share/deployd/cache/
 **Why would you move it?**  
 If your game lives on a secondary drive, placing the cache on the same drive eliminates the copy overhead on every install: Deployd deploys mods using **hardlinks** (zero-copy, zero extra disk space).
 
+In the Snap package, Steam-managed game folders can be exposed through a separate mount. When Linux rejects a hardlink across that boundary, Deployd falls back to copying the file while keeping it tracked as Deployd-managed.
+
 **Hardlink filesystem constraint**
 
 Hardlinks require both the cache directory and the game directory to reside on the **same filesystem** — that is, they must share the same `st_dev` value as reported by the OS. Concretely:

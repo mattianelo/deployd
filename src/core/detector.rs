@@ -1,4 +1,6 @@
 use std::collections::{HashMap, HashSet};
+use std::fs::File;
+use std::io::{self, BufReader, Read};
 use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 
@@ -260,16 +262,33 @@ pub fn scan_modified_managed_plugins(
             continue;
         }
 
-        let disk_ino = match std::fs::metadata(&disk_path) {
-            Ok(m) => m.ino(),
+        let disk_meta = match std::fs::metadata(&disk_path) {
+            Ok(m) => m,
             Err(_) => continue,
         };
-        let cache_ino = match std::fs::metadata(cache_path) {
-            Ok(m) => m.ino(),
+        let cache_meta = match std::fs::metadata(cache_path) {
+            Ok(m) => m,
             Err(_) => continue,
         };
+        let disk_ino = disk_meta.ino();
+        let cache_ino = cache_meta.ino();
 
         if disk_ino != cache_ino {
+            let should_report = should_report_inode_mismatch(
+                &disk_path,
+                cache_path,
+                &disk_meta,
+                &cache_meta,
+                disk_meta.dev() != cache_meta.dev(),
+            );
+            match should_report {
+                Ok(true) => {}
+                Ok(false) => continue,
+                Err(e) => eprintln!(
+                    "[deployd] WARNING: could not compare managed plugin '{}' with cache: {e}",
+                    game_rel_original
+                ),
+            }
             // Strategy 1: broken hardlink (rename-save). Cache has the dirty original;
             // "Restore from cache" works without a backup.
             results.push(ExternalFile {
@@ -329,4 +348,133 @@ fn file_attrs(entry: &walkdir::DirEntry) -> (u64, i64) {
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
     (size, mtime)
+}
+
+fn should_report_inode_mismatch(
+    disk_path: &std::path::Path,
+    cache_path: &std::path::Path,
+    disk_meta: &std::fs::Metadata,
+    cache_meta: &std::fs::Metadata,
+    copied_across_devices: bool,
+) -> io::Result<bool> {
+    if !copied_across_devices {
+        return Ok(true);
+    }
+
+    file_contents_match_with_metadata(disk_path, cache_path, disk_meta, cache_meta)
+        .map(|same_content| !same_content)
+}
+
+fn file_contents_match_with_metadata(
+    left: &std::path::Path,
+    right: &std::path::Path,
+    left_meta: &std::fs::Metadata,
+    right_meta: &std::fs::Metadata,
+) -> io::Result<bool> {
+    if left_meta.len() != right_meta.len() {
+        return Ok(false);
+    }
+
+    let mut left_reader = BufReader::new(File::open(left)?);
+    let mut right_reader = BufReader::new(File::open(right)?);
+    let mut left_buf = [0u8; 8192];
+    let mut right_buf = [0u8; 8192];
+
+    loop {
+        let left_read = left_reader.read(&mut left_buf)?;
+        let right_read = right_reader.read(&mut right_buf)?;
+        if left_read != right_read {
+            return Ok(false);
+        }
+        if left_read == 0 {
+            return Ok(true);
+        }
+        if left_buf[..left_read] != right_buf[..right_read] {
+            return Ok(false);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use tempfile::tempdir;
+
+    use crate::models::game::{Game, GameEngine};
+
+    use super::{scan_modified_managed_plugins, should_report_inode_mismatch};
+
+    #[test]
+    fn copied_managed_plugins_are_not_reported_as_cleaned() -> anyhow::Result<()> {
+        let temp = tempdir()?;
+        let game_root = temp.path().join("game");
+        let data_dir = game_root.join("Data");
+        let cache_dir = temp.path().join("cache");
+        fs::create_dir_all(&data_dir)?;
+        fs::create_dir_all(&cache_dir)?;
+
+        let cache_path = cache_dir.join("example.esp");
+        let disk_path = data_dir.join("Example.esp");
+        fs::write(&cache_path, b"plugin bytes")?;
+        fs::copy(&cache_path, &disk_path)?;
+
+        let cache_meta = fs::metadata(&cache_path)?;
+        let disk_meta = fs::metadata(&disk_path)?;
+        let unchanged =
+            should_report_inode_mismatch(&disk_path, &cache_path, &disk_meta, &cache_meta, true)?;
+        assert!(
+            !unchanged,
+            "copy-fallback deployment should remain managed when cache and disk bytes match"
+        );
+
+        fs::write(&disk_path, b"cleaned plugin bytes")?;
+        let disk_meta = fs::metadata(&disk_path)?;
+        let modified =
+            should_report_inode_mismatch(&disk_path, &cache_path, &disk_meta, &cache_meta, true)?;
+        assert!(
+            modified,
+            "content changes should still be offered for adoption"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn same_device_inode_changes_are_reported_without_content_comparison() -> anyhow::Result<()> {
+        let temp = tempdir()?;
+        let game_root = temp.path().join("game");
+        let data_dir = game_root.join("Data");
+        let cache_dir = temp.path().join("cache");
+        fs::create_dir_all(&data_dir)?;
+        fs::create_dir_all(&cache_dir)?;
+
+        let cache_path = cache_dir.join("example.esp");
+        let disk_path = data_dir.join("Example.esp");
+        fs::write(&cache_path, b"plugin bytes")?;
+        fs::copy(&cache_path, &disk_path)?;
+
+        let game = Game {
+            id: "fallout4".to_string(),
+            title: "Fallout 4".to_string(),
+            path: game_root,
+            data_subdir: "Data".to_string(),
+            engine: GameEngine::Bethesda,
+            wine_prefix: None,
+        };
+        let plugin_files = vec![(
+            "example.esp".to_string(),
+            "Example.esp".to_string(),
+            cache_path.clone(),
+        )];
+
+        let modified = scan_modified_managed_plugins(&game.id, &game, &plugin_files);
+        assert_eq!(
+            modified.len(),
+            1,
+            "same-device inode changes should keep the original hardlink-break detection path"
+        );
+
+        Ok(())
+    }
 }

@@ -20,8 +20,6 @@
   tool-launch preparation paths without recording user paths or API tokens.
 - Mod Properties now lets users correct the Nexus Mod ID for an installed mod when filename or
   download metadata detection picked the wrong Nexus page.
-- Nexus file-requirements work is tracked in `docs/nexus-file-requirements.md` as an API discovery
-  backlog before any dependency-warning UI is implemented.
 
 ### Fixed
 
@@ -52,6 +50,8 @@
   terminate the Deployd-owned Wine/UMU process group after the tool has spawned.
 - Vanilla/DLC plugin header master counts are cached by game, path, mtime, and file length to avoid
   repeated TES4 header reads during ordinary reloads.
+- Snap copy-fallback deployments no longer make managed plugins appear as externally cleaned when
+  the deployed file still matches Deployd's cache.
 
 ## [2.2.1]
 
