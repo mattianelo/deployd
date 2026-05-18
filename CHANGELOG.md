@@ -61,7 +61,8 @@
   the deployed file still matches Deployd's cache.
 - Downloads-folder scans now preserve and reattach imported AppImage download metadata, including
   downloaded-but-not-installed entries, instead of creating duplicate path-only rows after a Snap
-  migration import.
+  migration import. Non-installed pathless entries that still cannot be matched to an archive are
+  removed as dead download entries.
 
 ## [2.2.1]
 

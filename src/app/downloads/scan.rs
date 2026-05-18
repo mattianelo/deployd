@@ -323,6 +323,20 @@ fn scan_downloads(
         }
     }
 
+    let stale_pathless_ids: Vec<String> = all_downloads
+        .iter()
+        .filter(|entry| {
+            !entry.is_active()
+                && entry.status != DownloadStatus::Installed
+                && entry.archive_path.is_none()
+        })
+        .map(|entry| entry.id.clone())
+        .collect();
+    if !stale_pathless_ids.is_empty() {
+        removed_ids.extend(stale_pathless_ids.iter().cloned());
+        all_downloads.retain(|entry| !stale_pathless_ids.contains(&entry.id));
+    }
+
     let mut to_persist: Vec<DownloadEntry> = all_downloads
         .iter()
         .rev()
@@ -513,19 +527,41 @@ mod tests {
         std::fs::write(&archive, b"archive")?;
 
         let mut first = download_entry("first", "First");
+        first.status = DownloadStatus::Downloaded;
         first.nexus_file_name = None;
         let mut second = download_entry("second", "Second");
+        second.status = DownloadStatus::Downloaded;
         second.nexus_file_name = None;
         let scan = scan_downloads(temp.path().to_path_buf(), vec![first, second])
             .map_err(anyhow::Error::msg)?;
 
         assert_eq!(scan.new_count, 1);
-        assert_eq!(scan.entries.len(), 3);
+        assert_eq!(scan.entries.len(), 1);
         assert!(
             scan.entries
                 .iter()
                 .any(|entry| entry.id != "first" && entry.id != "second")
         );
+        assert_eq!(
+            scan.removed_ids,
+            vec!["first".to_string(), "second".to_string()]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn scan_removes_unmatched_pathless_download_metadata() -> Result<()> {
+        let temp = TempDir::new()?;
+        let mut imported = download_entry("missing", "Missing Archive");
+        imported.status = DownloadStatus::Downloaded;
+        imported.status_msg = "Ready to install".to_string();
+
+        let scan = scan_downloads(temp.path().to_path_buf(), vec![imported])
+            .map_err(anyhow::Error::msg)?;
+
+        assert!(scan.entries.is_empty());
+        assert_eq!(scan.removed_ids, vec!["missing".to_string()]);
+        assert!(scan.to_persist.is_empty());
         Ok(())
     }
 
