@@ -8,8 +8,8 @@ use sqlx::{Row, Sqlite, Transaction};
 use tempfile::TempDir;
 use zip::ZipArchive;
 
-use crate::core::migration_bundle::ExportManifest;
 use crate::core::tracker::Tracker;
+use crate::core::{game as game_core, migration_bundle::ExportManifest};
 use crate::models::game::{Game, GameEngine};
 use crate::utils::paths;
 
@@ -86,12 +86,17 @@ pub async fn preview_import_bundle(
     let counts = read_preview_counts(&pool, extracted.bundle_files).await?;
     pool.close().await;
 
-    let exists = tracker_game_exists(tracker, &extracted.manifest.game_id).await?;
+    let existing_state = tracker_game_state(tracker, &extracted.manifest.game_id).await?;
 
     let mut warnings = extracted.manifest.warnings.clone();
-    if exists {
+    if existing_state == ExistingGameState::Active {
         warnings.push(
             "This game is already managed in the Snap; a later import phase will skip it by default."
+                .to_string(),
+        );
+    } else if existing_state == ExistingGameState::Hidden {
+        warnings.push(
+            "This game was previously stopped in the Snap; import will replace that hidden state."
                 .to_string(),
         );
     }
@@ -109,7 +114,7 @@ pub async fn preview_import_bundle(
         bundle_path: request.bundle_path,
         manifest: extracted.manifest,
         counts,
-        conflict: if exists {
+        conflict: if existing_state == ExistingGameState::Active {
             PreviewConflict::ExistingGame
         } else {
             PreviewConflict::NewGame
@@ -134,7 +139,8 @@ pub async fn import_bundle(
     .await
     .context("Import task failed")??;
 
-    if tracker_game_exists(tracker, &staged.manifest.game_id).await? {
+    let existing_state = tracker_game_state(tracker, &staged.manifest.game_id).await?;
+    if existing_state == ExistingGameState::Active {
         bail!(
             "Game {} is already managed in this Snap. Import was skipped.",
             staged.manifest.game_title
@@ -153,6 +159,9 @@ pub async fn import_bundle(
         &request.confirmed_wine_prefix,
     )
     .await?;
+    if existing_state == ExistingGameState::Hidden {
+        drop_hidden_game_state(tracker, &imported_game).await?;
+    }
     validate_export_dependencies(&export_pool, &staged.payload_root, &import_paths).await?;
     validate_import_collisions(tracker, &export_pool, &staged.manifest.game_id).await?;
 
@@ -393,13 +402,24 @@ fn validate_required_confirmation(path: &Path, label: &str) -> Result<()> {
     Ok(())
 }
 
-async fn tracker_game_exists(tracker: &Tracker, game_id: &str) -> Result<bool> {
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM games WHERE id = ?")
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExistingGameState {
+    Absent,
+    Active,
+    Hidden,
+}
+
+async fn tracker_game_state(tracker: &Tracker, game_id: &str) -> Result<ExistingGameState> {
+    let hidden: Option<Option<i32>> = sqlx::query_scalar("SELECT hidden FROM games WHERE id = ?")
         .bind(game_id)
-        .fetch_one(&tracker.pool)
+        .fetch_optional(&tracker.pool)
         .await
         .context("Failed to check existing Snap game")?;
-    Ok(count > 0)
+    Ok(match hidden {
+        None => ExistingGameState::Absent,
+        Some(Some(1)) => ExistingGameState::Hidden,
+        Some(_) => ExistingGameState::Active,
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -511,12 +531,135 @@ async fn validate_export_dependencies(
     Ok(())
 }
 
+async fn drop_hidden_game_state(tracker: &Tracker, game: &Game) -> Result<()> {
+    if tracker_game_state(tracker, &game.id).await? != ExistingGameState::Hidden {
+        return Ok(());
+    }
+
+    let cache_root = paths::cache_root().context("Cannot resolve Snap cache folder")?;
+    let mod_ids: Vec<(String,)> = sqlx::query_as("SELECT id FROM mods WHERE game_id = ?")
+        .bind(&game.id)
+        .fetch_all(&tracker.pool)
+        .await
+        .context("Failed to list hidden game mods before reimport")?;
+    for (mod_id,) in &mod_ids {
+        let cache = paths::mod_cache_dir_in(&cache_root, mod_id);
+        if cache.exists() {
+            fs::remove_dir_all(&cache).with_context(|| {
+                format!(
+                    "Failed to remove old hidden-game cache folder {}",
+                    cache.display()
+                )
+            })?;
+        }
+    }
+    let backup_dir = paths::vanilla_backup_dir(&game.id)?;
+    if backup_dir.exists() {
+        fs::remove_dir_all(&backup_dir).with_context(|| {
+            format!(
+                "Failed to remove old hidden-game vanilla backups {}",
+                backup_dir.display()
+            )
+        })?;
+    }
+    let saves_dir = paths::saves_root()?.join(&game.id);
+    if saves_dir.exists() {
+        fs::remove_dir_all(&saves_dir).with_context(|| {
+            format!(
+                "Failed to remove old hidden-game save snapshots {}",
+                saves_dir.display()
+            )
+        })?;
+    }
+
+    let mut tx = tracker
+        .pool
+        .begin()
+        .await
+        .context("Failed to begin hidden game cleanup")?;
+    let mod_ids: Vec<(String,)> = sqlx::query_as("SELECT id FROM mods WHERE game_id = ?")
+        .bind(&game.id)
+        .fetch_all(&mut *tx)
+        .await
+        .context("Failed to list hidden game mods for cleanup")?;
+    for (mod_id,) in &mod_ids {
+        sqlx::query("DELETE FROM plugin_masters WHERE plugin_id IN (SELECT id FROM plugins WHERE mod_id = ?)")
+            .bind(mod_id)
+            .execute(&mut *tx)
+            .await
+            .context("Failed to delete hidden game plugin masters")?;
+        sqlx::query("DELETE FROM profile_mods WHERE mod_id = ?")
+            .bind(mod_id)
+            .execute(&mut *tx)
+            .await
+            .context("Failed to delete hidden game profile mods")?;
+        sqlx::query("DELETE FROM profile_plugins WHERE plugin_id IN (SELECT id FROM plugins WHERE mod_id = ?)")
+            .bind(mod_id)
+            .execute(&mut *tx)
+            .await
+            .context("Failed to delete hidden game profile plugins")?;
+        sqlx::query("DELETE FROM plugins WHERE mod_id = ?")
+            .bind(mod_id)
+            .execute(&mut *tx)
+            .await
+            .context("Failed to delete hidden game plugins")?;
+        sqlx::query("DELETE FROM mod_files WHERE mod_id = ?")
+            .bind(mod_id)
+            .execute(&mut *tx)
+            .await
+            .context("Failed to delete hidden game mod files")?;
+    }
+    for sql in [
+        "DELETE FROM deployed_files WHERE game_id = ?",
+        "DELETE FROM mods WHERE game_id = ?",
+        "DELETE FROM profiles WHERE game_id = ?",
+        "DELETE FROM tools WHERE game_id = ?",
+        "DELETE FROM mod_groups WHERE game_id = ?",
+        "DELETE FROM vanilla_files WHERE game_id = ?",
+        "DELETE FROM vanilla_backups WHERE game_id = ?",
+        "DELETE FROM order_snapshot_entries WHERE snapshot_id IN (SELECT id FROM order_snapshots WHERE game_id = ?)",
+        "DELETE FROM order_snapshots WHERE game_id = ?",
+        "DELETE FROM games WHERE id = ?",
+    ] {
+        sqlx::query(sql)
+            .bind(&game.id)
+            .execute(&mut *tx)
+            .await
+            .with_context(|| format!("Failed hidden game cleanup step: {sql}"))?;
+    }
+    if let Some(domain) = game_core::nexus_domain(game) {
+        sqlx::query(
+            "DELETE FROM download_entries
+             WHERE COALESCE(game_domain, nexus_domain, '') = ?",
+        )
+        .bind(domain)
+        .execute(&mut *tx)
+        .await
+        .context("Failed to delete hidden game download entries")?;
+    }
+    for key in [
+        format!("cache_dir_{}", game.id),
+        format!("last_profile_{}", game.id),
+        format!("last_deployed_profile_{}", game.id),
+    ] {
+        sqlx::query("DELETE FROM settings WHERE key = ?")
+            .bind(key)
+            .execute(&mut *tx)
+            .await
+            .context("Failed to delete hidden game setting")?;
+    }
+    tx.commit()
+        .await
+        .context("Failed to commit hidden game cleanup")?;
+    Ok(())
+}
+
 async fn validate_import_collisions(
     tracker: &Tracker,
     export_pool: &sqlx::SqlitePool,
     game_id: &str,
 ) -> Result<()> {
-    if tracker_game_exists(tracker, game_id).await? {
+    if tracker_game_state(tracker, game_id).await? != ExistingGameState::Absent {
         bail!("Game {game_id} already exists in the Snap database");
     }
     if let Some((table, id)) = [
@@ -1308,6 +1451,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn previews_hidden_game_as_importable() -> Result<()> {
+        let fixture = PreviewFixture::new().await?;
+        fixture.write_bundle(|manifest| manifest).await?;
+        fixture
+            .snap_tracker
+            .upsert_game(
+                "skyrim-se",
+                "Skyrim",
+                Path::new("/snap-visible/skyrim"),
+                "Data",
+                "bethesda",
+                Some(Path::new("/snap-visible/prefix")),
+                true,
+            )
+            .await?;
+        fixture.snap_tracker.hide_game("skyrim-se").await?;
+
+        let result = preview_import_bundle(
+            &fixture.snap_tracker,
+            PreviewImportRequest {
+                bundle_path: fixture.bundle_path.clone(),
+            },
+        )
+        .await?;
+
+        assert_eq!(result.conflict, PreviewConflict::NewGame);
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("previously stopped"))
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn rejects_missing_manifest() -> Result<()> {
         let fixture = PreviewFixture::new().await?;
         fixture
@@ -1576,6 +1755,65 @@ mod tests {
                 .join("mod-1")
                 .exists(),
             "existing-game refusal must happen before copying files"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn imports_over_hidden_game_state() -> Result<()> {
+        let _guard = ENV_LOCK
+            .lock()
+            .map_err(|_| anyhow!("test environment lock was poisoned"))?;
+        let fixture = PreviewFixture::new().await?;
+        let snap_common = fixture._temp.path().join("snap-common");
+        let _env = EnvVarGuard::set("SNAP_USER_COMMON", &snap_common);
+        fixture.write_bundle(|manifest| manifest).await?;
+        fixture
+            .snap_tracker
+            .upsert_game(
+                "skyrim-se",
+                "Old Skyrim",
+                Path::new("/old/skyrim"),
+                "Data",
+                "bethesda",
+                Some(Path::new("/old/prefix")),
+                true,
+            )
+            .await?;
+        sqlx::query(
+            "INSERT INTO mods (id, game_id, name, priority)
+             VALUES ('mod-1', 'skyrim-se', 'Old Mod', 0)",
+        )
+        .execute(&fixture.snap_tracker.pool)
+        .await?;
+        fixture.snap_tracker.hide_game("skyrim-se").await?;
+        let old_cache = snap_common.join("deployd").join("cache").join("mod-1");
+        std::fs::create_dir_all(&old_cache)?;
+        std::fs::write(old_cache.join("old.txt"), b"old")?;
+
+        let result = import_bundle(
+            &fixture.snap_tracker,
+            ImportBundleRequest {
+                bundle_path: fixture.bundle_path.clone(),
+                confirmed_game_path: fixture._temp.path().join("snap-visible-game"),
+                confirmed_wine_prefix: fixture._temp.path().join("snap-visible-prefix"),
+                confirmed_downloads_dir: fixture._temp.path().join("Downloads"),
+            },
+        )
+        .await?;
+
+        assert_eq!(result.game.id, "skyrim-se");
+        let hidden: i32 = sqlx::query_scalar("SELECT hidden FROM games WHERE id = 'skyrim-se'")
+            .fetch_one(&fixture.snap_tracker.pool)
+            .await?;
+        assert_eq!(hidden, 0);
+        assert!(
+            !old_cache.join("old.txt").exists(),
+            "old hidden cache should be replaced"
+        );
+        assert!(
+            old_cache.join("file.txt").is_file(),
+            "new imported cache should be copied"
         );
         Ok(())
     }

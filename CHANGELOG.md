@@ -63,6 +63,8 @@
   downloaded-but-not-installed entries, instead of creating duplicate path-only rows after a Snap
   migration import. Non-installed pathless entries that still cannot be matched to an archive are
   removed as dead download entries.
+- Snap migration import now treats previously stopped/hidden games as re-importable, replacing
+  their hidden Snap state, while still refusing games that are actively managed.
 
 ## [2.2.1]
 
