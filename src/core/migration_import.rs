@@ -473,15 +473,18 @@ async fn validate_export_dependencies(
     import_paths: &ImportPaths,
 ) -> Result<()> {
     for table in ["mod_files", "deployed_files"] {
-        let sql = format!("SELECT cache_path FROM {table}");
-        let rows: Vec<(Option<String>,)> = sqlx::query_as(&sql)
+        let sql = format!("SELECT game_rel_lowercase, cache_path FROM {table}");
+        let rows: Vec<(String, Option<String>)> = sqlx::query_as(&sql)
             .fetch_all(pool)
             .await
             .with_context(|| format!("Failed to read {table} cache paths"))?;
-        for (cache_path,) in rows {
+        for (game_rel, cache_path) in rows {
             let Some(cache_path) = cache_path else {
                 continue;
             };
+            if skips_cache_file_validation(&game_rel, &cache_path) {
+                continue;
+            }
             let staged = staged_cache_path(payload_root, &cache_path)?;
             if !staged.is_file() {
                 bail!(
@@ -815,10 +818,11 @@ async fn import_mod_files(
     .await
     .context("Failed to read exported mod files")?;
     for row in rows {
+        let game_rel = row.get::<String, _>("game_rel_lowercase");
         let cache_path = row.get::<Option<String>, _>("cache_path");
         let rewritten = cache_path
             .as_deref()
-            .map(|path| rewrite_cache_path(path, import_paths))
+            .map(|path| rewrite_cache_path_for_row(path, &game_rel, import_paths))
             .transpose()?;
         sqlx::query(
             "INSERT INTO mod_files
@@ -826,9 +830,9 @@ async fn import_mod_files(
              VALUES (?, ?, ?, ?)",
         )
         .bind(row.get::<String, _>("mod_id"))
-        .bind(row.get::<String, _>("game_rel_lowercase"))
+        .bind(game_rel)
         .bind(row.get::<String, _>("game_rel_original"))
-        .bind(rewritten.map(|path| path.to_string_lossy().into_owned()))
+        .bind(rewritten)
         .execute(&mut **tx)
         .await
         .context("Failed to import mod file")?;
@@ -890,17 +894,22 @@ async fn import_deployed_files(
     .await
     .context("Failed to read exported deployed files")?;
     for row in rows {
-        let cache_path = rewrite_cache_path(&row.get::<String, _>("cache_path"), import_paths)?;
+        let game_rel = row.get::<String, _>("game_rel_lowercase");
+        let cache_path = rewrite_cache_path_for_row(
+            &row.get::<String, _>("cache_path"),
+            &game_rel,
+            import_paths,
+        )?;
         sqlx::query(
             "INSERT INTO deployed_files
              (game_id, game_rel_lowercase, game_rel_original, mod_id, cache_path)
              VALUES (?, ?, ?, ?, ?)",
         )
         .bind(row.get::<String, _>("game_id"))
-        .bind(row.get::<String, _>("game_rel_lowercase"))
+        .bind(game_rel)
         .bind(row.get::<String, _>("game_rel_original"))
         .bind(row.get::<String, _>("mod_id"))
-        .bind(cache_path.to_string_lossy().into_owned())
+        .bind(cache_path)
         .execute(&mut **tx)
         .await
         .context("Failed to import deployed file")?;
@@ -1166,6 +1175,22 @@ fn rewrite_cache_path(bundle_path: &str, import_paths: &ImportPaths) -> Result<P
     Ok(import_paths.cache_root.join(rel))
 }
 
+fn rewrite_cache_path_for_row(
+    bundle_path: &str,
+    game_rel: &str,
+    import_paths: &ImportPaths,
+) -> Result<String> {
+    if bundle_path.is_empty() {
+        return Ok(String::new());
+    }
+    let rewritten = rewrite_cache_path(bundle_path, import_paths)?;
+    let mut value = rewritten.to_string_lossy().into_owned();
+    if game_rel.ends_with('/') && !value.ends_with(std::path::MAIN_SEPARATOR) {
+        value.push(std::path::MAIN_SEPARATOR);
+    }
+    Ok(value)
+}
+
 fn rewrite_backup_path(bundle_path: &str, import_paths: &ImportPaths) -> Result<PathBuf> {
     let rel = strip_bundle_prefix(bundle_path, "vanilla-backup")?;
     Ok(import_paths.backup_root.join(rel))
@@ -1180,10 +1205,15 @@ fn strip_bundle_prefix(bundle_path: &str, prefix: &str) -> Result<PathBuf> {
     let rel = normalized
         .strip_prefix(&format!("{prefix}/"))
         .ok_or_else(|| anyhow!("Expected bundle-relative {prefix} path, got {bundle_path}"))?;
+    let rel = rel.trim_end_matches('/');
     if rel.is_empty() || rel.split('/').any(|part| part == ".." || part.is_empty()) {
         bail!("Unsafe bundle-relative path: {bundle_path}");
     }
     Ok(PathBuf::from(rel))
+}
+
+fn skips_cache_file_validation(game_rel: &str, cache_path: &str) -> bool {
+    game_rel.ends_with('/') || cache_path.is_empty()
 }
 
 async fn open_sqlite_pool(url: &str) -> Result<sqlx::SqlitePool> {
@@ -1444,6 +1474,61 @@ mod tests {
             "save snapshots should be copied"
         );
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn imports_directory_sentinels_without_cached_files() -> Result<()> {
+        let _guard = ENV_LOCK
+            .lock()
+            .map_err(|_| anyhow!("test environment lock was poisoned"))?;
+        let fixture = PreviewFixture::new().await?;
+        let snap_common = fixture._temp.path().join("snap-common");
+        let _env = EnvVarGuard::set("SNAP_USER_COMMON", &snap_common);
+        add_directory_sentinel(&fixture.export_db).await?;
+        fixture.write_bundle(|manifest| manifest).await?;
+
+        import_bundle(
+            &fixture.snap_tracker,
+            ImportBundleRequest {
+                bundle_path: fixture.bundle_path.clone(),
+                confirmed_game_path: fixture._temp.path().join("snap-visible-game"),
+                confirmed_wine_prefix: fixture._temp.path().join("snap-visible-prefix"),
+                confirmed_downloads_dir: fixture._temp.path().join("Downloads"),
+            },
+        )
+        .await?;
+
+        let sentinel_cache_path: String = sqlx::query_scalar(
+            "SELECT cache_path FROM mod_files
+             WHERE mod_id = 'mod-1' AND game_rel_lowercase = 'empty/'",
+        )
+        .fetch_one(&fixture.snap_tracker.pool)
+        .await?;
+        assert!(
+            sentinel_cache_path.contains("deployd/cache/mod-1/empty"),
+            "directory sentinel cache path should be rewritten into Snap cache"
+        );
+        Ok(())
+    }
+
+    async fn add_directory_sentinel(export_db: &Path) -> Result<()> {
+        let url = format!("sqlite://{}?mode=rwc", export_db.display());
+        let pool = open_sqlite_pool(&url).await?;
+        sqlx::query(
+            "INSERT INTO mod_files (mod_id, game_rel_lowercase, game_rel_original, cache_path)
+             VALUES ('mod-1', 'empty/', 'empty/', 'cache/mod-1/empty/')",
+        )
+        .execute(&pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO deployed_files
+             (game_id, game_rel_lowercase, game_rel_original, mod_id, cache_path)
+             VALUES ('skyrim-se', 'empty/', 'empty/', 'mod-1', 'cache/mod-1/empty/')",
+        )
+        .execute(&pool)
+        .await?;
+        pool.close().await;
         Ok(())
     }
 
