@@ -59,8 +59,9 @@
   repeated TES4 header reads during ordinary reloads.
 - Snap copy-fallback deployments no longer make managed plugins appear as externally cleaned when
   the deployed file still matches Deployd's cache.
-- Downloads-folder scans now reattach found archives to imported AppImage download metadata instead
-  of creating duplicate path-only rows after a Snap migration import.
+- Downloads-folder scans now preserve and reattach imported AppImage download metadata, including
+  downloaded-but-not-installed entries, instead of creating duplicate path-only rows after a Snap
+  migration import.
 
 ## [2.2.1]
 

@@ -104,21 +104,19 @@ fn scan_downloads(
         .filter(|e| {
             !e.is_active()
                 && e.status != DownloadStatus::Installed
-                && !e
-                    .archive_path
+                && e.archive_path
                     .as_ref()
-                    .map(|p| p.exists() && p.starts_with(&base_dir))
-                    .unwrap_or(false)
+                    .is_some_and(|p| !(p.exists() && p.starts_with(&base_dir)))
         })
         .map(|e| e.id.clone())
         .collect();
     all_downloads.retain(|e| {
         e.is_active()
             || e.status == DownloadStatus::Installed
+            || e.archive_path.is_none()
             || e.archive_path
                 .as_ref()
-                .map(|p| p.exists() && p.starts_with(&base_dir))
-                .unwrap_or(false)
+                .is_some_and(|p| p.exists() && p.starts_with(&base_dir))
     });
 
     let existing: HashSet<std::path::PathBuf> = all_downloads
@@ -469,6 +467,40 @@ mod tests {
         assert!(scan.entries[0].metadata_fetched);
         assert_eq!(scan.to_persist.len(), 1);
         assert_eq!(scan.to_persist[0].id, "imported");
+        Ok(())
+    }
+
+    #[test]
+    fn scan_preserves_downloaded_imported_metadata_before_reattach() -> Result<()> {
+        let temp = TempDir::new()?;
+        let domain_dir = temp.path().join("fallout4");
+        std::fs::create_dir_all(&domain_dir)?;
+        let archive = domain_dir.join("LooksMenu-12631-1-6-20-1750000000.7z");
+        std::fs::write(&archive, b"archive")?;
+
+        let mut imported = download_entry("downloaded", "LooksMenu");
+        imported.status = DownloadStatus::Downloaded;
+        imported.status_msg = "Ready to install".to_string();
+        imported.nexus_ids = Some(NexusIds {
+            mod_id: 12631,
+            file_id: 456,
+            domain: "fallout4".to_string(),
+        });
+        imported.nexus_file_name = Some("LooksMenu-12631-1-6-20.7z".to_string());
+
+        let scan = scan_downloads(temp.path().to_path_buf(), vec![imported])
+            .map_err(anyhow::Error::msg)?;
+
+        assert_eq!(scan.removed_ids.len(), 0);
+        assert_eq!(scan.new_count, 0);
+        assert_eq!(scan.entries.len(), 1);
+        assert_eq!(scan.entries[0].id, "downloaded");
+        assert_eq!(scan.entries[0].status, DownloadStatus::Downloaded);
+        assert_eq!(
+            scan.entries[0].archive_path.as_deref(),
+            Some(archive.as_path())
+        );
+        assert!(scan.entries[0].metadata_fetched);
         Ok(())
     }
 
