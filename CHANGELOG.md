@@ -63,6 +63,12 @@
   downloaded-but-not-installed entries, instead of creating duplicate path-only rows after a Snap
   migration import. Non-installed pathless entries that still cannot be matched to an archive are
   removed as dead download entries.
+- Downloads-folder scans now reconcile duplicate archive rows against installed entries as well,
+  preferring the richer Nexus metadata row and deleting weaker duplicates while leaving active
+  downloads untouched.
+- Installed mods now retain source metadata independently from the downloads inventory, including
+  Nexus file names, primary-file flags, and archive MD5 values backfilled from installed download
+  rows.
 - Snap migration import now treats previously stopped/hidden games as re-importable, replacing
   their hidden Snap state, while still refusing games that are actively managed.
 

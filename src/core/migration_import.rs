@@ -851,11 +851,69 @@ async fn import_database_rows(
     import_order_snapshot_entries(&mut tx, export_pool).await?;
     import_vanilla_backups(&mut tx, export_pool, import_paths).await?;
     import_download_entries(&mut tx, export_pool).await?;
+    backfill_imported_mod_source_metadata(&mut tx).await?;
     import_settings(&mut tx, &manifest.game_id, confirmed_downloads_dir).await?;
 
     tx.commit()
         .await
         .context("Failed to commit AppImage export import")?;
+    Ok(())
+}
+
+async fn backfill_imported_mod_source_metadata(tx: &mut Transaction<'_, Sqlite>) -> Result<()> {
+    sqlx::query(
+        "UPDATE mods
+         SET nexus_file_name = COALESCE(
+                 nexus_file_name,
+                 (
+                     SELECT de.nexus_file_name
+                     FROM download_entries de
+                     WHERE de.status = 'installed'
+                       AND de.nexus_mod_id = mods.nexus_mod_id
+                       AND de.nexus_file_id = mods.nexus_file_id
+                       AND de.nexus_domain = mods.nexus_domain
+                       AND de.nexus_file_name IS NOT NULL
+                     ORDER BY de.metadata_fetched DESC
+                     LIMIT 1
+                 )
+             ),
+             nexus_is_primary = CASE
+                 WHEN COALESCE(nexus_is_primary, 0) = 0 THEN COALESCE(
+                     (
+                         SELECT de.nexus_is_primary
+                         FROM download_entries de
+                         WHERE de.status = 'installed'
+                           AND de.nexus_mod_id = mods.nexus_mod_id
+                           AND de.nexus_file_id = mods.nexus_file_id
+                           AND de.nexus_domain = mods.nexus_domain
+                           AND COALESCE(de.nexus_is_primary, 0) != 0
+                         LIMIT 1
+                     ),
+                     0
+                 )
+                 ELSE nexus_is_primary
+             END,
+             archive_md5 = COALESCE(
+                 archive_md5,
+                 (
+                     SELECT de.archive_md5
+                     FROM download_entries de
+                     WHERE de.status = 'installed'
+                       AND de.nexus_mod_id = mods.nexus_mod_id
+                       AND de.nexus_file_id = mods.nexus_file_id
+                       AND de.nexus_domain = mods.nexus_domain
+                       AND de.archive_md5 IS NOT NULL
+                     ORDER BY de.metadata_fetched DESC
+                     LIMIT 1
+                 )
+             )
+         WHERE nexus_mod_id IS NOT NULL
+           AND nexus_file_id IS NOT NULL
+           AND nexus_domain IS NOT NULL",
+    )
+    .execute(&mut **tx)
+    .await
+    .context("Failed to backfill imported mod source metadata")?;
     Ok(())
 }
 

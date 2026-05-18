@@ -98,6 +98,11 @@ The Snap cannot read the AppImage's hidden `~/.local/share/deployd/` data direct
 
 If the previewed game is not already managed in the Snap, the preview dialog can import it. Import requires you to confirm the Snap-visible game folder, Wine prefix, and downloads folder through file pickers. Deployd copies the bundle's mod cache, vanilla backups, and profile save snapshots into Snap-owned storage, skips exported external tools, and clears old AppImage download archive paths so the downloads folder can be reselected or rescanned safely.
 
+After import, downloads-folder scans reconcile imported Nexus metadata with the archives that are
+actually visible in the selected Snap downloads folder. Installed mod source metadata is retained on
+the installed mod record, so cleaning an empty downloads folder can remove dead archive inventory
+without losing the metadata Deployd needs to describe the installed mod.
+
 ---
 
 ## Getting Started

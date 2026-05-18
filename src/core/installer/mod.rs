@@ -356,6 +356,9 @@ pub async fn add_mod_with_file_list(
         author: None,
         nexus_description: None,
         latest_version: None,
+        nexus_file_name: None,
+        nexus_is_primary: false,
+        archive_md5: None,
         install_target: mod_install_target,
         notes: None,
     };

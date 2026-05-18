@@ -122,6 +122,91 @@ pub(super) async fn migrate_download_columns(pool: &SqlitePool) -> Result<()> {
     Ok(())
 }
 
+pub(super) async fn migrate_mod_source_metadata_columns(pool: &SqlitePool) -> Result<()> {
+    let columns: Vec<(String,)> = sqlx::query_as("PRAGMA table_info(mods)")
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(|row: (i32, String, String, i32, Option<String>, i32)| (row.1,))
+        .collect();
+
+    let existing: std::collections::HashSet<&str> =
+        columns.iter().map(|(name,)| name.as_str()).collect();
+
+    let new_columns = [
+        ("nexus_file_name", "TEXT"),
+        ("nexus_is_primary", "BOOLEAN DEFAULT FALSE"),
+        ("archive_md5", "TEXT"),
+    ];
+
+    for (col, col_type) in &new_columns {
+        if !existing.contains(*col) {
+            let sql = format!("ALTER TABLE mods ADD COLUMN {col} {col_type}");
+            sqlx::query(&sql).execute(pool).await?;
+        }
+    }
+
+    Ok(())
+}
+
+pub(super) async fn backfill_mod_source_metadata(pool: &SqlitePool) -> Result<()> {
+    sqlx::query(
+        "UPDATE mods
+         SET nexus_file_name = COALESCE(
+                 nexus_file_name,
+                 (
+                     SELECT de.nexus_file_name
+                     FROM download_entries de
+                     WHERE de.status = 'installed'
+                       AND de.nexus_mod_id = mods.nexus_mod_id
+                       AND de.nexus_file_id = mods.nexus_file_id
+                       AND de.nexus_domain = mods.nexus_domain
+                       AND de.nexus_file_name IS NOT NULL
+                     ORDER BY de.metadata_fetched DESC
+                     LIMIT 1
+                 )
+             ),
+             nexus_is_primary = CASE
+                 WHEN COALESCE(nexus_is_primary, 0) = 0 THEN COALESCE(
+                     (
+                         SELECT de.nexus_is_primary
+                         FROM download_entries de
+                         WHERE de.status = 'installed'
+                           AND de.nexus_mod_id = mods.nexus_mod_id
+                           AND de.nexus_file_id = mods.nexus_file_id
+                           AND de.nexus_domain = mods.nexus_domain
+                           AND COALESCE(de.nexus_is_primary, 0) != 0
+                         LIMIT 1
+                     ),
+                     0
+                 )
+                 ELSE nexus_is_primary
+             END,
+             archive_md5 = COALESCE(
+                 archive_md5,
+                 (
+                     SELECT de.archive_md5
+                     FROM download_entries de
+                     WHERE de.status = 'installed'
+                       AND de.nexus_mod_id = mods.nexus_mod_id
+                       AND de.nexus_file_id = mods.nexus_file_id
+                       AND de.nexus_domain = mods.nexus_domain
+                       AND de.archive_md5 IS NOT NULL
+                     ORDER BY de.metadata_fetched DESC
+                     LIMIT 1
+                 )
+             )
+         WHERE nexus_mod_id IS NOT NULL
+           AND nexus_file_id IS NOT NULL
+           AND nexus_domain IS NOT NULL",
+    )
+    .execute(pool)
+    .await
+    .context("Failed to backfill mod source metadata")?;
+
+    Ok(())
+}
+
 pub(super) async fn migrate_group_columns(pool: &SqlitePool) -> Result<()> {
     let columns: Vec<(String,)> = sqlx::query_as("PRAGMA table_info(mods)")
         .fetch_all(pool)
@@ -1364,4 +1449,53 @@ pub(super) async fn migrate_group_color_column(pool: &SqlitePool) -> Result<()> 
             .context("Failed to add color column to mod_groups")?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::core::tracker::Tracker;
+
+    #[tokio::test]
+    async fn backfills_installed_mod_source_metadata_from_download_entries() -> Result<()> {
+        let tracker = Tracker::open("sqlite::memory:").await?;
+
+        sqlx::query(
+            "INSERT INTO games (id, title, path, data_subdir)
+             VALUES ('g', 'Game', '/tmp/game', 'Data')",
+        )
+        .execute(&tracker.pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO mods
+             (id, game_id, name, priority, nexus_mod_id, nexus_file_id, nexus_domain)
+             VALUES ('mod-1', 'g', 'Mod', 0, 4598, 123, 'fallout4')",
+        )
+        .execute(&tracker.pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO download_entries
+             (id, mod_name, nexus_mod_id, nexus_file_id, nexus_domain, metadata_fetched,
+              nexus_file_name, nexus_is_primary, status, archive_md5)
+             VALUES ('download-1', 'Mod', 4598, 123, 'fallout4', 1,
+                     'Main File', 1, 'installed', 'md5')",
+        )
+        .execute(&tracker.pool)
+        .await?;
+
+        backfill_mod_source_metadata(&tracker.pool).await?;
+
+        let row: (Option<String>, bool, Option<String>) = sqlx::query_as(
+            "SELECT nexus_file_name, nexus_is_primary, archive_md5
+             FROM mods WHERE id = 'mod-1'",
+        )
+        .fetch_one(&tracker.pool)
+        .await?;
+
+        assert_eq!(row.0.as_deref(), Some("Main File"));
+        assert!(row.1, "primary flag should be backfilled");
+        assert_eq!(row.2.as_deref(), Some("md5"));
+        Ok(())
+    }
 }

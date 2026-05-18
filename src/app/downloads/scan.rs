@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use crate::core::game;
@@ -99,20 +99,26 @@ fn scan_downloads(
     base_dir: PathBuf,
     mut all_downloads: Vec<DownloadEntry>,
 ) -> Result<DownloadScanResult, String> {
-    let mut removed_ids: Vec<String> = all_downloads
-        .iter()
-        .filter(|e| {
-            !e.is_active()
-                && e.status != DownloadStatus::Installed
-                && e.archive_path
-                    .as_ref()
-                    .is_some_and(|p| !(p.exists() && p.starts_with(&base_dir)))
-        })
-        .map(|e| e.id.clone())
-        .collect();
+    let mut removed_ids = Vec::new();
+    for entry in &mut all_downloads {
+        if entry.is_active() {
+            continue;
+        }
+        let has_invalid_archive = entry
+            .archive_path
+            .as_ref()
+            .is_some_and(|p| !(p.exists() && p.starts_with(&base_dir)));
+        if !has_invalid_archive {
+            continue;
+        }
+        if entry.status == DownloadStatus::Installed {
+            entry.archive_path = None;
+        } else {
+            removed_ids.push(entry.id.clone());
+        }
+    }
     all_downloads.retain(|e| {
         e.is_active()
-            || e.status == DownloadStatus::Installed
             || e.archive_path.is_none()
             || e.archive_path
                 .as_ref()
@@ -168,46 +174,27 @@ fn scan_downloads(
                 domain: domain.to_string(),
             });
 
-            if existing.contains(&path) {
-                if let Some((kept_id, removed_id)) =
-                    merge_path_duplicate(&mut all_downloads, &path, Some(domain), &nexus_ids)
-                {
-                    changed_ids.push(kept_id);
-                    removed_ids.push(removed_id);
-                    continue;
-                }
-                // Archive already tracked — ensure game_domain is set
-                // (covers entries from before per-game subfolder migration)
-                if let Some(dl) = all_downloads
-                    .iter_mut()
-                    .find(|e| e.archive_path.as_ref() == Some(&path))
-                    && dl.game_domain.is_none()
-                {
-                    dl.game_domain = Some(domain.to_string());
-                    changed_ids.push(dl.id.clone());
-                }
-                continue;
-            }
-            // Also skip if the same filename is already tracked under a
-            // different path (e.g. user moved the downloads folder).
-            if path
-                .file_name()
-                .map(|n| existing_names.contains(n))
-                .unwrap_or(false)
-            {
-                continue;
-            }
-
             let mod_name = path
                 .file_stem()
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_string();
 
-            if let Some(id) =
-                attach_pathless_download(&mut all_downloads, &path, Some(domain), &nexus_ids)
+            if let Some(outcome) =
+                reconcile_archive(&mut all_downloads, &path, Some(domain), &nexus_ids)
             {
-                changed_ids.push(id);
+                changed_ids.extend(outcome.changed_ids);
+                removed_ids.extend(outcome.removed_ids);
+                continue;
+            }
+            // Also skip if the same filename is already tracked under a
+            // different path (e.g. user moved the downloads folder).
+            if !existing.contains(&path)
+                && path
+                    .file_name()
+                    .map(|n| existing_names.contains(n))
+                    .unwrap_or(false)
+            {
                 continue;
             }
 
@@ -268,33 +255,24 @@ fn scan_downloads(
                 domain: String::new(),
             });
 
-            if existing_after.contains(&path) {
-                if let Some((kept_id, removed_id)) =
-                    merge_path_duplicate(&mut all_downloads, &path, None, &nexus_ids)
-                {
-                    changed_ids.push(kept_id);
-                    removed_ids.push(removed_id);
-                }
-                continue;
-            }
-            // Skip if same filename is already tracked (path-change dedup)
-            if path
-                .file_name()
-                .map(|n| existing_names.contains(n))
-                .unwrap_or(false)
-            {
-                continue;
-            }
-
             let mod_name = path
                 .file_stem()
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_string();
 
-            if let Some(id) = attach_pathless_download(&mut all_downloads, &path, None, &nexus_ids)
+            if let Some(outcome) = reconcile_archive(&mut all_downloads, &path, None, &nexus_ids) {
+                changed_ids.extend(outcome.changed_ids);
+                removed_ids.extend(outcome.removed_ids);
+                continue;
+            }
+            // Skip if same filename is already tracked (path-change dedup)
+            if !existing_after.contains(&path)
+                && path
+                    .file_name()
+                    .map(|n| existing_names.contains(n))
+                    .unwrap_or(false)
             {
-                changed_ids.push(id);
                 continue;
             }
 
@@ -323,13 +301,13 @@ fn scan_downloads(
         }
     }
 
+    let sweep = sweep_duplicate_downloads(&mut all_downloads);
+    changed_ids.extend(sweep.changed_ids);
+    removed_ids.extend(sweep.removed_ids);
+
     let stale_pathless_ids: Vec<String> = all_downloads
         .iter()
-        .filter(|entry| {
-            !entry.is_active()
-                && entry.status != DownloadStatus::Installed
-                && entry.archive_path.is_none()
-        })
+        .filter(|entry| !entry.is_active() && entry.archive_path.is_none())
         .map(|entry| entry.id.clone())
         .collect();
     if !stale_pathless_ids.is_empty() {
@@ -343,11 +321,15 @@ fn scan_downloads(
         .take(new_count)
         .cloned()
         .collect();
+    changed_ids.sort();
+    changed_ids.dedup();
     for id in &changed_ids {
         if let Some(entry) = all_downloads.iter().find(|e| &e.id == id) {
             to_persist.push(entry.clone());
         }
     }
+    removed_ids.sort();
+    removed_ids.dedup();
 
     Ok(DownloadScanResult {
         entries: all_downloads,
@@ -357,77 +339,405 @@ fn scan_downloads(
     })
 }
 
-fn attach_pathless_download(
-    all_downloads: &mut [DownloadEntry],
-    path: &std::path::Path,
-    domain: Option<&str>,
-    scanned_nexus_ids: &Option<NexusIds>,
-) -> Option<String> {
-    let file_name = path.file_name()?.to_string_lossy();
-    let normalized_file = normalize_nexus_filename(&file_name);
-    let mut nexus_match: Option<usize> = None;
-    let mut nexus_match_count = 0usize;
-
-    for (idx, entry) in all_downloads.iter().enumerate() {
-        if entry.archive_path.is_some() || !download_domain_matches(entry, domain) {
-            continue;
-        }
-        if let Some(nexus_file_name) = entry.nexus_file_name.as_deref()
-            && normalize_nexus_filename(nexus_file_name) == normalized_file
-        {
-            return attach_archive_path(all_downloads, idx, path, domain);
-        }
-        if download_nexus_mod_matches(entry, scanned_nexus_ids) {
-            nexus_match = Some(idx);
-            nexus_match_count += 1;
-        }
-    }
-
-    if nexus_match_count == 1
-        && let Some(idx) = nexus_match
-    {
-        return attach_archive_path(all_downloads, idx, path, domain);
-    }
-
-    None
+#[derive(Default)]
+struct ReconcileOutcome {
+    changed_ids: Vec<String>,
+    removed_ids: Vec<String>,
 }
 
-fn merge_path_duplicate(
+#[derive(PartialEq)]
+struct DownloadSnapshot {
+    archive_path: Option<PathBuf>,
+    game_domain: Option<String>,
+    metadata_fetched: bool,
+    nexus_file_name: Option<String>,
+    archive_hash: Option<String>,
+    archive_md5: Option<String>,
+    version: Option<String>,
+}
+
+fn reconcile_archive(
     all_downloads: &mut Vec<DownloadEntry>,
     path: &std::path::Path,
     domain: Option<&str>,
     scanned_nexus_ids: &Option<NexusIds>,
-) -> Option<(String, String)> {
-    let path_entry_idx = all_downloads
-        .iter()
-        .position(|entry| entry.archive_path.as_ref() == Some(&path.to_path_buf()))?;
-    let path_entry_id = all_downloads.get(path_entry_idx)?.id.clone();
-    let kept_id = attach_pathless_download(all_downloads, path, domain, scanned_nexus_ids)?;
-    if kept_id == path_entry_id {
-        return None;
-    }
-    if let Some(remove_idx) = all_downloads
-        .iter()
-        .position(|entry| entry.id == path_entry_id)
-    {
-        let removed = all_downloads.remove(remove_idx);
-        return Some((kept_id, removed.id));
-    }
-    None
+) -> Option<ReconcileOutcome> {
+    let candidates = archive_match_candidates(all_downloads, path, domain, scanned_nexus_ids)?;
+    Some(merge_candidates(
+        all_downloads,
+        candidates,
+        Some(path),
+        domain,
+    ))
 }
 
-fn attach_archive_path(
-    all_downloads: &mut [DownloadEntry],
-    idx: usize,
+fn archive_match_candidates(
+    all_downloads: &[DownloadEntry],
     path: &std::path::Path,
     domain: Option<&str>,
-) -> Option<String> {
-    let entry = all_downloads.get_mut(idx)?;
-    entry.archive_path = Some(path.to_path_buf());
-    if entry.game_domain.is_none() {
-        entry.game_domain = domain.map(str::to_string);
+    scanned_nexus_ids: &Option<NexusIds>,
+) -> Option<Vec<usize>> {
+    let exact_path: Vec<usize> = all_downloads
+        .iter()
+        .enumerate()
+        .filter(|(_, entry)| entry.archive_path.as_ref().is_some_and(|p| p == path))
+        .map(|(idx, _)| idx)
+        .collect();
+    if exact_path.iter().any(|idx| all_downloads[*idx].is_active()) {
+        let active_path = exact_path
+            .into_iter()
+            .filter(|idx| all_downloads[*idx].is_active())
+            .collect();
+        return Some(active_path);
     }
-    Some(entry.id.clone())
+
+    let file_name = path.file_name()?.to_string_lossy();
+    let normalized_file = normalize_nexus_filename(&file_name);
+    let mut candidates = exact_path;
+
+    for (idx, entry) in all_downloads.iter().enumerate() {
+        if !candidates.contains(&idx)
+            && !entry.is_active()
+            && download_domain_matches(entry, domain)
+            && exact_nexus_file_matches(entry, scanned_nexus_ids)
+        {
+            candidates.push(idx);
+        }
+    }
+
+    let filename_matches: Vec<usize> = all_downloads
+        .iter()
+        .enumerate()
+        .filter(|(idx, entry)| {
+            !candidates.contains(idx)
+                && !entry.is_active()
+                && download_domain_matches(entry, domain)
+                && entry
+                    .nexus_file_name
+                    .as_deref()
+                    .is_some_and(|name| normalize_nexus_filename(name) == normalized_file)
+        })
+        .map(|(idx, _)| idx)
+        .collect();
+    candidates.extend(filename_matches);
+
+    let mod_matches: Vec<usize> = all_downloads
+        .iter()
+        .enumerate()
+        .filter(|(idx, entry)| {
+            !candidates.contains(idx)
+                && !entry.is_active()
+                && download_domain_matches(entry, domain)
+                && download_nexus_mod_matches(entry, scanned_nexus_ids)
+        })
+        .map(|(idx, _)| idx)
+        .collect();
+    if mod_matches.len() == 1 {
+        candidates.extend(mod_matches);
+    }
+
+    (!candidates.is_empty()).then_some(candidates)
+}
+
+fn merge_candidates(
+    all_downloads: &mut Vec<DownloadEntry>,
+    candidate_indices: Vec<usize>,
+    path: Option<&std::path::Path>,
+    domain: Option<&str>,
+) -> ReconcileOutcome {
+    let candidates: Vec<String> = candidate_indices
+        .into_iter()
+        .filter_map(|idx| all_downloads.get(idx))
+        .map(|entry| entry.id.clone())
+        .collect();
+    let scored_candidates: Vec<(String, i32)> = candidates
+        .iter()
+        .filter_map(|id| {
+            all_downloads
+                .iter()
+                .find(|entry| &entry.id == id)
+                .map(|entry| (entry.id.clone(), download_quality(entry)))
+        })
+        .collect();
+    let Some(best_score) = scored_candidates.iter().map(|(_, score)| *score).max() else {
+        return ReconcileOutcome::default();
+    };
+    let best_ids: Vec<String> = scored_candidates
+        .iter()
+        .filter(|(_, score)| *score == best_score)
+        .map(|(id, _)| id.clone())
+        .collect();
+    let [winner_id] = best_ids.as_slice() else {
+        return ReconcileOutcome::default();
+    };
+    let winner_id = winner_id.clone();
+
+    let mut outcome = ReconcileOutcome::default();
+    for candidate_id in candidates {
+        if candidate_id == winner_id {
+            continue;
+        }
+        let Some(loser_idx) = all_downloads
+            .iter()
+            .position(|entry| entry.id == candidate_id)
+        else {
+            continue;
+        };
+        if all_downloads[loser_idx].is_active() {
+            continue;
+        }
+        let loser = all_downloads.remove(loser_idx);
+        merge_download_metadata(all_downloads, &winner_id, &loser);
+        outcome.removed_ids.push(loser.id);
+    }
+
+    if let Some(winner) = all_downloads.iter_mut().find(|entry| entry.id == winner_id) {
+        let before = snapshot_for_change_detection(winner);
+        if let Some(path) = path {
+            winner.archive_path = Some(path.to_path_buf());
+        }
+        if winner.game_domain.is_none() {
+            winner.game_domain = domain.map(str::to_string);
+        }
+        if snapshot_for_change_detection(winner) != before || !outcome.removed_ids.is_empty() {
+            outcome.changed_ids.push(winner.id.clone());
+        }
+    }
+    outcome
+}
+
+fn sweep_duplicate_downloads(all_downloads: &mut Vec<DownloadEntry>) -> ReconcileOutcome {
+    let mut outcome = ReconcileOutcome::default();
+    for group in duplicate_groups(all_downloads) {
+        let indices: Vec<usize> = group
+            .iter()
+            .filter_map(|id| all_downloads.iter().position(|entry| &entry.id == id))
+            .collect();
+        let sweep = merge_candidates(all_downloads, indices, None, None);
+        outcome.changed_ids.extend(sweep.changed_ids);
+        outcome.removed_ids.extend(sweep.removed_ids);
+    }
+    outcome
+}
+
+fn duplicate_groups(all_downloads: &[DownloadEntry]) -> Vec<Vec<String>> {
+    let mut groups = Vec::new();
+    collect_duplicate_groups(
+        &mut groups,
+        group_by_archive_path(all_downloads),
+        all_downloads,
+    );
+    collect_duplicate_groups(
+        &mut groups,
+        group_by_exact_nexus_file(all_downloads),
+        all_downloads,
+    );
+    collect_duplicate_groups(
+        &mut groups,
+        group_by_normalized_nexus_file_name(all_downloads),
+        all_downloads,
+    );
+    collect_duplicate_groups(
+        &mut groups,
+        group_by_safe_nexus_mod(all_downloads),
+        all_downloads,
+    );
+    groups
+}
+
+fn collect_duplicate_groups(
+    groups: &mut Vec<Vec<String>>,
+    candidate_groups: Vec<Vec<usize>>,
+    all_downloads: &[DownloadEntry],
+) {
+    for group in candidate_groups {
+        let group_ids: Vec<String> = group
+            .iter()
+            .filter_map(|idx| all_downloads.get(*idx))
+            .map(|entry| entry.id.clone())
+            .collect();
+        if group.len() > 1 {
+            groups.push(group_ids);
+        }
+    }
+}
+
+fn group_by_archive_path(all_downloads: &[DownloadEntry]) -> Vec<Vec<usize>> {
+    let mut grouped: HashMap<PathBuf, Vec<usize>> = HashMap::new();
+    for (idx, entry) in all_downloads.iter().enumerate() {
+        if entry.is_active() {
+            continue;
+        }
+        if let Some(path) = entry.archive_path.clone() {
+            grouped.entry(path).or_default().push(idx);
+        }
+    }
+    grouped
+        .into_values()
+        .filter(|group| group.len() > 1)
+        .collect()
+}
+
+fn group_by_exact_nexus_file(all_downloads: &[DownloadEntry]) -> Vec<Vec<usize>> {
+    let mut grouped: HashMap<(String, i64, i64), Vec<usize>> = HashMap::new();
+    for (idx, entry) in all_downloads.iter().enumerate() {
+        if entry.is_active() {
+            continue;
+        }
+        let Some(ids) = entry.nexus_ids.as_ref() else {
+            continue;
+        };
+        if ids.file_id == 0 {
+            continue;
+        }
+        grouped
+            .entry((ids.domain.clone(), ids.mod_id, ids.file_id))
+            .or_default()
+            .push(idx);
+    }
+    grouped
+        .into_values()
+        .filter(|group| group.len() > 1)
+        .collect()
+}
+
+fn group_by_normalized_nexus_file_name(all_downloads: &[DownloadEntry]) -> Vec<Vec<usize>> {
+    let mut grouped: HashMap<(String, String), Vec<usize>> = HashMap::new();
+    for (idx, entry) in all_downloads.iter().enumerate() {
+        if entry.is_active() {
+            continue;
+        }
+        let Some(domain) = entry_domain(entry) else {
+            continue;
+        };
+        let Some(file_name) = entry.nexus_file_name.as_deref() else {
+            continue;
+        };
+        grouped
+            .entry((domain.to_string(), normalize_nexus_filename(file_name)))
+            .or_default()
+            .push(idx);
+    }
+    grouped
+        .into_values()
+        .filter(|group| group.len() > 1)
+        .collect()
+}
+
+fn group_by_safe_nexus_mod(all_downloads: &[DownloadEntry]) -> Vec<Vec<usize>> {
+    let mut grouped: HashMap<(String, i64), Vec<usize>> = HashMap::new();
+    for (idx, entry) in all_downloads.iter().enumerate() {
+        if entry.is_active() {
+            continue;
+        }
+        let Some(ids) = entry.nexus_ids.as_ref() else {
+            continue;
+        };
+        grouped
+            .entry((ids.domain.clone(), ids.mod_id))
+            .or_default()
+            .push(idx);
+    }
+    grouped
+        .into_values()
+        .filter(|group| group.len() > 1 && has_no_conflicting_nexus_file_ids(all_downloads, group))
+        .collect()
+}
+
+fn has_no_conflicting_nexus_file_ids(all_downloads: &[DownloadEntry], group: &[usize]) -> bool {
+    let file_ids: HashSet<i64> = group
+        .iter()
+        .filter_map(|idx| all_downloads.get(*idx))
+        .filter_map(|entry| entry.nexus_ids.as_ref())
+        .filter_map(|ids| (ids.file_id != 0).then_some(ids.file_id))
+        .collect();
+    file_ids.len() <= 1
+}
+
+fn merge_download_metadata(
+    all_downloads: &mut [DownloadEntry],
+    winner_id: &str,
+    loser: &DownloadEntry,
+) {
+    let Some(winner) = all_downloads.iter_mut().find(|entry| entry.id == winner_id) else {
+        return;
+    };
+    if winner.nexus_ids.is_none() {
+        winner.nexus_ids = loser.nexus_ids.clone();
+    }
+    if winner.game_domain.is_none() {
+        winner.game_domain = loser.game_domain.clone();
+    }
+    if winner.nexus_file_name.is_none() {
+        winner.nexus_file_name = loser.nexus_file_name.clone();
+    }
+    if !winner.nexus_is_primary {
+        winner.nexus_is_primary = loser.nexus_is_primary;
+    }
+    if winner.archive_hash.is_none() {
+        winner.archive_hash = loser.archive_hash.clone();
+    }
+    if winner.archive_md5.is_none() {
+        winner.archive_md5 = loser.archive_md5.clone();
+    }
+    if winner.version.is_none() {
+        winner.version = loser.version.clone();
+    }
+    if winner.author.is_none() {
+        winner.author = loser.author.clone();
+    }
+    if winner.archive_path.is_none() {
+        winner.archive_path = loser.archive_path.clone();
+    }
+    winner.metadata_fetched |= loser.metadata_fetched;
+    if winner.status != DownloadStatus::Installed && loser.status == DownloadStatus::Installed {
+        winner.status = DownloadStatus::Installed;
+        winner.status_msg = DownloadStatus::Installed.default_status_msg().to_string();
+    }
+}
+
+fn download_quality(entry: &DownloadEntry) -> i32 {
+    let mut score = 0;
+    if entry.status == DownloadStatus::Installed {
+        score += 1_000;
+    }
+    if entry.metadata_fetched {
+        score += 100;
+    }
+    if entry.nexus_ids.as_ref().is_some_and(|ids| ids.file_id != 0) {
+        score += 80;
+    }
+    if entry.nexus_file_name.is_some() {
+        score += 40;
+    }
+    if entry.version.is_some() {
+        score += 20;
+    }
+    if entry.author.is_some() {
+        score += 20;
+    }
+    if entry.archive_hash.is_some() {
+        score += 20;
+    }
+    if entry.archive_md5.is_some() {
+        score += 20;
+    }
+    if entry.archive_path.is_some() {
+        score += 5;
+    }
+    score
+}
+
+fn snapshot_for_change_detection(entry: &DownloadEntry) -> DownloadSnapshot {
+    DownloadSnapshot {
+        archive_path: entry.archive_path.clone(),
+        game_domain: entry.game_domain.clone(),
+        metadata_fetched: entry.metadata_fetched,
+        nexus_file_name: entry.nexus_file_name.clone(),
+        archive_hash: entry.archive_hash.clone(),
+        archive_md5: entry.archive_md5.clone(),
+        version: entry.version.clone(),
+    }
 }
 
 fn download_domain_matches(entry: &DownloadEntry, domain: Option<&str>) -> bool {
@@ -443,6 +753,18 @@ fn download_domain_matches(entry: &DownloadEntry, domain: Option<&str>) -> bool 
     }
 }
 
+fn exact_nexus_file_matches(entry: &DownloadEntry, scanned_nexus_ids: &Option<NexusIds>) -> bool {
+    match (&entry.nexus_ids, scanned_nexus_ids) {
+        (Some(existing), Some(scanned)) => {
+            scanned.file_id != 0
+                && existing.file_id == scanned.file_id
+                && existing.mod_id == scanned.mod_id
+                && (scanned.domain.is_empty() || existing.domain == scanned.domain)
+        }
+        _ => false,
+    }
+}
+
 fn download_nexus_mod_matches(entry: &DownloadEntry, scanned_nexus_ids: &Option<NexusIds>) -> bool {
     match (&entry.nexus_ids, scanned_nexus_ids) {
         (Some(existing), Some(scanned)) => {
@@ -451,6 +773,13 @@ fn download_nexus_mod_matches(entry: &DownloadEntry, scanned_nexus_ids: &Option<
         }
         _ => false,
     }
+}
+
+fn entry_domain(entry: &DownloadEntry) -> Option<&str> {
+    entry
+        .game_domain
+        .as_deref()
+        .or_else(|| entry.nexus_ids.as_ref().map(|ids| ids.domain.as_str()))
 }
 
 #[cfg(test)]
@@ -566,6 +895,19 @@ mod tests {
     }
 
     #[test]
+    fn scan_removes_unmatched_installed_download_inventory() -> Result<()> {
+        let temp = TempDir::new()?;
+        let installed = download_entry("installed", "Installed Without Archive");
+
+        let scan = scan_downloads(temp.path().to_path_buf(), vec![installed])
+            .map_err(anyhow::Error::msg)?;
+
+        assert!(scan.entries.is_empty());
+        assert_eq!(scan.removed_ids, vec!["installed".to_string()]);
+        Ok(())
+    }
+
+    #[test]
     fn scan_merges_existing_path_only_duplicate_into_imported_metadata() -> Result<()> {
         let temp = TempDir::new()?;
         let domain_dir = temp.path().join("fallout4");
@@ -594,6 +936,117 @@ mod tests {
         assert_eq!(scan.removed_ids, vec!["duplicate".to_string()]);
         assert_eq!(scan.to_persist.len(), 1);
         assert_eq!(scan.to_persist[0].id, "imported");
+        Ok(())
+    }
+
+    #[test]
+    fn scan_sweeps_duplicate_installed_entries_by_exact_nexus_file() -> Result<()> {
+        let temp = TempDir::new()?;
+        let archive = temp
+            .path()
+            .join("Unofficial Fallout 4 Patch-4598-2-1-5-1750000000.7z");
+        std::fs::write(&archive, b"archive")?;
+
+        let rich = download_entry("rich", "Unofficial Fallout 4 Patch");
+        let mut duplicate = download_entry("duplicate", "UFO4P Duplicate");
+        duplicate.archive_path = Some(archive.clone());
+        duplicate.metadata_fetched = false;
+        duplicate.nexus_file_name = None;
+        duplicate.version = None;
+        duplicate.author = None;
+        duplicate.archive_md5 = None;
+
+        let scan = scan_downloads(temp.path().to_path_buf(), vec![rich, duplicate])
+            .map_err(anyhow::Error::msg)?;
+
+        assert_eq!(scan.entries.len(), 1);
+        assert_eq!(scan.entries[0].id, "rich");
+        assert_eq!(
+            scan.entries[0].archive_path.as_deref(),
+            Some(archive.as_path())
+        );
+        assert_eq!(scan.removed_ids, vec!["duplicate".to_string()]);
+        assert_eq!(scan.to_persist.len(), 1);
+        assert_eq!(scan.to_persist[0].id, "rich");
+        Ok(())
+    }
+
+    #[test]
+    fn scan_sweeps_duplicate_entries_by_safe_mod_id_match() -> Result<()> {
+        let temp = TempDir::new()?;
+        let archive = temp
+            .path()
+            .join("Unofficial Fallout 4 Patch-4598-2-1-5-1750000000.7z");
+        std::fs::write(&archive, b"archive")?;
+
+        let rich = download_entry("rich", "Unofficial Fallout 4 Patch");
+        let mut duplicate = download_entry("duplicate", "UFO4P Scanned");
+        duplicate.archive_path = Some(archive.clone());
+        if let Some(ref mut ids) = duplicate.nexus_ids {
+            ids.file_id = 0;
+        }
+        duplicate.metadata_fetched = false;
+        duplicate.nexus_file_name = None;
+
+        let scan = scan_downloads(temp.path().to_path_buf(), vec![rich, duplicate])
+            .map_err(anyhow::Error::msg)?;
+
+        assert_eq!(scan.entries.len(), 1);
+        assert_eq!(scan.entries[0].id, "rich");
+        assert_eq!(
+            scan.entries[0].archive_path.as_deref(),
+            Some(archive.as_path())
+        );
+        assert_eq!(scan.removed_ids, vec!["duplicate".to_string()]);
+        Ok(())
+    }
+
+    #[test]
+    fn scan_keeps_duplicate_mod_id_when_file_ids_conflict() -> Result<()> {
+        let temp = TempDir::new()?;
+        let first_archive = temp.path().join("First File-4598-1-0-1750000000.7z");
+        let second_archive = temp.path().join("Second File-4598-2-0-1750000000.7z");
+        std::fs::write(&first_archive, b"first")?;
+        std::fs::write(&second_archive, b"second")?;
+
+        let mut first = download_entry("first", "First File");
+        first.archive_path = Some(first_archive);
+        let mut second = download_entry("second", "Second File");
+        second.archive_path = Some(second_archive);
+        if let Some(ref mut ids) = second.nexus_ids {
+            ids.file_id = 456;
+        }
+        second.nexus_file_name = Some("Second File.7z".to_string());
+
+        let scan = scan_downloads(temp.path().to_path_buf(), vec![first, second])
+            .map_err(anyhow::Error::msg)?;
+
+        assert_eq!(scan.entries.len(), 2);
+        assert!(scan.removed_ids.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn scan_does_not_merge_active_downloads() -> Result<()> {
+        let temp = TempDir::new()?;
+        let domain_dir = temp.path().join("fallout4");
+        std::fs::create_dir_all(&domain_dir)?;
+        let archive = domain_dir.join("Unofficial Fallout 4 Patch-4598-2-1-5-1750000000.7z");
+        std::fs::write(&archive, b"archive")?;
+
+        let installed = download_entry("installed", "Unofficial Fallout 4 Patch");
+        let mut active = download_entry("active", "Active Download");
+        active.status = DownloadStatus::Downloading;
+        active.status_msg = "Downloading...".to_string();
+        active.archive_path = Some(archive);
+        active.metadata_fetched = false;
+
+        let scan = scan_downloads(temp.path().to_path_buf(), vec![installed, active])
+            .map_err(anyhow::Error::msg)?;
+
+        assert_eq!(scan.entries.len(), 1);
+        assert!(scan.entries.iter().any(|entry| entry.id == "active"));
+        assert_eq!(scan.removed_ids, vec!["installed".to_string()]);
         Ok(())
     }
 

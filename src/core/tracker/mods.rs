@@ -11,8 +11,8 @@ impl Tracker {
         sqlx::query(
             "INSERT INTO mods (id, game_id, name, archive_hash, archive_path, installed_at,
                                enabled, priority, nexus_mod_id, nexus_file_id, nexus_domain,
-                               install_target)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                               install_target, nexus_file_name, nexus_is_primary, archive_md5)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&entry.id)
         .bind(&entry.game_id)
@@ -26,6 +26,9 @@ impl Tracker {
         .bind(entry.nexus_file_id)
         .bind(&entry.nexus_domain)
         .bind(entry.install_target.to_string())
+        .bind(entry.nexus_file_name.as_deref())
+        .bind(entry.nexus_is_primary)
+        .bind(entry.archive_md5.as_deref())
         .execute(&self.pool)
         .await
         .context("Failed to insert mod entry")?;
@@ -47,7 +50,8 @@ impl Tracker {
         let rows = sqlx::query(
             "SELECT id, game_id, name, archive_hash, archive_path, installed_at, enabled, priority,
                     nexus_mod_id, nexus_file_id, nexus_domain, version, author,
-                    nexus_description, latest_version, install_target, notes
+                    nexus_description, latest_version, nexus_file_name, nexus_is_primary,
+                    archive_md5, install_target, notes
              FROM mods WHERE game_id = ? ORDER BY priority ASC",
         )
         .bind(game_id)
@@ -75,6 +79,9 @@ impl Tracker {
                     author: row.get("author"),
                     nexus_description: row.get("nexus_description"),
                     latest_version: row.get("latest_version"),
+                    nexus_file_name: row.get("nexus_file_name"),
+                    nexus_is_primary: row.get("nexus_is_primary"),
+                    archive_md5: row.get("archive_md5"),
                     install_target: InstallTarget::from(install_target.as_deref()),
                     notes: row.get("notes"),
                 }
@@ -240,6 +247,9 @@ mod tests {
             author: None,
             nexus_description: None,
             latest_version: None,
+            nexus_file_name: None,
+            nexus_is_primary: false,
+            archive_md5: None,
             install_target: InstallTarget::Data,
             notes: None,
         }

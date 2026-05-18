@@ -277,6 +277,7 @@ impl Tracker {
         migrations::migrate_games_columns(&pool).await?;
         migrations::migrate_nexus_columns(&pool).await?;
         migrations::migrate_download_columns(&pool).await?;
+        migrations::migrate_mod_source_metadata_columns(&pool).await?;
         migrations::migrate_vanilla_files_columns(&pool).await?;
         migrations::migrate_group_columns(&pool).await?;
         migrations::migrate_install_target_column(&pool).await?;
@@ -290,6 +291,9 @@ impl Tracker {
         }
         if let Err(e) = migrations::backfill_download_statuses(&pool).await {
             eprintln!("Download status backfill failed (non-fatal): {e}");
+        }
+        if let Err(e) = migrations::backfill_mod_source_metadata(&pool).await {
+            eprintln!("Mod source metadata backfill failed (non-fatal): {e}");
         }
         if let Err(e) = migrations::backfill_archive_hashes(&pool).await {
             eprintln!("Archive hash backfill failed (non-fatal): {e}");

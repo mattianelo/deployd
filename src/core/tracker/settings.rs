@@ -149,6 +149,39 @@ impl Tracker {
         Ok(())
     }
 
+    pub async fn update_mod_source_metadata_by_nexus_ids(
+        &self,
+        game_id: &str,
+        nexus_mod_id: i64,
+        nexus_file_id: i64,
+        nexus_file_name: Option<&str>,
+        nexus_is_primary: bool,
+        archive_md5: Option<&str>,
+    ) -> Result<()> {
+        sqlx::query(
+            "UPDATE mods
+             SET nexus_file_name = COALESCE(?, nexus_file_name),
+                 nexus_is_primary = CASE
+                     WHEN ? THEN 1
+                     ELSE nexus_is_primary
+                 END,
+                 archive_md5 = COALESCE(?, archive_md5)
+             WHERE game_id = ?
+               AND nexus_mod_id = ?
+               AND nexus_file_id = ?",
+        )
+        .bind(nexus_file_name)
+        .bind(nexus_is_primary)
+        .bind(archive_md5)
+        .bind(game_id)
+        .bind(nexus_mod_id)
+        .bind(nexus_file_id)
+        .execute(&self.pool)
+        .await
+        .context("Failed to update mod source metadata by Nexus IDs")?;
+        Ok(())
+    }
+
     /// Set version on a mod row identified by its Nexus file coordinates.
     /// Used to propagate resolved download metadata to the installed mod without a full reload.
     pub async fn update_mod_version_by_nexus_ids(

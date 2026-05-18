@@ -639,6 +639,35 @@ impl App {
                 }
             }
         }
+        if let Some(entry) = self.all_downloads.iter().find(|e| e.id == download_id)
+            && let Some(NexusIds {
+                mod_id: nxs_mod_id,
+                file_id: nxs_file_id,
+                ..
+            }) = entry.nexus_ids
+            && nxs_file_id != 0
+            && let Some(tracker) = self.tracker.clone()
+            && let Some(game) = self.selected_game().cloned()
+        {
+            let game_id = game.id.clone();
+            let source_file_name = entry.nexus_file_name.clone();
+            let source_is_primary = entry.nexus_is_primary;
+            let source_md5 = entry.archive_md5.clone();
+            sender.oneshot_command(async move {
+                tracker
+                    .update_mod_source_metadata_by_nexus_ids(
+                        &game_id,
+                        nxs_mod_id,
+                        nxs_file_id,
+                        source_file_name.as_deref(),
+                        source_is_primary,
+                        source_md5.as_deref(),
+                    )
+                    .await
+                    .ok();
+                AppCmdMsg::PrioritySaved(Ok(()))
+            });
+        }
         // Rebuild views only if game_domain actually changed (affects filtering)
         if game_domain.is_some() && old_domain != game_domain {
             self.rebuild_downloads_view();
