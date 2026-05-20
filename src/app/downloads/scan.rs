@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::core::game;
@@ -100,6 +100,7 @@ fn scan_downloads(
     mut all_downloads: Vec<DownloadEntry>,
 ) -> Result<DownloadScanResult, String> {
     let mut removed_ids = Vec::new();
+    let mut changed_ids: Vec<String> = Vec::new();
     for entry in &mut all_downloads {
         if entry.is_active() {
             continue;
@@ -111,8 +112,10 @@ fn scan_downloads(
         if !has_invalid_archive {
             continue;
         }
-        if entry.status == DownloadStatus::Installed {
+        if should_keep_metadata_cache(entry) {
             entry.archive_path = None;
+            entry.hidden = true;
+            changed_ids.push(entry.id.clone());
         } else {
             removed_ids.push(entry.id.clone());
         }
@@ -125,23 +128,8 @@ fn scan_downloads(
                 .is_some_and(|p| p.exists() && p.starts_with(&base_dir))
     });
 
-    let existing: HashSet<std::path::PathBuf> = all_downloads
-        .iter()
-        .filter_map(|e| e.archive_path.clone())
-        .collect();
-    let existing_names: HashSet<std::ffi::OsString> = all_downloads
-        .iter()
-        .filter_map(|e| {
-            e.archive_path
-                .as_ref()
-                .and_then(|p| p.file_name())
-                .map(|n| n.to_os_string())
-        })
-        .collect();
-
     let archive_extensions = ["zip", "7z", "rar", "dazip"];
     let mut new_count = 0usize;
-    let mut changed_ids: Vec<String> = Vec::new();
 
     // Scan per-game subfolders (e.g. downloads_dir/skyrimspecialedition/)
     for domain in game::all_nexus_domains() {
@@ -187,17 +175,6 @@ fn scan_downloads(
                 removed_ids.extend(outcome.removed_ids);
                 continue;
             }
-            // Also skip if the same filename is already tracked under a
-            // different path (e.g. user moved the downloads folder).
-            if !existing.contains(&path)
-                && path
-                    .file_name()
-                    .map(|n| existing_names.contains(n))
-                    .unwrap_or(false)
-            {
-                continue;
-            }
-
             let download_id = uuid::Uuid::new_v4().to_string();
             let entry = DownloadEntry {
                 id: download_id,
@@ -224,12 +201,7 @@ fn scan_downloads(
     }
 
     // Also scan the flat root folder for unrecognized archives
-    // (backward compat + manual drops). Re-collect existing paths
-    // to include entries just added from subfolders.
-    let existing_after: HashSet<std::path::PathBuf> = all_downloads
-        .iter()
-        .filter_map(|e| e.archive_path.clone())
-        .collect();
+    // (backward compat + manual drops).
     if let Ok(root_entries) = std::fs::read_dir(&base_dir) {
         for entry in root_entries.flatten() {
             let path = entry.path();
@@ -266,16 +238,6 @@ fn scan_downloads(
                 removed_ids.extend(outcome.removed_ids);
                 continue;
             }
-            // Skip if same filename is already tracked (path-change dedup)
-            if !existing_after.contains(&path)
-                && path
-                    .file_name()
-                    .map(|n| existing_names.contains(n))
-                    .unwrap_or(false)
-            {
-                continue;
-            }
-
             let download_id = uuid::Uuid::new_v4().to_string();
             let entry = DownloadEntry {
                 id: download_id,
@@ -306,9 +268,20 @@ fn scan_downloads(
     removed_ids.extend(sweep.removed_ids);
 
     let stale_pathless_ids: Vec<String> = all_downloads
-        .iter()
-        .filter(|entry| !entry.is_active() && entry.archive_path.is_none())
-        .map(|entry| entry.id.clone())
+        .iter_mut()
+        .filter_map(|entry| {
+            if entry.is_active() || entry.archive_path.is_some() {
+                return None;
+            }
+            if should_keep_metadata_cache(entry) {
+                if !entry.hidden {
+                    entry.hidden = true;
+                    changed_ids.push(entry.id.clone());
+                }
+                return None;
+            }
+            Some(entry.id.clone())
+        })
         .collect();
     if !stale_pathless_ids.is_empty() {
         removed_ids.extend(stale_pathless_ids.iter().cloned());
@@ -354,6 +327,7 @@ struct DownloadSnapshot {
     archive_hash: Option<String>,
     archive_md5: Option<String>,
     version: Option<String>,
+    hidden: bool,
 }
 
 fn reconcile_archive(
@@ -421,21 +395,6 @@ fn archive_match_candidates(
         .collect();
     candidates.extend(filename_matches);
 
-    let mod_matches: Vec<usize> = all_downloads
-        .iter()
-        .enumerate()
-        .filter(|(idx, entry)| {
-            !candidates.contains(idx)
-                && !entry.is_active()
-                && download_domain_matches(entry, domain)
-                && download_nexus_mod_matches(entry, scanned_nexus_ids)
-        })
-        .map(|(idx, _)| idx)
-        .collect();
-    if mod_matches.len() == 1 {
-        candidates.extend(mod_matches);
-    }
-
     (!candidates.is_empty()).then_some(candidates)
 }
 
@@ -495,6 +454,7 @@ fn merge_candidates(
         let before = snapshot_for_change_detection(winner);
         if let Some(path) = path {
             winner.archive_path = Some(path.to_path_buf());
+            winner.hidden = false;
         }
         if winner.game_domain.is_none() {
             winner.game_domain = domain.map(str::to_string);
@@ -535,11 +495,6 @@ fn duplicate_groups(all_downloads: &[DownloadEntry]) -> Vec<Vec<String>> {
     collect_duplicate_groups(
         &mut groups,
         group_by_normalized_nexus_file_name(all_downloads),
-        all_downloads,
-    );
-    collect_duplicate_groups(
-        &mut groups,
-        group_by_safe_nexus_mod(all_downloads),
         all_downloads,
     );
     groups
@@ -624,36 +579,6 @@ fn group_by_normalized_nexus_file_name(all_downloads: &[DownloadEntry]) -> Vec<V
         .collect()
 }
 
-fn group_by_safe_nexus_mod(all_downloads: &[DownloadEntry]) -> Vec<Vec<usize>> {
-    let mut grouped: HashMap<(String, i64), Vec<usize>> = HashMap::new();
-    for (idx, entry) in all_downloads.iter().enumerate() {
-        if entry.is_active() {
-            continue;
-        }
-        let Some(ids) = entry.nexus_ids.as_ref() else {
-            continue;
-        };
-        grouped
-            .entry((ids.domain.clone(), ids.mod_id))
-            .or_default()
-            .push(idx);
-    }
-    grouped
-        .into_values()
-        .filter(|group| group.len() > 1 && has_no_conflicting_nexus_file_ids(all_downloads, group))
-        .collect()
-}
-
-fn has_no_conflicting_nexus_file_ids(all_downloads: &[DownloadEntry], group: &[usize]) -> bool {
-    let file_ids: HashSet<i64> = group
-        .iter()
-        .filter_map(|idx| all_downloads.get(*idx))
-        .filter_map(|entry| entry.nexus_ids.as_ref())
-        .filter_map(|ids| (ids.file_id != 0).then_some(ids.file_id))
-        .collect();
-    file_ids.len() <= 1
-}
-
 fn merge_download_metadata(
     all_downloads: &mut [DownloadEntry],
     winner_id: &str,
@@ -728,6 +653,17 @@ fn download_quality(entry: &DownloadEntry) -> i32 {
     score
 }
 
+fn should_keep_metadata_cache(entry: &DownloadEntry) -> bool {
+    entry.status == DownloadStatus::Installed
+        || entry.metadata_fetched
+        || entry.nexus_file_name.is_some()
+        || entry.nexus_is_primary
+        || entry.archive_hash.is_some()
+        || entry.archive_md5.is_some()
+        || entry.version.is_some()
+        || entry.author.is_some()
+}
+
 fn snapshot_for_change_detection(entry: &DownloadEntry) -> DownloadSnapshot {
     DownloadSnapshot {
         archive_path: entry.archive_path.clone(),
@@ -737,6 +673,7 @@ fn snapshot_for_change_detection(entry: &DownloadEntry) -> DownloadSnapshot {
         archive_hash: entry.archive_hash.clone(),
         archive_md5: entry.archive_md5.clone(),
         version: entry.version.clone(),
+        hidden: entry.hidden,
     }
 }
 
@@ -759,16 +696,6 @@ fn exact_nexus_file_matches(entry: &DownloadEntry, scanned_nexus_ids: &Option<Ne
             scanned.file_id != 0
                 && existing.file_id == scanned.file_id
                 && existing.mod_id == scanned.mod_id
-                && (scanned.domain.is_empty() || existing.domain == scanned.domain)
-        }
-        _ => false,
-    }
-}
-
-fn download_nexus_mod_matches(entry: &DownloadEntry, scanned_nexus_ids: &Option<NexusIds>) -> bool {
-    match (&entry.nexus_ids, scanned_nexus_ids) {
-        (Some(existing), Some(scanned)) => {
-            existing.mod_id == scanned.mod_id
                 && (scanned.domain.is_empty() || existing.domain == scanned.domain)
         }
         _ => false,
@@ -865,21 +792,28 @@ mod tests {
             .map_err(anyhow::Error::msg)?;
 
         assert_eq!(scan.new_count, 1);
-        assert_eq!(scan.entries.len(), 1);
+        assert_eq!(scan.entries.len(), 3);
         assert!(
             scan.entries
                 .iter()
                 .any(|entry| entry.id != "first" && entry.id != "second")
         );
-        assert_eq!(
-            scan.removed_ids,
-            vec!["first".to_string(), "second".to_string()]
+        assert!(
+            scan.entries
+                .iter()
+                .any(|entry| entry.id == "first" && entry.hidden)
         );
+        assert!(
+            scan.entries
+                .iter()
+                .any(|entry| entry.id == "second" && entry.hidden)
+        );
+        assert!(scan.removed_ids.is_empty());
         Ok(())
     }
 
     #[test]
-    fn scan_removes_unmatched_pathless_download_metadata() -> Result<()> {
+    fn scan_hides_unmatched_pathless_download_metadata() -> Result<()> {
         let temp = TempDir::new()?;
         let mut imported = download_entry("missing", "Missing Archive");
         imported.status = DownloadStatus::Downloaded;
@@ -888,22 +822,30 @@ mod tests {
         let scan = scan_downloads(temp.path().to_path_buf(), vec![imported])
             .map_err(anyhow::Error::msg)?;
 
-        assert!(scan.entries.is_empty());
-        assert_eq!(scan.removed_ids, vec!["missing".to_string()]);
-        assert!(scan.to_persist.is_empty());
+        assert_eq!(scan.entries.len(), 1);
+        assert_eq!(scan.entries[0].id, "missing");
+        assert!(scan.entries[0].hidden);
+        assert!(scan.removed_ids.is_empty());
+        assert_eq!(scan.to_persist.len(), 1);
+        assert_eq!(scan.to_persist[0].id, "missing");
         Ok(())
     }
 
     #[test]
-    fn scan_removes_unmatched_installed_download_inventory() -> Result<()> {
+    fn scan_hides_unmatched_installed_download_inventory() -> Result<()> {
         let temp = TempDir::new()?;
         let installed = download_entry("installed", "Installed Without Archive");
 
         let scan = scan_downloads(temp.path().to_path_buf(), vec![installed])
             .map_err(anyhow::Error::msg)?;
 
-        assert!(scan.entries.is_empty());
-        assert_eq!(scan.removed_ids, vec!["installed".to_string()]);
+        assert_eq!(scan.entries.len(), 1);
+        assert_eq!(scan.entries[0].id, "installed");
+        assert!(scan.entries[0].hidden);
+        assert!(scan.entries[0].archive_path.is_none());
+        assert!(scan.removed_ids.is_empty());
+        assert_eq!(scan.to_persist.len(), 1);
+        assert_eq!(scan.to_persist[0].id, "installed");
         Ok(())
     }
 
@@ -972,32 +914,113 @@ mod tests {
     }
 
     #[test]
-    fn scan_sweeps_duplicate_entries_by_safe_mod_id_match() -> Result<()> {
+    fn scan_keeps_same_mod_archives_when_file_id_is_unknown() -> Result<()> {
         let temp = TempDir::new()?;
-        let archive = temp
-            .path()
-            .join("Unofficial Fallout 4 Patch-4598-2-1-5-1750000000.7z");
-        std::fs::write(&archive, b"archive")?;
+        let domain_dir = temp.path().join("fallout4");
+        std::fs::create_dir_all(&domain_dir)?;
+        let first_archive = domain_dir.join("First File-4598-1-0-1750000000.7z");
+        let second_archive = domain_dir.join("Second File-4598-2-0-1750000001.7z");
+        std::fs::write(&first_archive, b"first")?;
+        std::fs::write(&second_archive, b"second")?;
 
-        let rich = download_entry("rich", "Unofficial Fallout 4 Patch");
-        let mut duplicate = download_entry("duplicate", "UFO4P Scanned");
-        duplicate.archive_path = Some(archive.clone());
-        if let Some(ref mut ids) = duplicate.nexus_ids {
-            ids.file_id = 0;
-        }
-        duplicate.metadata_fetched = false;
-        duplicate.nexus_file_name = None;
+        let scan =
+            scan_downloads(temp.path().to_path_buf(), Vec::new()).map_err(anyhow::Error::msg)?;
 
-        let scan = scan_downloads(temp.path().to_path_buf(), vec![rich, duplicate])
+        assert_eq!(scan.new_count, 2);
+        assert_eq!(scan.entries.len(), 2);
+        assert!(scan.removed_ids.is_empty());
+        assert!(scan.entries.iter().all(|entry| {
+            matches!(
+                &entry.nexus_ids,
+                Some(NexusIds {
+                    mod_id: 4598,
+                    file_id: 0,
+                    ..
+                })
+            )
+        }));
+        assert!(
+            scan.entries
+                .iter()
+                .any(|entry| { entry.archive_path.as_deref() == Some(first_archive.as_path()) })
+        );
+        assert!(
+            scan.entries
+                .iter()
+                .any(|entry| { entry.archive_path.as_deref() == Some(second_archive.as_path()) })
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn scan_reattaches_exact_metadata_match_without_collapsing_same_mod_archives() -> Result<()> {
+        let temp = TempDir::new()?;
+        let domain_dir = temp.path().join("fallout4");
+        std::fs::create_dir_all(&domain_dir)?;
+        let matching_archive =
+            domain_dir.join("Unofficial Fallout 4 Patch-4598-2-1-5-1750000000.7z");
+        let other_archive = domain_dir.join("Optional UFO4P File-4598-1-0-1750000001.7z");
+        std::fs::write(&matching_archive, b"matching")?;
+        std::fs::write(&other_archive, b"other")?;
+
+        let imported = download_entry("imported", "Unofficial Fallout 4 Patch");
+
+        let scan = scan_downloads(temp.path().to_path_buf(), vec![imported])
             .map_err(anyhow::Error::msg)?;
 
-        assert_eq!(scan.entries.len(), 1);
-        assert_eq!(scan.entries[0].id, "rich");
-        assert_eq!(
-            scan.entries[0].archive_path.as_deref(),
-            Some(archive.as_path())
-        );
-        assert_eq!(scan.removed_ids, vec!["duplicate".to_string()]);
+        assert_eq!(scan.new_count, 1);
+        assert_eq!(scan.entries.len(), 2);
+        assert!(scan.removed_ids.is_empty());
+        assert!(scan.entries.iter().any(|entry| {
+            entry.id == "imported"
+                && entry.archive_path.as_deref() == Some(matching_archive.as_path())
+        }));
+        assert!(scan.entries.iter().any(|entry| {
+            entry.id != "imported" && entry.archive_path.as_deref() == Some(other_archive.as_path())
+        }));
+        Ok(())
+    }
+
+    #[test]
+    fn scan_keeps_same_filename_at_different_valid_paths() -> Result<()> {
+        let temp = TempDir::new()?;
+        let domain_dir = temp.path().join("fallout4");
+        let alternate_dir = temp.path().join("manual");
+        std::fs::create_dir_all(&domain_dir)?;
+        std::fs::create_dir_all(&alternate_dir)?;
+        let tracked_archive = alternate_dir.join("Manual Archive-77777-1-0-1750000000.7z");
+        let scanned_archive = domain_dir.join("Manual Archive-77777-1-0-1750000000.7z");
+        std::fs::write(&tracked_archive, b"tracked")?;
+        std::fs::write(&scanned_archive, b"scanned")?;
+
+        let mut tracked = download_entry("tracked", "Manual Archive");
+        tracked.archive_path = Some(tracked_archive.clone());
+        tracked.metadata_fetched = false;
+        tracked.nexus_file_name = None;
+        tracked.version = None;
+        tracked.author = None;
+        tracked.archive_hash = None;
+        tracked.archive_md5 = None;
+        tracked.nexus_ids = Some(NexusIds {
+            mod_id: 77777,
+            file_id: 0,
+            domain: "fallout4".to_string(),
+        });
+
+        let scan =
+            scan_downloads(temp.path().to_path_buf(), vec![tracked]).map_err(anyhow::Error::msg)?;
+
+        assert_eq!(scan.new_count, 1);
+        assert_eq!(scan.entries.len(), 2);
+        assert!(scan.removed_ids.is_empty());
+        assert!(scan.entries.iter().any(|entry| {
+            entry.id == "tracked"
+                && entry.archive_path.as_deref() == Some(tracked_archive.as_path())
+        }));
+        assert!(scan.entries.iter().any(|entry| {
+            entry.id != "tracked"
+                && entry.archive_path.as_deref() == Some(scanned_archive.as_path())
+        }));
         Ok(())
     }
 
@@ -1044,9 +1067,14 @@ mod tests {
         let scan = scan_downloads(temp.path().to_path_buf(), vec![installed, active])
             .map_err(anyhow::Error::msg)?;
 
-        assert_eq!(scan.entries.len(), 1);
+        assert_eq!(scan.entries.len(), 2);
         assert!(scan.entries.iter().any(|entry| entry.id == "active"));
-        assert_eq!(scan.removed_ids, vec!["installed".to_string()]);
+        assert!(
+            scan.entries
+                .iter()
+                .any(|entry| entry.id == "installed" && entry.hidden)
+        );
+        assert!(scan.removed_ids.is_empty());
         Ok(())
     }
 

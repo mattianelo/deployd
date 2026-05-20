@@ -16,6 +16,7 @@ use crate::models::game::GameEngine;
 use crate::ui::game_setup_dialog::{GameSetupDialog, GameSetupOutput};
 use crate::ui::settings_dialog::{SettingsDialog, SettingsDialogOutput};
 use crate::ui::welcome_wizard::{WelcomeWizard, WelcomeWizardOutput};
+use crate::utils;
 
 use super::super::App;
 use super::super::messages::{AppCmdMsg, AppMsg};
@@ -39,7 +40,7 @@ impl App {
                     tracker,
                     self.nexus_username.is_some(),
                     self.color_scheme_idx,
-                    game::is_snap(),
+                    game::is_snap() && utils::experimental_enabled(),
                 ))
                 .forward(sender.input_sender(), |output| match output {
                     SettingsDialogOutput::Closed => AppMsg::SettingsClosed,
@@ -146,7 +147,9 @@ impl App {
     ) {
         let detected: Vec<crate::models::game::Game> = self.games.clone();
         let cache_dirs = self.game_cache_dirs.clone();
-        let can_export_for_snap = self.running_as_appimage && std::env::var_os("SNAP").is_none();
+        let can_export_for_snap = self.running_as_appimage
+            && std::env::var_os("SNAP").is_none()
+            && utils::experimental_enabled();
 
         self.game_setup_dialog = Some(
             GameSetupDialog::builder()
@@ -179,6 +182,10 @@ impl App {
     ) {
         if !self.running_as_appimage || std::env::var_os("SNAP").is_some() {
             self.push_notification("Snap migration export is only available from the AppImage.");
+            return;
+        }
+        if !utils::experimental_enabled() {
+            self.push_notification("Snap migration export is experimental and disabled.");
             return;
         }
         let Some(game) = self.games.iter().find(|g| g.id == game_id) else {
@@ -227,6 +234,10 @@ impl App {
     ) {
         if !self.running_as_appimage || std::env::var_os("SNAP").is_some() {
             self.push_notification("Snap migration export is only available from the AppImage.");
+            return;
+        }
+        if !utils::experimental_enabled() {
+            self.push_notification("Snap migration export is experimental and disabled.");
             return;
         }
         let Some(game) = self.games.iter().find(|g| g.id == game_id).cloned() else {
@@ -288,6 +299,10 @@ impl App {
             self.push_notification("AppImage export preview is only available from the Snap.");
             return;
         }
+        if !utils::experimental_enabled() {
+            self.push_notification("AppImage export import is experimental and disabled.");
+            return;
+        }
         let dialog = gtk::FileDialog::builder()
             .title("Preview AppImage Export")
             .modal(true)
@@ -320,6 +335,10 @@ impl App {
     ) {
         if !game::is_snap() {
             self.push_notification("AppImage export preview is only available from the Snap.");
+            return;
+        }
+        if !utils::experimental_enabled() {
+            self.push_notification("AppImage export import is experimental and disabled.");
             return;
         }
         let Some(tracker) = self.tracker.clone() else {
@@ -363,6 +382,10 @@ impl App {
             self.push_notification("AppImage export import is only available from the Snap.");
             return;
         }
+        if !utils::experimental_enabled() {
+            self.push_notification("AppImage export import is experimental and disabled.");
+            return;
+        }
         self.pending_migration_import = Some(PendingMigrationImport {
             bundle_path,
             confirmed_game_path: None,
@@ -404,6 +427,10 @@ impl App {
     ) {
         if !game::is_snap() {
             self.push_notification("AppImage export import is only available from the Snap.");
+            return;
+        }
+        if !utils::experimental_enabled() {
+            self.push_notification("AppImage export import is experimental and disabled.");
             return;
         }
         let Some(pending) = self.pending_migration_import.take() else {

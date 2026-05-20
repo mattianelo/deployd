@@ -26,7 +26,7 @@ rm -rf /var/lib/apt/lists/*
 
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
     | sh -s -- -y --default-toolchain stable --profile minimal
-/root/.cargo/bin/rustup component add rust-std clippy
+/root/.cargo/bin/rustup component add rust-std rustfmt clippy
 /root/.cargo/bin/cargo install cargo-audit --locked
 /root/.cargo/bin/cargo install cargo-nextest --locked
 

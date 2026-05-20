@@ -107,16 +107,24 @@ impl Tracker {
                     author,
                     hidden,
                 )| {
-                    let path = archive_path.map(std::path::PathBuf::from);
+                    let mut path = archive_path.map(std::path::PathBuf::from);
                     let is_installed = status_str.as_deref().unwrap_or("downloaded") == "installed";
-                    // Always load Installed entries (the archive may have been deleted
-                    // or the downloads folder may have changed — the mod is still installed).
-                    // Filter out other entries whose archive no longer exists.
-                    if !is_installed
-                        && let Some(ref p) = path
-                        && !p.exists()
-                    {
-                        return None;
+                    let keep_metadata_cache = is_installed
+                        || metadata_fetched
+                        || nexus_file_name.is_some()
+                        || nexus_is_primary
+                        || archive_hash.is_some()
+                        || archive_md5.is_some()
+                        || version.as_ref().is_some_and(|v| !v.is_empty())
+                        || author.as_ref().is_some_and(|a| !a.is_empty());
+                    let path_missing = path.as_ref().is_some_and(|p| !p.exists());
+                    let hidden = hidden || (path_missing && keep_metadata_cache);
+                    if path_missing {
+                        if keep_metadata_cache {
+                            path = None;
+                        } else {
+                            return None;
+                        }
                     }
                     let nexus_ids = nexus_mod_id.zip(nexus_file_id).zip(nexus_domain).map(
                         |((mod_id, file_id), domain)| NexusIds {

@@ -6,15 +6,15 @@
 
 - AppImage-to-Snap migration export creates a per-game `.deployd-export.zip` bundle from Manage
   Games with that game's database slice, cached mod files, vanilla backups, and profile save
-  snapshots. Snap-side import, path validation, downloads-folder confirmation, and runtime tool
-  rebinding remain separate migration work.
+  snapshots. The migration UI is available only when experimental features are enabled.
 - Snap builds can preview AppImage migration bundles from Settings without importing them, showing
   the exported game, content counts, warnings, existing-game conflicts, and required later path/tool
-  confirmations.
+  confirmations. The migration UI is available only when experimental features are enabled.
 - Snap builds can now import a previewed AppImage migration bundle for a new game after confirming
   Snap-visible game, Wine prefix, and downloads folders. Import copies cache, vanilla backups, and
   save snapshots into Snap-owned storage, skips AppImage external tools, clears stale download
-  archive paths, and refuses existing-game bundles without overwriting Snap state.
+  archive paths, and refuses existing-game bundles without overwriting Snap state. The migration UI
+  is available only when experimental features are enabled.
 - Performance feedback is more cohesive during long-running work: install, extraction, caching,
   deploy, purge, downloads-folder scan, and first-run runtime setup now share the same header busy
   status language.
@@ -61,14 +61,15 @@
   the deployed file still matches Deployd's cache.
 - Downloads-folder scans now preserve and reattach imported AppImage download metadata, including
   downloaded-but-not-installed entries, instead of creating duplicate path-only rows after a Snap
-  migration import. Non-installed pathless entries that still cannot be matched to an archive are
-  removed as dead download entries.
-- Downloads-folder scans now reconcile duplicate archive rows against installed entries as well,
-  preferring the richer Nexus metadata row and deleting weaker duplicates while leaving active
-  downloads untouched.
+  migration import.
+- Downloads-folder scans now reconcile duplicate archive rows only by strong archive/file identity,
+  such as exact archive paths, exact Nexus file IDs, or exact normalized Nexus filenames. Multiple
+  archives from the same Nexus mod page are preserved as separate downloads.
 - Installed mods now retain source metadata independently from the downloads inventory, including
   Nexus file names, primary-file flags, and archive MD5 values backfilled from installed download
   rows.
+- Downloads-folder scans now hide pathless metadata cache rows instead of deleting them, so changing
+  downloads folders can clean visible archive inventory without forcing a full Nexus metadata refetch.
 - Snap migration import now treats previously stopped/hidden games as re-importable, replacing
   their hidden Snap state, while still refusing games that are actively managed.
 
