@@ -6,6 +6,7 @@
 #   build-env-image  — Build and push the deployd build-env image to the registry
 #   build-appimage   — Build and publish the Deployd AppImage
 #   build-snap       — Build and publish the Deployd Snap package
+#   pages            — Publish the Deployd feature page
 #
 # Build environment image
 # -----------------------
@@ -24,6 +25,7 @@ stages:
   - secret-detection
   - build-env
   - build
+  - deploy
 
 # ── Security scanning ────────────────────────────────────────────────────────
 include:
@@ -101,5 +103,21 @@ build-snap:
     expire_in: 90 days
   rules:
     - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+
+# ── GitLab Pages ─────────────────────────────────────────────────────────────
+pages:
+  stage: deploy
+  image: alpine:3.20
+  script:
+    - mkdir -p public/assets/screenshots public/assets/icons
+    - cp data/screenshots/*.png public/assets/screenshots/
+    - cp data/icons/hicolor/scalable/apps/deployd.svg public/assets/icons/
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - if: '$CI_PIPELINE_SOURCE == "web"'
       when: manual

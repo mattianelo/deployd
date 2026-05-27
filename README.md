@@ -9,6 +9,22 @@ libadwaita, and Rust.
 
 > **v2.2.3** If you find bugs, please [open an issue](https://gitlab.com/mattianelo/deployd/-/issues).
 
+Feature overview: [Deployd GitLab Page](https://mattianelo.gitlab.io/deployd/)
+
+---
+
+## Install
+
+The Snap package is available from the Snap Store:
+
+```bash
+sudo snap install deployd
+```
+
+You can also install from the [Deployd Snap Store page](https://snapcraft.io/deployd).
+The Nexus Mods page remains available for users who prefer that distribution channel:
+[Deployd on Nexus Mods](https://www.nexusmods.com/skyrimspecialedition/mods/174218).
+
 ---
 
 ## Supported Games
@@ -186,8 +202,7 @@ Launch modding tools through the package-managed runtime from the **Tools** pane
 - In the Snap package, tools run through the Wine platform content snaps; if either content plug is
   disconnected, Deployd shows the exact `snap connect` command with the provider slot included
 - The Snap package owns the `io.mattianelo.deployd` session D-Bus name for
-  single-instance activation and NXM link forwarding; this interface requires manual Snap Store
-  review
+  single-instance activation and NXM link forwarding
 
 ---
 

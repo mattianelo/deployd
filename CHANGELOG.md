@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Added a GitLab Pages feature page with screenshots, animated feature highlights,
+  and download links for the Snap Store and Nexus Mods.
+- Updated documentation to reflect that Deployd is now released on the Snap Store,
+  including install instructions and accepted Snap Store review status.
+
 ## [2.2.3]
 
 ### Added

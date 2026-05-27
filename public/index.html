@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      name="description"
+      content="Deployd is a Linux-native mod manager for Bethesda, REDEngine, Aurora, and Eclipse games."
+    >
+    <title>Deployd</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #101114;
+        --panel: #181b20;
+        --text: #f5f2ea;
+        --muted: #b8b3aa;
+        --line: #313741;
+        --snap: #74d85d;
+        --nexus: #db8e3f;
+        --blue: #69b7ff;
+        --shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        line-height: 1.5;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      img {
+        display: block;
+        max-width: 100%;
+      }
+
+      .shell {
+        width: min(1180px, calc(100% - 32px));
+        margin: 0 auto;
+      }
+
+      .nav {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(16, 17, 20, 0.78);
+        backdrop-filter: blur(18px);
+      }
+
+      .nav-inner {
+        display: flex;
+        min-height: 68px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 1rem;
+        font-weight: 760;
+        text-decoration: none;
+      }
+
+      .brand img {
+        width: 34px;
+        height: 34px;
+      }
+
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      .nav-links a {
+        text-decoration: none;
+      }
+
+      .nav-links a:hover {
+        color: var(--text);
+      }
+
+      .hero {
+        min-height: calc(92vh - 68px);
+        padding: 76px 0 44px;
+        display: grid;
+        align-items: center;
+        background:
+          linear-gradient(
+            90deg,
+            rgba(16, 17, 20, 0.94) 0%,
+            rgba(16, 17, 20, 0.74) 42%,
+            rgba(16, 17, 20, 0.18) 100%
+          ),
+          linear-gradient(180deg, rgba(16, 17, 20, 0.04) 0%, #101114 100%),
+          url("assets/screenshots/main-window.png") center / cover;
+      }
+
+      .hero-content {
+        max-width: 680px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        width: fit-content;
+        align-items: center;
+        gap: 8px;
+        margin: 0 0 22px;
+        padding: 7px 11px;
+        border: 1px solid rgba(116, 216, 93, 0.34);
+        border-radius: 999px;
+        color: #d9f8d1;
+        background: rgba(116, 216, 93, 0.1);
+        font-size: 0.78rem;
+        font-weight: 720;
+        text-transform: uppercase;
+        letter-spacing: 0;
+      }
+
+      h1 {
+        max-width: 11ch;
+        margin: 0;
+        font-size: 7.6rem;
+        line-height: 0.86;
+        letter-spacing: 0;
+      }
+
+      .lead {
+        max-width: 610px;
+        margin: 26px 0 0;
+        color: var(--muted);
+        font-size: 1.28rem;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+        margin-top: 34px;
+      }
+
+      .button {
+        display: inline-flex;
+        min-height: 52px;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        border-radius: 8px;
+        padding: 0 20px;
+        border: 1px solid transparent;
+        font-weight: 780;
+        text-decoration: none;
+        transition:
+          transform 180ms ease,
+          border-color 180ms ease,
+          background 180ms ease;
+      }
+
+      .button:hover {
+        transform: translateY(-2px);
+      }
+
+      .button.primary {
+        color: #101114;
+        background: linear-gradient(135deg, #95ec7f, var(--snap));
+        box-shadow: 0 18px 50px rgba(116, 216, 93, 0.22);
+      }
+
+      .button.secondary {
+        min-height: 42px;
+        padding: 0 16px;
+        color: var(--text);
+        border-color: rgba(219, 142, 63, 0.42);
+        background: rgba(219, 142, 63, 0.12);
+        font-size: 0.92rem;
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1px;
+        overflow: hidden;
+        margin-top: 36px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--line);
+      }
+
+      .stat {
+        padding: 18px;
+        background: rgba(24, 27, 32, 0.88);
+      }
+
+      .stat strong {
+        display: block;
+        font-size: 1.5rem;
+        line-height: 1;
+      }
+
+      .stat span {
+        display: block;
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 0.88rem;
+      }
+
+      section {
+        padding: 76px 0;
+      }
+
+      .section-title {
+        max-width: 760px;
+        margin-bottom: 30px;
+      }
+
+      .section-title h2 {
+        margin: 0;
+        font-size: 3.2rem;
+        line-height: 1;
+        letter-spacing: 0;
+      }
+
+      .section-title p {
+        margin: 16px 0 0;
+        color: var(--muted);
+        font-size: 1.05rem;
+      }
+
+      .feature-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px;
+      }
+
+      .feature {
+        min-height: 220px;
+        padding: 24px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: linear-gradient(180deg, rgba(32, 36, 43, 0.92), rgba(24, 27, 32, 0.92));
+        transform: translateY(16px);
+        opacity: 0;
+        animation: rise 700ms ease forwards;
+      }
+
+      .feature:nth-child(2) {
+        animation-delay: 80ms;
+      }
+
+      .feature:nth-child(3) {
+        animation-delay: 160ms;
+      }
+
+      .feature:nth-child(4) {
+        animation-delay: 240ms;
+      }
+
+      .feature:nth-child(5) {
+        animation-delay: 320ms;
+      }
+
+      .feature:nth-child(6) {
+        animation-delay: 400ms;
+      }
+
+      .feature .tag {
+        display: inline-flex;
+        min-width: 40px;
+        height: 40px;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        color: #0c1110;
+        background: var(--blue);
+        font-weight: 820;
+      }
+
+      .feature h3 {
+        margin: 24px 0 10px;
+        font-size: 1.15rem;
+      }
+
+      .feature p {
+        margin: 0;
+        color: var(--muted);
+      }
+
+      .showcase {
+        display: grid;
+        grid-template-columns: 1fr 0.82fr;
+        gap: 18px;
+        align-items: stretch;
+      }
+
+      .showcase img,
+      .support {
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        background: var(--panel);
+        box-shadow: var(--shadow);
+      }
+
+      .showcase img {
+        width: 100%;
+        height: 100%;
+        min-height: 330px;
+        object-fit: cover;
+      }
+
+      .support {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 28px;
+      }
+
+      .support h2 {
+        margin: 0;
+        font-size: 3rem;
+        line-height: 1;
+      }
+
+      .support p {
+        margin: 18px 0 28px;
+        color: var(--muted);
+      }
+
+      .mini-list {
+        display: grid;
+        gap: 12px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .mini-list li {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: #e8e3d9;
+      }
+
+      .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--snap);
+        box-shadow: 0 0 20px rgba(116, 216, 93, 0.58);
+      }
+
+      .footer {
+        padding: 34px 0 44px;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      @keyframes rise {
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @media (max-width: 900px) {
+        .showcase {
+          grid-template-columns: 1fr;
+        }
+
+        h1 {
+          font-size: 5.6rem;
+        }
+
+        .lead {
+          font-size: 1.16rem;
+        }
+
+        .section-title h2,
+        .support h2 {
+          font-size: 2.45rem;
+        }
+
+        .feature-grid,
+        .stats {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+
+      @media (max-width: 640px) {
+        .shell {
+          width: min(100% - 24px, 1180px);
+        }
+
+        .nav-links {
+          display: none;
+        }
+
+        .hero {
+          padding-top: 44px;
+        }
+
+        h1 {
+          font-size: 4rem;
+        }
+
+        .section-title h2,
+        .support h2 {
+          font-size: 2rem;
+        }
+
+        .actions,
+        .button {
+          width: 100%;
+        }
+
+        .feature-grid,
+        .stats {
+          grid-template-columns: 1fr;
+        }
+
+        section {
+          padding: 54px 0;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          animation-duration: 1ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 1ms !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="nav" aria-label="Primary">
+      <div class="shell nav-inner">
+        <a class="brand" href="#">
+          <img src="assets/icons/deployd.svg" alt="" width="34" height="34">
+          <span>Deployd</span>
+        </a>
+        <div class="nav-links" aria-label="Page sections">
+          <a href="#features">Features</a>
+          <a href="#showcase">Screenshots</a>
+          <a href="#download">Download</a>
+        </div>
+      </div>
+    </nav>
+
+    <main>
+      <header class="hero">
+        <div class="shell">
+          <div class="hero-content">
+            <p class="eyebrow">Linux-native mod manager</p>
+            <h1>Deployd</h1>
+            <p class="lead">
+              A modern GTK4 mod manager for Bethesda, REDEngine, Aurora, and Eclipse games.
+              Profiles, conflict detection, FOMOD installers, Nexus links, and hardlink deployment
+              stay together in one native Linux workflow.
+            </p>
+            <div class="actions" id="download">
+              <a class="button primary" href="https://snapcraft.io/deployd">Download on Snap Store</a>
+              <a
+                class="button secondary"
+                href="https://www.nexusmods.com/skyrimspecialedition/mods/174218"
+              >
+                Nexus Mods page
+              </a>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <section aria-label="Highlights">
+        <div class="shell stats">
+          <div class="stat">
+            <strong>4</strong>
+            <span>supported engine families</span>
+          </div>
+          <div class="stat">
+            <strong>8</strong>
+            <span>supported games today</span>
+          </div>
+          <div class="stat">
+            <strong>0</strong>
+            <span>copies for same-disk hardlink deploys</span>
+          </div>
+          <div class="stat">
+            <strong>GTK4</strong>
+            <span>native Linux interface</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="features">
+        <div class="shell">
+          <div class="section-title">
+            <h2>Built for heavy mod lists.</h2>
+            <p>
+              Deployd keeps the practical work close: install, sort, inspect conflicts, switch
+              profiles, and launch tools without turning your game folder into a mystery box.
+            </p>
+          </div>
+
+          <div class="feature-grid">
+            <article class="feature">
+              <span class="tag">NXM</span>
+              <h3>Nexus integration</h3>
+              <p>SSO login, NXM deep links, update checks, and manual Nexus ID correction.</p>
+            </article>
+            <article class="feature">
+              <span class="tag">FOM</span>
+              <h3>FOMOD installer</h3>
+              <p>Conditional wizard steps, image previews, and DLC-aware option selection.</p>
+            </article>
+            <article class="feature">
+              <span class="tag">ORD</span>
+              <h3>Load order control</h3>
+              <p>Dedicated mod and plugin order flows with grouped drag selection.</p>
+            </article>
+            <article class="feature">
+              <span class="tag">CFG</span>
+              <h3>Profiles</h3>
+              <p>Per-game profiles preserve enabled mods, priorities, and plugin order.</p>
+            </article>
+            <article class="feature">
+              <span class="tag">DIF</span>
+              <h3>Conflict detection</h3>
+              <p>See which files override each other before deploying changes.</p>
+            </article>
+            <article class="feature">
+              <span class="tag">RUN</span>
+              <h3>Tool launcher</h3>
+              <p>Run LOOT, xEdit, BodySlide, and other tools through the package runtime.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="showcase">
+        <div class="shell showcase">
+          <img
+            src="assets/screenshots/main-window-instructions.png"
+            alt="Deployd instructions and setup state in the main window."
+            width="1920"
+            height="1048"
+          >
+          <div class="support">
+            <div>
+              <h2>Native where it matters.</h2>
+              <p>
+                Libadwaita navigation, responsive busy feedback, toast notifications, and
+                sandbox-aware Snap behavior keep the app feeling at home on Linux desktops.
+              </p>
+            </div>
+            <ul class="mini-list">
+              <li><span class="dot"></span>Non-destructive hardlink deployment</li>
+              <li><span class="dot"></span>Pause and resume active downloads</li>
+              <li><span class="dot"></span>Snap package runtime for external tools</li>
+              <li><span class="dot"></span>AppImage users can migrate game data to Snap</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="shell">GPL-3.0-only. Built with Rust, GTK4, libadwaita, Relm4, and SQLite.</div>
+    </footer>
+  </body>
+</html>
