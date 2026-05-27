@@ -1,8 +1,8 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Build the static GitLab Pages artifact without host-side dependencies.
-set -euo pipefail
+set -eu
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 OUT_DIR="${DEPLOYD_PAGES_OUT:-$REPO_ROOT/out}"
 
