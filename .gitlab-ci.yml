@@ -111,13 +111,10 @@ pages:
   stage: deploy
   image: alpine:3.20
   script:
-    - mkdir -p public/assets/screenshots public/assets/icons
-    - cp data/screenshots/*.png public/assets/screenshots/
-    - cp data/icons/hicolor/scalable/apps/deployd.svg public/assets/icons/
+    - sh scripts/build-pages.sh
   artifacts:
     paths:
-      - public
+      - out
+  publish: out
   rules:
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - if: '$CI_PIPELINE_SOURCE == "web"'
-      when: manual
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

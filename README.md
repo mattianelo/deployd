@@ -27,6 +27,29 @@ The Nexus Mods page remains available for users who prefer that distribution cha
 
 ---
 
+## GitLab Pages Preview
+
+The feature page source lives in `pages/` and builds to the generated `out/`
+directory that GitLab Pages publishes.
+
+Build it locally without installing host dependencies:
+
+```bash
+bash scripts/build-pages.sh
+```
+
+To preview through a dedicated LXD container:
+
+```bash
+bash scripts/setup-pages-container.sh
+lxc exec deployd-pages --cwd /workspace/deployd --user 1000 --group 1000 --env HOME=/home/ubuntu -- bash scripts/build-pages.sh
+lxc exec deployd-pages --cwd /workspace/deployd/out --user 1000 --group 1000 --env HOME=/home/ubuntu -- python3 -m http.server 3003 --bind 0.0.0.0
+```
+
+Then open `http://localhost:3003`. Stop the preview with `Ctrl+C`.
+
+---
+
 ## Supported Games
 
 | Engine | Games |

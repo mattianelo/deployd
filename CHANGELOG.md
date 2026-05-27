@@ -3,7 +3,9 @@
 ## Unreleased
 
 - Added a GitLab Pages feature page with screenshots, animated feature highlights,
-  and download links for the Snap Store and Nexus Mods.
+  and download links for the Snap Store and Nexus Mods. The Pages job generates
+  and publishes an `out/` directory, and the local preview can run through a
+  dedicated LXD container.
 - Updated documentation to reflect that Deployd is now released on the Snap Store,
   including install instructions and accepted Snap Store review status.
 
