@@ -100,10 +100,18 @@ impl App {
         use crate::core::nexus_api::NexusClient;
         use crate::core::update_check::{NEXUS_DOMAIN, NEXUS_MOD_ID};
 
-        let Some(tracker) = self.tracker.clone() else {
+        let Ok(appimage_path) = std::env::var("APPIMAGE") else {
+            let url = self
+                .app_update_url
+                .as_deref()
+                .unwrap_or(crate::core::update_check::NEXUS_PAGE_URL);
+            if let Err(e) = open::that(url) {
+                self.push_notification(&format!("Could not open update page: {e}"));
+            }
             return;
         };
-        let Ok(appimage_path) = std::env::var("APPIMAGE") else {
+
+        let Some(tracker) = self.tracker.clone() else {
             return;
         };
 

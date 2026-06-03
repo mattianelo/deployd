@@ -161,7 +161,9 @@ impl App {
                 self.push_notification(
                     "Empty mod created — put files in its cache folder, then use Scan Cache in Properties",
                 );
-                let _ = open::that(&cache_dir);
+                if let Err(e) = open::that(&cache_dir) {
+                    self.push_notification(&format!("Could not open mod cache folder: {e}"));
+                }
             }
             Err(e) => {
                 self.push_notification(&format!("Failed to create mod: {e}"));

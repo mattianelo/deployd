@@ -17,6 +17,7 @@ use crate::ui::game_setup_dialog::{GameSetupDialog, GameSetupOutput};
 use crate::ui::settings_dialog::{SettingsDialog, SettingsDialogOutput};
 use crate::ui::welcome_wizard::{WelcomeWizard, WelcomeWizardOutput};
 use crate::utils;
+use crate::utils::snap::{self, SelectedFolderKind};
 
 use super::super::App;
 use super::super::messages::{AppCmdMsg, AppMsg};
@@ -400,6 +401,11 @@ impl App {
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
+        if let Err(message) = snap::validate_selected_folder(&path, SelectedFolderKind::GameFolder)
+        {
+            self.push_notification(&message);
+            return;
+        }
         let Some(pending) = self.pending_migration_import.as_mut() else {
             return;
         };
@@ -413,6 +419,11 @@ impl App {
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
+        if let Err(message) = snap::validate_selected_folder(&path, SelectedFolderKind::WinePrefix)
+        {
+            self.push_notification(&message);
+            return;
+        }
         let Some(pending) = self.pending_migration_import.as_mut() else {
             return;
         };
@@ -425,6 +436,12 @@ impl App {
         downloads_dir: PathBuf,
         sender: &ComponentSender<Self>,
     ) {
+        if let Err(message) =
+            snap::validate_selected_folder(&downloads_dir, SelectedFolderKind::DownloadsFolder)
+        {
+            self.push_notification(&message);
+            return;
+        }
         if !game::is_snap() {
             self.push_notification("AppImage export import is only available from the Snap.");
             return;

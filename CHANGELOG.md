@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Snap folder selections are now validated before they are saved for game folders,
+  Wine prefixes, downloads folders, cache folders, and AppImage migration imports. Deployd now
+  explains blocked hidden-home, removable-media, document-portal, and read/write access failures at
+  selection time instead of surfacing them later as confusing deploy or scan errors.
+- Opening update pages, deployment folders, and mod cache folders now reports a notification or
+  dialog when the desktop cannot open the target, and Snap builds use the update notification's
+  "View" action to open the release page instead of invoking AppImage self-update logic.
 - Added a GitLab Pages feature page with screenshots, animated feature highlights,
   and download links for the Snap Store and Nexus Mods. The Pages job generates
   and publishes an `out/` directory, and the local preview can run through a

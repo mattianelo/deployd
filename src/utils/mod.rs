@@ -5,6 +5,7 @@ pub mod paths;
 pub mod plugin_header;
 pub mod plugins_txt;
 pub mod portal;
+pub mod snap;
 
 pub fn experimental_enabled() -> bool {
     std::env::var_os("DEPLOYD_EXPERIMENTAL").is_some_and(|value| value == "1")

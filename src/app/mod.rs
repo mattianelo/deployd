@@ -1770,7 +1770,9 @@ impl Component for App {
                     .app_update_url
                     .as_deref()
                     .unwrap_or(crate::core::update_check::NEXUS_PAGE_URL);
-                let _ = open::that(url);
+                if let Err(e) = open::that(url) {
+                    self.push_notification(&format!("Could not open update page: {e}"));
+                }
             }
             AppMsg::SelfUpdateDownload => {
                 self.notifications_menu_btn.popdown();
@@ -1805,11 +1807,13 @@ impl Component for App {
             AppMsg::OpenDeploymentFolder => {
                 self.deploy_options_btn.popdown();
                 if let Some(game) = self.selected_game() {
-                    let uri = format!("file://{}", game.path.display());
-                    let _ = gtk::gio::AppInfo::launch_default_for_uri(
-                        &uri,
+                    let uri = gtk::gio::File::for_path(&game.path).uri();
+                    if let Err(e) = gtk::gio::AppInfo::launch_default_for_uri(
+                        uri.as_str(),
                         None::<&gtk::gio::AppLaunchContext>,
-                    );
+                    ) {
+                        self.push_notification(&format!("Could not open deployment folder: {e}"));
+                    }
                 }
             }
             AppMsg::PauseDownload(idx) => self.handle_pause_download(idx),

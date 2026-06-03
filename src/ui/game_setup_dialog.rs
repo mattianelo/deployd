@@ -10,6 +10,7 @@ use crate::app::messages::GameConfig;
 use crate::core::game;
 use crate::core::tracker::PersistedGame;
 use crate::models::game::{Game, GameEngine};
+use crate::utils::snap::{self, SelectedFolderKind};
 
 /// One row in the games list: a manually added game.
 #[derive(Debug, Clone)]
@@ -271,6 +272,17 @@ impl GameSetupDialog {
     fn update_add_btn(&self) {
         self.add_btn
             .set_sensitive(self.new_path.is_some() && self.new_prefix.is_some());
+    }
+
+    fn show_path_error(root: &adw::Window, message: &str) {
+        let dialog = adw::AlertDialog::builder()
+            .heading("Folder Not Available")
+            .body(message)
+            .build();
+        dialog.add_response("close", "Close");
+        dialog.set_default_response(Some("close"));
+        dialog.set_close_response("close");
+        dialog.present(Some(root));
     }
 }
 
@@ -568,6 +580,12 @@ impl Component for GameSetupDialog {
             }
 
             GameSetupMsg::PathChosen(idx, path) => {
+                if let Err(message) =
+                    snap::validate_selected_folder(&path, SelectedFolderKind::GameFolder)
+                {
+                    Self::show_path_error(root, &message);
+                    return;
+                }
                 if let Some(entry) = self.entries.get_mut(idx) {
                     entry.game.path = path;
                 }
@@ -586,6 +604,12 @@ impl Component for GameSetupDialog {
             }
 
             GameSetupMsg::PrefixChosen(idx, path) => {
+                if let Err(message) =
+                    snap::validate_selected_folder(&path, SelectedFolderKind::WinePrefix)
+                {
+                    Self::show_path_error(root, &message);
+                    return;
+                }
                 if let Some(entry) = self.entries.get_mut(idx) {
                     entry.game.wine_prefix = Some(path);
                 }
@@ -604,6 +628,12 @@ impl Component for GameSetupDialog {
             }
 
             GameSetupMsg::CacheDirChosen(idx, path) => {
+                if let Err(message) =
+                    snap::validate_selected_folder(&path, SelectedFolderKind::CacheFolder)
+                {
+                    Self::show_path_error(root, &message);
+                    return;
+                }
                 let Some(entry) = self.entries.get(idx) else {
                     return;
                 };
@@ -673,6 +703,12 @@ impl Component for GameSetupDialog {
             }
 
             GameSetupMsg::NewPathChosen(path) => {
+                if let Err(message) =
+                    snap::validate_selected_folder(&path, SelectedFolderKind::GameFolder)
+                {
+                    Self::show_path_error(root, &message);
+                    return;
+                }
                 self.new_path_entry.set_text(&path.to_string_lossy());
                 self.new_path = Some(path);
                 self.update_add_btn();
@@ -690,6 +726,12 @@ impl Component for GameSetupDialog {
             }
 
             GameSetupMsg::NewPrefixChosen(path) => {
+                if let Err(message) =
+                    snap::validate_selected_folder(&path, SelectedFolderKind::WinePrefix)
+                {
+                    Self::show_path_error(root, &message);
+                    return;
+                }
                 self.new_prefix_entry.set_text(&path.to_string_lossy());
                 self.new_prefix = Some(path);
                 self.update_add_btn();

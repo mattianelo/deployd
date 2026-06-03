@@ -7,6 +7,7 @@ use relm4::prelude::*;
 use crate::app::messages::GameConfig;
 use crate::core::game;
 use crate::models::game::Game;
+use crate::utils::snap::{self, SelectedFolderKind};
 
 pub struct WelcomeWizard {
     known_opts: Vec<game::KnownGameOption>,
@@ -164,6 +165,17 @@ impl WelcomeWizard {
 
         let all_set = self.missing_paths().is_empty();
         self.finish_btn.set_sensitive(all_set);
+    }
+
+    fn show_path_error(root: &adw::Window, message: &str) {
+        let dialog = adw::AlertDialog::builder()
+            .heading("Folder Not Available")
+            .body(message)
+            .build();
+        dialog.add_response("close", "Close");
+        dialog.set_default_response(Some("close"));
+        dialog.set_close_response("close");
+        dialog.present(Some(root));
     }
 }
 
@@ -418,6 +430,12 @@ impl Component for WelcomeWizard {
             }
 
             WelcomeWizardMsg::InstallPathChosen(idx, path) => {
+                if let Err(message) =
+                    snap::validate_selected_folder(&path, SelectedFolderKind::GameFolder)
+                {
+                    Self::show_path_error(root, &message);
+                    return;
+                }
                 if let Some(slot) = self.install_paths.get_mut(idx) {
                     *slot = Some(path);
                 }
@@ -436,6 +454,12 @@ impl Component for WelcomeWizard {
             }
 
             WelcomeWizardMsg::WinePrefixChosen(idx, path) => {
+                if let Err(message) =
+                    snap::validate_selected_folder(&path, SelectedFolderKind::WinePrefix)
+                {
+                    Self::show_path_error(root, &message);
+                    return;
+                }
                 if let Some(slot) = self.wine_prefixes.get_mut(idx) {
                     *slot = Some(path);
                 }

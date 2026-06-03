@@ -779,8 +779,22 @@ impl SimpleComponent for ModPropertiesDialog {
             ModPropertiesMsg::OpenFolder => {
                 let cache_dir =
                     crate::utils::paths::mod_cache_dir_in(&self.cache_root, &self.mod_id);
-                let _ = std::fs::create_dir_all(&cache_dir);
-                let _ = open::that(&cache_dir);
+                let result = std::fs::create_dir_all(&cache_dir)
+                    .map_err(|e| format!("Could not create cache folder: {e}"))
+                    .and_then(|()| {
+                        open::that(&cache_dir)
+                            .map_err(|e| format!("Could not open cache folder: {e}"))
+                    });
+                if let Err(message) = result {
+                    let dialog = adw::AlertDialog::builder()
+                        .heading("Could Not Open Folder")
+                        .body(&message)
+                        .build();
+                    dialog.add_response("close", "Close");
+                    dialog.set_default_response(Some("close"));
+                    dialog.set_close_response("close");
+                    dialog.present(Some(&self.window));
+                }
             }
             ModPropertiesMsg::ScanCacheClicked => {
                 let _ = sender.output(ModPropertiesOutput::ScanCache {

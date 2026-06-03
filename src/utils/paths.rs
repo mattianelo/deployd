@@ -25,10 +25,14 @@ pub fn lowercase_path_str(rel: &Path) -> String {
 /// `$SNAP_USER_COMMON` instead, which snapd keeps stable across revisions.
 pub fn deployd_data_dir() -> Result<PathBuf> {
     if let Some(common) = std::env::var_os("SNAP_USER_COMMON") {
-        return Ok(PathBuf::from(common).join("deployd"));
+        return Ok(deployd_data_dir_from_snap_common(&PathBuf::from(common)));
     }
     let data_dir = dirs::data_dir().ok_or_else(|| anyhow!("Cannot determine XDG_DATA_HOME"))?;
     Ok(data_dir.join("deployd"))
+}
+
+pub(crate) fn deployd_data_dir_from_snap_common(common: &Path) -> PathBuf {
+    common.join("deployd")
 }
 
 /// Deployd cache root: <data>/deployd/cache
@@ -104,4 +108,19 @@ pub fn default_downloads_dir() -> PathBuf {
             .unwrap_or_else(|| PathBuf::from("."))
             .join("Downloads")
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::deployd_data_dir_from_snap_common;
+
+    #[test]
+    fn snap_data_dir_uses_user_common() {
+        assert_eq!(
+            deployd_data_dir_from_snap_common(Path::new("/home/alex/snap/deployd/common")),
+            Path::new("/home/alex/snap/deployd/common/deployd")
+        );
+    }
 }

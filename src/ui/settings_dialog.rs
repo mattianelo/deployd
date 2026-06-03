@@ -8,6 +8,7 @@ use relm4::prelude::*;
 use crate::core::nexus_api::NexusClient;
 use crate::core::tracker::Tracker;
 use crate::utils::paths;
+use crate::utils::snap::{self, SelectedFolderKind};
 
 pub struct SettingsDialog {
     tracker: Tracker,
@@ -385,6 +386,15 @@ impl Component for SettingsDialog {
                 let _ = sender.output(SettingsDialogOutput::ColorSchemeChanged(idx));
             }
             SettingsMsg::DownloadsDirChosen(path) => {
+                if let Err(message) =
+                    snap::validate_selected_folder(&path, SelectedFolderKind::DownloadsFolder)
+                {
+                    self.status_label.set_label(&message);
+                    self.status_label.remove_css_class("success");
+                    self.status_label.add_css_class("error");
+                    self.status_label.set_visible(true);
+                    return;
+                }
                 let dir_str = path.to_string_lossy().to_string();
                 self.downloads_dir = dir_str.clone();
 

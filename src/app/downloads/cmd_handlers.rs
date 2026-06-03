@@ -243,7 +243,9 @@ impl App {
                         .app_update_url
                         .as_deref()
                         .unwrap_or(crate::core::update_check::NEXUS_PAGE_URL);
-                    let _ = open::that(url);
+                    if let Err(e) = open::that(url) {
+                        self.push_notification(&format!("Could not open update page: {e}"));
+                    }
                 }
             }
         }

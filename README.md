@@ -116,6 +116,11 @@ If your game lives on a secondary drive, placing the cache on the same drive eli
 
 In the Snap package, Steam-managed game folders can be exposed through a separate mount. When Linux rejects a hardlink across that boundary, Deployd falls back to copying the file while keeping it tracked as Deployd-managed.
 
+Strict Snap confinement still controls which folders the app can see. Deployd validates selected
+game, Wine prefix, downloads, cache, and migration-import folders before saving them, and explains
+blocked hidden-home paths, document-portal mounts, removable media, or read/write access failures
+immediately.
+
 **Hardlink filesystem constraint**
 
 Hardlinks require both the cache directory and the game directory to reside on the **same filesystem** — that is, they must share the same `st_dev` value as reported by the OS. Concretely:

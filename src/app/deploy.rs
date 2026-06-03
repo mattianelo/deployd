@@ -7,6 +7,7 @@ use relm4::prelude::*;
 
 use crate::core::deployer;
 use crate::utils::paths;
+use crate::utils::snap::{self, SelectedFolderKind};
 
 use super::App;
 use super::messages::{AppCmdMsg, AppMsg};
@@ -232,6 +233,11 @@ impl App {
         path: PathBuf,
         sender: &ComponentSender<Self>,
     ) {
+        if let Err(message) = snap::validate_selected_folder(&path, SelectedFolderKind::GameFolder)
+        {
+            self.push_notification(&message);
+            return;
+        }
         let idx = self.selected_game_idx;
         let Some(game) = self.games.get_mut(idx) else {
             return;
