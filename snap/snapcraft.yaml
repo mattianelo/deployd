@@ -1,6 +1,6 @@
 name: deployd
 base: core24
-version: '2.2.3'
+version: '2.3.0'
 adopt-info: deployd
 title: Deployd
 license: GPL-3.0

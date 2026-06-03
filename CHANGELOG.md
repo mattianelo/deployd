@@ -16,7 +16,7 @@
 - Updated documentation to reflect that Deployd is now released on the Snap Store,
   including install instructions and accepted Snap Store review status.
 
-## [2.2.3]
+## [2.3.0]
 
 ### Added
 
