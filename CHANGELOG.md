@@ -15,6 +15,9 @@
   dedicated LXD container.
 - Updated documentation to reflect that Deployd is now released on the Snap Store,
   including install instructions and accepted Snap Store review status.
+- Snap CI now builds with the official core24 Snapcraft image and the top-level
+  destructive-mode lifecycle command, avoiding breakage from the mutable
+  `snapcore/snapcraft:latest` image and its incompatible `pack` command.
 
 ## [2.3.0]
 

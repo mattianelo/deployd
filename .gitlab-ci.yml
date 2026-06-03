@@ -93,9 +93,9 @@ build-appimage:
 # container with a fresh checkout and has no dependency on the other.
 build-snap:
   stage: build
-  image: snapcore/snapcraft:latest
+  image: canonical/snapcraft:8_core24
   script:
-    - snapcraft pack --destructive-mode
+    - snapcraft --destructive-mode
   artifacts:
     name: "Deployd-snap-$CI_COMMIT_TAG"
     paths:
