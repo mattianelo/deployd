@@ -146,8 +146,6 @@ pub enum AppMsg {
     ImportGameFolderChosen(std::path::PathBuf),
     /// User confirmed the Wine prefix for an AppImage export import.
     ImportWinePrefixChosen(std::path::PathBuf),
-    /// User confirmed the downloads folder for an AppImage export import.
-    ImportDownloadsDirChosen(std::path::PathBuf),
     /// Emitted by SettingsDialog whenever the Nexus API key is set or cleared.
     NexusApiKeyUpdated,
     NxmLinkReceived(String),

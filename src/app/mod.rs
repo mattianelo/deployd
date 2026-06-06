@@ -1546,10 +1546,7 @@ impl Component for App {
                 self.handle_import_game_folder_chosen(path, root, &sender)
             }
             AppMsg::ImportWinePrefixChosen(path) => {
-                self.handle_import_wine_prefix_chosen(path, root, &sender)
-            }
-            AppMsg::ImportDownloadsDirChosen(path) => {
-                self.handle_import_downloads_dir_chosen(path, &sender)
+                self.handle_import_wine_prefix_chosen(path, &sender)
             }
             AppMsg::NexusApiKeyUpdated => self.handle_nexus_api_key_updated(&sender),
             AppMsg::NxmLinkReceived(link) => self.handle_nxm_link_received(link, &sender),

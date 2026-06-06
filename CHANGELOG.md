@@ -6,6 +6,9 @@
   Wine prefixes, downloads folders, cache folders, and AppImage migration imports. Deployd now
   explains blocked hidden-home, removable-media, document-portal, and read/write access failures at
   selection time instead of surfacing them later as confusing deploy or scan errors.
+- AppImage-to-Snap migration import no longer asks the Snap to confirm or save a
+  downloads folder. Imported download rows keep fetched Nexus metadata, hashes, versions,
+  and authors, while stale AppImage archive paths are still cleared for later rescans.
 - Opening update pages, deployment folders, and mod cache folders now reports a notification or
   dialog when the desktop cannot open the target, and Snap builds use the update notification's
   "View" action to open the release page instead of invoking AppImage self-update logic.

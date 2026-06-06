@@ -10,6 +10,7 @@ use zip::ZipArchive;
 
 use crate::core::tracker::Tracker;
 use crate::core::{game as game_core, migration_bundle::ExportManifest};
+use crate::models::download::DownloadEntry;
 use crate::models::game::{Game, GameEngine};
 use crate::utils::paths;
 
@@ -33,13 +34,12 @@ pub struct ImportBundleRequest {
     pub bundle_path: PathBuf,
     pub confirmed_game_path: PathBuf,
     pub confirmed_wine_prefix: PathBuf,
-    pub confirmed_downloads_dir: PathBuf,
 }
 
 #[derive(Debug, Clone)]
 pub struct ImportBundleResult {
     pub game: Game,
-    pub downloads_dir: PathBuf,
+    pub download_entries: Vec<DownloadEntry>,
     pub counts: PreviewCounts,
     pub warnings: Vec<String>,
 }
@@ -66,7 +66,6 @@ pub enum PreviewConflict {
 pub enum ValidationItem {
     NeedsGameFolderConfirmation,
     NeedsWinePrefixConfirmation,
-    NeedsDownloadsFolderConfirmation,
     ToolsNeedSnapRuntimeRebind,
 }
 
@@ -104,7 +103,6 @@ pub async fn preview_import_bundle(
     let mut validation_items = vec![
         ValidationItem::NeedsGameFolderConfirmation,
         ValidationItem::NeedsWinePrefixConfirmation,
-        ValidationItem::NeedsDownloadsFolderConfirmation,
     ];
     if counts.tools > 0 {
         validation_items.push(ValidationItem::ToolsNeedSnapRuntimeRebind);
@@ -130,7 +128,6 @@ pub async fn import_bundle(
 ) -> Result<ImportBundleResult> {
     validate_required_confirmation(&request.confirmed_game_path, "game folder")?;
     validate_required_confirmation(&request.confirmed_wine_prefix, "Wine prefix")?;
-    validate_required_confirmation(&request.confirmed_downloads_dir, "downloads folder")?;
 
     let staged = tokio::task::spawn_blocking({
         let bundle_path = request.bundle_path.clone();
@@ -173,20 +170,12 @@ pub async fn import_bundle(
             counts.tools
         ));
     }
-    if counts.downloads > 0 {
-        warnings.push(
-            "Download archive paths were cleared. Re-select or rescan the downloads folder before reinstalling from downloads."
-                .to_string(),
-        );
-    }
-
     let import_result = import_database_rows(
         tracker,
         &export_pool,
         &staged.manifest,
         &imported_game,
         &import_paths,
-        &request.confirmed_downloads_dir,
     )
     .await;
     export_pool.close().await;
@@ -196,9 +185,14 @@ pub async fn import_bundle(
         return Err(error);
     }
 
+    let download_entries = tracker
+        .load_download_entries()
+        .await
+        .context("Failed to load imported download entries")?;
+
     Ok(ImportBundleResult {
         game: imported_game,
-        downloads_dir: request.confirmed_downloads_dir,
+        download_entries,
         counts,
         warnings,
     })
@@ -828,7 +822,6 @@ async fn import_database_rows(
     manifest: &ExportManifest,
     game: &Game,
     import_paths: &ImportPaths,
-    confirmed_downloads_dir: &Path,
 ) -> Result<()> {
     let mut tx = tracker
         .pool
@@ -852,7 +845,7 @@ async fn import_database_rows(
     import_vanilla_backups(&mut tx, export_pool, import_paths).await?;
     import_download_entries(&mut tx, export_pool).await?;
     backfill_imported_mod_source_metadata(&mut tx).await?;
-    import_settings(&mut tx, &manifest.game_id, confirmed_downloads_dir).await?;
+    import_settings(&mut tx, &manifest.game_id).await?;
 
     tx.commit()
         .await
@@ -1331,11 +1324,7 @@ async fn import_download_entries(
     Ok(())
 }
 
-async fn import_settings(
-    tx: &mut Transaction<'_, Sqlite>,
-    game_id: &str,
-    confirmed_downloads_dir: &Path,
-) -> Result<()> {
+async fn import_settings(tx: &mut Transaction<'_, Sqlite>, game_id: &str) -> Result<()> {
     sqlx::query(
         "INSERT INTO settings (key, value) VALUES ('last_game_id', ?)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -1344,15 +1333,6 @@ async fn import_settings(
     .execute(&mut **tx)
     .await
     .context("Failed to store imported game selection")?;
-
-    sqlx::query(
-        "INSERT INTO settings (key, value) VALUES ('downloads_dir', ?)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-    )
-    .bind(confirmed_downloads_dir.to_string_lossy().as_ref())
-    .execute(&mut **tx)
-    .await
-    .context("Failed to store confirmed downloads folder")?;
 
     let cache_key = format!("cache_dir_{game_id}");
     sqlx::query("DELETE FROM settings WHERE key = ?")
@@ -1652,13 +1632,28 @@ mod tests {
                 bundle_path: fixture.bundle_path.clone(),
                 confirmed_game_path: fixture._temp.path().join("snap-visible-game"),
                 confirmed_wine_prefix: fixture._temp.path().join("snap-visible-prefix"),
-                confirmed_downloads_dir: fixture._temp.path().join("Downloads"),
             },
         )
         .await?;
 
         assert_eq!(result.game.id, "skyrim-se");
         assert_eq!(result.counts.mods, 1);
+        let imported_download = result
+            .download_entries
+            .iter()
+            .find(|entry| entry.id == "download-1")
+            .expect("import result should include imported download metadata");
+        assert!(
+            imported_download.metadata_fetched,
+            "import result should expose fetched download metadata to the UI"
+        );
+        assert_eq!(
+            imported_download.nexus_file_name.as_deref(),
+            Some("mod.zip")
+        );
+        assert_eq!(imported_download.archive_md5.as_deref(), Some("md5"));
+        assert_eq!(imported_download.version.as_deref(), Some("1.0"));
+        assert_eq!(imported_download.author.as_deref(), Some("Author"));
         let games = fixture.snap_tracker.load_persisted_games().await?;
         assert_eq!(games.len(), 1);
         assert_eq!(
@@ -1676,6 +1671,35 @@ mod tests {
         assert!(
             archive_path.is_none(),
             "download archive paths must be cleared"
+        );
+        let metadata = sqlx::query(
+            "SELECT metadata_fetched, nexus_file_name, archive_md5, version, author
+             FROM download_entries
+             WHERE id = 'download-1'",
+        )
+        .fetch_one(&fixture.snap_tracker.pool)
+        .await?;
+        assert!(
+            metadata.get::<bool, _>("metadata_fetched"),
+            "fetched download metadata must stay attached to the imported row"
+        );
+        assert_eq!(
+            metadata
+                .get::<Option<String>, _>("nexus_file_name")
+                .as_deref(),
+            Some("mod.zip")
+        );
+        assert_eq!(
+            metadata.get::<Option<String>, _>("archive_md5").as_deref(),
+            Some("md5")
+        );
+        assert_eq!(
+            metadata.get::<Option<String>, _>("version").as_deref(),
+            Some("1.0")
+        );
+        assert_eq!(
+            metadata.get::<Option<String>, _>("author").as_deref(),
+            Some("Author")
         );
         let cache_path: String =
             sqlx::query_scalar("SELECT cache_path FROM mod_files WHERE mod_id = 'mod-1'")
@@ -1731,7 +1755,6 @@ mod tests {
                 bundle_path: fixture.bundle_path.clone(),
                 confirmed_game_path: fixture._temp.path().join("snap-visible-game"),
                 confirmed_wine_prefix: fixture._temp.path().join("snap-visible-prefix"),
-                confirmed_downloads_dir: fixture._temp.path().join("Downloads"),
             },
         )
         .await?;
@@ -1797,7 +1820,6 @@ mod tests {
                 bundle_path: fixture.bundle_path.clone(),
                 confirmed_game_path: fixture._temp.path().join("snap-visible-game"),
                 confirmed_wine_prefix: fixture._temp.path().join("snap-visible-prefix"),
-                confirmed_downloads_dir: fixture._temp.path().join("Downloads"),
             },
         )
         .await
@@ -1855,7 +1877,6 @@ mod tests {
                 bundle_path: fixture.bundle_path.clone(),
                 confirmed_game_path: fixture._temp.path().join("snap-visible-game"),
                 confirmed_wine_prefix: fixture._temp.path().join("snap-visible-prefix"),
-                confirmed_downloads_dir: fixture._temp.path().join("Downloads"),
             },
         )
         .await?;
@@ -1885,7 +1906,6 @@ mod tests {
                 bundle_path: fixture.bundle_path.clone(),
                 confirmed_game_path: PathBuf::new(),
                 confirmed_wine_prefix: fixture._temp.path().join("prefix"),
-                confirmed_downloads_dir: fixture._temp.path().join("Downloads"),
             },
         )
         .await
@@ -1916,7 +1936,6 @@ mod tests {
                 bundle_path: fixture.bundle_path.clone(),
                 confirmed_game_path: fixture._temp.path().join("snap-visible-game"),
                 confirmed_wine_prefix: fixture._temp.path().join("snap-visible-prefix"),
-                confirmed_downloads_dir: fixture._temp.path().join("Downloads"),
             },
         )
         .await

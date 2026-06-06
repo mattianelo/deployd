@@ -416,7 +416,6 @@ impl App {
     pub(crate) fn handle_import_wine_prefix_chosen(
         &mut self,
         path: PathBuf,
-        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         if let Err(message) = snap::validate_selected_folder(&path, SelectedFolderKind::WinePrefix)
@@ -428,20 +427,10 @@ impl App {
             return;
         };
         pending.confirmed_wine_prefix = Some(path);
-        self.select_import_downloads_folder(root, sender);
+        self.start_appimage_export_import(sender);
     }
 
-    pub(crate) fn handle_import_downloads_dir_chosen(
-        &mut self,
-        downloads_dir: PathBuf,
-        sender: &ComponentSender<Self>,
-    ) {
-        if let Err(message) =
-            snap::validate_selected_folder(&downloads_dir, SelectedFolderKind::DownloadsFolder)
-        {
-            self.push_notification(&message);
-            return;
-        }
+    fn start_appimage_export_import(&mut self, sender: &ComponentSender<Self>) {
         if !game::is_snap() {
             self.push_notification("AppImage export import is only available from the Snap.");
             return;
@@ -471,7 +460,6 @@ impl App {
             bundle_path: pending.bundle_path,
             confirmed_game_path,
             confirmed_wine_prefix,
-            confirmed_downloads_dir: downloads_dir,
         };
         sender.oneshot_command(async move {
             AppCmdMsg::AppImageExportImported(
@@ -491,16 +479,16 @@ impl App {
         match result {
             Ok(result) => {
                 let imported_id = result.game.id.clone();
-                self.downloads_dir = result.downloads_dir.clone();
+                self.all_downloads = result.download_entries;
                 if self.games.iter().all(|game| game.id != imported_id) {
                     self.game_model.append(&result.game.title);
                     self.games.push(result.game.clone());
                 }
                 if let Some(idx) = self.games.iter().position(|game| game.id == imported_id) {
-                    self.selected_game_idx = idx;
                     self.game_dropdown.set_selected(idx as u32);
                     sender.input(AppMsg::GameSelected(idx as u32));
                 }
+                self.rebuild_downloads_view();
                 if !result.warnings.is_empty() {
                     for warning in result.warnings.iter().take(3) {
                         self.push_notification(&format!("Import warning: {warning}"));
@@ -555,27 +543,6 @@ impl App {
                 && let Some(path) = file.path()
             {
                 input_sender.send(AppMsg::ImportWinePrefixChosen(path)).ok();
-            }
-        });
-    }
-
-    fn select_import_downloads_folder(
-        &self,
-        root: &adw::ApplicationWindow,
-        sender: &ComponentSender<Self>,
-    ) {
-        let dialog = gtk::FileDialog::builder()
-            .title("Confirm Downloads Folder")
-            .modal(true)
-            .build();
-        let input_sender = sender.input_sender().clone();
-        dialog.select_folder(Some(root), None::<&gio::Cancellable>, move |result| {
-            if let Ok(file) = result
-                && let Some(path) = file.path()
-            {
-                input_sender
-                    .send(AppMsg::ImportDownloadsDirChosen(path))
-                    .ok();
             }
         });
     }
@@ -879,7 +846,6 @@ fn validation_item_label(item: &ValidationItem) -> &'static str {
     match item {
         ValidationItem::NeedsGameFolderConfirmation => "- Game folder",
         ValidationItem::NeedsWinePrefixConfirmation => "- Wine prefix",
-        ValidationItem::NeedsDownloadsFolderConfirmation => "- Downloads folder",
         ValidationItem::ToolsNeedSnapRuntimeRebind => "- External tools through Snap Wine runtime",
     }
 }

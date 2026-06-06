@@ -143,22 +143,6 @@ Hardlinks require both the cache directory and the game directory to reside on t
 
 If you select a cache directory on a different filesystem than the game folder, Deployd will reject the selection with a clear error message. No files are moved until the check passes.
 
-### AppImage to Snap Export
-
-The AppImage can create a per-game Snap migration bundle from **Settings → Manage Games → Export for Snap** when experimental features are enabled with `DEPLOYD_EXPERIMENTAL=1`. The bundle contains the selected game's database slice, cached mod files, vanilla backups, and profile save snapshots.
-
-The Snap cannot read the AppImage's hidden `~/.local/share/deployd/` data directly, so this export only writes a user-chosen `.deployd-export.zip` file. With experimental features enabled, the Snap can preview that bundle from **Settings → Migration → Preview AppImage Export** to show the exported game, counts, warnings, and existing-game conflicts.
-
-If the previewed game is not already managed in the Snap, the preview dialog can import it. Import requires you to confirm the Snap-visible game folder, Wine prefix, and downloads folder through file pickers. Deployd copies the bundle's mod cache, vanilla backups, and profile save snapshots into Snap-owned storage, skips exported external tools, and clears old AppImage download archive paths so the downloads folder can be reselected or rescanned safely.
-
-After import, downloads-folder scans reconcile imported Nexus metadata with the archives that are
-actually visible in the selected Snap downloads folder. Installed mod source metadata is retained on
-the installed mod record, so cleaning an empty downloads folder can remove dead archive inventory
-without losing the metadata Deployd needs to describe the installed mod. Metadata-only download rows
-are kept hidden so they can be reattached if the user points Deployd back to a folder containing the
-matching archive. Scans preserve every visible archive and only deduplicate rows that refer to the
-same archive path or the same Nexus file, not merely the same Nexus mod page.
-
 ---
 
 ## Getting Started
