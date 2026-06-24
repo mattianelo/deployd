@@ -197,7 +197,7 @@ impl FactoryComponent for DownloadRow {
             .build();
         let hide_btn = self.hide_btn.clone();
         let delete_btn = gtk::Button::builder()
-            .label("Delete")
+            .label("Move to Trash")
             .css_classes(["flat", "download-menu-delete"])
             .halign(gtk::Align::Fill)
             .build();

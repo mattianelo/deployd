@@ -418,6 +418,11 @@ pub enum AppCmdMsg {
     AppImageExportPreviewed(Result<crate::core::migration_import::PreviewImportResult, String>),
     /// Result of importing an AppImage-to-Snap export bundle into Snap state.
     AppImageExportImported(Result<crate::core::migration_import::ImportBundleResult, String>),
+    /// The download archive was moved to Trash and the entry can be removed.
+    DownloadArchiveTrashed {
+        download_id: String,
+        result: Result<(), String>,
+    },
     PrioritySaved(Result<(), String>),
     OverridesRefreshed(
         Result<std::collections::HashMap<String, crate::core::tracker::OverrideInfo>, String>,

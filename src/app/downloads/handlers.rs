@@ -1172,30 +1172,57 @@ impl App {
         };
 
         let dialog = adw::AlertDialog::builder()
-            .heading("Delete Download")
+            .heading("Move Download to Trash")
             .body(format!(
-                "Delete \"{}\" and its archive file from disk?",
+                "Move \"{}\" and its archive file to Trash?",
                 mod_name
             ))
             .build();
         dialog.add_response("cancel", "Cancel");
-        dialog.add_response("delete", "Delete");
-        dialog.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
+        dialog.add_response("trash", "Move to Trash");
+        dialog.set_response_appearance("trash", adw::ResponseAppearance::Destructive);
         dialog.set_default_response(Some("cancel"));
         dialog.set_close_response("cancel");
 
         let input_sender = sender.input_sender().clone();
+        let command_sender = sender.clone();
         dialog.connect_response(None, move |_, response| {
-            if response == "delete" {
-                if let Some(ref path) = archive_path {
-                    let _ = std::fs::remove_file(path);
+            if response == "trash" {
+                if let Some(path) = archive_path.clone() {
+                    let download_id = download_id.clone();
+                    command_sender.oneshot_command(async move {
+                        AppCmdMsg::DownloadArchiveTrashed {
+                            download_id,
+                            result: crate::utils::portal::trash_file(path)
+                                .await
+                                .map_err(|e| e.to_string()),
+                        }
+                    });
+                } else {
+                    input_sender
+                        .send(AppMsg::ConfirmDeleteDownload(download_id.clone()))
+                        .ok();
                 }
-                input_sender
-                    .send(AppMsg::ConfirmDeleteDownload(download_id.clone()))
-                    .ok();
             }
         });
         dialog.present(Some(root));
+    }
+
+    pub(crate) fn handle_download_archive_trashed(
+        &mut self,
+        download_id: String,
+        result: Result<(), String>,
+        sender: &ComponentSender<Self>,
+    ) {
+        match result {
+            Ok(()) => {
+                self.show_toast("Download moved to Trash");
+                self.handle_confirm_delete_download(download_id, sender);
+            }
+            Err(e) => {
+                self.push_notification(&format!("Could not move download archive to Trash: {e}"));
+            }
+        }
     }
 
     pub(crate) fn handle_confirm_delete_download(

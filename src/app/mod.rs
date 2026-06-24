@@ -1948,6 +1948,10 @@ impl Component for App {
             AppCmdMsg::AppImageExportImported(result) => {
                 self.handle_cmd_appimage_export_imported(result, &sender)
             }
+            AppCmdMsg::DownloadArchiveTrashed {
+                download_id,
+                result,
+            } => self.handle_download_archive_trashed(download_id, result, &sender),
             AppCmdMsg::PrioritySaved(result) => self.handle_cmd_priority_saved(result, &sender),
             AppCmdMsg::OverridesRefreshed(result) => {
                 self.handle_cmd_overrides_refreshed(result, &sender)
