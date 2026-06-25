@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fixed Snap download archive trashing when the stored archive path points at an XDG
+  document-portal mount.
 - Snap folder selections are now validated before they are saved for game folders,
   Wine prefixes, downloads folders, cache folders, and AppImage migration imports. Deployd now
   explains blocked hidden-home, removable-media, document-portal, and read/write access failures at

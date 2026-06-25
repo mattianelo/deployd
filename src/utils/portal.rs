@@ -1,6 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use anyhow::Result;
+use ashpd::documents::{DocumentID, Documents};
 use gio::prelude::*;
 
 /// Open a folder-picker dialog via the xdg-desktop-portal FileChooser portal.
@@ -30,15 +31,32 @@ pub async fn select_folder(title: &str) -> Result<Option<PathBuf>> {
 /// The portal path is preferred because it works with strict Snap confinement
 /// without requiring Deployd to write directly into hidden home directories.
 pub async fn trash_file(path: PathBuf) -> Result<()> {
+    match trash_file_by_path(&path).await {
+        Ok(()) => Ok(()),
+        Err(original_error) => {
+            if let Some(host_path) = resolve_document_portal_host_path(&path).await {
+                return trash_file_by_path(&host_path).await.map_err(|host_error| {
+                    anyhow::anyhow!(
+                        "document-portal trash failed: {original_error}; host-path trash failed: {host_error}"
+                    )
+                });
+            }
+
+            Err(original_error)
+        }
+    }
+}
+
+async fn trash_file_by_path(path: &Path) -> Result<()> {
     let file = match std::fs::OpenOptions::new()
         .read(true)
         .write(true)
-        .open(&path)
+        .open(path)
     {
         Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(open_error) => {
-            return trash_file_with_gio(&path).map_err(|gio_error| {
+            return trash_file_with_gio(path).map_err(|gio_error| {
                 anyhow::anyhow!(
                     "could not open file for portal trash: {open_error}; filesystem trash failed: {gio_error}"
                 )
@@ -50,7 +68,7 @@ pub async fn trash_file(path: PathBuf) -> Result<()> {
         Ok(()) => Ok(()),
         Err(portal_error) => {
             drop(file);
-            trash_file_with_gio(&path).map_err(|gio_error| {
+            trash_file_with_gio(path).map_err(|gio_error| {
                 anyhow::anyhow!(
                     "portal trash failed: {portal_error}; filesystem trash failed: {gio_error}"
                 )
@@ -59,7 +77,77 @@ pub async fn trash_file(path: PathBuf) -> Result<()> {
     }
 }
 
+async fn resolve_document_portal_host_path(path: &Path) -> Option<PathBuf> {
+    let (doc_id, relative_path) = split_document_portal_path(path)?;
+    let documents = Documents::new().await.ok()?;
+    let host_paths = documents
+        .host_paths(std::slice::from_ref(&doc_id))
+        .await
+        .ok()?;
+    let host_path = host_paths.get(&doc_id)?;
+    Some(host_path.as_ref().join(relative_path))
+}
+
+fn split_document_portal_path(path: &Path) -> Option<(DocumentID, PathBuf)> {
+    let mut components = path.components();
+    match (
+        components.next(),
+        components.next(),
+        components.next(),
+        components.next(),
+        components.next(),
+    ) {
+        (
+            Some(Component::RootDir),
+            Some(Component::Normal(run)),
+            Some(Component::Normal(user)),
+            Some(Component::Normal(_uid)),
+            Some(Component::Normal(doc)),
+        ) if run == "run" && user == "user" && doc == "doc" => {}
+        _ => return None,
+    }
+
+    let doc_id = match components.next()? {
+        Component::Normal(doc_id) => doc_id.to_string_lossy().into_owned(),
+        _ => return None,
+    };
+    let relative_path = components.as_path().to_path_buf();
+    Some((DocumentID::from(doc_id), relative_path))
+}
+
 fn trash_file_with_gio(path: &Path) -> std::result::Result<(), glib::Error> {
     let gio_file = gio::File::for_path(path);
     gio_file.trash(None::<&gio::Cancellable>)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    use super::*;
+
+    // Regression: Snap document-portal download archives can arrive as
+    // `/run/user/<uid>/doc/<id>/...`, which the Trash portal cannot trash directly.
+    // @variants: snap
+    #[test]
+    fn splits_document_portal_path() {
+        let path = Path::new("/run/user/1000/doc/f29584af/Mods/fallout4/Hydra.7z");
+
+        let (doc_id, relative_path) =
+            split_document_portal_path(path).expect("document portal path should split");
+
+        assert_eq!(doc_id.as_ref(), "f29584af");
+        assert_eq!(
+            relative_path,
+            PathBuf::from("Mods").join("fallout4").join("Hydra.7z")
+        );
+    }
+
+    // @variants: both
+    #[test]
+    fn ignores_non_document_portal_path() {
+        let path = Path::new("/home/alex/Mods/fallout4/Hydra.7z");
+
+        assert!(split_document_portal_path(path).is_none());
+    }
 }

@@ -128,7 +128,8 @@ In the Snap package, Steam-managed game folders can be exposed through a separat
 Strict Snap confinement still controls which folders the app can see. Deployd validates selected
 game, Wine prefix, downloads, cache, and migration-import folders before saving them, and explains
 blocked hidden-home paths, document-portal mounts, removable media, or read/write access failures
-immediately.
+immediately. When older download records still point at a document-portal mount, Deployd resolves
+the original host path before moving the archive to Trash.
 
 **Hardlink filesystem constraint**
 
