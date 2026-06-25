@@ -939,7 +939,11 @@ impl App {
                             if let Some(rl) = rl {
                                 let _ = input_sender.send(AppMsg::RateLimitUpdated(rl));
                             }
-                            if let Some(hit) = results.into_iter().next() {
+                            let matching_hit = results.into_iter().find(|hit| {
+                                hit.r#mod.mod_id == nexus_mod_id
+                                    && hit.r#mod.domain_name.eq_ignore_ascii_case(&domain)
+                            });
+                            if let Some(hit) = matching_hit {
                                 let file_entry = hit.file_details;
                                 let mod_info = hit.r#mod;
                                 let file_version = file_entry.version.clone();

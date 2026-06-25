@@ -21,6 +21,9 @@
 - Snap CI now builds with the official core24 Snapcraft image and the top-level
   destructive-mode lifecycle command, avoiding breakage from the mutable
   `snapcore/snapcraft:latest` image and its incompatible `pack` command.
+- Manual Nexus metadata fetches now keep the selected or inferred mod page authoritative when
+  checking archive MD5s, so files like `NEO-65761-3-1-1-1763043682` resolve against the Fallout 4
+  mod page `65761` instead of adopting unrelated file metadata.
 
 ## [2.3.0]
 

@@ -388,7 +388,17 @@ pub(crate) async fn fetch_avatar_bytes(url: &str) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_nexus_mod_id_from_input;
+    use super::{parse_nexus_mod_id, parse_nexus_mod_id_from_input};
+
+    // Regression: manually fetched metadata for NEO must target the page ID, not the CDN timestamp.
+    // @variants: both
+    #[test]
+    fn parses_nexus_mod_id_from_timestamped_archive_name() {
+        assert_eq!(
+            parse_nexus_mod_id("NEO-65761-3-1-1-1763043682"),
+            Some(65761)
+        );
+    }
 
     #[test]
     fn parses_bare_nexus_mod_id() {
