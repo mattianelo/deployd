@@ -36,9 +36,7 @@ pub(super) fn resolve_file_list(extracted_root: &Path) -> Result<FileListResult>
     for entry in WalkDir::new(&effective_root) {
         let entry = entry?;
         let rel = entry.path().strip_prefix(&effective_root)?;
-        // Skip fomod metadata even in non-FOMOD mods
-        let rel_lower = rel.to_string_lossy().to_lowercase();
-        if rel_lower.starts_with("fomod/") || rel_lower.starts_with("fomod\\") {
+        if is_fomod_metadata_rel(rel) {
             continue;
         }
 
@@ -100,6 +98,9 @@ pub(super) fn rescan(tmp_dir: &Path, stripped_wrapper: Option<&str>) -> Vec<(Pat
         if rel.as_os_str().is_empty() {
             continue;
         }
+        if is_fomod_metadata_rel(rel) {
+            continue;
+        }
         if entry.file_type().is_file() {
             let mut parent = rel.parent();
             while let Some(p) = parent {
@@ -122,6 +123,15 @@ pub(super) fn rescan(tmp_dir: &Path, stripped_wrapper: Option<&str>) -> Vec<(Pat
     }
 
     files
+}
+
+fn is_fomod_metadata_rel(rel: &Path) -> bool {
+    let mut components = rel.components();
+    components
+        .next()
+        .and_then(|component| component.as_os_str().to_str())
+        .map(|component| component.eq_ignore_ascii_case("fomod"))
+        .unwrap_or(false)
 }
 
 /// Detect a single wrapper directory.
@@ -248,4 +258,55 @@ pub(crate) fn is_ignorable_file(name_lower: &str) -> bool {
             | "version.txt"
             | "meta.ini"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use anyhow::Result;
+
+    // Regression: pre-install re-scan must not reintroduce hidden FOMOD metadata
+    // after the initial preview has skipped it.
+    // @variants: both
+    #[test]
+    fn rescan_skips_fomod_metadata_files() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let data_dir = tmp.path().join("Data");
+        let fomod_dir = tmp.path().join("fomod");
+        fs::create_dir_all(&data_dir)?;
+        fs::create_dir_all(&fomod_dir)?;
+        fs::write(data_dir.join("keep.txt"), "keep")?;
+        fs::write(fomod_dir.join("ModuleConfig.xml"), "<config />")?;
+
+        let rescanned = rescan(tmp.path(), None);
+
+        assert_eq!(
+            rescanned
+                .into_iter()
+                .map(|(_, dest)| dest)
+                .collect::<Vec<_>>(),
+            vec![PathBuf::from("Data/keep.txt")]
+        );
+        Ok(())
+    }
+
+    // @variants: both
+    #[test]
+    fn rescan_skips_empty_fomod_directory_sentinels() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        fs::create_dir_all(tmp.path().join("FOMOD"))?;
+        fs::create_dir_all(tmp.path().join("EmptyRuntimeDir"))?;
+
+        let rescanned = rescan(tmp.path(), None);
+
+        assert_eq!(
+            rescanned
+                .into_iter()
+                .map(|(_, dest)| dest)
+                .collect::<Vec<_>>(),
+            vec![PathBuf::from("EmptyRuntimeDir")]
+        );
+        Ok(())
+    }
 }

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Pre-install re-scans now keep skipping FOMOD metadata, so deselected or hidden `fomod/`
+  folders no longer cache stray installer XML files.
 - Fixed Snap download archive trashing when the stored archive path points at an XDG
   document-portal mount.
 - Snap folder selections are now validated before they are saved for game folders,
