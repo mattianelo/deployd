@@ -89,9 +89,10 @@ impl App {
                 );
 
                 let timing_start = std::time::Instant::now();
+                let archive_label = path.display().to_string();
                 let prepare = installer::prepare_mod(&path, on_extract_progress, on_processing)
                     .await
-                    .map_err(|e| format!("{e:#}"))?;
+                    .map_err(|e| format!("{e:#}\nArchive: {archive_label}"))?;
                 crate::app::timing::log_phase(
                     "install.prepare_archive",
                     "manual",
@@ -292,6 +293,10 @@ impl App {
         let input_sender = sender.input_sender().clone();
         sender.oneshot_command(async move {
             let result: Result<AddResult, String> = async {
+                let archive_label = pending
+                    .archive_path
+                    .clone()
+                    .unwrap_or_else(|| pending.mod_name.clone());
                 let progress_sender = input_sender.clone();
                 let on_progress: Option<Box<dyn Fn(usize, usize) + Send>> =
                     Some(throttled_install_progress(progress_sender, "Caching"));
@@ -311,7 +316,7 @@ impl App {
                     on_progress,
                 )
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| format!("{e:#}\nArchive: {archive_label}"))?;
                 crate::app::timing::log_phase(
                     "install.cache_files",
                     &pending.game.id,
@@ -483,13 +488,17 @@ impl App {
         let input_sender = sender.input_sender().clone();
         sender.oneshot_command(async move {
             let result: Result<AddResult, String> = async {
+                let archive_label = pending
+                    .archive_path
+                    .clone()
+                    .unwrap_or_else(|| pending.mod_name.clone());
                 let file_list = fomod_resolver::resolve_fomod_with_selections(
                     &config_path,
                     pending.tmp_dir.path(),
                     &selections,
                 )
                 .map_err(|e| {
-                    let msg = format!("{e:#}");
+                    let msg = format!("{e:#}\nArchive: {archive_label}");
                     eprintln!("[deployd] FOMOD resolve error: {msg}");
                     msg
                 })?;
@@ -526,7 +535,7 @@ impl App {
                 )
                 .await
                 .map_err(|e| {
-                    let msg = format!("{e:#}");
+                    let msg = format!("{e:#}\nArchive: {archive_label}");
                     eprintln!("[deployd] FOMOD install error: {msg}");
                     msg
                 })?;
@@ -678,6 +687,10 @@ impl App {
         let input_sender = sender.input_sender().clone();
         sender.oneshot_command(async move {
             let result: Result<(String, usize), String> = async {
+                let archive_label = pending
+                    .archive_path
+                    .clone()
+                    .unwrap_or_else(|| pending.mod_name.clone());
                 let progress_sender = input_sender.clone();
                 let on_progress: Option<Box<dyn Fn(usize, usize) + Send>> =
                     Some(throttled_install_progress(progress_sender, "Caching"));
@@ -694,7 +707,7 @@ impl App {
                     on_progress,
                 )
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| format!("{e:#}\nArchive: {archive_label}"))?;
                 drop(pending.tmp_dir);
                 Ok((mod_name, count))
             }

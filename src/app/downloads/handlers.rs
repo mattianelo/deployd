@@ -394,10 +394,11 @@ impl App {
                 );
 
                 let timing_start = std::time::Instant::now();
+                let archive_label = archive_path.display().to_string();
                 let prepare =
                     installer::prepare_mod(&archive_path, on_extract_progress, on_processing)
                         .await
-                        .map_err(|e| format!("{e:#}"))?;
+                        .map_err(|e| format!("{e:#}\nArchive: {archive_label}"))?;
                 crate::app::timing::log_phase(
                     "install.prepare_archive",
                     "download",

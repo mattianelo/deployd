@@ -219,6 +219,12 @@ pub async fn add_mod_with_file_list(
         // Directory sentinel: recorded with trailing '/' so the deployer creates the dir
         // rather than hardlinking (e.g. JContainers' Domains/ folder must exist).
         if src_abs.is_dir() {
+            if should_skip_empty_bethesda_sentinel(&game.engine, &lowercase_rel) {
+                if let Some(ref cb) = on_progress {
+                    cb(file_idx + 1, total_files);
+                }
+                continue;
+            }
             let cache_sentinel = cache_dir.join(&lowercase_rel);
             if let Err(e) = fs::create_dir_all(&cache_sentinel) {
                 eprintln!(
@@ -453,6 +459,12 @@ pub async fn merge_files_into_mod(
             self::paths::strip_data_subdir_prefix_str(&original_rel, &game.data_subdir);
 
         if src_abs.is_dir() {
+            if should_skip_empty_bethesda_sentinel(&game.engine, &lowercase_rel) {
+                if let Some(ref cb) = on_progress {
+                    cb(file_idx + 1, total_files);
+                }
+                continue;
+            }
             let cache_sentinel = cache_dir.join(&lowercase_rel);
             if let Err(e) = fs::create_dir_all(&cache_sentinel) {
                 eprintln!(
@@ -605,6 +617,10 @@ fn is_plugin(rel_path: &str) -> bool {
     l.ends_with(".esp") || l.ends_with(".esm") || l.ends_with(".esl")
 }
 
+fn should_skip_empty_bethesda_sentinel(engine: &GameEngine, rel: &Path) -> bool {
+    *engine == GameEngine::Bethesda && rel.as_os_str().is_empty()
+}
+
 fn filter_excluded_files(
     file_list: Vec<(PathBuf, PathBuf)>,
     rules: &[rules::Rule],
@@ -690,5 +706,138 @@ mod tests {
         );
 
         assert_eq!(dests(filtered), vec![PathBuf::from("Data/system/bar.dll")]);
+    }
+
+    #[test]
+    fn excludes_bethesda_root_file_before_root_target_recording() {
+        let mut excluded = HashSet::new();
+        excluded.insert("skse64_loader.dll".to_string());
+
+        let filtered = filter_excluded_files(
+            pairs(&["skse64_loader.dll", "Data/Scripts/keep.pex"]),
+            &[],
+            &GameEngine::Bethesda,
+            "Data",
+            &excluded,
+        );
+
+        assert_eq!(
+            dests(filtered),
+            vec![PathBuf::from("Data/Scripts/keep.pex")]
+        );
+    }
+
+    #[test]
+    fn excludes_bethesda_data_file() {
+        let mut excluded = HashSet::new();
+        excluded.insert("Data/Scripts/drop.pex".to_string());
+
+        let filtered = filter_excluded_files(
+            pairs(&["Data/Scripts/drop.pex", "Data/Scripts/keep.pex"]),
+            &[],
+            &GameEngine::Bethesda,
+            "Data",
+            &excluded,
+        );
+
+        assert_eq!(
+            dests(filtered),
+            vec![PathBuf::from("Data/Scripts/keep.pex")]
+        );
+    }
+
+    #[test]
+    fn excludes_bethesda_directory_sentinel() {
+        let mut excluded = HashSet::new();
+        excluded.insert("EmptyDir".to_string());
+
+        let filtered = filter_excluded_files(
+            pairs(&["EmptyDir", "Data/Scripts/keep.pex"]),
+            &[],
+            &GameEngine::Bethesda,
+            "Data",
+            &excluded,
+        );
+
+        assert_eq!(
+            dests(filtered),
+            vec![PathBuf::from("Data/Scripts/keep.pex")]
+        );
+    }
+
+    #[test]
+    fn non_bethesda_root_anchor_is_not_reinterpreted_as_data_path() {
+        let mut excluded = HashSet::new();
+        excluded.insert("system/foo.dll".to_string());
+
+        let filtered = filter_excluded_files(
+            pairs(&["../system/foo.dll", "system/foo.dll"]),
+            &[],
+            &GameEngine::Aurora,
+            "Data",
+            &excluded,
+        );
+
+        assert_eq!(dests(filtered), vec![PathBuf::from("../system/foo.dll")]);
+    }
+
+    #[test]
+    fn eclipse_docs_anchor_is_not_reinterpreted() {
+        let mut excluded = HashSet::new();
+        excluded.insert("BioWare/Settings.xml".to_string());
+
+        let filtered = filter_excluded_files(
+            pairs(&["~docs~/BioWare/Settings.xml", "BioWare/Settings.xml"]),
+            &[],
+            &GameEngine::Eclipse,
+            "packages/core/override",
+            &excluded,
+        );
+
+        assert_eq!(
+            dests(filtered),
+            vec![PathBuf::from("~docs~/BioWare/Settings.xml")]
+        );
+    }
+
+    #[test]
+    fn redengine_routed_mods_path_is_not_reinterpreted() {
+        let mut excluded = HashSet::new();
+        excluded.insert("content/scripts/foo.ws".to_string());
+
+        let filtered = filter_excluded_files(
+            pairs(&[
+                "Mods/SomeMod/content/scripts/foo.ws",
+                "content/scripts/foo.ws",
+            ]),
+            &[],
+            &GameEngine::REDEngine,
+            "Data",
+            &excluded,
+        );
+
+        assert_eq!(
+            dests(filtered),
+            vec![PathBuf::from("Mods/SomeMod/content/scripts/foo.ws")]
+        );
+    }
+
+    #[test]
+    fn skips_only_bethesda_empty_directory_sentinel() {
+        assert!(should_skip_empty_bethesda_sentinel(
+            &GameEngine::Bethesda,
+            Path::new("")
+        ));
+        assert!(!should_skip_empty_bethesda_sentinel(
+            &GameEngine::Bethesda,
+            Path::new("EmptyDir")
+        ));
+        assert!(!should_skip_empty_bethesda_sentinel(
+            &GameEngine::Aurora,
+            Path::new("")
+        ));
+
+        let rel_str = "";
+        assert_eq!(format!("{rel_str}/"), "/");
     }
 }
