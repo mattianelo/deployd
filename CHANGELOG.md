@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [2.3.1]
 
 - Pre-install re-scans now keep skipping FOMOD metadata, so deselected or hidden `fomod/`
   folders no longer cache stray installer XML files.
