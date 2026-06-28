@@ -68,9 +68,9 @@ Protect release tags matching `v*` so protected variables are available only to
 trusted tag pipelines. Nexus publishing runs only for exact stable semantic
 version tags such as `v2.3.1`; manually triggered branch pipelines never upload.
 The previous Nexus file version is archived after the replacement succeeds.
-The repository-owned uploader uses Nexus's multipart upload session for reliable
-AppImage transfers of any supported size. It has no GitHub Actions runtime
-dependency.
+The repository-owned release packager wraps the executable AppImage in a ZIP
+archive accepted by Nexus Mods, then the uploader transfers that ZIP through a
+multipart upload session. Neither step has a GitHub Actions runtime dependency.
 
 ---
 
