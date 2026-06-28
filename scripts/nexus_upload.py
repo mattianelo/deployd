@@ -17,7 +17,6 @@ from xml.sax.saxutils import escape
 
 
 API_BASE = "https://api.nexusmods.com/v3"
-SINGLE_PART_LIMIT = 100 * 1024 * 1024
 USER_AGENT = "Deployd-release-uploader/1.0"
 
 
@@ -55,10 +54,7 @@ class NexusUploader:
             raise UploadError("Release version is required")
 
         size = artifact.stat().st_size
-        if size <= SINGLE_PART_LIMIT:
-            upload_id = self._upload_single(artifact, size)
-        else:
-            upload_id = self._upload_multipart(artifact, size)
+        upload_id = self._upload_multipart(artifact, size)
 
         self._api_json("POST", f"/uploads/{upload_id}/finalise", expected_status=200)
         self._wait_until_available(upload_id)
@@ -79,21 +75,6 @@ class NexusUploader:
         if not isinstance(version_id, str):
             raise UploadError("Nexus returned a non-string file version ID")
         return version_id
-
-    def _upload_single(self, artifact: Path, size: int) -> str:
-        response = self._api_json(
-            "POST",
-            "/uploads",
-            {"filename": artifact.name, "size_bytes": size},
-            expected_status=201,
-        )
-        upload_id = self._upload_id(response)
-        presigned_url = self._required(response, "data", "presigned_url")
-        if not isinstance(presigned_url, str):
-            raise UploadError("Nexus returned a non-string presigned upload URL")
-
-        self._put_file(presigned_url, artifact.read_bytes())
-        return upload_id
 
     def _upload_multipart(self, artifact: Path, size: int) -> str:
         response = self._api_json(
@@ -149,20 +130,6 @@ class NexusUploader:
         )
         completion_response.close()
         return upload_id
-
-    def _put_file(self, url: str, artifact: bytes) -> None:
-        self._validate_presigned_url(url)
-        request = urllib.request.Request(
-            url,
-            data=artifact,
-            headers={
-                "Content-Type": "application/octet-stream",
-                "Content-Length": str(len(artifact)),
-            },
-            method="PUT",
-        )
-        response = self._send(request, "upload release artifact")
-        response.close()
 
     def _put_part(self, url: str, part: bytes, part_number: int) -> str:
         response = self._presigned_request(

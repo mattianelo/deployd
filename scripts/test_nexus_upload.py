@@ -46,7 +46,7 @@ class RecordingTransport:
 
 
 class NexusUploaderTests(unittest.TestCase):
-    def test_small_artifact_uses_single_upload_session(self) -> None:
+    def test_artifact_uses_multipart_upload_session(self) -> None:
         transport = RecordingTransport(
             [
                 FakeResponse(
@@ -55,10 +55,15 @@ class NexusUploaderTests(unittest.TestCase):
                         "data": {
                             "id": "upload-id",
                             "state": "created",
-                            "presigned_url": "https://storage.example/upload",
+                            "part_size_bytes": 8,
+                            "part_presigned_urls": [
+                                "https://storage.example/part-1"
+                            ],
+                            "complete_presigned_url": "https://storage.example/complete",
                         }
                     },
                 ),
+                FakeResponse(200, headers={"ETag": '"etag-1"'}),
                 FakeResponse(200),
                 FakeResponse(200),
                 FakeResponse(200, {"data": {"id": "upload-id", "state": "created"}}),
@@ -80,9 +85,12 @@ class NexusUploaderTests(unittest.TestCase):
         self.assertEqual(version_id, "version-id")
         self.assertEqual(
             [request.get_method() for request in transport.requests],
-            ["POST", "PUT", "POST", "GET", "GET", "POST"],
+            ["POST", "PUT", "POST", "POST", "GET", "GET", "POST"],
         )
-        self.assertEqual(transport.requests[0].full_url, f"{nexus_upload.API_BASE}/uploads")
+        self.assertEqual(
+            transport.requests[0].full_url,
+            f"{nexus_upload.API_BASE}/uploads/multipart",
+        )
         create_version = json.loads(transport.requests[-1].data)
         self.assertEqual(create_version["upload_id"], "upload-id")
         self.assertTrue(create_version["archive_existing_file"])
@@ -96,7 +104,11 @@ class NexusUploaderTests(unittest.TestCase):
                         "data": {
                             "id": "upload-id",
                             "state": "created",
-                            "presigned_url": "http://storage.example/upload",
+                            "part_size_bytes": 8,
+                            "part_presigned_urls": [
+                                "http://storage.example/part-1"
+                            ],
+                            "complete_presigned_url": "https://storage.example/complete",
                         }
                     },
                 )
@@ -110,7 +122,7 @@ class NexusUploaderTests(unittest.TestCase):
             with self.assertRaisesRegex(nexus_upload.UploadError, "non-HTTPS"):
                 uploader.publish(artifact, "file-id", "2.4.0", "Deployd 2.4.0", True)
 
-    def test_large_artifact_uses_multipart_upload_session(self) -> None:
+    def test_multipart_completion_contains_each_part_etag(self) -> None:
         transport = RecordingTransport(
             [
                 FakeResponse(
@@ -139,17 +151,12 @@ class NexusUploaderTests(unittest.TestCase):
         uploader = nexus_upload.NexusUploader(
             "secret", open_url=transport, sleep=lambda _: None
         )
-        original_limit = nexus_upload.SINGLE_PART_LIMIT
-        nexus_upload.SINGLE_PART_LIMIT = 1
-        try:
-            with tempfile.TemporaryDirectory() as directory:
-                artifact = Path(directory) / "Deployd.AppImage"
-                artifact.write_bytes(b"12345678")
-                version_id = uploader.publish(
-                    artifact, "file-id", "2.4.0", "Deployd 2.4.0", True
-                )
-        finally:
-            nexus_upload.SINGLE_PART_LIMIT = original_limit
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = Path(directory) / "Deployd.AppImage"
+            artifact.write_bytes(b"12345678")
+            version_id = uploader.publish(
+                artifact, "file-id", "2.4.0", "Deployd 2.4.0", True
+            )
 
         self.assertEqual(version_id, "version-id")
         self.assertEqual(
@@ -162,7 +169,7 @@ class NexusUploaderTests(unittest.TestCase):
         def reject(request: Any, *, timeout: int) -> Any:
             del request, timeout
             raise urllib.error.HTTPError(
-                f"{nexus_upload.API_BASE}/uploads",
+                f"{nexus_upload.API_BASE}/uploads/multipart",
                 403,
                 "Forbidden",
                 {},
