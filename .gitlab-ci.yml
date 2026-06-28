@@ -3,9 +3,11 @@
 # Jobs:
 #   sast             — Static Application Security Testing (GitLab template)
 #   secret_detection — Secret Detection (GitLab template)
+#   test-nexus-upload — Test the repository-owned Nexus upload client
 #   build-env-image  — Build and push the deployd build-env image to the registry
 #   build-appimage   — Build and publish the Deployd AppImage
 #   build-snap       — Build and publish the Deployd Snap package
+#   upload-nexus     — Publish tagged AppImage updates to Nexus Mods
 #   pages            — Publish the Deployd feature page
 #
 # Build environment image
@@ -40,6 +42,12 @@ sast:
 
 secret_detection:
   stage: secret-detection
+
+test-nexus-upload:
+  stage: test
+  image: python:3.13-slim
+  script:
+    - python3 scripts/test_nexus_upload.py
 
 # ── Build environment image ──────────────────────────────────────────────────
 build-env-image:
@@ -105,6 +113,35 @@ build-snap:
     - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/'
     - if: '$CI_PIPELINE_SOURCE == "web"'
       when: manual
+
+# ── Nexus Mods release ───────────────────────────────────────────────────────
+# @affects: appimage
+# NEXUSMODS_API_KEY and NEXUSMODS_FILE_ID must be protected GitLab CI/CD
+# variables. The API key must also be masked. The v3 upload API targets an
+# existing Nexus file, so the file ID cannot be inferred from the mod-page ID.
+upload-nexus:
+  stage: deploy
+  image: python:3.13-slim
+  needs:
+    - job: build-appimage
+      artifacts: true
+  resource_group: nexus-production
+  interruptible: false
+  script:
+    - test -n "$NEXUSMODS_API_KEY"
+    - test -n "$NEXUSMODS_FILE_ID"
+    - export RELEASE_VERSION="${CI_COMMIT_TAG#v}"
+    - export NEXUS_FILENAME="Deployd-${RELEASE_VERSION}-x86_64.AppImage"
+    - mv Deployd-x86_64.AppImage "$NEXUS_FILENAME"
+    - |
+      python3 scripts/nexus_upload.py \
+        --file "$NEXUS_FILENAME" \
+        --file-id "$NEXUSMODS_FILE_ID" \
+        --version "$RELEASE_VERSION" \
+        --display-name "Deployd $RELEASE_VERSION (AppImage)" \
+        --archive-existing
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/'
 
 # ── GitLab Pages ─────────────────────────────────────────────────────────────
 pages:

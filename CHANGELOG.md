@@ -2,6 +2,11 @@
 
 ## [2.3.1]
 
+- Stable version-tag pipelines now publish the AppImage to Deployd's existing
+  Nexus Mods file through a repository-owned client of the Nexus v3 upload API.
+  It supports single-part and multipart upload sessions without a GitHub Actions
+  runtime dependency. The API key and Nexus file ID remain protected GitLab
+  CI/CD variables, and manual branch pipelines cannot publish.
 - Pre-install re-scans now keep skipping FOMOD metadata, so deselected or hidden `fomod/`
   folders no longer cache stray installer XML files.
 - Fixed Snap download archive trashing when the stored archive path points at an XDG

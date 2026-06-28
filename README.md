@@ -55,7 +55,22 @@ Then open `http://localhost:3003`. Stop the preview with `Ctrl+C`.
 GitLab release pipelines build the AppImage and Snap independently. The Snap job
 uses Canonical's `canonical/snapcraft:8_core24` image because Deployd declares
 `base: core24`, then runs `snapcraft --destructive-mode` inside that matching
-container.
+container. A successful stable version tag also uploads the AppImage as a new
+version of Deployd's existing Nexus Mods file.
+
+The Nexus upload job requires these GitLab CI/CD variables:
+
+- `NEXUSMODS_API_KEY`: a masked, protected Nexus Mods API key.
+- `NEXUSMODS_FILE_ID`: the protected file ID shown by **API Info** on the Nexus
+  Files tab. This is not the mod-page ID (`174218`).
+
+Protect release tags matching `v*` so protected variables are available only to
+trusted tag pipelines. Nexus publishing runs only for exact stable semantic
+version tags such as `v2.3.1`; manually triggered branch pipelines never upload.
+The previous Nexus file version is archived after the replacement succeeds.
+The repository-owned uploader uses Nexus's single-part upload session for files
+up to 100 MiB and automatically switches to the documented multipart session for
+larger AppImages. It has no GitHub Actions runtime dependency.
 
 ---
 
