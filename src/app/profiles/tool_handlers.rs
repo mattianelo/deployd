@@ -21,6 +21,32 @@ const PROTON_SETUP_BODY: &str = "Proton GE needs to be installed before tools ca
 This is a one-time setup handled by UMU Launcher.\n\n\
 The tool will launch automatically when the setup starts.";
 
+#[derive(Debug, Default, PartialEq, Eq)]
+struct PostToolExitActions {
+    scan_external_files: bool,
+    sort_with_loot: bool,
+}
+
+fn post_tool_exit_actions(
+    was_cancelling: bool,
+    _selected_game_id: Option<&str>,
+) -> PostToolExitActions {
+    if was_cancelling {
+        return PostToolExitActions::default();
+    }
+
+    #[cfg(feature = "loot")]
+    let sort_with_loot =
+        _selected_game_id.is_some_and(crate::core::loot_sort::game_has_loot_support);
+    #[cfg(not(feature = "loot"))]
+    let sort_with_loot = false;
+
+    PostToolExitActions {
+        scan_external_files: true,
+        sort_with_loot,
+    }
+}
+
 impl App {
     pub(crate) fn handle_launch_tool(
         &mut self,
@@ -29,7 +55,7 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         if self.is_busy() {
-            self.push_notification("Wait for the current task to finish before launching tools");
+            self.show_toast("Wait for the current task to finish before launching tools");
             return;
         }
         self.handle_launch_tool_inner(tool_id, false, root, sender);
@@ -43,12 +69,12 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         if self.needs_deploy {
-            self.push_notification("Deploy your mods before launching tools");
+            self.show_toast("Deploy your mods before launching tools");
             return;
         }
 
         let Some(tool) = self.tools.iter().find(|t| t.id == tool_id).cloned() else {
-            self.push_notification("Tool not found");
+            self.show_toast("Tool not found");
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
@@ -233,6 +259,10 @@ impl App {
             .tool_launch_session
             .as_ref()
             .is_some_and(|session| session.state == ToolSessionState::Cancelling);
+        let actions = post_tool_exit_actions(
+            was_cancelling,
+            self.selected_game().map(|game| game.id.as_str()),
+        );
         if let Some(session) = self.tool_launch_session.as_ref() {
             crate::dlog!(
                 "deployd: tool session ended tool_id={} variant={} elapsed_ms={}",
@@ -248,18 +278,15 @@ impl App {
         self.finish_work(WorkKind::SettingUpRuntime);
 
         if was_cancelling {
-            self.push_notification(&format!("{tool_name} stopped"));
+            self.show_toast(&format!("{tool_name} stopped"));
             return;
         }
 
-        self.push_notification(&format!("{tool_name} closed — scanning for changes…"));
-        sender.input(AppMsg::ScanExternalFiles);
-        #[cfg(feature = "loot")]
-        if self
-            .selected_game()
-            .map(|g| crate::core::loot_sort::game_has_loot_support(&g.id))
-            .unwrap_or(false)
-        {
+        self.show_toast(&format!("{tool_name} closed — scanning for changes…"));
+        if actions.scan_external_files {
+            sender.input(AppMsg::ScanExternalFiles);
+        }
+        if actions.sort_with_loot {
             sender.input(AppMsg::SortWithLoot);
         }
     }
@@ -396,7 +423,7 @@ impl App {
         self.finish_work(WorkKind::LaunchingTool);
         self.finish_work(WorkKind::SettingUpRuntime);
         if had_launch {
-            self.push_notification("Tool launch cancelled");
+            self.show_toast("Tool launch cancelled");
         }
     }
 
@@ -558,11 +585,47 @@ fn monitor_deployd_proton_runtime(sender: relm4::Sender<AppMsg>) {
 
 #[cfg(test)]
 mod tests {
-    use super::PROTON_SETUP_BODY;
+    use super::{PROTON_SETUP_BODY, PostToolExitActions, post_tool_exit_actions};
 
     #[test]
     fn proton_setup_message_does_not_claim_a_download_size() {
         assert!(!PROTON_SETUP_BODY.contains("MB"));
         assert!(!PROTON_SETUP_BODY.contains("GB"));
+    }
+
+    // @variants: both
+    #[test]
+    fn normal_tool_exit_scans_and_sorts_every_loot_game() {
+        for game_id in ["skyrim-se", "fallout-4", "fallout-nv", "starfield"] {
+            assert_eq!(
+                post_tool_exit_actions(false, Some(game_id)),
+                PostToolExitActions {
+                    scan_external_files: true,
+                    sort_with_loot: cfg!(feature = "loot"),
+                },
+                "unexpected post-tool actions for {game_id}",
+            );
+        }
+    }
+
+    // @variants: both
+    #[test]
+    fn cancelled_tool_exit_does_not_scan_or_sort() {
+        assert_eq!(
+            post_tool_exit_actions(true, Some("skyrim-se")),
+            PostToolExitActions::default(),
+        );
+    }
+
+    // @variants: both
+    #[test]
+    fn unsupported_game_scans_without_loot_sort() {
+        assert_eq!(
+            post_tool_exit_actions(false, Some("witcher-3")),
+            PostToolExitActions {
+                scan_external_files: true,
+                sort_with_loot: false,
+            },
+        );
     }
 }

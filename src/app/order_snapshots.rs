@@ -120,7 +120,11 @@ impl App {
                     .restore_mod_order_snapshot(&snapshot_id, &game.id)
                     .await
                     .map_err(|e| e.to_string())?;
-                load_game_data(&tracker, &game, false)
+                load_game_data(
+                    &tracker,
+                    &game,
+                    crate::app::free_fns::GameLoadMode::Refresh,
+                )
                     .await
                     .map_err(|e| e.to_string())
             }
@@ -147,7 +151,11 @@ impl App {
                     .restore_plugin_order_snapshot(&snapshot_id, &game.id)
                     .await
                     .map_err(|e| e.to_string())?;
-                load_game_data(&tracker, &game, false)
+                load_game_data(
+                    &tracker,
+                    &game,
+                    crate::app::free_fns::GameLoadMode::Refresh,
+                )
                     .await
                     .map_err(|e| e.to_string())
             }

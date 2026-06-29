@@ -169,7 +169,7 @@ impl App {
             }
         }
         if !nexus_update_allowed {
-            self.push_notification("Current game has no Nexus domain; Nexus ID was not updated.");
+            self.show_toast("Current game has no Nexus domain; Nexus ID was not updated.");
         }
 
         let mod_id_clone = mod_id.clone();
@@ -262,7 +262,7 @@ impl App {
         });
 
         self.needs_deploy = true;
-        self.push_notification(&format!("Properties updated for {name}"));
+        self.show_toast(&format!("Properties updated for {name}"));
     }
 
     pub(crate) fn handle_cmd_mod_nexus_metadata_refreshed(

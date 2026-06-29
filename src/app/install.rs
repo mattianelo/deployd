@@ -1041,7 +1041,15 @@ impl App {
                         if let Some(ref author) = author_from_dl {
                             let _ = tracker.set_mod_author(&mod_id, author).await;
                         }
-                        AppCmdMsg::ModsLoaded(load_game_data(&tracker, &game, false).await, true)
+                        AppCmdMsg::ModsLoaded(
+                            load_game_data(
+                                &tracker,
+                                &game,
+                                crate::app::free_fns::GameLoadMode::Refresh,
+                            )
+                            .await,
+                            true,
+                        )
                     });
                 } else {
                     self.reload_mods(sender);

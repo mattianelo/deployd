@@ -71,7 +71,7 @@ impl App {
     }
 
     pub(crate) fn handle_nexus_api_key_updated(&mut self, sender: &ComponentSender<Self>) {
-        self.push_notification("Nexus Mods key updated.");
+        self.show_toast("Nexus Mods key updated.");
         // Re-validate to refresh username and avatar displayed in the headerbar.
         if let Some(tracker) = self.tracker.clone() {
             sender.oneshot_command(async move {
@@ -138,7 +138,7 @@ impl App {
             let _ = tracker.clear_nexus_user().await;
             AppCmdMsg::NexusUserRefreshed(None, None, false)
         });
-        self.push_notification("Logged out of Nexus Mods");
+        self.show_toast("Logged out of Nexus Mods");
     }
 
     pub(crate) fn handle_manage_games_clicked(
@@ -182,15 +182,15 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         if !self.running_as_appimage || std::env::var_os("SNAP").is_some() {
-            self.push_notification("Snap migration export is only available from the AppImage.");
+            self.show_toast("Snap migration export is only available from the AppImage.");
             return;
         }
         if !utils::experimental_enabled() {
-            self.push_notification("Snap migration export is experimental and disabled.");
+            self.show_toast("Snap migration export is experimental and disabled.");
             return;
         }
         let Some(game) = self.games.iter().find(|g| g.id == game_id) else {
-            self.push_notification("Game is no longer managed.");
+            self.show_toast("Game is no longer managed.");
             return;
         };
 
@@ -234,15 +234,15 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         if !self.running_as_appimage || std::env::var_os("SNAP").is_some() {
-            self.push_notification("Snap migration export is only available from the AppImage.");
+            self.show_toast("Snap migration export is only available from the AppImage.");
             return;
         }
         if !utils::experimental_enabled() {
-            self.push_notification("Snap migration export is experimental and disabled.");
+            self.show_toast("Snap migration export is experimental and disabled.");
             return;
         }
         let Some(game) = self.games.iter().find(|g| g.id == game_id).cloned() else {
-            self.push_notification("Game is no longer managed.");
+            self.show_toast("Game is no longer managed.");
             return;
         };
         let Ok(cache_root) = self.cache_root_for(&game.id) else {
@@ -297,11 +297,11 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         if !game::is_snap() {
-            self.push_notification("AppImage export preview is only available from the Snap.");
+            self.show_toast("AppImage export preview is only available from the Snap.");
             return;
         }
         if !utils::experimental_enabled() {
-            self.push_notification("AppImage export import is experimental and disabled.");
+            self.show_toast("AppImage export import is experimental and disabled.");
             return;
         }
         let dialog = gtk::FileDialog::builder()
@@ -335,11 +335,11 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         if !game::is_snap() {
-            self.push_notification("AppImage export preview is only available from the Snap.");
+            self.show_toast("AppImage export preview is only available from the Snap.");
             return;
         }
         if !utils::experimental_enabled() {
-            self.push_notification("AppImage export import is experimental and disabled.");
+            self.show_toast("AppImage export import is experimental and disabled.");
             return;
         }
         let Some(tracker) = self.tracker.clone() else {
@@ -380,11 +380,11 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         if !game::is_snap() {
-            self.push_notification("AppImage export import is only available from the Snap.");
+            self.show_toast("AppImage export import is only available from the Snap.");
             return;
         }
         if !utils::experimental_enabled() {
-            self.push_notification("AppImage export import is experimental and disabled.");
+            self.show_toast("AppImage export import is experimental and disabled.");
             return;
         }
         self.pending_migration_import = Some(PendingMigrationImport {
@@ -432,22 +432,22 @@ impl App {
 
     fn start_appimage_export_import(&mut self, sender: &ComponentSender<Self>) {
         if !game::is_snap() {
-            self.push_notification("AppImage export import is only available from the Snap.");
+            self.show_toast("AppImage export import is only available from the Snap.");
             return;
         }
         if !utils::experimental_enabled() {
-            self.push_notification("AppImage export import is experimental and disabled.");
+            self.show_toast("AppImage export import is experimental and disabled.");
             return;
         }
         let Some(pending) = self.pending_migration_import.take() else {
             return;
         };
         let Some(confirmed_game_path) = pending.confirmed_game_path else {
-            self.push_notification("Import cancelled: game folder was not confirmed.");
+            self.show_toast("Import cancelled: game folder was not confirmed.");
             return;
         };
         let Some(confirmed_wine_prefix) = pending.confirmed_wine_prefix else {
-            self.push_notification("Import cancelled: Wine prefix was not confirmed.");
+            self.show_toast("Import cancelled: Wine prefix was not confirmed.");
             return;
         };
         let Some(tracker) = self.tracker.clone() else {

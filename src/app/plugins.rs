@@ -12,7 +12,7 @@ use crate::models::plugin::PluginDirtyInfo;
 use crate::ui::plugin_list::PluginRowInit;
 
 use super::App;
-use super::free_fns::load_game_data;
+use super::free_fns::{GameLoadMode, load_game_data};
 use super::messages::AppCmdMsg;
 
 impl App {
@@ -368,7 +368,10 @@ impl App {
                         {
                             return AppCmdMsg::PluginOrderSaved(Err(e.to_string()));
                         }
-                        AppCmdMsg::ModsLoaded(load_game_data(&tracker, &game, false).await, true)
+                        AppCmdMsg::ModsLoaded(
+                            load_game_data(&tracker, &game, GameLoadMode::Refresh).await,
+                            true,
+                        )
                     });
                 }
             }

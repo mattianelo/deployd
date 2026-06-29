@@ -2,7 +2,7 @@ use gtk::prelude::*;
 use relm4::prelude::*;
 
 use super::super::App;
-use super::super::free_fns::{fetch_avatar_bytes, load_game_data};
+use super::super::free_fns::{GameLoadMode, fetch_avatar_bytes, load_game_data};
 use super::super::messages::{AppCmdMsg, AppMsg};
 use super::super::types::{InitData, LoadedData, WorkKind};
 
@@ -397,7 +397,10 @@ impl App {
                     && let Some(game) = self.selected_game().cloned()
                 {
                     sender.oneshot_command(async move {
-                        AppCmdMsg::ModsLoaded(load_game_data(&tracker, &game, false).await, true)
+                        AppCmdMsg::ModsLoaded(
+                            load_game_data(&tracker, &game, GameLoadMode::Refresh).await,
+                            true,
+                        )
                     });
                 }
             }
@@ -416,7 +419,7 @@ impl App {
                 if let Some(p) = self.profiles.get_mut(self.active_profile_idx) {
                     p.save_synced_at = Some(std::time::SystemTime::now());
                 }
-                self.push_notification(&sync.to_toast());
+                self.show_toast(&sync.to_toast());
             }
             Err(e) => {
                 self.push_notification(&format!("Save sync failed: {e}"));

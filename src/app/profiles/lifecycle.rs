@@ -4,7 +4,7 @@ use crate::core::{game, save_manager};
 use crate::models::profile::SaveMode;
 
 use super::super::App;
-use super::super::free_fns::load_game_data;
+use super::super::free_fns::{GameLoadMode, load_game_data};
 use super::super::messages::AppCmdMsg;
 
 impl App {
@@ -55,7 +55,7 @@ impl App {
                 } else {
                     None
                 };
-                let data = load_game_data(&tracker, &game, false).await?;
+                let data = load_game_data(&tracker, &game, GameLoadMode::Refresh).await?;
                 Ok::<_, String>((data, save_sync))
             };
             AppCmdMsg::ProfileSwitched(result.await)
@@ -101,7 +101,7 @@ impl App {
                     .switch_profile(&game.id, &new_id)
                     .await
                     .map_err(|e| e.to_string())?;
-                load_game_data(&tracker, &game, false).await
+                load_game_data(&tracker, &game, GameLoadMode::Refresh).await
             };
             AppCmdMsg::ProfileCreated(result.await)
         });
@@ -134,7 +134,7 @@ impl App {
                     .switch_profile(&game.id, &new_id)
                     .await
                     .map_err(|e| e.to_string())?;
-                load_game_data(&tracker, &game, false).await
+                load_game_data(&tracker, &game, GameLoadMode::Refresh).await
             };
             AppCmdMsg::ProfileCloned(result.await)
         });
@@ -142,7 +142,7 @@ impl App {
 
     pub(crate) fn handle_delete_profile_clicked(&mut self, sender: &ComponentSender<Self>) {
         if self.profiles.len() <= 1 {
-            self.push_notification("Cannot delete the last profile");
+            self.show_toast("Cannot delete the last profile");
             return;
         }
 
@@ -174,7 +174,7 @@ impl App {
                         .await
                         .map_err(|e| e.to_string())?;
                 }
-                load_game_data(&tracker, &game, false).await
+                load_game_data(&tracker, &game, GameLoadMode::Refresh).await
             };
             AppCmdMsg::ProfileDeleted(result.await)
         });

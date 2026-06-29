@@ -2,6 +2,12 @@
 
 ## [2.3.1]
 
+- Games now reopen the profile used by their most recent successful deployment, independently
+  across restarts and game switches, instead of falling back to the alphabetically first profile.
+- Routine status messages, including external-tool exits, now appear as temporary toasts instead
+  of accumulating in the notifications panel; failures and actionable recovery notices remain.
+- External-tool exits now have regression coverage ensuring supported games automatically run LOOT
+  after scanning for external changes, while cancelled sessions and unsupported games skip it.
 - Stable version-tag pipelines now publish the AppImage to Deployd's existing
   Nexus Mods file through a repository-owned client of the Nexus v3 upload API.
   CI packages the executable AppImage in the ZIP format accepted by Nexus before

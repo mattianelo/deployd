@@ -17,8 +17,9 @@ use crate::ui::mod_list::ModListItemOutput;
 use crate::ui::plugin_list::PluginRowOutput;
 use crate::utils::paths;
 
-use super::free_fns::load_game_data;
-use super::free_fns::{clear_drop_indicators, update_drop_indicator};
+use super::free_fns::{
+    GameLoadMode, clear_drop_indicators, load_game_data, update_drop_indicator,
+};
 use super::types::{DownloadFilter, DownloadSort, InitData, ModFilter, SearchScope};
 use super::{App, AppCmdMsg, AppMsg};
 
@@ -630,8 +631,7 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             vanilla_plugin_master_counts,
             vanilla_derived_plugins,
         ) = if let Some(game) = &init_game {
-            // sync_txt = true: honour any LOOT edits made while the app was closed.
-            let loaded = load_game_data(&tracker, game, true).await?;
+            let loaded = load_game_data(&tracker, game, GameLoadMode::OpenGame).await?;
             (
                 loaded.mods,
                 loaded.plugins,

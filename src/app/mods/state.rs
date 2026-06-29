@@ -15,7 +15,7 @@ use crate::ui::mod_list::{ModListItemInit, ModListItemKind, ModRowInit};
 use crate::ui::plugin_list::PluginRowInit;
 
 use super::super::App;
-use super::super::free_fns::load_game_data;
+use super::super::free_fns::{GameLoadMode, load_game_data};
 use super::super::messages::AppCmdMsg;
 use super::super::types::LoadedData;
 
@@ -39,7 +39,12 @@ impl App {
     ) {
         if let (Some(tracker), Some(game)) = (self.tracker.clone(), self.selected_game().cloned()) {
             sender.oneshot_command(async move {
-                let result = async { load_game_data(&tracker, &game, sync_txt).await };
+                let mode = if sync_txt {
+                    GameLoadMode::OpenGame
+                } else {
+                    GameLoadMode::Refresh
+                };
+                let result = async { load_game_data(&tracker, &game, mode).await };
                 AppCmdMsg::ModsLoaded(result.await, preserve_collapsed)
             });
         }

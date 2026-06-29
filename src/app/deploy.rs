@@ -250,7 +250,7 @@ impl App {
                 AppCmdMsg::PrioritySaved(Ok(()))
             });
         }
-        self.push_notification("Game folder confirmed — you can now deploy");
+        self.show_toast("Game folder confirmed — you can now deploy");
     }
 }
 
@@ -321,7 +321,7 @@ impl App {
                         "No deployed files tracked — the game folder may already be clean, or try redeploying first",
                     );
                 } else {
-                    self.push_notification(&format!("Purged {count} deployed files"));
+                    self.show_toast(&format!("Purged {count} deployed files"));
                 }
             }
             Err(e) => {

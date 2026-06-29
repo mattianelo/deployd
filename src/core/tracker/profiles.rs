@@ -170,6 +170,40 @@ impl Tracker {
         }))
     }
 
+    /// Resolve the profile used by the most recent successful deploy for this game.
+    /// Missing and stale settings deliberately leave the current profile unchanged.
+    async fn get_last_deployed_profile(&self, game_id: &str) -> Result<Option<Profile>> {
+        let key = format!("last_deployed_profile_{game_id}");
+        let Some(profile_id) = self.get_setting(&key).await? else {
+            return Ok(None);
+        };
+
+        Ok(self
+            .list_profiles(game_id)
+            .await?
+            .into_iter()
+            .find(|profile| profile.id == profile_id))
+    }
+
+    pub(crate) async fn restore_last_deployed_profile(
+        &self,
+        game_id: &str,
+    ) -> Result<Option<(Profile, Profile)>> {
+        let Some(active_profile) = self.get_active_profile(game_id).await? else {
+            return Ok(None);
+        };
+        let Some(deployed_profile) = self.get_last_deployed_profile(game_id).await? else {
+            return Ok(None);
+        };
+        if active_profile.id == deployed_profile.id {
+            return Ok(None);
+        }
+
+        self.save_to_profile(&active_profile.id, game_id).await?;
+        self.switch_profile(game_id, &deployed_profile.id).await?;
+        Ok(Some((active_profile, deployed_profile)))
+    }
+
     /// Update the save mode for a profile.
     pub async fn set_profile_save_mode(&self, profile_id: &str, mode: SaveMode) -> Result<()> {
         sqlx::query("UPDATE profiles SET save_mode = ? WHERE id = ?")
@@ -342,5 +376,104 @@ impl Tracker {
             save_mode: SaveMode::Global,
             save_synced_at: None,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn profile_tracker() -> Result<Tracker> {
+        Tracker::open("sqlite::memory:").await
+    }
+
+    // @variants: both
+    #[tokio::test]
+    async fn resolves_last_deployed_profiles_independently_per_game() -> Result<()> {
+        let tracker = profile_tracker().await?;
+        let first_a = tracker.create_profile("game-a", "Alpha").await?;
+        let deployed_a = tracker.create_profile("game-a", "Zulu").await?;
+        let first_b = tracker.create_profile("game-b", "Alpha").await?;
+        let deployed_b = tracker.create_profile("game-b", "Zulu").await?;
+        sqlx::query(
+            "INSERT INTO mods (id, game_id, name, enabled, priority) VALUES (?, ?, ?, 0, 0)",
+        )
+        .bind("mod-a")
+        .bind("game-a")
+        .bind("Mod A")
+        .execute(&tracker.pool)
+        .await?;
+        tracker.save_to_profile(&first_a, "game-a").await?;
+        sqlx::query("UPDATE mods SET enabled = 1 WHERE id = ?")
+            .bind("mod-a")
+            .execute(&tracker.pool)
+            .await?;
+        tracker.save_to_profile(&deployed_a, "game-a").await?;
+        tracker.switch_profile("game-a", &first_a).await?;
+        tracker.switch_profile("game-b", &first_b).await?;
+        tracker
+            .set_setting("last_deployed_profile_game-a", &deployed_a)
+            .await?;
+        tracker
+            .set_setting("last_deployed_profile_game-b", &deployed_b)
+            .await?;
+
+        let transition_a = tracker.restore_last_deployed_profile("game-a").await?;
+        let transition_b = tracker.restore_last_deployed_profile("game-b").await?;
+        let active_a = tracker.get_active_profile("game-a").await?;
+        let active_b = tracker.get_active_profile("game-b").await?;
+        let mod_a_enabled: bool = sqlx::query_scalar("SELECT enabled FROM mods WHERE id = ?")
+            .bind("mod-a")
+            .fetch_one(&tracker.pool)
+            .await?;
+
+        assert_eq!(
+            transition_a.map(|(_, deployed)| deployed.id),
+            Some(deployed_a.clone()),
+        );
+        assert_eq!(
+            transition_b.map(|(_, deployed)| deployed.id),
+            Some(deployed_b.clone()),
+        );
+        assert_eq!(active_a.map(|profile| profile.id), Some(deployed_a));
+        assert_eq!(active_b.map(|profile| profile.id), Some(deployed_b));
+        assert!(mod_a_enabled, "the deployed profile snapshot was restored");
+        Ok(())
+    }
+
+    // @variants: both
+    #[tokio::test]
+    async fn missing_deploy_record_keeps_current_profile_available() -> Result<()> {
+        let tracker = profile_tracker().await?;
+        let current = tracker.create_profile("game", "Current").await?;
+        tracker.switch_profile("game", &current).await?;
+
+        let transition = tracker.restore_last_deployed_profile("game").await?;
+        let active = tracker.get_active_profile("game").await?;
+
+        assert!(
+            transition.is_none(),
+            "a never-deployed game has no preferred profile",
+        );
+        assert_eq!(active.map(|profile| profile.id), Some(current));
+        Ok(())
+    }
+
+    // @variants: both
+    #[tokio::test]
+    async fn stale_deploy_record_keeps_current_profile_available() -> Result<()> {
+        let tracker = profile_tracker().await?;
+        let current = tracker.create_profile("game", "Current").await?;
+        tracker.switch_profile("game", &current).await?;
+        tracker
+            .set_setting("last_deployed_profile_game", "deleted-profile")
+            .await?;
+
+        let transition = tracker.restore_last_deployed_profile("game").await?;
+        let active = tracker.get_active_profile("game").await?;
+
+        assert!(transition.is_none(), "a stale deploy record is ignored");
+        assert_eq!(active.map(|profile| profile.id), Some(current));
+        Ok(())
     }
 }

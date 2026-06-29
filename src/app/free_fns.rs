@@ -143,18 +143,17 @@ pub(crate) fn update_drop_indicator(list_box: &gtk::ListBox, y: f64) {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum GameLoadMode {
+    OpenGame,
+    Refresh,
+}
+
 /// Load all game data (mods, plugins, overrides, profiles, tools) for a game.
-///
-/// `sync_txt` controls whether to sync plugin enabled/order state from the
-/// on-disk Plugins.txt.  Pass `true` only on initial game select so that
-/// external LOOT edits are honoured at session start.  In-session reloads
-/// (conflict recomputation, priority saves, etc.) must pass `false` to avoid
-/// reading back the cascaded-disabled Plugins.txt that Deployd wrote during
-/// the last deploy and corrupting plugins.enabled.
 pub(crate) async fn load_game_data(
     tracker: &Tracker,
     game: &Game,
-    sync_txt: bool,
+    mode: GameLoadMode,
 ) -> Result<LoadedData, String> {
     let game_id = &game.id;
 
@@ -164,6 +163,26 @@ pub(crate) async fn load_game_data(
         .ensure_default_profile(game_id)
         .await
         .map_err(|e| e.to_string())?;
+
+    if matches!(mode, GameLoadMode::OpenGame) {
+        let transition = tracker
+            .restore_last_deployed_profile(game_id)
+            .await
+            .map_err(|e| e.to_string())?;
+        if let Some((active_profile, deployed_profile)) = transition {
+            if game::has_save_management(game) {
+                save_manager::swap_saves(
+                    game,
+                    Some(&active_profile.id),
+                    &active_profile.save_mode,
+                    &deployed_profile.id,
+                    &deployed_profile.save_mode,
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+            }
+        }
+    }
 
     // Take a one-time vanilla snapshot so the external-file detector can exclude
     // files that were already present before any mod was installed.
@@ -177,7 +196,7 @@ pub(crate) async fn load_game_data(
 
     // Sync plugin order from Plugins.txt (written by LOOT or other tools).
     // Only performed on initial game select, not on every in-session reload.
-    if sync_txt {
+    if matches!(mode, GameLoadMode::OpenGame) {
         let txt_paths = game::plugins_txt_paths(game);
         let txt_entries = txt_paths
             .iter()

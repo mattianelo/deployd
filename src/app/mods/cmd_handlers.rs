@@ -180,7 +180,7 @@ impl App {
             Ok(msg) => {
                 self.needs_deploy = true;
                 self.reload_mods(sender);
-                self.push_notification(&msg);
+                self.show_toast(&msg);
             }
             Err(e) => {
                 self.push_notification(&format!("Rescan failed: {e}"));
