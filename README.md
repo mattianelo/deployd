@@ -2,7 +2,8 @@
 
 ![Version](https://img.shields.io/badge/version-2.3.1-blue)
 ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey?logo=linux)
-![License](https://img.shields.io/badge/license-GPL--3.0-green)
+![License](https://img.shields.io/badge/license-GPL--3.0--only-green)
+[![deployd](https://snapcraft.io/deployd/badge.svg)](https://snapcraft.io/deployd)
 
 A Linux-native mod manager for Bethesda, REDEngine, Aurora, and Eclipse games, built with GTK4,
 libadwaita, and Rust.

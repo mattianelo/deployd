@@ -66,11 +66,7 @@
   <screenshots>
     <screenshot type="default">
       <caption>Main window with mod order, plugin order, downloads, and notifications panels.</caption>
-      <image type="source" width="1920" height="1048">screenshots/main-window.png</image>
-    </screenshot>
-    <screenshot>
-      <caption>Main window showing the first-run instructions and game setup flow.</caption>
-      <image type="source" width="1920" height="1048">screenshots/main-window-instructions.png</image>
+      <image type="source" width="1920" height="1048">https://gitlab.com/mattianelo/deployd/-/raw/main/data/screenshots/main-window.png</image>
     </screenshot>
   </screenshots>
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+- Snap builds now explicitly target amd64, pin Rust 1.96.0, enforce the Cargo lockfile, restore
+  library linting, and publish valid AppStream screenshot and license metadata for automatic builds.
+
 ## [2.3.1]
 
 - Games now persist the active profile as part of successful deployment completion and reopen it
