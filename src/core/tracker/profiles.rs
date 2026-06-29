@@ -204,6 +204,15 @@ impl Tracker {
         Ok(Some((active_profile, deployed_profile)))
     }
 
+    pub(crate) async fn record_deployed_profile(
+        &self,
+        game_id: &str,
+        profile_id: &str,
+    ) -> Result<()> {
+        let key = format!("last_deployed_profile_{game_id}");
+        self.set_setting(&key, profile_id).await
+    }
+
     /// Update the save mode for a profile.
     pub async fn set_profile_save_mode(&self, profile_id: &str, mode: SaveMode) -> Result<()> {
         sqlx::query("UPDATE profiles SET save_mode = ? WHERE id = ?")
@@ -412,10 +421,10 @@ mod tests {
         tracker.switch_profile("game-a", &first_a).await?;
         tracker.switch_profile("game-b", &first_b).await?;
         tracker
-            .set_setting("last_deployed_profile_game-a", &deployed_a)
+            .record_deployed_profile("game-a", &deployed_a)
             .await?;
         tracker
-            .set_setting("last_deployed_profile_game-b", &deployed_b)
+            .record_deployed_profile("game-b", &deployed_b)
             .await?;
 
         let transition_a = tracker.restore_last_deployed_profile("game-a").await?;

@@ -221,7 +221,7 @@ For Bethesda games, manage plugins separately in the **Plugins** tab:
 
 - Click the **profile selector** in the toolbar to create or switch profiles
 - Each profile saves which mods are enabled, their priority order, and the full plugin load order
-- Opening a game restores the profile used by its most recent successful deployment
+- Opening a game reliably restores the profile used by its most recent successful deployment
 - Switching profiles re-deploys automatically
 
 ### 7. Save Management
@@ -237,7 +237,7 @@ Launch modding tools through the package-managed runtime from the **Tools** pane
 - Each tool supports custom arguments and a working directory
 - BodySlide launches prefer the 64-bit executable when both `BodySlide.exe` and
   `BodySlide x64.exe` are present
-- Closing a tool scans for external changes and automatically runs LOOT for supported games
+- Closing a tool scans for external changes, runs LOOT for supported games, and deploys automatically
 - In the Snap package, tools run through the Wine platform content snaps; if either content plug is
   disconnected, Deployd shows the exact `snap connect` command with the provider slot included
 - The Snap package owns the `io.mattianelo.deployd` session D-Bus name for

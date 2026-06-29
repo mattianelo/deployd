@@ -427,12 +427,8 @@ impl App {
                     eprintln!("Failed to delete group: {e}");
                 }
                 AppCmdMsg::ModsLoaded(
-                    load_game_data(
-                        &tracker,
-                        &game,
-                        crate::app::free_fns::GameLoadMode::Refresh,
-                    )
-                    .await,
+                    load_game_data(&tracker, &game, crate::app::free_fns::GameLoadMode::Refresh)
+                        .await,
                     true,
                 )
             });
@@ -450,12 +446,8 @@ impl App {
                     eprintln!("Failed to create group: {e}");
                 }
                 AppCmdMsg::ModsLoaded(
-                    load_game_data(
-                        &tracker,
-                        &game,
-                        crate::app::free_fns::GameLoadMode::Refresh,
-                    )
-                    .await,
+                    load_game_data(&tracker, &game, crate::app::free_fns::GameLoadMode::Refresh)
+                        .await,
                     true,
                 )
             });

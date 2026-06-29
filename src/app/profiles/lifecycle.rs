@@ -7,15 +7,46 @@ use super::super::App;
 use super::super::free_fns::{GameLoadMode, load_game_data};
 use super::super::messages::AppCmdMsg;
 
+#[derive(Clone, Copy)]
+enum ProfileSelectionPhase {
+    Ready,
+    Updating,
+}
+
+#[derive(Clone, Copy)]
+struct ProfileSelectionState {
+    displayed_idx: usize,
+    active_idx: usize,
+    profile_count: usize,
+    phase: ProfileSelectionPhase,
+}
+
+fn resolve_profile_selection(requested_idx: usize, state: ProfileSelectionState) -> Option<usize> {
+    if matches!(state.phase, ProfileSelectionPhase::Updating)
+        || requested_idx != state.displayed_idx
+        || requested_idx == state.active_idx
+        || requested_idx >= state.profile_count
+    {
+        return None;
+    }
+    Some(requested_idx)
+}
+
 impl App {
     pub(crate) fn handle_profile_selected(&mut self, idx: u32, sender: &ComponentSender<Self>) {
-        if self.updating_profiles {
+        let state = ProfileSelectionState {
+            displayed_idx: self.profile_dropdown.selected() as usize,
+            active_idx: self.active_profile_idx,
+            profile_count: self.profiles.len(),
+            phase: if self.updating_profiles {
+                ProfileSelectionPhase::Updating
+            } else {
+                ProfileSelectionPhase::Ready
+            },
+        };
+        let Some(idx) = resolve_profile_selection(idx as usize, state) else {
             return;
-        }
-        let idx = idx as usize;
-        if idx == self.active_profile_idx || idx >= self.profiles.len() {
-            return;
-        }
+        };
 
         let target_profile_id = self.profiles[idx].id.clone();
         let target_save_mode = self.profiles[idx].save_mode.clone();
@@ -262,5 +293,56 @@ impl App {
                 AppCmdMsg::PrioritySaved(Ok(()))
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ready_state(displayed_idx: usize, active_idx: usize) -> ProfileSelectionState {
+        ProfileSelectionState {
+            displayed_idx,
+            active_idx,
+            profile_count: 3,
+            phase: ProfileSelectionPhase::Ready,
+        }
+    }
+
+    // @variants: both
+    #[test]
+    fn rejects_stale_queued_selection_after_dropdown_moves() {
+        let state = ready_state(2, 2);
+
+        assert_eq!(resolve_profile_selection(0, state), None);
+    }
+
+    // @variants: both
+    #[test]
+    fn accepts_current_user_selection() {
+        let state = ready_state(2, 0);
+
+        assert_eq!(resolve_profile_selection(2, state), Some(2));
+    }
+
+    // @variants: both
+    #[test]
+    fn rejects_already_active_selection() {
+        let state = ready_state(1, 1);
+
+        assert_eq!(resolve_profile_selection(1, state), None);
+    }
+
+    // @variants: both
+    #[test]
+    fn rejects_selection_during_programmatic_update() {
+        let state = ProfileSelectionState {
+            displayed_idx: 2,
+            active_idx: 0,
+            profile_count: 3,
+            phase: ProfileSelectionPhase::Updating,
+        };
+
+        assert_eq!(resolve_profile_selection(2, state), None);
     }
 }

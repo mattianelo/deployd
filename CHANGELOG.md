@@ -2,12 +2,16 @@
 
 ## [2.3.1]
 
-- Games now reopen the profile used by their most recent successful deployment, independently
-  across restarts and game switches, instead of falling back to the alphabetically first profile.
+- Games now persist the active profile as part of successful deployment completion and reopen it
+  independently across restarts and game switches. Stale GTK dropdown events generated while
+  rebuilding the profile list can no longer switch back to the alphabetically first profile.
 - Routine status messages, including external-tool exits, now appear as temporary toasts instead
   of accumulating in the notifications panel; failures and actionable recovery notices remain.
-- External-tool exits now have regression coverage ensuring supported games automatically run LOOT
-  after scanning for external changes, while cancelled sessions and unsupported games skip it.
+- Normal external-tool exits now scan for changes, run LOOT where supported, and automatically
+  deploy the resulting order. Cancelled sessions skip the workflow; games without LOOT support
+  deploy directly.
+- The Downloads panel now uses one dedicated sort menu button with direct order choices instead of
+  nesting a dropdown beneath the generic three-dot overflow button.
 - Stable version-tag pipelines now publish the AppImage to Deployd's existing
   Nexus Mods file through a repository-owned client of the Nexus v3 upload API.
   CI packages the executable AppImage in the ZIP format accepted by Nexus before

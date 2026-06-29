@@ -15,7 +15,7 @@ use crate::ui::tool_manager::{ToolManager, ToolManagerOutput};
 
 use super::super::App;
 use super::super::messages::{AppCmdMsg, AppMsg};
-use super::super::types::{ToolLaunchSession, ToolSessionState, WorkKind};
+use super::super::types::{PostLootAction, ToolLaunchSession, ToolSessionState, WorkKind};
 
 const PROTON_SETUP_BODY: &str = "Proton GE needs to be installed before tools can run. \
 This is a one-time setup handled by UMU Launcher.\n\n\
@@ -25,13 +25,26 @@ The tool will launch automatically when the setup starts.";
 struct PostToolExitActions {
     scan_external_files: bool,
     sort_with_loot: bool,
+    deploy: Option<PostToolDeploy>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ToolExitKind {
+    Completed,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PostToolDeploy {
+    AfterLoot,
+    Now,
 }
 
 fn post_tool_exit_actions(
-    was_cancelling: bool,
+    exit_kind: ToolExitKind,
     _selected_game_id: Option<&str>,
 ) -> PostToolExitActions {
-    if was_cancelling {
+    if exit_kind == ToolExitKind::Cancelled {
         return PostToolExitActions::default();
     }
 
@@ -44,6 +57,11 @@ fn post_tool_exit_actions(
     PostToolExitActions {
         scan_external_files: true,
         sort_with_loot,
+        deploy: Some(if sort_with_loot {
+            PostToolDeploy::AfterLoot
+        } else {
+            PostToolDeploy::Now
+        }),
     }
 }
 
@@ -260,7 +278,11 @@ impl App {
             .as_ref()
             .is_some_and(|session| session.state == ToolSessionState::Cancelling);
         let actions = post_tool_exit_actions(
-            was_cancelling,
+            if was_cancelling {
+                ToolExitKind::Cancelled
+            } else {
+                ToolExitKind::Completed
+            },
             self.selected_game().map(|game| game.id.as_str()),
         );
         if let Some(session) = self.tool_launch_session.as_ref() {
@@ -287,7 +309,12 @@ impl App {
             sender.input(AppMsg::ScanExternalFiles);
         }
         if actions.sort_with_loot {
+            if actions.deploy == Some(PostToolDeploy::AfterLoot) {
+                self.pending_post_loot_action = PostLootAction::Deploy;
+            }
             sender.input(AppMsg::SortWithLoot);
+        } else if actions.deploy == Some(PostToolDeploy::Now) {
+            sender.input(AppMsg::DeployConfirmed);
         }
     }
 
@@ -585,7 +612,10 @@ fn monitor_deployd_proton_runtime(sender: relm4::Sender<AppMsg>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{PROTON_SETUP_BODY, PostToolExitActions, post_tool_exit_actions};
+    use super::{
+        PROTON_SETUP_BODY, PostToolDeploy, PostToolExitActions, ToolExitKind,
+        post_tool_exit_actions,
+    };
 
     #[test]
     fn proton_setup_message_does_not_claim_a_download_size() {
@@ -598,10 +628,15 @@ mod tests {
     fn normal_tool_exit_scans_and_sorts_every_loot_game() {
         for game_id in ["skyrim-se", "fallout-4", "fallout-nv", "starfield"] {
             assert_eq!(
-                post_tool_exit_actions(false, Some(game_id)),
+                post_tool_exit_actions(ToolExitKind::Completed, Some(game_id)),
                 PostToolExitActions {
                     scan_external_files: true,
                     sort_with_loot: cfg!(feature = "loot"),
+                    deploy: Some(if cfg!(feature = "loot") {
+                        PostToolDeploy::AfterLoot
+                    } else {
+                        PostToolDeploy::Now
+                    }),
                 },
                 "unexpected post-tool actions for {game_id}",
             );
@@ -612,7 +647,7 @@ mod tests {
     #[test]
     fn cancelled_tool_exit_does_not_scan_or_sort() {
         assert_eq!(
-            post_tool_exit_actions(true, Some("skyrim-se")),
+            post_tool_exit_actions(ToolExitKind::Cancelled, Some("skyrim-se")),
             PostToolExitActions::default(),
         );
     }
@@ -621,10 +656,11 @@ mod tests {
     #[test]
     fn unsupported_game_scans_without_loot_sort() {
         assert_eq!(
-            post_tool_exit_actions(false, Some("witcher-3")),
+            post_tool_exit_actions(ToolExitKind::Completed, Some("witcher-3")),
             PostToolExitActions {
                 scan_external_files: true,
                 sort_with_loot: false,
+                deploy: Some(PostToolDeploy::Now),
             },
         );
     }

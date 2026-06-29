@@ -24,7 +24,7 @@ use gtk::glib;
 use gtk::prelude::*;
 use relm4::prelude::*;
 
-use self::types::{DownloadFilter, ModFilter, WorkKind};
+use self::types::{DownloadFilter, DownloadSort, ModFilter, WorkKind};
 
 mod state;
 pub use state::App;
@@ -649,8 +649,8 @@ impl Component for App {
                             },
 
                             pack_end = &gtk::MenuButton {
-                                set_icon_name: "view-more-symbolic",
-                                set_tooltip_text: Some("More"),
+                                set_icon_name: "view-sort-ascending-symbolic",
+                                set_tooltip_text: Some("Sort downloads"),
                                 add_css_class: "flat",
                                 #[wrap(Some)]
                                 set_popover = &gtk::Popover {
@@ -660,21 +660,55 @@ impl Component for App {
                                         set_spacing: 6,
                                         set_margin_all: 8,
 
-                                        gtk::Label {
-                                            set_label: "Sort downloads",
-                                            set_halign: gtk::Align::Start,
-                                            add_css_class: "caption",
-                                            add_css_class: "dim-label",
+                                        gtk::Button {
+                                            set_label: "Default order",
+                                            add_css_class: "flat",
+                                            #[watch]
+                                            set_sensitive: !matches!(
+                                                model.download_sort,
+                                                DownloadSort::Default,
+                                            ),
+                                            connect_clicked[sender] => move |button| {
+                                                sender.input(AppMsg::DownloadSortChanged(0));
+                                                if let Some(popover) = button
+                                                    .ancestor(gtk::Popover::static_type())
+                                                    .and_downcast::<gtk::Popover>()
+                                                {
+                                                    popover.popdown();
+                                                }
+                                            },
                                         },
 
-                                        gtk::DropDown {
-                                            set_model: Some(&gtk::StringList::new(&["Default", "Name", "Status"])),
-                                            set_valign: gtk::Align::Center,
+                                        gtk::Button {
+                                            set_label: "Name",
+                                            add_css_class: "flat",
                                             #[watch]
-                                            set_selected: model.download_sort as u32,
-                                            connect_selected_notify[sender] => move |dd| {
-                                                sender.input(AppMsg::DownloadSortChanged(dd.selected()));
-                                                if let Some(popover) = dd
+                                            set_sensitive: !matches!(
+                                                model.download_sort,
+                                                DownloadSort::Name,
+                                            ),
+                                            connect_clicked[sender] => move |button| {
+                                                sender.input(AppMsg::DownloadSortChanged(1));
+                                                if let Some(popover) = button
+                                                    .ancestor(gtk::Popover::static_type())
+                                                    .and_downcast::<gtk::Popover>()
+                                                {
+                                                    popover.popdown();
+                                                }
+                                            },
+                                        },
+
+                                        gtk::Button {
+                                            set_label: "Status",
+                                            add_css_class: "flat",
+                                            #[watch]
+                                            set_sensitive: !matches!(
+                                                model.download_sort,
+                                                DownloadSort::Status,
+                                            ),
+                                            connect_clicked[sender] => move |button| {
+                                                sender.input(AppMsg::DownloadSortChanged(2));
+                                                if let Some(popover) = button
                                                     .ancestor(gtk::Popover::static_type())
                                                     .and_downcast::<gtk::Popover>()
                                                 {
@@ -2002,7 +2036,13 @@ impl Component for App {
                 self.handle_cmd_mod_files_rescanned(result, &sender)
             }
             #[cfg(feature = "loot")]
-            AppCmdMsg::LootSortDone(result) => self.handle_cmd_loot_sort_done(result, &sender),
+            AppCmdMsg::LootSortDone(game_id, result) => {
+                self.handle_cmd_loot_sort_done(game_id, result, &sender)
+            }
+            #[cfg(feature = "loot")]
+            AppCmdMsg::LootOrderApplied(result, post_action) => {
+                self.handle_cmd_loot_order_applied(result, post_action, &sender)
+            }
             AppCmdMsg::ModFilesLoaded(files) => self.handle_cmd_mod_files_loaded(files),
             AppCmdMsg::SaveModeToggled(result) => {
                 self.handle_cmd_save_mode_toggled(result, &sender)

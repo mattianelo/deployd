@@ -11,7 +11,7 @@ use crate::utils::snap::{self, SelectedFolderKind};
 
 use super::App;
 use super::messages::{AppCmdMsg, AppMsg};
-use super::types::WorkKind;
+use super::types::{DeployCompletion, WorkKind};
 
 impl App {
     pub(crate) fn handle_deploy_clicked(
@@ -93,6 +93,14 @@ impl App {
             self.push_notification("No game selected");
             return;
         };
+        let Some(profile_id) = self
+            .profiles
+            .get(self.active_profile_idx)
+            .map(|profile| profile.id.clone())
+        else {
+            self.push_notification("No profile selected");
+            return;
+        };
         if !game.path.exists() {
             sender.input(AppMsg::GrantGameFolderAccess);
             return;
@@ -103,19 +111,32 @@ impl App {
 
         self.deploying = true;
         self.begin_work(WorkKind::Deploying, "Deploying...");
-        self.auto_save_profile(sender);
 
         sender.oneshot_command(async move {
+            if let Err(error) = tracker.save_to_profile(&profile_id, &game.id).await {
+                return AppCmdMsg::DeployDone(Err(format!(
+                    "Failed to save the active profile before deployment: {error}"
+                )));
+            }
             let timing_start = std::time::Instant::now();
             let game_id = game.id.clone();
-            AppCmdMsg::DeployDone(
-                deployer::deploy(&game, &tracker, &cache_root)
-                    .await
-                    .map_err(|e| e.to_string())
-                    .inspect(|_| {
-                        crate::app::timing::log_phase("deploy.apply", &game_id, timing_start, None);
-                    }),
-            )
+            let result = match deployer::deploy(&game, &tracker, &cache_root).await {
+                Ok(result) => {
+                    crate::app::timing::log_phase("deploy.apply", &game_id, timing_start, None);
+                    let record_error = tracker
+                        .record_deployed_profile(&game_id, &profile_id)
+                        .await
+                        .err()
+                        .map(|error| error.to_string());
+                    Ok(DeployCompletion {
+                        result,
+                        profile_id,
+                        record_error,
+                    })
+                }
+                Err(error) => Err(error.to_string()),
+            };
+            AppCmdMsg::DeployDone(result)
         });
     }
 
@@ -259,29 +280,22 @@ impl App {
 impl App {
     pub(crate) fn handle_cmd_deploy_done(
         &mut self,
-        result: Result<crate::core::deployer::DeployResult, String>,
+        result: Result<DeployCompletion, String>,
         sender: &ComponentSender<Self>,
     ) {
         self.deploying = false;
         self.finish_work(WorkKind::Deploying);
         match result {
-            Ok(deploy_result) => {
+            Ok(completion) => {
                 self.needs_deploy = false;
-                // Track which profile this deploy was performed for.
-                if let (Some(tracker), Some(game), Some(profile)) = (
-                    self.tracker.clone(),
-                    self.selected_game().cloned(),
-                    self.profiles.get(self.active_profile_idx),
-                ) {
-                    let id = profile.id.clone();
-                    self.last_deployed_profile_id = Some(id.clone());
-                    let key = format!("last_deployed_profile_{}", game.id);
-                    sender.oneshot_command(async move {
-                        let _ = tracker.set_setting(&key, &id).await;
-                        AppCmdMsg::PrioritySaved(Ok(()))
-                    });
+                self.last_deployed_profile_id = Some(completion.profile_id);
+                if let Some(error) = completion.record_error {
+                    self.push_notification(&format!(
+                        "Deployment succeeded, but its profile could not be remembered: {error}"
+                    ));
                 }
                 self.rebuild_tool_buttons(sender);
+                let deploy_result = completion.result;
                 let added = deploy_result.files_added;
                 let removed = deploy_result.files_removed;
                 let total = deploy_result.files_total;

@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use relm4::factory::DynamicIndex;
 use tempfile::TempDir;
 
-use crate::core::deployer::DeployResult;
 use crate::core::detector::ExternalFile;
 use crate::core::installer::AddResult;
 use crate::core::save_manager;
@@ -17,7 +16,8 @@ use crate::models::tool::Tool;
 use crate::utils::fomod_resolver;
 
 use super::types::{
-    DownloadFilter, DownloadScanResult, InitData, LoadedData, ModFilter, NxmDownloadResult,
+    DeployCompletion, DownloadFilter, DownloadScanResult, InitData, LoadedData, ModFilter,
+    NxmDownloadResult, PostLootAction,
 };
 
 /// A game entry produced by the game setup dialog or welcome wizard, carrying the user-confirmed configuration.
@@ -401,7 +401,7 @@ pub enum AppCmdMsg {
         String,
         Option<String>,
     ),
-    DeployDone(Result<DeployResult, String>),
+    DeployDone(Result<DeployCompletion, String>),
     PurgeDone(Result<usize, String>),
     CacheDirMoved {
         game_id: String,
@@ -480,7 +480,12 @@ pub enum AppCmdMsg {
     ModFilesRescanned(Result<String, String>),
     /// Result of the async LOOT sort; payload is (sorted filenames, dirty-info map) on success.
     #[cfg(feature = "loot")]
-    LootSortDone(Result<(Vec<String>, HashMap<String, PluginDirtyInfo>), String>),
+    LootSortDone(
+        String,
+        Result<(Vec<String>, HashMap<String, PluginDirtyInfo>), String>,
+    ),
+    #[cfg(feature = "loot")]
+    LootOrderApplied(Result<LoadedData, String>, PostLootAction),
     /// Per-file list loaded for the open mod properties dialog.
     ModFilesLoaded(Vec<ModFile>),
     /// Result of toggling profile save mode (+ optional save backup/restore op).

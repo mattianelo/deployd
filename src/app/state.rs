@@ -167,6 +167,7 @@ pub struct App {
     /// drop automatically once the user cleans a plugin and re-sorts.
     #[cfg(feature = "loot")]
     pub(crate) dirty_plugins: HashMap<String, PluginDirtyInfo>,
+    pub(crate) pending_post_loot_action: super::types::PostLootAction,
     /// MenuButton that opens the notifications popover.
     pub(crate) notifications_menu_btn: gtk::MenuButton,
     /// MenuButton that opens the deploy options popover (Purge, Open folder).

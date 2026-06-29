@@ -17,10 +17,10 @@ use crate::ui::mod_list::ModListItemOutput;
 use crate::ui::plugin_list::PluginRowOutput;
 use crate::utils::paths;
 
-use super::free_fns::{
-    GameLoadMode, clear_drop_indicators, load_game_data, update_drop_indicator,
+use super::free_fns::{GameLoadMode, clear_drop_indicators, load_game_data, update_drop_indicator};
+use super::types::{
+    DownloadFilter, DownloadSort, InitData, ModFilter, PostLootAction, SearchScope,
 };
-use super::types::{DownloadFilter, DownloadSort, InitData, ModFilter, SearchScope};
 use super::{App, AppCmdMsg, AppMsg};
 
 /// Builds the initial App model, wires up factory lists, constructs UI helpers
@@ -213,6 +213,7 @@ pub(super) fn build_model(
         downloads_scroll,
         #[cfg(feature = "loot")]
         dirty_plugins: HashMap::new(),
+        pending_post_loot_action: PostLootAction::None,
         deploy_options_btn: gtk::MenuButton::new(),
         notifications_menu_btn: gtk::MenuButton::new(),
         overflow_menu_btn: gtk::MenuButton::new(),

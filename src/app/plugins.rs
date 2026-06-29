@@ -14,6 +14,7 @@ use crate::ui::plugin_list::PluginRowInit;
 use super::App;
 use super::free_fns::{GameLoadMode, load_game_data};
 use super::messages::AppCmdMsg;
+use super::types::PostLootAction;
 
 impl App {
     pub(crate) fn handle_move_plugin_to(
@@ -280,8 +281,10 @@ impl App {
 
         #[cfg(feature = "loot")]
         {
+            let result_game_id = game_id.clone();
             sender.oneshot_command(async move {
                 AppCmdMsg::LootSortDone(
+                    result_game_id,
                     crate::core::loot_sort::sort_plugins(
                         &game_id,
                         game_path,
@@ -320,16 +323,29 @@ impl App {
     #[cfg(feature = "loot")]
     pub(crate) fn handle_cmd_loot_sort_done(
         &mut self,
+        game_id: String,
         result: Result<(Vec<String>, HashMap<String, PluginDirtyInfo>), String>,
         sender: &ComponentSender<Self>,
     ) {
+        if self.selected_game().map(|game| game.id.as_str()) != Some(game_id.as_str()) {
+            self.pending_post_loot_action = PostLootAction::None;
+            self.push_notification(
+                "LOOT finished after the selected game changed; its result was not applied",
+            );
+            return;
+        }
         match result {
             Ok((sorted_names, dirty)) => {
                 let dirty_count = dirty.len();
                 self.dirty_plugins = dirty;
+                let post_action = std::mem::take(&mut self.pending_post_loot_action);
 
                 self.needs_deploy = true;
-                self.show_toast("Load order sorted by LOOT — deploy to apply");
+                if post_action == PostLootAction::Deploy {
+                    self.show_toast("Load order sorted by LOOT — deploying…");
+                } else {
+                    self.show_toast("Load order sorted by LOOT — deploy to apply");
+                }
 
                 if dirty_count > 0 {
                     self.show_toast(&format!(
@@ -363,20 +379,47 @@ impl App {
                     (self.tracker.clone(), self.selected_game().cloned())
                 {
                     sender.oneshot_command(async move {
-                        if !updates.is_empty()
-                            && let Err(e) = tracker.update_plugin_order(&updates).await
-                        {
-                            return AppCmdMsg::PluginOrderSaved(Err(e.to_string()));
+                        let result = async {
+                            if !updates.is_empty() {
+                                tracker
+                                    .update_plugin_order(&updates)
+                                    .await
+                                    .map_err(|error| error.to_string())?;
+                            }
+                            load_game_data(&tracker, &game, GameLoadMode::Refresh).await
                         }
-                        AppCmdMsg::ModsLoaded(
-                            load_game_data(&tracker, &game, GameLoadMode::Refresh).await,
-                            true,
-                        )
+                        .await;
+                        AppCmdMsg::LootOrderApplied(result, post_action)
                     });
+                } else {
+                    self.push_notification(
+                        "LOOT sorted the load order, but the game could not be reloaded",
+                    );
                 }
             }
             Err(e) => {
+                self.pending_post_loot_action = PostLootAction::None;
                 self.show_toast(&format!("LOOT sort failed: {e}"));
+            }
+        }
+    }
+
+    #[cfg(feature = "loot")]
+    pub(crate) fn handle_cmd_loot_order_applied(
+        &mut self,
+        result: Result<super::types::LoadedData, String>,
+        post_action: PostLootAction,
+        sender: &ComponentSender<Self>,
+    ) {
+        match result {
+            Ok(data) => {
+                self.apply_loaded_data(data, sender);
+                if post_action == PostLootAction::Deploy {
+                    self.execute_deploy(sender);
+                }
+            }
+            Err(error) => {
+                self.push_notification(&format!("Failed to apply LOOT order: {error}"));
             }
         }
     }

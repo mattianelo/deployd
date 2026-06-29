@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use tempfile::TempDir;
 
+use crate::core::deployer::DeployResult;
 use crate::core::tracker::{OverrideInfo, PersistedGame, Tracker};
 use crate::models::download::{DownloadEntry, NexusIds};
 use crate::models::game::Game;
@@ -75,6 +76,20 @@ pub(crate) struct WorkStatus {
     pub(crate) kind: WorkKind,
     pub(crate) message: String,
     pub(crate) progress: Option<f64>,
+}
+
+#[derive(Debug)]
+pub(crate) struct DeployCompletion {
+    pub(crate) result: DeployResult,
+    pub(crate) profile_id: String,
+    pub(crate) record_error: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PostLootAction {
+    #[default]
+    None,
+    Deploy,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

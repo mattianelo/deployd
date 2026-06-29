@@ -169,18 +169,18 @@ pub(crate) async fn load_game_data(
             .restore_last_deployed_profile(game_id)
             .await
             .map_err(|e| e.to_string())?;
-        if let Some((active_profile, deployed_profile)) = transition {
-            if game::has_save_management(game) {
-                save_manager::swap_saves(
-                    game,
-                    Some(&active_profile.id),
-                    &active_profile.save_mode,
-                    &deployed_profile.id,
-                    &deployed_profile.save_mode,
-                )
-                .await
-                .map_err(|e| e.to_string())?;
-            }
+        if let Some((active_profile, deployed_profile)) = transition
+            && game::has_save_management(game)
+        {
+            save_manager::swap_saves(
+                game,
+                Some(&active_profile.id),
+                &active_profile.save_mode,
+                &deployed_profile.id,
+                &deployed_profile.save_mode,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
         }
     }
 
