@@ -53,8 +53,8 @@ Then open `http://localhost:3003`. Stop the preview with `Ctrl+C`.
 ## Release CI
 
 GitLab release pipelines build the AppImage and Snap independently. The Snap job
-uses Canonical's `canonical/snapcraft:8_core24` image because Deployd declares
-`base: core24`, then runs `snapcraft --destructive-mode` inside that matching
+uses Canonical's `ghcr.io/canonical/snapcraft:8_core24` image because Deployd declares
+`base: core24`, then runs `snapcraft pack --destructive-mode` inside that matching
 container. A successful stable version tag also uploads the AppImage as a new
 version of Deployd's existing Nexus Mods file.
 
