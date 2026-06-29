@@ -27,53 +27,6 @@ The Nexus Mods page remains available for users who prefer that distribution cha
 
 ---
 
-## GitLab Pages Preview
-
-The feature page source lives in `pages/` and builds to the generated `out/`
-directory that GitLab Pages publishes.
-
-Build it locally without installing host dependencies:
-
-```bash
-bash scripts/build-pages.sh
-```
-
-To preview through a dedicated LXD container:
-
-```bash
-bash scripts/setup-pages-container.sh
-lxc exec deployd-pages --cwd /workspace/deployd --user 1000 --group 1000 --env HOME=/home/ubuntu -- bash scripts/build-pages.sh
-lxc exec deployd-pages --cwd /workspace/deployd/out --user 1000 --group 1000 --env HOME=/home/ubuntu -- python3 -m http.server 3003 --bind 0.0.0.0
-```
-
-Then open `http://localhost:3003`. Stop the preview with `Ctrl+C`.
-
----
-
-## Release CI
-
-GitLab release pipelines build the AppImage and Snap independently. The Snap job
-uses Canonical's `ghcr.io/canonical/snapcraft:8_core24` image because Deployd declares
-`base: core24`, then runs `snapcraft pack --destructive-mode` inside that matching
-container. A successful stable version tag also uploads the AppImage as a new
-version of Deployd's existing Nexus Mods file.
-
-The Nexus upload job requires these GitLab CI/CD variables:
-
-- `NEXUSMODS_API_KEY`: a masked, protected Nexus Mods API key.
-- `NEXUSMODS_FILE_ID`: the protected file ID shown by **API Info** on the Nexus
-  Files tab. This is not the mod-page ID (`174218`).
-
-Protect release tags matching `v*` so protected variables are available only to
-trusted tag pipelines. Nexus publishing runs only for exact stable semantic
-version tags such as `v2.3.1`; manually triggered branch pipelines never upload.
-The previous Nexus file version is archived after the replacement succeeds.
-The repository-owned release packager wraps the executable AppImage in a ZIP
-archive accepted by Nexus Mods, then the uploader transfers that ZIP through a
-multipart upload session. Neither step has a GitHub Actions runtime dependency.
-
----
-
 ## Supported Games
 
 | Engine | Games |
