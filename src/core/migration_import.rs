@@ -845,7 +845,7 @@ async fn import_database_rows(
     import_vanilla_backups(&mut tx, export_pool, import_paths).await?;
     import_download_entries(&mut tx, export_pool).await?;
     backfill_imported_mod_source_metadata(&mut tx).await?;
-    import_settings(&mut tx, &manifest.game_id).await?;
+    import_settings(&mut tx, export_pool, &manifest.game_id).await?;
 
     tx.commit()
         .await
@@ -961,7 +961,8 @@ async fn import_mods(tx: &mut Transaction<'_, Sqlite>, pool: &sqlx::SqlitePool) 
     let rows = sqlx::query(
         "SELECT id, game_id, name, archive_hash, archive_path, installed_at, enabled, priority,
                 nexus_mod_id, nexus_file_id, nexus_domain, version, author, latest_version,
-                nexus_description, group_id, install_target, notes, fomod_selections
+                nexus_description, group_id, install_target, notes, fomod_selections,
+                nexus_file_name, nexus_is_primary, archive_md5
          FROM mods",
     )
     .fetch_all(pool)
@@ -972,8 +973,9 @@ async fn import_mods(tx: &mut Transaction<'_, Sqlite>, pool: &sqlx::SqlitePool) 
             "INSERT INTO mods
              (id, game_id, name, archive_hash, archive_path, installed_at, enabled, priority,
               nexus_mod_id, nexus_file_id, nexus_domain, version, author, latest_version,
-              nexus_description, group_id, install_target, notes, fomod_selections)
-             VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              nexus_description, group_id, install_target, notes, fomod_selections,
+              nexus_file_name, nexus_is_primary, archive_md5)
+             VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(row.get::<String, _>("id"))
         .bind(row.get::<Option<String>, _>("game_id"))
@@ -993,6 +995,9 @@ async fn import_mods(tx: &mut Transaction<'_, Sqlite>, pool: &sqlx::SqlitePool) 
         .bind(row.get::<Option<String>, _>("install_target"))
         .bind(row.get::<Option<String>, _>("notes"))
         .bind(row.get::<Option<String>, _>("fomod_selections"))
+        .bind(row.get::<Option<String>, _>("nexus_file_name"))
+        .bind(row.get::<bool, _>("nexus_is_primary"))
+        .bind(row.get::<Option<String>, _>("archive_md5"))
         .execute(&mut **tx)
         .await
         .context("Failed to import mod")?;
@@ -1324,7 +1329,11 @@ async fn import_download_entries(
     Ok(())
 }
 
-async fn import_settings(tx: &mut Transaction<'_, Sqlite>, game_id: &str) -> Result<()> {
+async fn import_settings(
+    tx: &mut Transaction<'_, Sqlite>,
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+) -> Result<()> {
     sqlx::query(
         "INSERT INTO settings (key, value) VALUES ('last_game_id', ?)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -1333,6 +1342,35 @@ async fn import_settings(tx: &mut Transaction<'_, Sqlite>, game_id: &str) -> Res
     .execute(&mut **tx)
     .await
     .context("Failed to store imported game selection")?;
+
+    let deployed_profile_key = format!("last_deployed_profile_{game_id}");
+    let deployed_profile_id: Option<String> =
+        sqlx::query_scalar("SELECT value FROM settings WHERE key = ?")
+            .bind(&deployed_profile_key)
+            .fetch_optional(pool)
+            .await
+            .context("Failed to read exported last-deployed profile")?;
+    if let Some(profile_id) = deployed_profile_id {
+        let profile_exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM profiles WHERE id = ? AND game_id = ?)",
+        )
+        .bind(&profile_id)
+        .bind(game_id)
+        .fetch_one(&mut **tx)
+        .await
+        .context("Failed to validate imported last-deployed profile")?;
+        if profile_exists {
+            sqlx::query(
+                "INSERT INTO settings (key, value) VALUES (?, ?)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            )
+            .bind(&deployed_profile_key)
+            .bind(profile_id)
+            .execute(&mut **tx)
+            .await
+            .context("Failed to import last-deployed profile")?;
+        }
+    }
 
     let cache_key = format!("cache_dir_{game_id}");
     sqlx::query("DELETE FROM settings WHERE key = ?")
@@ -1616,6 +1654,8 @@ mod tests {
         Ok(())
     }
 
+    // Regression: AppImage-to-Snap migration metadata and deployment state.
+    // @variants: snap
     #[tokio::test]
     async fn imports_new_game_into_snap_owned_state() -> Result<()> {
         let _guard = ENV_LOCK
@@ -1701,6 +1741,37 @@ mod tests {
             metadata.get::<Option<String>, _>("author").as_deref(),
             Some("Author")
         );
+        let mod_metadata = sqlx::query(
+            "SELECT nexus_file_name, nexus_is_primary, archive_md5
+             FROM mods WHERE id = 'mod-1'",
+        )
+        .fetch_one(&fixture.snap_tracker.pool)
+        .await?;
+        assert_eq!(
+            mod_metadata
+                .get::<Option<String>, _>("nexus_file_name")
+                .as_deref(),
+            Some("source-mod.zip")
+        );
+        assert!(mod_metadata.get::<bool, _>("nexus_is_primary"));
+        assert_eq!(
+            mod_metadata
+                .get::<Option<String>, _>("archive_md5")
+                .as_deref(),
+            Some("source-md5")
+        );
+        let deployed_profile: Option<String> = fixture
+            .snap_tracker
+            .get_setting("last_deployed_profile_skyrim-se")
+            .await?;
+        assert_eq!(deployed_profile.as_deref(), Some("profile-1"));
+        let deployed_files: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM deployed_files
+             WHERE game_id = 'skyrim-se' AND mod_id = 'mod-1'",
+        )
+        .fetch_one(&fixture.snap_tracker.pool)
+        .await?;
+        assert_eq!(deployed_files, 1, "deployed file state must remain intact");
         let cache_path: String =
             sqlx::query_scalar("SELECT cache_path FROM mod_files WHERE mod_id = 'mod-1'")
                 .fetch_one(&fixture.snap_tracker.pool)
@@ -1735,6 +1806,45 @@ mod tests {
             "save snapshots should be copied"
         );
 
+        Ok(())
+    }
+
+    // Regression: AppImage-to-Snap migration deployment state.
+    // @variants: snap
+    #[tokio::test]
+    async fn skips_stale_last_deployed_profile() -> Result<()> {
+        let _guard = ENV_LOCK
+            .lock()
+            .map_err(|_| anyhow!("test environment lock was poisoned"))?;
+        let fixture = PreviewFixture::new().await?;
+        let snap_common = fixture._temp.path().join("snap-common");
+        let _env = EnvVarGuard::set("SNAP_USER_COMMON", &snap_common);
+        let export_url = format!("sqlite://{}?mode=rwc", fixture.export_db.display());
+        let export_tracker = Tracker::open(&export_url).await?;
+        export_tracker
+            .set_setting("last_deployed_profile_skyrim-se", "missing-profile")
+            .await?;
+        export_tracker.pool.close().await;
+        fixture.write_bundle(|manifest| manifest).await?;
+
+        import_bundle(
+            &fixture.snap_tracker,
+            ImportBundleRequest {
+                bundle_path: fixture.bundle_path.clone(),
+                confirmed_game_path: fixture._temp.path().join("snap-visible-game"),
+                confirmed_wine_prefix: fixture._temp.path().join("snap-visible-prefix"),
+            },
+        )
+        .await?;
+
+        let deployed_profile = fixture
+            .snap_tracker
+            .get_setting("last_deployed_profile_skyrim-se")
+            .await?;
+        assert!(
+            deployed_profile.is_none(),
+            "a marker that does not reference an imported profile must be omitted"
+        );
         Ok(())
     }
 
@@ -2092,11 +2202,13 @@ mod tests {
             "INSERT INTO mods
              (id, game_id, name, archive_hash, archive_path, installed_at, enabled, priority,
               nexus_mod_id, nexus_file_id, nexus_domain, version, author, latest_version,
-              nexus_description, group_id, install_target, notes, fomod_selections)
+              nexus_description, group_id, install_target, notes, fomod_selections,
+              nexus_file_name, nexus_is_primary, archive_md5)
              VALUES
              ('mod-1', 'skyrim-se', 'Mod', 'hash', '/downloads/mod.zip', 'now', 1, 0,
               101, 202, 'skyrimspecialedition', '1.0', 'Author', '1.1',
-              'Description', 'group-1', 'data', 'Notes', '{\"choices\":[]}')",
+              'Description', 'group-1', 'data', 'Notes', '{\"choices\":[]}',
+              'source-mod.zip', 1, 'source-md5')",
         )
         .execute(&tracker.pool)
         .await?;
@@ -2131,6 +2243,9 @@ mod tests {
         )
         .execute(&tracker.pool)
         .await?;
+        tracker
+            .set_setting("last_deployed_profile_skyrim-se", "profile-1")
+            .await?;
         sqlx::query(
             "INSERT INTO profile_mods (profile_id, mod_id, enabled, priority)
              VALUES ('profile-1', 'mod-1', 1, 0)",

@@ -206,8 +206,10 @@ async fn prune_download_entries(pool: &sqlx::SqlitePool, game: &Game) -> Result<
 
 async fn prune_settings(pool: &sqlx::SqlitePool, game_id: &str) -> Result<()> {
     let cache_key = format!("cache_dir_{game_id}");
-    sqlx::query("DELETE FROM settings WHERE key != ?")
+    let deployed_profile_key = format!("last_deployed_profile_{game_id}");
+    sqlx::query("DELETE FROM settings WHERE key NOT IN (?, ?)")
         .bind(&cache_key)
+        .bind(&deployed_profile_key)
         .execute(pool)
         .await?;
     sqlx::query(
@@ -398,6 +400,8 @@ mod tests {
     use super::*;
     use crate::models::game::GameEngine;
 
+    // Regression: AppImage-to-Snap migration deployment state.
+    // @variants: both
     #[tokio::test]
     async fn prunes_database_to_selected_game() -> Result<()> {
         let temp = TempDir::new()?;
@@ -433,7 +437,7 @@ mod tests {
         sqlx::query("INSERT INTO plugins (id, mod_id, filename, load_order) VALUES ('p1', 'm1', 'a.esp', 0), ('p2', 'm2', 'b.esp', 0)")
             .execute(&tracker.pool)
             .await?;
-        sqlx::query("INSERT INTO settings (key, value) VALUES ('nexus_api_key', 'secret'), ('cache_dir_skyrim-se', '/cache/skyrim'), ('cache_dir_fallout-4', '/cache/fallout')")
+        sqlx::query("INSERT INTO settings (key, value) VALUES ('nexus_api_key', 'secret'), ('cache_dir_skyrim-se', '/cache/skyrim'), ('cache_dir_fallout-4', '/cache/fallout'), ('last_deployed_profile_skyrim-se', 'profile-1'), ('last_deployed_profile_fallout-4', 'profile-2')")
             .execute(&tracker.pool)
             .await?;
 
@@ -466,6 +470,16 @@ mod tests {
             sqlx::query_scalar("SELECT value FROM settings WHERE key = 'cache_dir_skyrim-se'")
                 .fetch_optional(&tracker.pool)
                 .await?;
+        let deployed_profile: Option<String> = sqlx::query_scalar(
+            "SELECT value FROM settings WHERE key = 'last_deployed_profile_skyrim-se'",
+        )
+        .fetch_optional(&tracker.pool)
+        .await?;
+        let other_deployed_profile: Option<String> = sqlx::query_scalar(
+            "SELECT value FROM settings WHERE key = 'last_deployed_profile_fallout-4'",
+        )
+        .fetch_optional(&tracker.pool)
+        .await?;
 
         assert_eq!(games, 1, "only the selected game should remain");
         assert_eq!(fallout_mods, 0, "non-selected game mods should be removed");
@@ -479,6 +493,11 @@ mod tests {
             "secret global settings should not be exported"
         );
         assert_eq!(selected_cache.as_deref(), Some("/cache/skyrim"));
+        assert_eq!(deployed_profile.as_deref(), Some("profile-1"));
+        assert!(
+            other_deployed_profile.is_none(),
+            "another game's deployment marker must not be exported"
+        );
 
         Ok(())
     }

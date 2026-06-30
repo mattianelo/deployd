@@ -4,6 +4,8 @@
 
 - Snap builds now explicitly target amd64, pin Rust 1.96.0, enforce the Cargo lockfile, restore
   library linting, and publish valid AppStream screenshot and license metadata for automatic builds.
+- AppImage-to-Snap migration now preserves installed-mod source metadata and the valid profile
+  associated with deployed files, keeping download and deployment state consistent after import.
 
 ## [2.3.1]
 

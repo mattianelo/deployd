@@ -100,6 +100,10 @@ blocked hidden-home paths, document-portal mounts, removable media, or read/writ
 immediately. When older download records still point at a document-portal mount, Deployd resolves
 the original host path before moving the archive to Trash.
 
+AppImage-to-Snap game migration preserves installed-mod source metadata, download metadata, and
+the profile associated with currently deployed files. AppImage archive paths are cleared because
+they are not valid inside the Snap; rescanning the Snap downloads folder reattaches those archives.
+
 **Hardlink filesystem constraint**
 
 Hardlinks require both the cache directory and the game directory to reside on the **same filesystem** — that is, they must share the same `st_dev` value as reported by the OS. Concretely:
@@ -216,7 +220,7 @@ If Deployd saves you time, consider supporting development:
 
 ---
 
-*Built in 🇦🇷 with [Rust](https://www.rust-lang.org) · [GTK4](https://gtk.org) · [Relm4](https://relm4.org) · [SQLite](https://sqlite.org) · and the help of [Claude](https://claude.ai)*
+*Built in 🇦🇷 with [Rust](https://www.rust-lang.org) · [GTK4](https://gtk.org) · [Relm4](https://relm4.org) · [SQLite](https://sqlite.org) · and the help of agentic AI workflows*
 
 ---
 
