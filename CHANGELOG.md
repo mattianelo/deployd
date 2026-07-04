@@ -2,8 +2,8 @@
 
 ## [Unreleased]
 
-- Fixed Snapcraft hosted builds failing during the pull phase by provisioning `rustup` before
-  the Rust plugin validates its build environment.
+- Fixed Snapcraft hosted builds failing during Rust environment validation by allowing the Rust
+  plugin to provision its supported toolchain without conflicting manual overrides.
 
 ## [2.3.2]
 
