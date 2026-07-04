@@ -6,7 +6,6 @@
 #   test-nexus-upload — Test the repository-owned Nexus upload client
 #   build-env-image  — Build and push the deployd build-env image to the registry
 #   build-appimage   — Build and publish the Deployd AppImage
-#   build-snap       — Build and publish the Deployd Snap package
 #   upload-nexus     — Publish tagged AppImage updates to Nexus Mods
 #   pages            — Publish the Deployd feature page
 #
@@ -94,26 +93,6 @@ build-appimage:
     # Build on version tags (e.g. v0.9.6)
     - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/'
     # Allow manual trigger on any branch/MR
-    - if: '$CI_PIPELINE_SOURCE == "web"'
-      when: manual
-
-# ── Snap build ───────────────────────────────────────────────────────────────
-# Intentionally parallel with build-appimage: each runs in its own Docker
-# container with a fresh checkout and has no dependency on the other.
-build-snap:
-  stage: build
-  image:
-    name: ghcr.io/canonical/snapcraft:8_core24
-    entrypoint: [""]
-  script:
-    - snapcraft pack --destructive-mode
-  artifacts:
-    name: "Deployd-snap-$CI_COMMIT_TAG"
-    paths:
-      - "*.snap"
-    expire_in: 90 days
-  rules:
-    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/'
     - if: '$CI_PIPELINE_SOURCE == "web"'
       when: manual
 
