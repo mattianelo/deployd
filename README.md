@@ -50,7 +50,8 @@ The Nexus Mods page remains available for users who prefer that distribution cha
 - **Conflict Detection** — Per-file visibility into which mods override each other, with a detailed Conflicts section in each mod's Properties dialog (The Witcher 1's Override/ files are matched by filename regardless of subfolder depth)
 - **Priority-Based Deployment** — Hardlink deployment; lower in the list wins conflicts
 - **Tool Launcher** — Run xEdit, LOOT, BodySlide and more through the package-managed Windows runtime
-- **Save Management** — Browse game saves associated with the active profile
+- **Save Management** — Browse and back up game saves associated with the active profile,
+  including each Witcher game's distinct Documents folder
 - **Mod Notes** — Attach personal notes to any mod; preview on hover from the list
 - **Notifications Panel** — External changes and alerts collected in a sidebar, with "All Caught Up" state
 - **Download pause/resume** — Active downloads can be paused and resumed mid-transfer

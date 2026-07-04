@@ -2,6 +2,8 @@
 
 ## [2.3.2]
 
+- Witcher 2 save management now uses `Documents/Witcher 2/gamesaves`, so profile backups find
+  the game's actual save directory instead of creating an unused `The Witcher 2` folder.
 - Snap builds now explicitly target amd64, pin Rust 1.96.0, enforce the Cargo lockfile, restore
   library linting, and publish valid AppStream screenshot and license metadata for automatic builds.
 - AppImage-to-Snap migration now preserves installed-mod source metadata and the valid profile

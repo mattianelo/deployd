@@ -95,7 +95,7 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         bethesda_reg_key: "",
         nexus_domain: "witcher2",
         engine: GameEngine::REDEngine,
-        save_game_subpath: Some("Documents/The Witcher 2/gamesaves"),
+        save_game_subpath: Some("Documents/Witcher 2/gamesaves"),
     },
     // ── The Witcher (Aurora engine) ───────────────────────────────────────────
     KnownGame {
@@ -123,3 +123,25 @@ pub(super) const KNOWN_GAMES: &[KnownGame] = &[
         save_game_subpath: Some("Documents/BioWare/Dragon Age/Characters"),
     },
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::KNOWN_GAMES;
+
+    // Regression: user-reported Witcher 2 save backup path.
+    // @variants: both
+    #[test]
+    fn witcher_games_use_their_distinct_save_directories() {
+        let witcher_2_path = KNOWN_GAMES
+            .iter()
+            .find(|game| game.deployd_id == "witcher-2")
+            .and_then(|game| game.save_game_subpath);
+        let witcher_1_path = KNOWN_GAMES
+            .iter()
+            .find(|game| game.deployd_id == "witcher-1")
+            .and_then(|game| game.save_game_subpath);
+
+        assert_eq!(witcher_2_path, Some("Documents/Witcher 2/gamesaves"));
+        assert_eq!(witcher_1_path, Some("Documents/The Witcher/saves"));
+    }
+}
