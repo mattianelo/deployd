@@ -61,6 +61,7 @@ parts:
   deployd:
     plugin: rust
     source: .
+    build-snaps: [rustup]
     rust-channel: '1.96.0'
     parse-info: [usr/share/metainfo/io.mattianelo.deployd.metainfo.xml]
     build-packages:

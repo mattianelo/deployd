@@ -23,6 +23,7 @@ sudo snap install deployd
 ```
 
 You can also install from the [Deployd Snap Store page](https://snapcraft.io/deployd).
+The Snap package currently targets 64-bit x86 (`amd64`) Linux systems.
 The Nexus Mods page remains available for users who prefer that distribution channel:
 [Deployd on Nexus Mods](https://www.nexusmods.com/skyrimspecialedition/mods/174218).
 

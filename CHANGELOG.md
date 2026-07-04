@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+- Fixed Snapcraft hosted builds failing during the pull phase by provisioning `rustup` before
+  the Rust plugin validates its build environment.
+
 ## [2.3.2]
 
 - Witcher 2 save management now uses `Documents/Witcher 2/gamesaves`, so profile backups find
