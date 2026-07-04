@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [2.3.2]
 
 - Snap builds now explicitly target amd64, pin Rust 1.96.0, enforce the Cargo lockfile, restore
   library linting, and publish valid AppStream screenshot and license metadata for automatic builds.

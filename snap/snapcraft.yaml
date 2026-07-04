@@ -2,14 +2,14 @@ name: deployd
 base: core24
 platforms:
   amd64:
-version: '2.3.1'
+version: '2.3.2'
 adopt-info: deployd
 title: Deployd
 license: GPL-3.0-only
 contact: https://gitlab.com/mattianelo/deployd/-/issues
 issues: https://gitlab.com/mattianelo/deployd/-/issues
 source-code: https://gitlab.com/mattianelo/deployd
-website: https://www.nexusmods.com/skyrimspecialedition/mods/174218
+website: https://gitlab.com/mattianelo/deployd
 donation: https://ko-fi.com/mattianelo
 description: |
   Deployd is a non-destructive mod manager for PC games running on Linux.
