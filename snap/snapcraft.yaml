@@ -63,8 +63,6 @@ parts:
     source: .
     parse-info: [usr/share/metainfo/io.mattianelo.deployd.metainfo.xml]
     build-packages:
-      - libgtk-4-dev
-      - libadwaita-1-dev
       - libsqlite3-dev
       - libssl-dev
       - pkg-config

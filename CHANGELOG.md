@@ -2,8 +2,8 @@
 
 ## [Unreleased]
 
-- Fixed Snapcraft hosted builds failing during Rust environment validation by allowing the Rust
-  plugin to provision its supported toolchain without conflicting manual overrides.
+- Added an isolated Ubuntu 24.04 LXD workflow for local Snap builds, using the GNOME SDK for its
+  GTK dependencies and avoiding Snapcraft 9's incompatible core26-based Rustup build snap.
 
 ## [2.3.2]
 
