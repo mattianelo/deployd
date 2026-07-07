@@ -36,9 +36,11 @@
   folders no longer cache stray installer XML files.
 - Fixed Snap download archive trashing when the stored archive path points at an XDG
   document-portal mount.
+- Fixed Snap folder validation rejecting persistent XDG document-portal grants, which prevented
+  selecting downloads and other folders on external drives.
 - Snap folder selections are now validated before they are saved for game folders,
   Wine prefixes, downloads folders, cache folders, and AppImage migration imports. Deployd now
-  explains blocked hidden-home, removable-media, document-portal, and read/write access failures at
+  explains blocked hidden-home, ungranted removable-media, and read/write access failures at
   selection time instead of surfacing them later as confusing deploy or scan errors.
 - AppImage-to-Snap migration import no longer asks the Snap to confirm or save a
   downloads folder. Imported download rows keep fetched Nexus metadata, hashes, versions,

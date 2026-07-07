@@ -98,15 +98,9 @@ fn classify_snap_path(
 ) -> Option<String> {
     if snap_user_common.is_some_and(|root| path.starts_with(root))
         || snap_user_data.is_some_and(|root| path.starts_with(root))
+        || is_document_portal_path(path)
     {
         return None;
-    }
-
-    if is_document_portal_path(path) {
-        return Some(
-            "The selected folder is a document-portal mount. Choose the original folder path so Deployd can reuse it after restart."
-                .to_string(),
-        );
     }
 
     if is_removable_media_path(path) {
@@ -222,16 +216,16 @@ mod tests {
         );
     }
 
+    // Regression: portal-selected folders remain accessible across sessions and must not be
+    // mistaken for ungranted paths outside Snap confinement.
+    // @variants: snap
     #[test]
-    fn rejects_document_portal_paths() {
+    fn accepts_document_portal_paths() {
         let path = Path::new("/run/user/1000/doc/abcd/Game");
 
-        let message = classify_snap_path(path, Some(Path::new("/home/alex")), None, None)
-            .expect("document portal path should be rejected");
-
-        assert!(
-            message.contains("document-portal"),
-            "message should explain portal paths are not durable: {message}"
+        assert_eq!(
+            classify_snap_path(path, Some(Path::new("/home/alex")), None, None),
+            None
         );
     }
 }
