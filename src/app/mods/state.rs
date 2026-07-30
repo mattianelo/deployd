@@ -19,6 +19,25 @@ use super::super::free_fns::{GameLoadMode, load_game_data};
 use super::super::messages::AppCmdMsg;
 use super::super::types::{LoadedData, loaded_game_is_current};
 
+fn missing_plugin_masters(
+    masters: Option<&Vec<String>>,
+    installed: &HashSet<String>,
+    scan_complete: bool,
+) -> Vec<String> {
+    if !scan_complete {
+        return Vec::new();
+    }
+    masters
+        .map(|masters| {
+            masters
+                .iter()
+                .filter(|master| !installed.contains(&master.to_lowercase()))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 impl App {
     /// In-session reload: recomputes conflict overrides and refreshes the mod/plugin
     /// lists from DB without re-syncing Plugins.txt.
@@ -160,6 +179,7 @@ impl App {
         vanilla_plugins: &HashSet<String>,
         vanilla_plugin_master_counts: &HashMap<String, usize>,
         vanilla_derived: &HashSet<String>,
+        plugin_scan_complete: bool,
     ) {
         let managed_lower: HashSet<String> =
             plugins.iter().map(|p| p.filename.to_lowercase()).collect();
@@ -270,16 +290,8 @@ impl App {
                 .find(|m| m.id == p.mod_id)
                 .map(|m| m.name.clone())
                 .unwrap_or_else(|| "Unknown".to_string());
-            let missing_masters: Vec<String> = plugin_masters
-                .get(&p.id)
-                .map(|masters| {
-                    masters
-                        .iter()
-                        .filter(|m| !installed.contains(&m.to_lowercase()))
-                        .cloned()
-                        .collect()
-                })
-                .unwrap_or_default();
+            let missing_masters =
+                missing_plugin_masters(plugin_masters.get(&p.id), &installed, plugin_scan_complete);
             let mod_enabled = mods
                 .iter()
                 .find(|m| m.id == p.mod_id)
@@ -364,6 +376,9 @@ impl App {
             return false;
         }
 
+        for warning in &data.access_warnings {
+            self.push_notification(warning);
+        }
         self.populate_plugins(
             data.plugins,
             &data.mods,
@@ -371,6 +386,7 @@ impl App {
             &data.vanilla_plugins,
             &data.vanilla_plugin_master_counts,
             &data.vanilla_derived_plugins,
+            data.plugin_scan_complete,
         );
         self.populate_mods(data.mods, &data.groups, &data.overrides);
         self.update_profile_list(data.profiles, data.active_profile_idx);
@@ -498,5 +514,25 @@ impl App {
                 AppCmdMsg::PrioritySaved(Ok(()))
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::missing_plugin_masters;
+
+    // Regression: stale portal access must not produce false missing-dependency warnings.
+    // @variants: snap
+    #[test]
+    fn suppresses_missing_masters_after_incomplete_scan() {
+        let masters = vec!["SFBGS007.esm".to_string()];
+
+        assert!(missing_plugin_masters(Some(&masters), &HashSet::new(), false).is_empty());
+        assert_eq!(
+            missing_plugin_masters(Some(&masters), &HashSet::new(), true),
+            masters
+        );
     }
 }

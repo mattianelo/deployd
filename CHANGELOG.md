@@ -6,6 +6,9 @@
   load for another game from replacing the currently selected game's profiles, mods, and plugins.
 - AppImage startup now repairs missing or stale NXM protocol integration even when a restored data
   folder contains an old registration marker.
+- Snap game loads now detect expired document-portal grants, explain that the installation folder
+  or Wine prefix must be reselected, and suppress misleading missing-dependency warnings when the
+  game `Data` directory could not be completely scanned.
 - Added an isolated Ubuntu 24.04 LXD workflow for local Snap builds, using the GNOME SDK for its
   GTK dependencies and avoiding Snapcraft 9's incompatible core26-based Rustup build snap.
 

@@ -631,6 +631,8 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             groups,
             vanilla_plugin_master_counts,
             vanilla_derived_plugins,
+            access_warnings,
+            plugin_scan_complete,
         ) = if let Some(game) = &init_game {
             let loaded = load_game_data(&tracker, game, GameLoadMode::OpenGame).await?;
             (
@@ -645,6 +647,8 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
                 loaded.groups,
                 loaded.vanilla_plugin_master_counts,
                 loaded.vanilla_derived_plugins,
+                loaded.access_warnings,
+                loaded.plugin_scan_complete,
             )
         } else {
             (
@@ -659,6 +663,8 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
                 vec![],
                 Default::default(),
                 Default::default(),
+                vec![],
+                true,
             )
         };
 
@@ -777,6 +783,8 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             nexus_is_premium,
             color_scheme_idx,
             restored_from_backup,
+            access_warnings,
+            plugin_scan_complete,
         })
     };
     AppCmdMsg::Initialized(init.await)

@@ -9,6 +9,7 @@ use crate::core::tracker::Tracker;
 use crate::core::{detector, game, save_manager};
 use crate::models::game::Game;
 use crate::models::profile::SaveMode;
+use crate::utils::snap::{self, SelectedFolderKind};
 
 use super::types::LoadedData;
 
@@ -156,6 +157,42 @@ pub(crate) async fn load_game_data(
     mode: GameLoadMode,
 ) -> Result<LoadedData, String> {
     let game_id = &game.id;
+    let mut access_warnings = Vec::new();
+    let game_folder_accessible = if matches!(mode, GameLoadMode::OpenGame) {
+        match snap::validate_selected_folder(&game.path, SelectedFolderKind::GameFolder) {
+            Ok(()) => true,
+            Err(error) => {
+                access_warnings.push(format!(
+                    "Access to {}'s game folder is no longer valid. Open Settings → Manage Games \
+                     and reselect the installation folder. {error}",
+                    game.title
+                ));
+                false
+            }
+        }
+    } else {
+        true
+    };
+    let wine_prefix_accessible = if matches!(mode, GameLoadMode::OpenGame) {
+        match game.wine_prefix.as_deref() {
+            Some(prefix) => {
+                match snap::validate_selected_folder(prefix, SelectedFolderKind::WinePrefix) {
+                    Ok(()) => true,
+                    Err(error) => {
+                        access_warnings.push(format!(
+                            "Access to {}'s Wine prefix is no longer valid. Open Settings → \
+                             Manage Games and reselect the Wine prefix. {error}",
+                            game.title
+                        ));
+                        false
+                    }
+                }
+            }
+            None => true,
+        }
+    } else {
+        true
+    };
 
     // Ensure a "Default" profile exists. This is idempotent and covers both the
     // normal startup path and games added later via the wizard or Manage Games dialog.
@@ -171,6 +208,7 @@ pub(crate) async fn load_game_data(
             .map_err(|e| e.to_string())?;
         if let Some((active_profile, deployed_profile)) = transition
             && game::has_save_management(game)
+            && wine_prefix_accessible
         {
             save_manager::swap_saves(
                 game,
@@ -186,7 +224,7 @@ pub(crate) async fn load_game_data(
 
     // Take a one-time vanilla snapshot so the external-file detector can exclude
     // files that were already present before any mod was installed.
-    {
+    if game_folder_accessible {
         let vanilla_entries = detector::snapshot_game_files(game);
         tracker
             .ensure_vanilla_snapshot(game_id, &vanilla_entries)
@@ -196,7 +234,7 @@ pub(crate) async fn load_game_data(
 
     // Sync plugin order from Plugins.txt (written by LOOT or other tools).
     // Only performed on initial game select, not on every in-session reload.
-    if matches!(mode, GameLoadMode::OpenGame) {
+    if matches!(mode, GameLoadMode::OpenGame) && wine_prefix_accessible {
         let txt_paths = game::plugins_txt_paths(game);
         let txt_entries = txt_paths
             .iter()
@@ -276,17 +314,21 @@ pub(crate) async fn load_game_data(
     // Scan the game's Data directory for ALL plugin files (vanilla, DLC, CC, mod-managed).
     // Original casing is preserved for display; lowercasing is done at the point of comparison.
     let data_dir = game::deploy_dir(game);
-    let vanilla_plugins: HashSet<String> = match std::fs::read_dir(&data_dir) {
-        Ok(entries) => entries
-            .flatten()
-            .filter_map(|e| {
-                let orig = e.file_name().to_string_lossy().to_string();
-                let lower = orig.to_lowercase();
-                (lower.ends_with(".esp") || lower.ends_with(".esm") || lower.ends_with(".esl"))
-                    .then_some(orig) // store original casing
-            })
-            .collect(),
-        Err(_) => HashSet::new(),
+    let (vanilla_plugins, plugin_scan_complete) = if game_folder_accessible {
+        match scan_vanilla_plugins(&data_dir) {
+            Ok(plugins) => (plugins, true),
+            Err(error) => {
+                access_warnings.push(format!(
+                    "Deployd could not scan {}'s Data folder, so dependency warnings are hidden \
+                     until access is restored. Open Settings → Manage Games and reselect the \
+                     installation folder. {error}",
+                    game.title
+                ));
+                (HashSet::new(), false)
+            }
+        }
+    } else {
+        (HashSet::new(), false)
     };
 
     // Read TES4 master counts for every vanilla/on-disk plugin so they can be sorted by
@@ -331,7 +373,25 @@ pub(crate) async fn load_game_data(
         groups,
         vanilla_plugin_master_counts,
         vanilla_derived_plugins,
+        access_warnings,
+        plugin_scan_complete,
     })
+}
+
+fn scan_vanilla_plugins(data_dir: &Path) -> Result<HashSet<String>, String> {
+    let entries = std::fs::read_dir(data_dir)
+        .map_err(|error| format!("Cannot read '{}': {error}", data_dir.display()))?;
+    let mut plugins = HashSet::new();
+    for entry in entries {
+        let entry =
+            entry.map_err(|error| format!("Cannot enumerate '{}': {error}", data_dir.display()))?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let lower = name.to_lowercase();
+        if lower.ends_with(".esp") || lower.ends_with(".esm") || lower.ends_with(".esl") {
+            plugins.insert(name);
+        }
+    }
+    Ok(plugins)
 }
 
 fn cached_vanilla_plugin_master_counts(
@@ -408,7 +468,10 @@ pub(crate) async fn fetch_avatar_bytes(url: &str) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_nexus_mod_id, parse_nexus_mod_id_from_input};
+    use anyhow::Result;
+    use tempfile::tempdir;
+
+    use super::{parse_nexus_mod_id, parse_nexus_mod_id_from_input, scan_vanilla_plugins};
 
     // Regression: manually fetched metadata for NEO must target the page ID, not the CDN timestamp.
     // @variants: both
@@ -452,5 +515,36 @@ mod tests {
         assert_eq!(parse_nexus_mod_id_from_input("0"), None);
         assert_eq!(parse_nexus_mod_id_from_input("-1"), None);
         assert_eq!(parse_nexus_mod_id_from_input("not a nexus id"), None);
+    }
+
+    // Regression: a stale Snap document-portal grant must not look like an empty Data folder.
+    // @variants: snap
+    #[test]
+    fn reports_inaccessible_plugin_data_dir() -> Result<()> {
+        let temp = tempdir()?;
+        let missing = temp.path().join("stale-portal-id").join("Data");
+
+        let error = scan_vanilla_plugins(&missing)
+            .expect_err("an inaccessible Data folder must return an error");
+
+        assert!(error.contains("Cannot read"));
+        assert!(error.contains("Data"));
+        Ok(())
+    }
+
+    // @variants: both
+    #[test]
+    fn discovers_starfield_free_update_plugins() -> Result<()> {
+        let temp = tempdir()?;
+        std::fs::write(temp.path().join("SFBGS007.esm"), b"")?;
+        std::fs::write(temp.path().join("future-update.ESM"), b"")?;
+        std::fs::write(temp.path().join("not-a-plugin.ba2"), b"")?;
+
+        let plugins = scan_vanilla_plugins(temp.path()).map_err(anyhow::Error::msg)?;
+
+        assert!(plugins.contains("SFBGS007.esm"));
+        assert!(plugins.contains("future-update.ESM"));
+        assert!(!plugins.contains("not-a-plugin.ba2"));
+        Ok(())
     }
 }

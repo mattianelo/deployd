@@ -170,6 +170,8 @@ impl App {
                     groups: data.groups,
                     vanilla_plugin_master_counts: data.vanilla_plugin_master_counts,
                     vanilla_derived_plugins: data.vanilla_derived_plugins,
+                    access_warnings: data.access_warnings,
+                    plugin_scan_complete: data.plugin_scan_complete,
                 };
                 self.apply_loaded_data(loaded, sender);
                 self.last_deployed_profile_id = data.last_deployed_profile_id;

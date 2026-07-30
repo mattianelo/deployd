@@ -203,6 +203,8 @@ pub struct InitData {
     pub color_scheme_idx: u32,
     /// True when this launch follows a full-backup DB restore (marker file was present).
     pub restored_from_backup: bool,
+    pub access_warnings: Vec<String>,
+    pub plugin_scan_complete: bool,
 }
 
 #[derive(Debug)]
@@ -223,6 +225,8 @@ pub struct LoadedData {
     /// Lowercase filenames of managed plugins that were originally vanilla game files
     /// (deployd backed them up before a mod overwrote them, e.g. a cleaned Fallout4.esm).
     pub vanilla_derived_plugins: HashSet<String>,
+    pub access_warnings: Vec<String>,
+    pub plugin_scan_complete: bool,
 }
 
 pub(crate) fn loaded_game_is_current(selected_game_id: Option<&str>, loaded_game_id: &str) -> bool {

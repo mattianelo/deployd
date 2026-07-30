@@ -187,6 +187,8 @@ For Bethesda games, manage plugins separately in the **Plugins** tab:
 - Opening a game restores the profile used by its most recent successful deployment, and rapid
   game changes cannot apply a delayed profile load from another game
 - Switching profiles re-deploys automatically
+- Snap installations report expired folder grants and ask for the affected game or Wine-prefix
+  folder to be reselected instead of presenting inaccessible official plugins as missing
 
 ### 7. Save Management
 
