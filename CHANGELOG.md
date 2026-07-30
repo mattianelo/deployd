@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [2.3.3]
 
 - Game and profile restoration now ignores stale asynchronous load results, preventing a slower
   load for another game from replacing the currently selected game's profiles, mods, and plugins.

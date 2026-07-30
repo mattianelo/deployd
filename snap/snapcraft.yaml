@@ -2,7 +2,7 @@ name: deployd
 base: core24
 platforms:
   amd64:
-version: '2.3.2'
+version: '2.3.3'
 adopt-info: deployd
 title: Deployd
 license: GPL-3.0-only

@@ -19,6 +19,13 @@ use super::super::free_fns::{GameLoadMode, load_game_data};
 use super::super::messages::AppCmdMsg;
 use super::super::types::{LoadedData, loaded_game_is_current};
 
+struct PluginDiscovery<'a> {
+    vanilla_plugins: &'a HashSet<String>,
+    vanilla_master_counts: &'a HashMap<String, usize>,
+    vanilla_derived: &'a HashSet<String>,
+    scan_complete: bool,
+}
+
 fn missing_plugin_masters(
     masters: Option<&Vec<String>>,
     installed: &HashSet<String>,
@@ -171,16 +178,16 @@ impl App {
         });
     }
 
-    pub(crate) fn populate_plugins(
+    fn populate_plugins(
         &mut self,
         plugins: Vec<Plugin>,
         mods: &[ModEntry],
         plugin_masters: &HashMap<String, Vec<String>>,
-        vanilla_plugins: &HashSet<String>,
-        vanilla_plugin_master_counts: &HashMap<String, usize>,
-        vanilla_derived: &HashSet<String>,
-        plugin_scan_complete: bool,
+        discovery: PluginDiscovery<'_>,
     ) {
+        let vanilla_plugins = discovery.vanilla_plugins;
+        let vanilla_plugin_master_counts = discovery.vanilla_master_counts;
+        let vanilla_derived = discovery.vanilla_derived;
         let managed_lower: HashSet<String> =
             plugins.iter().map(|p| p.filename.to_lowercase()).collect();
 
@@ -290,8 +297,11 @@ impl App {
                 .find(|m| m.id == p.mod_id)
                 .map(|m| m.name.clone())
                 .unwrap_or_else(|| "Unknown".to_string());
-            let missing_masters =
-                missing_plugin_masters(plugin_masters.get(&p.id), &installed, plugin_scan_complete);
+            let missing_masters = missing_plugin_masters(
+                plugin_masters.get(&p.id),
+                &installed,
+                discovery.scan_complete,
+            );
             let mod_enabled = mods
                 .iter()
                 .find(|m| m.id == p.mod_id)
@@ -383,10 +393,12 @@ impl App {
             data.plugins,
             &data.mods,
             &data.plugin_masters,
-            &data.vanilla_plugins,
-            &data.vanilla_plugin_master_counts,
-            &data.vanilla_derived_plugins,
-            data.plugin_scan_complete,
+            PluginDiscovery {
+                vanilla_plugins: &data.vanilla_plugins,
+                vanilla_master_counts: &data.vanilla_plugin_master_counts,
+                vanilla_derived: &data.vanilla_derived_plugins,
+                scan_complete: data.plugin_scan_complete,
+            },
         );
         self.populate_mods(data.mods, &data.groups, &data.overrides);
         self.update_profile_list(data.profiles, data.active_profile_idx);
