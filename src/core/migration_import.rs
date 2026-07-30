@@ -1824,6 +1824,9 @@ mod tests {
         export_tracker
             .set_setting("last_deployed_profile_skyrim-se", "missing-profile")
             .await?;
+        sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+            .execute(&export_tracker.pool)
+            .await?;
         export_tracker.pool.close().await;
         fixture.write_bundle(|manifest| manifest).await?;
 

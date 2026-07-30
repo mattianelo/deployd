@@ -225,10 +225,7 @@ pub struct LoadedData {
     pub vanilla_derived_plugins: HashSet<String>,
 }
 
-pub(crate) fn loaded_game_is_current(
-    selected_game_id: Option<&str>,
-    loaded_game_id: &str,
-) -> bool {
+pub(crate) fn loaded_game_is_current(selected_game_id: Option<&str>, loaded_game_id: &str) -> bool {
     selected_game_id == Some(loaded_game_id)
 }
 
