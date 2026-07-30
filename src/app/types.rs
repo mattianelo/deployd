@@ -207,6 +207,7 @@ pub struct InitData {
 
 #[derive(Debug)]
 pub struct LoadedData {
+    pub game_id: String,
     pub mods: Vec<ModEntry>,
     pub plugins: Vec<Plugin>,
     pub plugin_masters: HashMap<String, Vec<String>>,
@@ -224,6 +225,13 @@ pub struct LoadedData {
     pub vanilla_derived_plugins: HashSet<String>,
 }
 
+pub(crate) fn loaded_game_is_current(
+    selected_game_id: Option<&str>,
+    loaded_game_id: &str,
+) -> bool {
+    selected_game_id == Some(loaded_game_id)
+}
+
 pub(crate) fn download_status_sort_key(status: &crate::models::download::DownloadStatus) -> u8 {
     use crate::models::download::DownloadStatus;
     match status {
@@ -233,5 +241,18 @@ pub(crate) fn download_status_sort_key(status: &crate::models::download::Downloa
         DownloadStatus::Downloaded => 3,
         DownloadStatus::Installed => 4,
         DownloadStatus::Failed => 5,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::loaded_game_is_current;
+
+    // @variants: both
+    #[test]
+    fn rejects_load_result_from_another_game() {
+        assert!(!loaded_game_is_current(Some("skyrim-se"), "fallout-4"));
+        assert!(!loaded_game_is_current(None, "skyrim-se"));
+        assert!(loaded_game_is_current(Some("skyrim-se"), "skyrim-se"));
     }
 }

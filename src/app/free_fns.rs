@@ -319,6 +319,7 @@ pub(crate) async fn load_game_data(
         .collect();
 
     Ok(LoadedData {
+        game_id: game_id.clone(),
         mods,
         plugins,
         plugin_masters,

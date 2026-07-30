@@ -158,6 +158,7 @@ impl App {
                     .map(|g| g.id.clone())
                     .collect();
                 let loaded = LoadedData {
+                    game_id: data.init_game_id.clone().unwrap_or_default(),
                     mods: data.mods,
                     plugins: data.plugins,
                     plugin_masters: data.plugin_masters,

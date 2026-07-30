@@ -12,20 +12,25 @@ DESKTOP_ID="io.mattianelo.deployd"
 MARKER_DIR="$HOME/.local/share/deployd"
 MARKER="$MARKER_DIR/.appimage-registration"
 CURRENT_APPIMAGE="${APPIMAGE:-$0}"
+APPS_DIR="$HOME/.local/share/applications"
+DESKTOP_FILE="$APPS_DIR/$DESKTOP_ID.desktop"
 
 needs_registration() {
-    [ ! -f "$MARKER" ] || [ "$(cat "$MARKER" 2>/dev/null)" != "$CURRENT_APPIMAGE" ]
+    [ ! -f "$MARKER" ] \
+        || [ "$(cat "$MARKER" 2>/dev/null)" != "$CURRENT_APPIMAGE" ] \
+        || [ ! -f "$DESKTOP_FILE" ] \
+        || ! grep -Fq "Exec=$CURRENT_APPIMAGE" "$DESKTOP_FILE" \
+        || [ "$(xdg-mime query default x-scheme-handler/nxm 2>/dev/null)" != "$DESKTOP_ID.desktop" ]
 }
 
 register_integration() {
-    local APPS_DIR="$HOME/.local/share/applications"
     local ICON_DIR="$HOME/.local/share/icons/hicolor/scalable/apps"
 
     mkdir -p "$APPS_DIR" "$ICON_DIR" "$MARKER_DIR"
 
     sed "s|Exec=deployd|Exec=$CURRENT_APPIMAGE|g" \
         "$APPDIR/usr/share/applications/$DESKTOP_ID.desktop" \
-        > "$APPS_DIR/$DESKTOP_ID.desktop"
+        > "$DESKTOP_FILE"
 
     cp "$APPDIR/usr/share/icons/hicolor/scalable/apps/$APP_ID.svg" \
         "$ICON_DIR/$APP_ID.svg"

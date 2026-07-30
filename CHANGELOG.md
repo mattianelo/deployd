@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Game and profile restoration now ignores stale asynchronous load results, preventing a slower
+  load for another game from replacing the currently selected game's profiles, mods, and plugins.
+- AppImage startup now repairs missing or stale NXM protocol integration even when a restored data
+  folder contains an old registration marker.
 - Added an isolated Ubuntu 24.04 LXD workflow for local Snap builds, using the GNOME SDK for its
   GTK dependencies and avoiding Snapcraft 9's incompatible core26-based Rustup build snap.
 

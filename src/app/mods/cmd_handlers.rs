@@ -7,7 +7,7 @@ use crate::core::tracker::OverrideInfo;
 
 use super::super::App;
 use super::super::messages::{AppCmdMsg, AppMsg};
-use super::super::types::LoadedData;
+use super::super::types::{LoadedData, loaded_game_is_current};
 
 impl App {
     pub(crate) fn handle_cmd_mods_loaded(
@@ -18,6 +18,12 @@ impl App {
     ) {
         match result {
             Ok(data) => {
+                if !loaded_game_is_current(
+                    self.selected_game().map(|game| game.id.as_str()),
+                    &data.game_id,
+                ) {
+                    return;
+                }
                 if !preserve_collapsed {
                     self.collapsed_groups = data
                         .groups

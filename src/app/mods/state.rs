@@ -17,7 +17,7 @@ use crate::ui::plugin_list::PluginRowInit;
 use super::super::App;
 use super::super::free_fns::{GameLoadMode, load_game_data};
 use super::super::messages::AppCmdMsg;
-use super::super::types::LoadedData;
+use super::super::types::{LoadedData, loaded_game_is_current};
 
 impl App {
     /// In-session reload: recomputes conflict overrides and refreshes the mod/plugin
@@ -352,7 +352,18 @@ impl App {
         });
     }
 
-    pub(crate) fn apply_loaded_data(&mut self, data: LoadedData, sender: &ComponentSender<Self>) {
+    pub(crate) fn apply_loaded_data(
+        &mut self,
+        data: LoadedData,
+        sender: &ComponentSender<Self>,
+    ) -> bool {
+        if !loaded_game_is_current(
+            self.selected_game().map(|game| game.id.as_str()),
+            &data.game_id,
+        ) {
+            return false;
+        }
+
         self.populate_plugins(
             data.plugins,
             &data.mods,
@@ -368,6 +379,7 @@ impl App {
         self.rebuild_tool_buttons(sender);
         self.reload_order_snapshots(sender);
         self.apply_search_filter();
+        true
     }
 
     /// Update the `#N` priority labels for all mod rows in-place after a reorder.

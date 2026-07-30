@@ -147,7 +147,9 @@ Open **Settings** (gear icon) and log in under **Nexus Mods**:
 2. *(Optional)* Prefer a manual API key? Enter it directly under **Advanced → API Key**.
    - Get your key from [nexusmods.com → Settings → API](https://www.nexusmods.com/users/myaccount?tab=api)
 
-> Once authenticated, Deployd registers itself as the NXM link handler. Clicking **Mod Manager Download** on Nexus Mods sends files directly to your download queue.
+> AppImage startup registers Deployd as the NXM link handler and repairs stale registration
+> automatically. Once authenticated, clicking **Mod Manager Download** on Nexus Mods sends files
+> directly to your download queue.
 
 ### 3. Installing Mods
 
@@ -182,7 +184,8 @@ For Bethesda games, manage plugins separately in the **Plugins** tab:
 
 - Click the **profile selector** in the toolbar to create or switch profiles
 - Each profile saves which mods are enabled, their priority order, and the full plugin load order
-- Opening a game reliably restores the profile used by its most recent successful deployment
+- Opening a game restores the profile used by its most recent successful deployment, and rapid
+  game changes cannot apply a delayed profile load from another game
 - Switching profiles re-deploys automatically
 
 ### 7. Save Management
