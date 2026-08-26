@@ -6,8 +6,15 @@
   explicit non-root LXD user, with Cargo output kept outside the bind-mounted repository.
 - Hardened the project check wrapper with an explicit command allow list, protected feature and
   target configuration, environment diagnostics, and shell-level policy tests.
+- Added an opt-in, single-package lockfile maintenance command so approved security updates can run
+  through the same non-root LXD boundary without enabling arbitrary Cargo commands.
 - Moved root-required Snapcraft builds into container-owned scratch storage and limited host
   export to the completed Snap artifact.
+- Confined GitLab Pages generation to the checkout's non-symlinked `out/` directory, preventing
+  an environment override from selecting an arbitrary recursive-deletion target.
+- Updated XML, concurrency, random-number, QUIC, and TLS certificate dependencies to RustSec-patched
+  releases, restricted SQLx to the SQLite feature set used by Deployd, and made auditing reject the
+  reviewed inactive-driver exception if RSA ever becomes reachable.
 
 ## [2.3.3]
 

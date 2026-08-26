@@ -6,6 +6,7 @@ use std::pin::Pin;
 
 use anyhow::Result;
 use quick_xml::Reader;
+use quick_xml::XmlVersion;
 use quick_xml::events::Event;
 
 use crate::core::tracker::Tracker;
@@ -249,6 +250,16 @@ mod tests {
     fn settings_prefix_passes_through() {
         assert_eq!(route_path("settings/AddIns.xml"), "settings/AddIns.xml");
     }
+
+    #[test]
+    fn preserves_escaped_addin_content() {
+        let manifest = br#"<AddInItem UID="mod&amp;id"><Name>Rock &amp; Roll</Name></AddInItem>"#;
+
+        let (uid, block) = extract_addin_block_with_uid(manifest).expect("valid addin block");
+
+        assert_eq!(uid, "mod&id");
+        assert!(block.contains("<Name>Rock &amp; Roll</Name>"));
+    }
 }
 
 fn uid_present_in(content: &str, uid: &str) -> bool {
@@ -314,7 +325,7 @@ fn extract_addin_block_with_uid(data: &[u8]) -> Option<(String, String)> {
                     depth = 1;
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"UID"
-                            && let Ok(val) = attr.unescape_value()
+                            && let Ok(val) = attr.normalized_value(XmlVersion::Implicit1_0)
                         {
                             uid = val.into_owned();
                         }
@@ -352,7 +363,14 @@ fn extract_addin_block_with_uid(data: &[u8]) -> Option<(String, String)> {
                 block.push_str("/>");
             }
             Ok(Event::Text(ref e)) if capturing => {
-                block.push_str(e.unescape().unwrap_or_default().as_ref());
+                if let Ok(text) = e.decode() {
+                    block.push_str(&text);
+                }
+            }
+            Ok(Event::GeneralRef(ref e)) if capturing => {
+                block.push('&');
+                block.push_str(std::str::from_utf8(e.as_ref()).unwrap_or(""));
+                block.push(';');
             }
             Ok(Event::CData(ref e)) if capturing => {
                 let content = std::str::from_utf8(e.as_ref()).unwrap_or("");

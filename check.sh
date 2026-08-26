@@ -18,6 +18,35 @@ shift "$(( $# > 0 ? 1 : 0 ))"
 
 case "$CMD" in
     build|check|test|clippy|doc|metadata|tree|audit|fmt|env) ;;
+    lock-update)
+        if [ "$#" -ne 2 ]; then
+            echo "error: lock-update requires <package-spec> <version>" >&2
+            exit 2
+        fi
+        case "$1" in
+            *[!A-Za-z0-9_@.+-]*|'')
+                echo "error: invalid package spec '$1'" >&2
+                exit 2
+                ;;
+        esac
+        case "$2" in
+            [0-9]*) ;;
+            *)
+                echo "error: invalid package version '$2'" >&2
+                exit 2
+                ;;
+        esac
+        case "$2" in
+            *[!A-Za-z0-9.+-]*)
+                echo "error: invalid package version '$2'" >&2
+                exit 2
+                ;;
+        esac
+        if [ "${DEPLOYD_DEPENDENCY_MAINTENANCE:-0}" != "1" ]; then
+            echo "error: lock-update requires DEPLOYD_DEPENDENCY_MAINTENANCE=1" >&2
+            exit 2
+        fi
+        ;;
     nextest)
         if [ "${1:-run}" != "run" ] && [ "${1:-run}" != "list" ]; then
             echo "error: unsupported nextest subcommand '${1:-}'" >&2
@@ -26,7 +55,7 @@ case "$CMD" in
         ;;
     *)
         echo "error: unsupported check command '$CMD'" >&2
-        echo "supported commands: build, check, test, nextest, clippy, fmt, audit, doc, metadata, tree, env" >&2
+        echo "supported commands: build, check, test, nextest, clippy, fmt, audit, doc, metadata, tree, env, lock-update" >&2
         exit 2
         ;;
 esac
@@ -55,6 +84,7 @@ if [ "${DEPLOYD_BUILD_CONTAINER:-0}" != "1" ]; then
         --env "HOME=$BUILD_HOME" \
         --env "PATH=$BUILD_PATH" \
         --env DEPLOYD_BUILD_CONTAINER=1 \
+        --env "DEPLOYD_DEPENDENCY_MAINTENANCE=${DEPLOYD_DEPENDENCY_MAINTENANCE:-0}" \
         --env "DEPLOYD_EXPERIMENTAL=${DEPLOYD_EXPERIMENTAL:-0}" \
         --env APPIMAGE_EXTRACT_AND_RUN=1 \
         --env CARGO_TARGET_DIR=/build/target \
@@ -96,6 +126,16 @@ case "$CMD" in
         exec cargo fmt "$@"
         ;;
     audit)
+        # Cargo audit cannot distinguish inactive lockfile features, so keep the reviewed RSA
+        # exception valid only while no package variant can compile that crate.
+        RSA_TREE="$(cargo tree --locked --features "$FEATURES" --target all -i rsa 2>&1)" || {
+            printf '%s\n' "$RSA_TREE" >&2
+            exit 1
+        }
+        if printf '%s\n' "$RSA_TREE" | grep -q '^rsa v'; then
+            echo "error: the ignored RSA advisory is reachable; remove the exception and remediate it" >&2
+            exit 1
+        fi
         exec cargo audit "$@"
         ;;
     nextest)
@@ -104,6 +144,9 @@ case "$CMD" in
             shift
         fi
         exec cargo nextest "$NEXTEST_SUBCMD" --locked --features "$FEATURES" "$@"
+        ;;
+    lock-update)
+        exec cargo update --package "$1" --precise "$2"
         ;;
     *)
         exec cargo "$CMD" --locked --features "$FEATURES" "$@"

@@ -41,6 +41,12 @@ assert_rejected check --manifest-path ../other/Cargo.toml
 assert_rejected check --target-dir target
 assert_rejected check --config net.git-fetch-with-cli=true
 assert_rejected env unexpected
+assert_rejected lock-update anyhow@1.0.102 1.0.103
+
+if DEPLOYD_DEPENDENCY_MAINTENANCE=1 "$REPO_ROOT/check.sh" \
+    lock-update 'bad/package' 1.0.103 >"$TEST_DIR/stdout" 2>"$TEST_DIR/stderr"; then
+    fail "accepted an invalid dependency package spec"
+fi
 
 PATH="$TEST_DIR:$PATH" LXC_LOG="$LXC_LOG" "$REPO_ROOT/check.sh" check --locked
 
@@ -55,6 +61,12 @@ grep -Fx -- '--locked' "$LXC_LOG" >/dev/null || fail "missing forwarded safe arg
 
 PATH="$TEST_DIR:$PATH" LXC_LOG="$LXC_LOG" "$REPO_ROOT/check.sh" env
 grep -Fx -- 'env' "$LXC_LOG" >/dev/null || fail "missing diagnostic command"
+
+PATH="$TEST_DIR:$PATH" LXC_LOG="$LXC_LOG" DEPLOYD_DEPENDENCY_MAINTENANCE=1 \
+    "$REPO_ROOT/check.sh" lock-update anyhow@1.0.102 1.0.103
+grep -Fx -- 'DEPLOYD_DEPENDENCY_MAINTENANCE=1' "$LXC_LOG" >/dev/null || \
+    fail "missing dependency-maintenance marker"
+grep -Fx -- 'lock-update' "$LXC_LOG" >/dev/null || fail "missing lock-update command"
 
 set +e
 PATH="$TEST_DIR:$PATH" LXC_LOG="$LXC_LOG" LXC_EXIT_CODE=17 \

@@ -4,6 +4,7 @@
 #   sast             — Static Application Security Testing (GitLab template)
 #   secret_detection — Secret Detection (GitLab template)
 #   test-nexus-upload — Test the repository-owned Nexus upload client
+#   test-pages-build — Test Pages output confinement and artifact generation
 #   build-env-image  — Build and push the deployd build-env image to the registry
 #   build-appimage   — Build and publish the Deployd AppImage
 #   upload-nexus     — Publish tagged AppImage updates to Nexus Mods
@@ -48,6 +49,12 @@ test-nexus-upload:
   script:
     - python3 scripts/test_package_nexus_release.py
     - python3 scripts/test_nexus_upload.py
+
+test-pages-build:
+  stage: test
+  image: alpine:3.20
+  script:
+    - sh scripts/test_build_pages.sh
 
 # ── Build environment image ──────────────────────────────────────────────────
 build-env-image:

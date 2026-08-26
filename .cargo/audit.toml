@@ -1,0 +1,5 @@
+[advisories]
+
+# SQLx records its inactive MySQL driver in Cargo.lock even though Deployd enables only SQLite.
+# The RSA crate has no patched release and is absent from the all-target dependency tree.
+ignore = ["RUSTSEC-2023-0071"]

@@ -267,6 +267,7 @@ fn find_file_case_insensitive(dir: &Path, name: &str) -> Option<PathBuf> {
 /// (standard DAO DAZIP format).
 fn parse_dazip_uid(data: &[u8]) -> Option<String> {
     use quick_xml::Reader;
+    use quick_xml::XmlVersion;
     use quick_xml::events::Event;
 
     let src = std::str::from_utf8(data).ok()?;
@@ -280,7 +281,10 @@ fn parse_dazip_uid(data: &[u8]) -> Option<String> {
             {
                 for attr in e.attributes().flatten() {
                     if attr.key.as_ref() == b"UID" {
-                        return attr.unescape_value().ok().map(|s| s.into_owned());
+                        return attr
+                            .normalized_value(XmlVersion::Implicit1_0)
+                            .ok()
+                            .map(|s| s.into_owned());
                     }
                 }
             }
@@ -290,4 +294,16 @@ fn parse_dazip_uid(data: &[u8]) -> Option<String> {
         buf.clear();
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decodes_escaped_dazip_uid() {
+        let manifest = br#"<AddInItem UID="mod&amp;id"/>"#;
+
+        assert_eq!(parse_dazip_uid(manifest).as_deref(), Some("mod&id"));
+    }
 }

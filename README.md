@@ -218,6 +218,9 @@ Launch modding tools through the package-managed runtime from the **Tools** pane
 3. **Track** — Every deployed file is recorded in SQLite; purge removes only tracked links
 4. **Profiles** — Full mod + plugin state is saved and restored per profile
 
+Deployd treats downloaded archives and installer metadata as untrusted input. Keep the application
+updated so archive, XML, and network-parser security fixes are applied with new releases.
+
 ---
 
 ## Support
