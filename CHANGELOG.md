@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+- Pinned the Rust development toolchain and isolated local AppImage checks and builds under an
+  explicit non-root LXD user, with Cargo output kept outside the bind-mounted repository.
+- Hardened the project check wrapper with an explicit command allow list, protected feature and
+  target configuration, environment diagnostics, and shell-level policy tests.
+- Moved root-required Snapcraft builds into container-owned scratch storage and limited host
+  export to the completed Snap artifact.
+
 ## [2.3.3]
 
 - Game and profile restoration now ignores stale asynchronous load results, preventing a slower

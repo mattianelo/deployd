@@ -3,8 +3,8 @@
 # Called once on first container creation by build-appimage.sh; subsequent
 # builds reuse the already-provisioned container without re-running this.
 #
-# Mirrors the Dockerfile exactly so local (LXD) and CI (Docker) environments
-# stay in sync. When the Dockerfile changes, update this script to match.
+# System provisioning runs as container root. Rust tooling is installed later
+# by setup-user.sh under the non-root build identity.
 
 set -euo pipefail
 
@@ -24,12 +24,6 @@ apt-get install -y --no-install-recommends \
     wget
 rm -rf /var/lib/apt/lists/*
 
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-    | sh -s -- -y --default-toolchain stable --profile minimal
-/root/.cargo/bin/rustup component add rust-std rustfmt clippy
-/root/.cargo/bin/cargo install cargo-audit --locked
-/root/.cargo/bin/cargo install cargo-nextest --locked
-
 UMU_VERSION=1.4.0
 wget -q \
     "https://github.com/Open-Wine-Components/umu-launcher/releases/download/${UMU_VERSION}/umu-launcher-${UMU_VERSION}-zipapp.tar" \
@@ -39,7 +33,9 @@ mv /tmp/umu/umu-run /opt/umu-run
 chmod +x /opt/umu-run
 rm -rf /tmp/umu-zipapp.tar /tmp/umu
 
-mkdir -p /opt/appimage-tools /build
+install -d -o ubuntu -g ubuntu /build
+chown -R ubuntu:ubuntu /build
+mkdir -p /opt/appimage-tools
 wget -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage" \
      -O /opt/appimage-tools/linuxdeploy
 wget -q "https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh" \

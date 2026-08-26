@@ -1,14 +1,23 @@
 #!/bin/bash
-# Runs INSIDE the deployd-build-env Docker container.
-# On CI (Docker-in-Docker) this is called directly via DEPLOYD_NO_DOCKER=1.
+# Runs inside the non-root AppImage build environment used by LXD and CI.
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+
+if [ "$(id -u)" = "0" ]; then
+    echo "error: AppImage builds must not run as container root" >&2
+    exit 1
+fi
+
 # Intermediate artifacts go to a container-internal path so they are never
 # written to the bind-mounted workspace.  Only the final AppImage reaches
 # /workspace, avoiding root-owned files that would block Snap builds.
 mkdir -p /build
+if [ ! -w /build ]; then
+    echo "error: /build is not writable by the AppImage build user" >&2
+    exit 1
+fi
 export CARGO_TARGET_DIR=/build/target
 APPDIR=/build/AppDir
 APP_ID="deployd"
@@ -33,11 +42,11 @@ FEATURES="loot,libarchive-fallback"
 
 if [ "$DEBUG" = "1" ]; then
     echo "==> Compiling (debug, features: $FEATURES)"
-    cargo build --features "$FEATURES"
+    cargo build --locked --features "$FEATURES"
     BINARY="$CARGO_TARGET_DIR/debug/$APP_ID"
 else
     echo "==> Compiling (release, features: $FEATURES)"
-    cargo build --release --features "$FEATURES"
+    cargo build --locked --release --features "$FEATURES"
     BINARY="$CARGO_TARGET_DIR/release/$APP_ID"
 fi
 

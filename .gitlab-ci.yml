@@ -13,13 +13,13 @@
 # -----------------------
 # The AppImage build runs directly inside $CI_REGISTRY_IMAGE/build-env:latest,
 # which is built from packaging/appimage/Dockerfile.  The image is published to
-# the project's GitLab Container Registry and only rebuilt when the Dockerfile
-# changes (or via manual trigger).
+# the project's GitLab Container Registry and rebuilt when its Dockerfile or
+# pinned Rust toolchain changes (or via manual trigger).
 #
 # Bootstrap: on first use, trigger build-env-image manually from the GitLab UI
 # before running a release pipeline.
 #
-# Local builds use LXD (preferred) or Docker — see build-appimage.sh.
+# Local builds use LXD exclusively — see build-appimage.sh.
 
 stages:
   - test
@@ -66,11 +66,12 @@ build-env-image:
     - docker build
         --tag "$CI_REGISTRY_IMAGE/build-env:latest"
         --file packaging/appimage/Dockerfile
-        packaging/appimage/
+        .
     - docker push "$CI_REGISTRY_IMAGE/build-env:latest"
   rules:
     - changes:
         - packaging/appimage/Dockerfile
+        - rust-toolchain.toml
     - if: '$CI_PIPELINE_SOURCE == "web"'
       when: manual
 

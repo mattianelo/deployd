@@ -1,48 +1,111 @@
 #!/usr/bin/env bash
-# Run cargo commands inside the deployd build environment (mirrors build-appimage.sh flow).
-# Usage: ./check.sh [check|clippy|test|...] [extra cargo flags]
-#
-# Requires the deployd-appimage-build LXD container. Run build-appimage.sh first
-# if it does not exist. Docker is intentionally not supported by this wrapper.
-set -eu
+# Run approved Cargo commands inside the Deployd LXD build environment.
+set -euo pipefail
+
 # Ignore SIGPIPE so piping output through `tail` doesn't kill the script
 # prematurely when the reader closes early (e.g. `./check.sh clippy 2>&1 | tail -40`).
 trap '' PIPE
 
 REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
 LXD_CONTAINER="deployd-appimage-build"
+BUILD_UID="1000"
+BUILD_GID="1000"
+BUILD_HOME="/home/ubuntu"
+BUILD_PATH="$BUILD_HOME/.cargo/bin:/opt/appimage-tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 CMD="${1:-check}"
 FEATURES="loot,libarchive-fallback"
+shift "$(( $# > 0 ? 1 : 0 ))"
 
-# ── LXD path (host) ──────────────────────────────────────────────────────────
-if [ "${DEPLOYD_NO_LXD:-0}" != "1" ] \
-    && command -v lxc &>/dev/null \
-    && lxc info &>/dev/null 2>&1
-then
+case "$CMD" in
+    build|check|test|clippy|doc|metadata|tree|audit|fmt|env) ;;
+    nextest)
+        if [ "${1:-run}" != "run" ] && [ "${1:-run}" != "list" ]; then
+            echo "error: unsupported nextest subcommand '${1:-}'" >&2
+            exit 2
+        fi
+        ;;
+    *)
+        echo "error: unsupported check command '$CMD'" >&2
+        echo "supported commands: build, check, test, nextest, clippy, fmt, audit, doc, metadata, tree, env" >&2
+        exit 2
+        ;;
+esac
+
+for arg in "$@"; do
+    case "$arg" in
+        --all-features|--no-default-features|--features|--features=*|--manifest-path|--manifest-path=*|--target-dir|--target-dir=*|--config|--config=*)
+            echo "error: '$arg' overrides project-controlled Cargo configuration" >&2
+            exit 2
+            ;;
+    esac
+done
+
+if [ "${DEPLOYD_BUILD_CONTAINER:-0}" != "1" ]; then
+    if ! command -v lxc &>/dev/null || ! lxc info &>/dev/null 2>&1; then
+        echo "error: LXD is required for ./check.sh" >&2
+        echo "hint: ensure 'lxc info' works and the '$LXD_CONTAINER' container exists" >&2
+        exit 1
+    fi
+
     lxc start "$LXD_CONTAINER" 2>/dev/null || true
-    lxc exec --force-noninteractive "$LXD_CONTAINER" -- \
-        env DEPLOYD_NO_LXD=1 DEPLOYD_NO_DOCKER=1 \
-            DEPLOYD_EXPERIMENTAL="${DEPLOYD_EXPERIMENTAL:-0}" \
-            APPIMAGE_EXTRACT_AND_RUN=1 \
-            PATH="/root/.cargo/bin:/opt/appimage-tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
-            CARGO_TARGET_DIR=/build/target \
-        bash /workspace/check.sh "$@"
-    exit $?
+    exec lxc exec --force-noninteractive "$LXD_CONTAINER" \
+        --cwd /workspace \
+        --user "$BUILD_UID" \
+        --group "$BUILD_GID" \
+        --env "HOME=$BUILD_HOME" \
+        --env "PATH=$BUILD_PATH" \
+        --env DEPLOYD_BUILD_CONTAINER=1 \
+        --env "DEPLOYD_EXPERIMENTAL=${DEPLOYD_EXPERIMENTAL:-0}" \
+        --env APPIMAGE_EXTRACT_AND_RUN=1 \
+        --env CARGO_TARGET_DIR=/build/target \
+        -- bash /workspace/check.sh "$CMD" "$@"
 fi
 
-# ── Direct path (inside LXD container) ───────────────────────────────────────
-if [ "${DEPLOYD_NO_DOCKER:-0}" = "1" ]; then
-    cd "$REPO_ROOT"
-    if [ "$CMD" = "fmt" ]; then
-        exec cargo fmt "${@:2}"
-    fi
-    if [ "$CMD" = "nextest" ]; then
-        NEXTEST_SUBCMD="${2:-run}"
-        exec cargo nextest "$NEXTEST_SUBCMD" --features "$FEATURES" "${@:3}"
-    fi
-    exec cargo "$CMD" --features "$FEATURES" "${@:2}"
+if [ "$(id -u)" != "$BUILD_UID" ] || [ "$(id -g)" != "$BUILD_GID" ]; then
+    echo "error: ./check.sh must run as UID $BUILD_UID and GID $BUILD_GID inside LXD" >&2
+    exit 1
 fi
 
-echo "error: LXD is required for ./check.sh; Docker fallback is intentionally disabled." >&2
-echo "hint: ensure 'lxc info' works and the '$LXD_CONTAINER' container exists." >&2
-exit 1
+if [ "$REPO_ROOT" != "/workspace" ]; then
+    echo "error: container workspace must be mounted at /workspace" >&2
+    exit 1
+fi
+
+if [ ! -x "$BUILD_HOME/.cargo/bin/cargo" ]; then
+    echo "error: the non-root Rust toolchain is not provisioned" >&2
+    echo "hint: run 'bash packaging/appimage/build-appimage.sh --setup-only'" >&2
+    exit 1
+fi
+
+cd "$REPO_ROOT"
+
+case "$CMD" in
+    env)
+        if [ "$#" -ne 0 ]; then
+            echo "error: env does not accept arguments" >&2
+            exit 2
+        fi
+        printf 'uid=%s\n' "$(id -u)"
+        printf 'gid=%s\n' "$(id -g)"
+        printf 'home=%s\n' "$HOME"
+        printf 'rust=%s\n' "$(rustc --version)"
+        printf 'workspace=%s\n' "$REPO_ROOT"
+        printf 'target=%s\n' "${CARGO_TARGET_DIR:-}"
+        ;;
+    fmt)
+        exec cargo fmt "$@"
+        ;;
+    audit)
+        exec cargo audit "$@"
+        ;;
+    nextest)
+        NEXTEST_SUBCMD="${1:-run}"
+        if [ "$#" -gt 0 ]; then
+            shift
+        fi
+        exec cargo nextest "$NEXTEST_SUBCMD" --locked --features "$FEATURES" "$@"
+        ;;
+    *)
+        exec cargo "$CMD" --locked --features "$FEATURES" "$@"
+        ;;
+esac

@@ -15,14 +15,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-    | sh -s -- -y --default-toolchain stable --profile minimal \
-    && /root/.cargo/bin/rustup component add rust-std clippy
-ENV PATH="/root/.cargo/bin:$PATH"
-
-RUN cargo install cargo-audit --locked \
-    && cargo install cargo-nextest --locked
-
 # UMU Launcher — Python zipapp bundling all dependencies; needs python3 at runtime.
 # Pinned to a specific release for reproducible builds.
 ARG UMU_VERSION=1.4.0
@@ -34,7 +26,8 @@ RUN wget -q \
     && chmod +x /opt/umu-run \
     && rm -rf /tmp/umu-zipapp.tar /tmp/umu
 
-RUN mkdir -p /opt/appimage-tools \
+RUN install -d -o ubuntu -g ubuntu /build \
+    && mkdir -p /opt/appimage-tools \
     && wget -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage" \
          -O /opt/appimage-tools/linuxdeploy \
     && wget -q "https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh" \
@@ -47,5 +40,18 @@ RUN mkdir -p /opt/appimage-tools \
 
 ENV APPIMAGE_EXTRACT_AND_RUN=1
 ENV PATH="/opt/appimage-tools:$PATH"
+
+USER ubuntu
+ENV HOME="/home/ubuntu"
+ENV PATH="/home/ubuntu/.cargo/bin:/opt/appimage-tools:$PATH"
+
+COPY --chown=ubuntu:ubuntu rust-toolchain.toml /tmp/deployd-rust-toolchain.toml
+
+RUN RUST_VERSION="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' /tmp/deployd-rust-toolchain.toml)" \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+        | sh -s -- -y --default-toolchain "$RUST_VERSION" --profile minimal \
+    && rustup component add --toolchain "$RUST_VERSION" rustfmt clippy rust-analyzer \
+    && cargo install cargo-audit --version 0.22.2 --locked \
+    && cargo install cargo-nextest --version 0.9.143 --locked
 
 WORKDIR /workspace
