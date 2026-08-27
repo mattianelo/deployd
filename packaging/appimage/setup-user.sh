@@ -29,7 +29,7 @@ fi
 
 rustup toolchain install "$RUST_VERSION" --profile minimal
 rustup default "$RUST_VERSION"
-rustup component add --toolchain "$RUST_VERSION" rustfmt clippy rust-analyzer
+rustup component add --toolchain "$RUST_VERSION" rustfmt clippy rust-analyzer rust-src
 
 if ! command -v cargo-audit >/dev/null 2>&1; then
     cargo install cargo-audit --version 0.22.2 --locked
@@ -38,3 +38,5 @@ fi
 if ! command -v cargo-nextest >/dev/null 2>&1; then
     cargo install cargo-nextest --version 0.9.143 --locked
 fi
+
+bash "$REPO_ROOT/packaging/appimage/provision-mcp.sh"

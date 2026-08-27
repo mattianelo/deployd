@@ -30,6 +30,7 @@ BUILD_GID="1000"
 BUILD_HOME="/home/ubuntu"
 BUILD_PATH="$BUILD_HOME/.cargo/bin:/opt/appimage-tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 RUST_VERSION="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' "$REPO_ROOT/rust-toolchain.toml" | head -1)"
+source "$REPO_ROOT/packaging/appimage/mcp-versions.sh"
 
 if [ -z "$RUST_VERSION" ]; then
     echo "ERROR: failed to read the pinned Rust version." >&2
@@ -90,7 +91,9 @@ if ! lxc exec "$LXD_CONTAINER" \
     --env "HOME=$BUILD_HOME" \
     --env "PATH=$BUILD_PATH" \
     --env "EXPECTED_RUST_VERSION=$RUST_VERSION" \
-    -- sh -c 'rustc --version | grep -q "^rustc $EXPECTED_RUST_VERSION " && rust-analyzer --version >/dev/null && command -v cargo-nextest >/dev/null && command -v cargo-audit >/dev/null'
+    --env "EXPECTED_RA_MCP_VERSION=$RUST_ANALYZER_MCP_VERSION" \
+    --env "EXPECTED_FOSSIL_MCP_VERSION=$FOSSIL_MCP_VERSION" \
+    -- sh -c 'rustc --version | grep -q "^rustc $EXPECTED_RUST_VERSION " && rust-analyzer --version >/dev/null && rustup component list --toolchain "$EXPECTED_RUST_VERSION" --installed | grep -q "^rust-src-" && command -v cargo-nextest >/dev/null && command -v cargo-audit >/dev/null && "$HOME/.local/lib/deployd-mcp/rust-analyzer-mcp-$EXPECTED_RA_MCP_VERSION" --version | grep -qx "rust-analyzer-mcp $EXPECTED_RA_MCP_VERSION" && "$HOME/.local/lib/deployd-mcp/fossil-mcp-$EXPECTED_FOSSIL_MCP_VERSION" --version | grep -qx "fossil-mcp $EXPECTED_FOSSIL_MCP_VERSION"'
 then
     echo "==> Provisioning Rust tools for the non-root build user"
     lxc exec "$LXD_CONTAINER" \

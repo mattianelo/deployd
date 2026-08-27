@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Development analysis now runs compiler-backed semantic and structural checks through the
+  project's isolated, reproducible environment.
 - Pinned the Rust development toolchain and isolated local AppImage checks and builds under an
   explicit non-root LXD user, with Cargo output kept outside the bind-mounted repository.
 - Hardened the project check wrapper with an explicit command allow list, protected feature and
