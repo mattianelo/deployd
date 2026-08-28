@@ -82,6 +82,36 @@ def validate() -> None:
         'CI_PIPELINE_SOURCE == "push"' in pipeline and "allow_failure: false" in pipeline,
         "protected default-branch pushes cannot bootstrap a changed build image",
     )
+    require(
+        './scripts/ci-fossil.sh diff .ci-artifacts/fossil '
+        '"$CI_MERGE_REQUEST_DIFF_BASE_SHA"' in pipeline,
+        "merge requests do not run the Fossil diff gate against their target base",
+    )
+    fossil_ci = (ROOT / "scripts" / "ci-fossil.sh").read_text()
+    require(
+        "--max-dead-code 0" in fossil_ci,
+        "Fossil diff gate does not block new dead code",
+    )
+    require(
+        "--min-confidence high" in fossil_ci,
+        "Fossil diff gate does not use the calibrated confidence threshold",
+    )
+    require(
+        "--max-scaffolding 0" in fossil_ci and "--fail-on-scaffolding" in fossil_ci,
+        "Fossil diff gate does not block new scaffolding",
+    )
+    require(
+        "--max-clones 4294967295" in fossil_ci,
+        "Fossil diff gate blocks clone growth before ratchet approval",
+    )
+    fossil_diff_job = pipeline.split("\nfossil-diff:\n", maxsplit=1)[1].split(
+        "\ndependency-audit:\n", maxsplit=1
+    )[0]
+    require("allow_failure: false" in fossil_diff_job, "Fossil diff gate is non-blocking")
+    require(
+        ".ci-artifacts/fossil/fossil-diff.json" in fossil_diff_job,
+        "Fossil diff report is not retained for clone-growth review",
+    )
     for local_source in ("AGENTS.md", ".agents/", ".codex/", ".plans/", "docs/"):
         require(local_source not in pipeline, f"CI references local-only input: {local_source}")
 
@@ -118,6 +148,7 @@ def validate() -> None:
         "scripts/ci-ownership.sh",
         "scripts/ci-ownership-smoke.sh",
         "scripts/ci-fossil.sh",
+        "scripts/ci_instruction_drift.py",
         "scripts/ci-freshness.sh",
         "scripts/ci-inventory-tests.sh",
         "scripts/ci-mcp-smoke.sh",

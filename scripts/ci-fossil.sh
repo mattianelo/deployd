@@ -64,6 +64,7 @@ else
         echo "error: Fossil base ref is unavailable: $BASE_REF" >&2
         exit 1
     }
+    # The MR diff contains only tracked changes, so local planning TODOs cannot become scaffolding.
     "$BINARY" check \
         --diff "$BASE_REF" \
         --max-dead-code 0 \
