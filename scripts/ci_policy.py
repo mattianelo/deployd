@@ -67,6 +67,14 @@ def validate() -> None:
         "a CI job consumes the mutable build image alias",
     )
     require(
+        re.search(r"^\s+HOME:", pipeline, re.MULTILINE) is None,
+        "job-level HOME leaks into the GitLab checkout helper",
+    )
+    require(
+        "- export HOME=/home/ubuntu" in pipeline,
+        "non-root HOME is not established after checkout",
+    )
+    require(
         'CI_PIPELINE_SOURCE == "push"' in pipeline and "allow_failure: false" in pipeline,
         "protected default-branch pushes cannot bootstrap a changed build image",
     )

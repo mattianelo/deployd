@@ -28,10 +28,10 @@ variables:
 .rust-job:
   image: $BUILD_ENV_IMAGE
   variables:
-    HOME: "/home/ubuntu"
     CARGO_HOME: "$CI_PROJECT_DIR/.ci-cache/cargo"
     CARGO_TARGET_DIR: "$CI_PROJECT_DIR/.ci-cache/target"
   before_script:
+    - export HOME=/home/ubuntu
     - ./scripts/ci-environment.sh
     - mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
 
@@ -150,7 +150,6 @@ fossil-observation:
   extends: .rust-job
   stage: observe
   variables:
-    HOME: "/home/ubuntu"
     GIT_DEPTH: "0"
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
