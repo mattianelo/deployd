@@ -26,7 +26,7 @@ RUN wget -q \
     && chmod +x /opt/umu-run \
     && rm -rf /tmp/umu-zipapp.tar /tmp/umu
 
-RUN install -d -o ubuntu -g ubuntu /build \
+RUN install -d -o ubuntu -g ubuntu /home/ubuntu /build \
     && mkdir -p /opt/appimage-tools \
     && wget -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage" \
          -O /opt/appimage-tools/linuxdeploy \

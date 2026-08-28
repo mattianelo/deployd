@@ -43,8 +43,12 @@ def validate() -> None:
             f"{name} is not a SHA-256 value",
         )
 
-    expected_tag = f"rust-{rust_version}-fossil-{fossil_version}-v1"
     pipeline = (ROOT / ".gitlab-ci.yml").read_text()
+    revision_match = re.search(
+        r'^\s*BUILD_ENV_IMAGE_REVISION: "(v[1-9][0-9]*)"$', pipeline, re.MULTILINE
+    )
+    require(revision_match is not None, "build image revision is missing or invalid")
+    expected_tag = f"rust-{rust_version}-fossil-{fossil_version}-{revision_match.group(1)}"
     require(
         pipeline.index("  - build-env") < pipeline.index("  - validate"),
         "build image bootstrap must run before jobs that consume the image",
@@ -87,6 +91,10 @@ def validate() -> None:
 
     dockerfile = (ROOT / "packaging" / "appimage" / "Dockerfile").read_text()
     require("USER ubuntu" in dockerfile, "build image does not select the non-root user")
+    require(
+        "install -d -o ubuntu -g ubuntu /home/ubuntu /build" in dockerfile,
+        "build image does not create the non-root HOME explicitly",
+    )
     require("rust-analyzer rust-src" in dockerfile, "build image omits rust-src")
     require("install-fossil.sh" in dockerfile, "build image omits Fossil")
     require("install-rust-analyzer-mcp.sh" in dockerfile, "build image omits rust-analyzer MCP")

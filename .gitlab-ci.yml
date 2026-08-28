@@ -14,8 +14,9 @@ include:
 
 variables:
   SECRET_DETECTION_ENABLED: "true"
-  BUILD_ENV_IMAGE_TAG: "rust-1.96.1-fossil-0.1.8-v1"
-  BUILD_ENV_PUBLISH_TAG: "rust-1.96.1-fossil-0.1.8-v1"
+  BUILD_ENV_IMAGE_REVISION: "v2"
+  BUILD_ENV_IMAGE_TAG: "rust-1.96.1-fossil-0.1.8-v2"
+  BUILD_ENV_PUBLISH_TAG: "rust-1.96.1-fossil-0.1.8-v2"
   BUILD_ENV_IMAGE: "$CI_REGISTRY_IMAGE/build-env:$BUILD_ENV_IMAGE_TAG"
   RUST_CACHE_VERSION: "v1"
 
