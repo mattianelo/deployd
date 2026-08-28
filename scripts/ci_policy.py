@@ -75,6 +75,10 @@ def validate() -> None:
         "non-root HOME is not established after checkout",
     )
     require(
+        re.search(r"ci-ownership\.sh.*CARGO_(?:HOME|TARGET_DIR)", pipeline) is None,
+        "CI applies ownership policy to runner-managed cache roots",
+    )
+    require(
         'CI_PIPELINE_SOURCE == "push"' in pipeline and "allow_failure: false" in pipeline,
         "protected default-branch pushes cannot bootstrap a changed build image",
     )
@@ -112,6 +116,7 @@ def validate() -> None:
         "scripts/rust-command.sh",
         "scripts/ci-environment.sh",
         "scripts/ci-ownership.sh",
+        "scripts/ci-ownership-smoke.sh",
         "scripts/ci-fossil.sh",
         "scripts/ci-freshness.sh",
         "scripts/ci-inventory-tests.sh",

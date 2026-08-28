@@ -65,6 +65,7 @@ policy-validation:
     - ./scripts/test_ci_environment.sh
     - ./scripts/test_check_wrapper.sh
     - ./scripts/test_mcp_wrappers.sh
+    - ./scripts/ci-ownership-smoke.sh
 
 rust-fmt:
   extends: .rust-job
@@ -82,7 +83,7 @@ rust-check:
     policy: pull-push
   script:
     - ./scripts/rust-command.sh run check
-    - ./scripts/ci-ownership.sh "$CARGO_HOME" "$CARGO_TARGET_DIR"
+    - ./scripts/ci-ownership-smoke.sh
 
 rust-clippy:
   extends: .rust-job
@@ -95,7 +96,7 @@ rust-clippy:
     policy: pull
   script:
     - ./scripts/rust-command.sh run clippy -- -D warnings
-    - ./scripts/ci-ownership.sh "$CARGO_HOME" "$CARGO_TARGET_DIR"
+    - ./scripts/ci-ownership-smoke.sh
 
 rust-nextest:
   extends: .rust-job
@@ -108,7 +109,7 @@ rust-nextest:
     policy: pull
   script:
     - ./scripts/rust-command.sh run nextest run
-    - ./scripts/ci-ownership.sh "$CARGO_HOME" "$CARGO_TARGET_DIR"
+    - ./scripts/ci-ownership-smoke.sh
 
 rust-inventory:
   extends: .rust-job
@@ -176,7 +177,7 @@ dependency-audit:
     policy: pull
   script:
     - ./scripts/rust-command.sh run audit
-    - ./scripts/ci-ownership.sh "$CARGO_HOME" "$CARGO_TARGET_DIR"
+    - ./scripts/ci-ownership-smoke.sh
 
 dependency-freshness:
   extends: .rust-job

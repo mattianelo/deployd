@@ -12,6 +12,4 @@ GROUP="${1:-}"
 
 FILTER="$(python3 "$REPO_ROOT/scripts/ci_test_inventory.py" filter "$GROUP")"
 "$REPO_ROOT/scripts/rust-command.sh" run nextest run -E "$FILTER"
-"$REPO_ROOT/scripts/ci-ownership.sh" \
-    "${CARGO_HOME:?CARGO_HOME is required}" \
-    "${CARGO_TARGET_DIR:?CARGO_TARGET_DIR is required}"
+"$REPO_ROOT/scripts/ci-ownership-smoke.sh"

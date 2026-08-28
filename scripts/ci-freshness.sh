@@ -22,7 +22,6 @@ DEPLOYD_CI_FRESHNESS=1 \
 STATUS=$?
 set -e
 cat "$REPORT"
-"$REPO_ROOT/scripts/ci-ownership.sh" \
-    "$OUTPUT_DIR" \
-    "${CARGO_HOME:?CARGO_HOME is required}"
+"$REPO_ROOT/scripts/ci-ownership.sh" "$OUTPUT_DIR"
+"$REPO_ROOT/scripts/ci-ownership-smoke.sh"
 exit "$STATUS"
