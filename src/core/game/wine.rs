@@ -278,6 +278,7 @@ mod tests {
 
     use super::*;
 
+    // @variants: snap
     #[test]
     fn snap_wine_status_reports_missing_content() -> anyhow::Result<()> {
         let snap = tempdir()?;
@@ -293,6 +294,7 @@ mod tests {
         Ok(())
     }
 
+    // @variants: snap
     #[test]
     fn snap_wine_status_resolves_content_mounted_wine() -> anyhow::Result<()> {
         let snap = tempdir()?;
@@ -315,6 +317,7 @@ mod tests {
         Ok(())
     }
 
+    // @variants: snap
     #[test]
     fn missing_snap_wine_commands_include_provider_slots() {
         let commands = missing_snap_wine_commands(&MissingSnapWineContent {
@@ -328,6 +331,7 @@ mod tests {
         );
     }
 
+    // @variants: snap
     #[test]
     fn missing_snap_wine_commands_omit_auto_connected_runtime() {
         let commands = missing_snap_wine_commands(&MissingSnapWineContent {
@@ -341,6 +345,7 @@ mod tests {
         );
     }
 
+    // @variants: snap
     #[test]
     fn missing_snap_wine_message_mentions_restart_after_manual_connection() {
         let message = missing_snap_wine_message(&MissingSnapWineContent {

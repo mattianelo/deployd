@@ -9,12 +9,16 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
+ANALYSIS_ROOT = os.environ.get("DEPLOYD_MCP_WORKSPACE", "/workspace")
 
 
 class McpSession:
     def __init__(self, wrapper: str):
+        env_name = f"DEPLOYD_MCP_{wrapper.removesuffix('.sh').replace('-', '_').upper()}_WRAPPER"
+        command = os.environ.get(env_name)
+        wrapper_path = Path(command) if command else ROOT / "scripts" / "mcp" / wrapper
         self.process = subprocess.Popen(
-            [str(ROOT / "scripts" / "mcp" / wrapper)],
+            [str(wrapper_path)],
             cwd=ROOT,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -106,7 +110,7 @@ def rust_analyzer_returns_semantic_results() -> None:
     session = McpSession("rust-analyzer.sh")
     try:
         initialize(session, "rust-analyzer-mcp")
-        file_path = "/workspace/src/core/update_check.rs"
+        file_path = f"{ANALYSIS_ROOT}/src/core/update_check.rs"
         symbols = tool_text(
             session,
             "rust_analyzer_symbols",
@@ -141,7 +145,7 @@ def fossil_returns_structural_results() -> None:
     session = McpSession("fossil.sh")
     try:
         initialize(session, "fossil-mcp")
-        scan = json.loads(tool_text(session, "scan_all", {"path": "/workspace"}))
+        scan = json.loads(tool_text(session, "scan_all", {"path": ANALYSIS_ROOT}))
         if not scan["analyses"]:
             raise RuntimeError("Fossil full scan returned no analyses")
         inspected = json.loads(
@@ -151,7 +155,7 @@ def fossil_returns_structural_results() -> None:
                 {
                     "mode": "call_graph",
                     "function_name": "is_newer",
-                    "path": "/workspace",
+                    "path": ANALYSIS_ROOT,
                     "depth": 2,
                 },
             )
@@ -165,7 +169,7 @@ def fossil_returns_structural_results() -> None:
                 {
                     "from_function": "is_newer",
                     "to_function": "parse_semver",
-                    "path": "/workspace",
+                    "path": ANALYSIS_ROOT,
                     "max_depth": 5,
                     "max_paths": 3,
                 },

@@ -116,6 +116,7 @@ mod tests {
 
     use super::deployd_data_dir_from_snap_common;
 
+    // @variants: snap
     #[test]
     fn snap_data_dir_uses_user_common() {
         assert_eq!(

@@ -1,0 +1,273 @@
+[[variant_tests]]
+path = "src/app/free_fns.rs"
+name = "parses_nexus_mod_id_from_timestamped_archive_name"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/app/free_fns.rs"
+name = "reports_inaccessible_plugin_data_dir"
+variant = "snap"
+interface = "home"
+interface_state = "disconnected"
+
+[[variant_tests]]
+path = "src/app/free_fns.rs"
+name = "discovers_starfield_free_update_plugins"
+variant = "both"
+interface = "home"
+interface_state = "connected"
+
+[[variant_tests]]
+path = "src/app/mods/state.rs"
+name = "suppresses_missing_masters_after_incomplete_scan"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/app/profiles/lifecycle.rs"
+name = "rejects_stale_queued_selection_after_dropdown_moves"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/app/profiles/lifecycle.rs"
+name = "accepts_current_user_selection"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/app/profiles/lifecycle.rs"
+name = "rejects_already_active_selection"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/app/profiles/lifecycle.rs"
+name = "rejects_selection_during_programmatic_update"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/app/profiles/tool_handlers.rs"
+name = "normal_tool_exit_scans_and_sorts_every_loot_game"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/app/profiles/tool_handlers.rs"
+name = "cancelled_tool_exit_does_not_scan_or_sort"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/app/profiles/tool_handlers.rs"
+name = "unsupported_game_scans_without_loot_sort"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/app/types.rs"
+name = "rejects_load_result_from_another_game"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/known_games.rs"
+name = "witcher_games_use_their_distinct_save_directories"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/wine.rs"
+name = "snap_wine_status_reports_missing_content"
+variant = "snap"
+interface = "wine-content"
+interface_state = "disconnected"
+
+[[variant_tests]]
+path = "src/core/game/wine.rs"
+name = "snap_wine_status_resolves_content_mounted_wine"
+variant = "snap"
+interface = "wine-content"
+interface_state = "connected"
+
+[[variant_tests]]
+path = "src/core/game/wine.rs"
+name = "missing_snap_wine_commands_include_provider_slots"
+variant = "snap"
+interface = "wine-content"
+interface_state = "disconnected"
+
+[[variant_tests]]
+path = "src/core/game/wine.rs"
+name = "missing_snap_wine_commands_omit_auto_connected_runtime"
+variant = "snap"
+interface = "wine-content"
+interface_state = "disconnected"
+
+[[variant_tests]]
+path = "src/core/game/wine.rs"
+name = "missing_snap_wine_message_mentions_restart_after_manual_connection"
+variant = "snap"
+interface = "wine-content"
+interface_state = "disconnected"
+
+[[variant_tests]]
+path = "src/core/installer/file_list.rs"
+name = "rescan_skips_fomod_metadata_files"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/installer/file_list.rs"
+name = "rescan_skips_empty_fomod_directory_sentinels"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/migration_export.rs"
+name = "prunes_database_to_selected_game"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/migration_export.rs"
+name = "manifest_marks_appimage_source"
+variant = "appimage"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/migration_import.rs"
+name = "detects_existing_game_without_writing_snap_state"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/migration_import.rs"
+name = "imports_new_game_into_snap_owned_state"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/migration_import.rs"
+name = "skips_stale_last_deployed_profile"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/migration_import.rs"
+name = "refuses_existing_game_import_without_writing_snap_state"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/profiles.rs"
+name = "resolves_last_deployed_profiles_independently_per_game"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/profiles.rs"
+name = "missing_deploy_record_keeps_current_profile_available"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/profiles.rs"
+name = "stale_deploy_record_keeps_current_profile_available"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/portal.rs"
+name = "splits_document_portal_path"
+variant = "snap"
+interface = "document-portal"
+interface_state = "connected"
+
+[[variant_tests]]
+path = "src/utils/portal.rs"
+name = "ignores_non_document_portal_path"
+variant = "both"
+interface = "document-portal"
+interface_state = "disconnected"
+
+[[variant_tests]]
+path = "src/utils/paths.rs"
+name = "snap_data_dir_uses_user_common"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/snap.rs"
+name = "accepts_snap_user_common_path"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/snap.rs"
+name = "rejects_hidden_home_path_under_snap"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/snap.rs"
+name = "rejects_removable_media_without_interface"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/snap.rs"
+name = "accepts_document_portal_paths"
+variant = "snap"
+interface = "document-portal"
+interface_state = "connected"
+
+[[engine_tests]]
+path = "src/core/installer/mod.rs"
+name = "excludes_bethesda_root_file_before_root_target_recording"
+engine = "bethesda"
+case = "positive"
+
+[[engine_tests]]
+path = "src/core/installer/mod.rs"
+name = "skips_only_bethesda_empty_directory_sentinel"
+engine = "bethesda"
+case = "negative"
+
+[[engine_tests]]
+path = "src/core/installer/paths.rs"
+name = "system_path_routed_to_game_root"
+engine = "aurora"
+case = "positive"
+
+[[engine_tests]]
+path = "src/core/installer/paths.rs"
+name = "modules_path_stays_in_data"
+engine = "aurora"
+case = "negative"
+
+[[engine_tests]]
+path = "src/core/deployer.rs"
+name = "split_deploy_target_preserves_anchor_prefixes"
+engine = "eclipse"
+case = "positive"
+
+[[engine_tests]]
+path = "src/core/installer/mod.rs"
+name = "eclipse_docs_anchor_is_not_reinterpreted"
+engine = "eclipse"
+case = "negative"
+
+[[engine_tests]]
+path = "src/core/installer/mod.rs"
+name = "redengine_routed_mods_path_is_not_reinterpreted"
+engine = "redengine"
+case = "positive"
+
+[[engine_tests]]
+path = "src/core/installer/mod.rs"
+name = "skips_only_bethesda_empty_directory_sentinel"
+engine = "redengine"
+case = "negative"

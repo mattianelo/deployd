@@ -175,6 +175,7 @@ mod tests {
 
     use super::*;
 
+    // @variants: snap
     #[test]
     fn accepts_snap_user_common_path() {
         let path = Path::new("/home/alex/snap/deployd/common/deployd/cache");
@@ -190,6 +191,7 @@ mod tests {
         );
     }
 
+    // @variants: snap
     #[test]
     fn rejects_hidden_home_path_under_snap() {
         let path = Path::new("/home/alex/.steam/steamapps/common/Skyrim");
@@ -203,6 +205,7 @@ mod tests {
         );
     }
 
+    // @variants: snap
     #[test]
     fn rejects_removable_media_without_interface() {
         let path = Path::new("/mnt/games/Skyrim");

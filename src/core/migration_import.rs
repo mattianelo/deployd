@@ -1493,6 +1493,7 @@ mod tests {
         Ok(())
     }
 
+    // @variants: snap
     #[tokio::test]
     async fn detects_existing_game_without_writing_snap_state() -> Result<()> {
         let fixture = PreviewFixture::new().await?;
@@ -1905,6 +1906,7 @@ mod tests {
         Ok(())
     }
 
+    // @variants: snap
     #[tokio::test]
     async fn refuses_existing_game_import_without_writing_snap_state() -> Result<()> {
         let _guard = ENV_LOCK

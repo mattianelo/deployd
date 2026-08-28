@@ -7,7 +7,7 @@ STATE_ROOT="/build/mcp/fossil"
 mkdir -p "$STATE_ROOT"
 UPPER_DIR="$STATE_ROOT/upper"
 WORK_DIR="$(mktemp -d "$STATE_ROOT/work.XXXXXX")"
-CONFIG_SOURCE="/workspace/docs/phase-2/fossil.toml"
+CONFIG_SOURCE="/workspace/fossil.toml"
 BINARY="/home/ubuntu/.local/lib/deployd-mcp/fossil-mcp-$FOSSIL_MCP_VERSION"
 
 cleanup() {

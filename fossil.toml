@@ -1,0 +1,16 @@
+[dead_code]
+min_confidence = "high"
+include_tests = false
+
+[clones]
+min_lines = 10
+similarity_threshold = 0.9
+
+[ci]
+# These observation thresholds came from Fossil 0.1.8 locally. CI may only lower them after a
+# reviewed default-branch observation establishes the tracked-checkout baseline.
+max_dead_code = 62
+max_clones = 13
+max_scaffolding = 6
+min_confidence = "high"
+fail_on_scaffolding = false

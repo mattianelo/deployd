@@ -1,41 +1,50 @@
-# GitLab CI — Deployd
-#
-# Jobs:
-#   sast             — Static Application Security Testing (GitLab template)
-#   secret_detection — Secret Detection (GitLab template)
-#   test-nexus-upload — Test the repository-owned Nexus upload client
-#   test-pages-build — Test Pages output confinement and artifact generation
-#   build-env-image  — Build and push the deployd build-env image to the registry
-#   build-appimage   — Build and publish the Deployd AppImage
-#   upload-nexus     — Publish tagged AppImage updates to Nexus Mods
-#   pages            — Publish the Deployd feature page
-#
-# Build environment image
-# -----------------------
-# The AppImage build runs directly inside $CI_REGISTRY_IMAGE/build-env:latest,
-# which is built from packaging/appimage/Dockerfile.  The image is published to
-# the project's GitLab Container Registry and rebuilt when its Dockerfile or
-# pinned Rust toolchain changes (or via manual trigger).
-#
-# Bootstrap: on first use, trigger build-env-image manually from the GitLab UI
-# before running a release pipeline.
-#
-# Local builds use LXD exclusively — see build-appimage.sh.
-
 stages:
+  - validate
+  - compile
   - test
+  - observe
   - secret-detection
   - build-env
   - build
   - deploy
 
-# ── Security scanning ────────────────────────────────────────────────────────
 include:
   - template: Security/SAST.gitlab-ci.yml
   - template: Security/Secret-Detection.gitlab-ci.yml
 
 variables:
-  SECRET_DETECTION_ENABLED: 'true'
+  SECRET_DETECTION_ENABLED: "true"
+  BUILD_ENV_IMAGE_TAG: "rust-1.96.1-fossil-0.1.8-v1"
+  BUILD_ENV_PUBLISH_TAG: "rust-1.96.1-fossil-0.1.8-v1"
+  BUILD_ENV_IMAGE: "$CI_REGISTRY_IMAGE/build-env:$BUILD_ENV_IMAGE_TAG"
+  RUST_CACHE_VERSION: "v1"
+
+.shared-pipeline:
+  rules: &shared-pipeline-rules
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE != "schedule"'
+
+.rust-job:
+  image: $BUILD_ENV_IMAGE
+  variables:
+    HOME: "/home/ubuntu"
+    CARGO_HOME: "$CI_PROJECT_DIR/.ci-cache/cargo"
+    CARGO_TARGET_DIR: "$CI_PROJECT_DIR/.ci-cache/target"
+  before_script:
+    - ./scripts/ci-environment.sh
+    - mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
+
+.rust-cache:
+  cache: &rust-cache
+    key:
+      files:
+        - Cargo.lock
+        - rust-toolchain.toml
+      prefix: "$BUILD_ENV_IMAGE_TAG-$RUST_CACHE_VERSION"
+    paths:
+      - .ci-cache/cargo/registry/
+      - .ci-cache/cargo/git/
+      - .ci-cache/target/
 
 sast:
   stage: test
@@ -43,20 +52,173 @@ sast:
 secret_detection:
   stage: secret-detection
 
-test-nexus-upload:
+policy-validation:
+  extends: .rust-job
+  stage: validate
+  rules: *shared-pipeline-rules
+  script:
+    - bash -n check.sh scripts/*.sh scripts/mcp/*.sh packaging/appimage/*.sh
+    - python3 scripts/test_ci_test_inventory.py
+    - python3 scripts/ci_test_inventory.py validate
+    - python3 scripts/ci_policy.py
+    - ./scripts/test_ci_environment.sh
+    - ./scripts/test_check_wrapper.sh
+    - ./scripts/test_mcp_wrappers.sh
+
+rust-fmt:
+  extends: .rust-job
+  stage: validate
+  rules: *shared-pipeline-rules
+  script:
+    - ./scripts/rust-command.sh run fmt -- --check
+
+rust-check:
+  extends: .rust-job
+  stage: compile
+  rules: *shared-pipeline-rules
+  cache:
+    <<: *rust-cache
+    policy: pull-push
+  script:
+    - ./scripts/rust-command.sh run check
+    - ./scripts/ci-ownership.sh "$CARGO_HOME" "$CARGO_TARGET_DIR"
+
+rust-clippy:
+  extends: .rust-job
   stage: test
-  image: python:3.13-slim
+  rules: *shared-pipeline-rules
+  needs:
+    - rust-check
+  cache:
+    <<: *rust-cache
+    policy: pull
+  script:
+    - ./scripts/rust-command.sh run clippy -- -D warnings
+    - ./scripts/ci-ownership.sh "$CARGO_HOME" "$CARGO_TARGET_DIR"
+
+rust-nextest:
+  extends: .rust-job
+  stage: test
+  rules: *shared-pipeline-rules
+  needs:
+    - rust-check
+  cache:
+    <<: *rust-cache
+    policy: pull
+  script:
+    - ./scripts/rust-command.sh run nextest run
+    - ./scripts/ci-ownership.sh "$CARGO_HOME" "$CARGO_TARGET_DIR"
+
+rust-inventory:
+  extends: .rust-job
+  stage: test
+  rules: *shared-pipeline-rules
+  needs:
+    - rust-check
+  parallel:
+    matrix:
+      - TEST_GROUP:
+          - variant:appimage
+          - variant:snap
+          - engine:bethesda
+          - engine:aurora
+          - engine:eclipse
+          - engine:redengine
+  cache:
+    <<: *rust-cache
+    policy: pull
+  script:
+    - ./scripts/ci-inventory-tests.sh "$TEST_GROUP"
+
+test-nexus-upload:
+  extends: .rust-job
+  stage: test
+  rules: *shared-pipeline-rules
   script:
     - python3 scripts/test_package_nexus_release.py
     - python3 scripts/test_nexus_upload.py
 
 test-pages-build:
+  extends: .rust-job
   stage: test
-  image: alpine:3.20
+  rules: *shared-pipeline-rules
   script:
     - sh scripts/test_build_pages.sh
 
-# ── Build environment image ──────────────────────────────────────────────────
+fossil-observation:
+  extends: .rust-job
+  stage: observe
+  variables:
+    HOME: "/home/ubuntu"
+    GIT_DEPTH: "0"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: always
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE != "schedule"'
+      when: always
+  allow_failure: true
+  script:
+    - ./scripts/ci-fossil.sh observe .ci-artifacts/fossil
+  artifacts:
+    when: always
+    expire_in: 90 days
+    paths:
+      - .ci-artifacts/fossil/fossil-scan.json
+      - .ci-artifacts/fossil/fossil-scaffolding.json
+
+dependency-audit:
+  extends: .rust-job
+  stage: test
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  cache:
+    <<: *rust-cache
+    policy: pull
+  script:
+    - ./scripts/rust-command.sh run audit
+    - ./scripts/ci-ownership.sh "$CARGO_HOME" "$CARGO_TARGET_DIR"
+
+dependency-freshness:
+  extends: .rust-job
+  stage: test
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  allow_failure: true
+  script:
+    - ./scripts/ci-freshness.sh
+  artifacts:
+    when: always
+    expire_in: 90 days
+    paths:
+      - .ci-artifacts/freshness/cargo-update-dry-run.txt
+
+mcp-protocol-smoke:
+  extends: .rust-job
+  stage: test
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - fossil.toml
+        - packaging/appimage/Dockerfile
+        - packaging/appimage/mcp-versions.sh
+        - packaging/appimage/install-fossil.sh
+        - packaging/appimage/install-rust-analyzer-mcp.sh
+        - packaging/appimage/provision-mcp.sh
+        - scripts/ci-fossil-mcp.sh
+        - scripts/ci-mcp-smoke.sh
+        - scripts/ci-rust-analyzer-mcp.sh
+        - scripts/mcp/**/*
+        - scripts/test_mcp_smoke.py
+  needs:
+    - job: rust-check
+      optional: true
+  cache:
+    <<: *rust-cache
+    policy: pull
+  script:
+    - ./scripts/ci-mcp-smoke.sh
+
 build-env-image:
   stage: build-env
   image: docker:28
@@ -67,26 +229,21 @@ build-env-image:
     DOCKER_HOST: tcp://docker:2376
     DOCKER_TLS_VERIFY: 1
     DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
-  before_script:
-    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
-  script:
-    - docker build
-        --tag "$CI_REGISTRY_IMAGE/build-env:latest"
-        --file packaging/appimage/Dockerfile
-        .
-    - docker push "$CI_REGISTRY_IMAGE/build-env:latest"
   rules:
-    - changes:
-        - packaging/appimage/Dockerfile
-        - rust-toolchain.toml
-    - if: '$CI_PIPELINE_SOURCE == "web"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "web"'
       when: manual
+    - when: never
+  script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    - if docker manifest inspect "$CI_REGISTRY_IMAGE/build-env:$BUILD_ENV_PUBLISH_TAG" >/dev/null 2>&1; then echo "immutable build image already exists" >&2; exit 1; fi
+    - docker build --pull --no-cache --tag "$CI_REGISTRY_IMAGE/build-env:$BUILD_ENV_PUBLISH_TAG" --file packaging/appimage/Dockerfile .
+    - docker push "$CI_REGISTRY_IMAGE/build-env:$BUILD_ENV_PUBLISH_TAG"
+    - docker tag "$CI_REGISTRY_IMAGE/build-env:$BUILD_ENV_PUBLISH_TAG" "$CI_REGISTRY_IMAGE/build-env:latest"
+    - docker push "$CI_REGISTRY_IMAGE/build-env:latest"
 
-# ── AppImage build ───────────────────────────────────────────────────────────
-# Runs directly inside the pre-built registry image — no Docker daemon needed.
 build-appimage:
   stage: build
-  image: $CI_REGISTRY_IMAGE/build-env:latest
+  image: $BUILD_ENV_IMAGE
   needs:
     - job: build-env-image
       optional: true
@@ -98,17 +255,10 @@ build-appimage:
       - Deployd-x86_64.AppImage
     expire_in: 90 days
   rules:
-    # Build on version tags (e.g. v0.9.6)
     - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/'
-    # Allow manual trigger on any branch/MR
     - if: '$CI_PIPELINE_SOURCE == "web"'
       when: manual
 
-# ── Nexus Mods release ───────────────────────────────────────────────────────
-# @affects: appimage
-# NEXUSMODS_API_KEY and NEXUSMODS_FILE_ID must be protected GitLab CI/CD
-# variables. The API key must also be masked. The v3 upload API targets an
-# existing Nexus file, so the file ID cannot be inferred from the mod-page ID.
 upload-nexus:
   stage: deploy
   image: python:3.13-slim
@@ -138,7 +288,6 @@ upload-nexus:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/'
 
-# ── GitLab Pages ─────────────────────────────────────────────────────────────
 pages:
   stage: deploy
   image: alpine:3.20

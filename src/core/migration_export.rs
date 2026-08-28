@@ -502,6 +502,7 @@ mod tests {
         Ok(())
     }
 
+    // @variants: appimage
     #[test]
     fn manifest_marks_appimage_source() -> Result<()> {
         let manifest = ExportManifest {
