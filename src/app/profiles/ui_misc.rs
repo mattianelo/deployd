@@ -106,10 +106,4 @@ impl App {
         self.search_scope = next_scope;
         self.apply_search_filter();
     }
-
-    pub(crate) fn handle_show_toast(&mut self, msg: String) {
-        let toast = adw::Toast::new(&msg);
-        toast.set_timeout(4);
-        self.toast_overlay.add_toast(toast);
-    }
 }

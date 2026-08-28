@@ -5,7 +5,34 @@ use crate::core::game;
 use super::super::App;
 use super::super::messages::{AppCmdMsg, AppMsg};
 
+#[derive(Debug, PartialEq, Eq)]
+enum SelfUpdateTarget {
+    ReleasePage,
+    AppImage(String),
+}
+
+fn self_update_target(appimage_path: Option<String>) -> SelfUpdateTarget {
+    match appimage_path {
+        Some(path) => SelfUpdateTarget::AppImage(path),
+        None => SelfUpdateTarget::ReleasePage,
+    }
+}
+
 impl App {
+    pub(crate) fn handle_app_update_available(&mut self, version: String, url: String) {
+        self.app_update_version = Some(format!("Deployd {version} is available"));
+        self.app_update_url = Some(url);
+    }
+
+    pub(crate) fn handle_open_update_page(&mut self) {
+        self.open_update_page();
+    }
+
+    pub(crate) fn handle_self_update_clicked(&mut self, sender: &ComponentSender<Self>) {
+        self.notifications_menu_btn.popdown();
+        self.handle_self_update_download(sender);
+    }
+
     pub(crate) fn handle_check_updates(&mut self, sender: &ComponentSender<Self>) {
         self.overflow_menu_btn.popdown();
         let Some(tracker) = self.tracker.clone() else {
@@ -96,18 +123,14 @@ impl App {
 
     /// Download the latest deployd AppImage from Nexus and replace the currently running one.
     /// Only reachable when APPIMAGE env var is set (i.e. running as an AppImage).
-    pub(crate) fn handle_self_update_download(&mut self, sender: &ComponentSender<Self>) {
+    fn handle_self_update_download(&mut self, sender: &ComponentSender<Self>) {
         use crate::core::nexus_api::NexusClient;
         use crate::core::update_check::{NEXUS_DOMAIN, NEXUS_MOD_ID};
 
-        let Ok(appimage_path) = std::env::var("APPIMAGE") else {
-            let url = self
-                .app_update_url
-                .as_deref()
-                .unwrap_or(crate::core::update_check::NEXUS_PAGE_URL);
-            if let Err(e) = open::that(url) {
-                self.push_notification(&format!("Could not open update page: {e}"));
-            }
+        let SelfUpdateTarget::AppImage(appimage_path) =
+            self_update_target(std::env::var("APPIMAGE").ok())
+        else {
+            self.open_update_page();
             return;
         };
 
@@ -174,5 +197,53 @@ impl App {
             .await;
             AppCmdMsg::AppUpdateResult(result)
         });
+    }
+
+    pub(crate) fn handle_cmd_app_update_result(&mut self, result: Result<(), String>) {
+        match result {
+            Ok(()) => {
+                self.push_notification(
+                    "Update downloaded. Restart deployd to use the new version.",
+                );
+            }
+            Err(error) => {
+                self.push_notification(&format!("Update failed: {error}"));
+                if error.contains("premium") {
+                    self.open_update_page();
+                }
+            }
+        }
+    }
+
+    fn open_update_page(&mut self) {
+        let url = self
+            .app_update_url
+            .as_deref()
+            .unwrap_or(crate::core::update_check::NEXUS_PAGE_URL);
+        if let Err(error) = open::that(url) {
+            self.push_notification(&format!("Could not open update page: {error}"));
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SelfUpdateTarget, self_update_target};
+
+    // @variants: snap
+    #[test]
+    fn non_appimage_packages_open_release_page() {
+        assert_eq!(self_update_target(None), SelfUpdateTarget::ReleasePage);
+    }
+
+    // @variants: appimage
+    #[test]
+    fn appimage_package_replaces_running_image() {
+        let path = "/tmp/Deployd.AppImage".to_string();
+
+        assert_eq!(
+            self_update_target(Some(path.clone())),
+            SelfUpdateTarget::AppImage(path)
+        );
     }
 }

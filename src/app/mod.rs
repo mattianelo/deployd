@@ -1776,15 +1776,8 @@ impl Component for App {
             AppMsg::DisableAllPlugins => self.handle_disable_all_plugins(&sender),
             AppMsg::ToggleShowVanillaPlugins => self.handle_toggle_show_vanilla_plugins(),
             AppMsg::ShowToast(msg) => self.handle_show_toast(msg),
-            AppMsg::NotificationDismissed => {
-                self.notification_count = self.notification_count.saturating_sub(1);
-            }
-            AppMsg::ClearNotifications => {
-                while let Some(child) = self.notification_list.first_child() {
-                    self.notification_list.remove(&child);
-                }
-                self.notification_count = 0;
-            }
+            AppMsg::NotificationDismissed => self.handle_notification_dismissed(),
+            AppMsg::ClearNotifications => self.handle_clear_notifications(),
             AppMsg::ToggleProfileSaveMode => {
                 self.profile_menu_btn.popdown();
                 self.handle_toggle_profile_save_mode(&sender);
@@ -1794,22 +1787,10 @@ impl Component for App {
                 self.handle_sync_saves(&sender);
             }
             AppMsg::AppUpdateAvailable(version, url) => {
-                self.app_update_version = Some(format!("Deployd {version} is available"));
-                self.app_update_url = Some(url);
+                self.handle_app_update_available(version, url)
             }
-            AppMsg::OpenUpdatePage => {
-                let url = self
-                    .app_update_url
-                    .as_deref()
-                    .unwrap_or(crate::core::update_check::NEXUS_PAGE_URL);
-                if let Err(e) = open::that(url) {
-                    self.push_notification(&format!("Could not open update page: {e}"));
-                }
-            }
-            AppMsg::SelfUpdateDownload => {
-                self.notifications_menu_btn.popdown();
-                self.handle_self_update_download(&sender);
-            }
+            AppMsg::OpenUpdatePage => self.handle_open_update_page(),
+            AppMsg::SelfUpdateDownload => self.handle_self_update_clicked(&sender),
             AppMsg::SaveModOrderSnapshot(name) => {
                 self.handle_snapshot_action(SnapshotAction::SaveMod(name), &sender)
             }

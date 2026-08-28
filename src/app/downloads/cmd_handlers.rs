@@ -227,27 +227,4 @@ impl App {
             self.downloads_dir = paths::default_downloads_dir();
         }
     }
-
-    pub(crate) fn handle_cmd_app_update_result(&mut self, result: Result<(), String>) {
-        match result {
-            Ok(()) => {
-                self.push_notification(
-                    "Update downloaded. Restart deployd to use the new version.",
-                );
-            }
-            Err(e) => {
-                self.push_notification(&format!("Update failed: {e}"));
-                // For premium-related failures, open the Nexus page as a fallback.
-                if e.contains("premium") {
-                    let url = self
-                        .app_update_url
-                        .as_deref()
-                        .unwrap_or(crate::core::update_check::NEXUS_PAGE_URL);
-                    if let Err(e) = open::that(url) {
-                        self.push_notification(&format!("Could not open update page: {e}"));
-                    }
-                }
-            }
-        }
-    }
 }

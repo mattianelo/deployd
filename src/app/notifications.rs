@@ -15,6 +15,21 @@ impl App {
         self.toast_overlay.add_toast(toast);
     }
 
+    pub(crate) fn handle_show_toast(&mut self, message: String) {
+        self.show_toast(&message);
+    }
+
+    pub(crate) fn handle_notification_dismissed(&mut self) {
+        self.notification_count = self.notification_count.saturating_sub(1);
+    }
+
+    pub(crate) fn handle_clear_notifications(&mut self) {
+        while let Some(child) = self.notification_list.first_child() {
+            self.notification_list.remove(&child);
+        }
+        self.notification_count = 0;
+    }
+
     /// Add an actionable notification to the persistent notification panel.
     ///
     /// Each item stays until the user explicitly dismisses it. Reserve this
