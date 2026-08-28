@@ -1,10 +1,10 @@
 stages:
+  - build-env
   - validate
   - compile
   - test
   - observe
   - secret-detection
-  - build-env
   - build
   - deploy
 
@@ -230,12 +230,23 @@ build-env-image:
     DOCKER_TLS_VERIFY: 1
     DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
   rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
+      changes:
+        - rust-toolchain.toml
+        - packaging/appimage/Dockerfile
+        - packaging/appimage/mcp-versions.sh
+        - packaging/appimage/install-fossil.sh
+        - packaging/appimage/install-rust-analyzer-mcp.sh
+        - packaging/appimage/provision-mcp.sh
+      when: manual
+      allow_failure: false
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "web"'
       when: manual
+      allow_failure: false
     - when: never
   script:
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
-    - if docker manifest inspect "$CI_REGISTRY_IMAGE/build-env:$BUILD_ENV_PUBLISH_TAG" >/dev/null 2>&1; then echo "immutable build image already exists" >&2; exit 1; fi
+    - if docker manifest inspect "$CI_REGISTRY_IMAGE/build-env:$BUILD_ENV_PUBLISH_TAG" >/dev/null 2>&1; then echo "immutable build image already exists"; exit 0; fi
     - docker build --pull --no-cache --tag "$CI_REGISTRY_IMAGE/build-env:$BUILD_ENV_PUBLISH_TAG" --file packaging/appimage/Dockerfile .
     - docker push "$CI_REGISTRY_IMAGE/build-env:$BUILD_ENV_PUBLISH_TAG"
     - docker tag "$CI_REGISTRY_IMAGE/build-env:$BUILD_ENV_PUBLISH_TAG" "$CI_REGISTRY_IMAGE/build-env:latest"

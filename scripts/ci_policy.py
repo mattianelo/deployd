@@ -46,6 +46,10 @@ def validate() -> None:
     expected_tag = f"rust-{rust_version}-fossil-{fossil_version}-v1"
     pipeline = (ROOT / ".gitlab-ci.yml").read_text()
     require(
+        pipeline.index("  - build-env") < pipeline.index("  - validate"),
+        "build image bootstrap must run before jobs that consume the image",
+    )
+    require(
         f'BUILD_ENV_IMAGE_TAG: "{expected_tag}"' in pipeline,
         f"build image tag must be {expected_tag}",
     )
@@ -57,6 +61,10 @@ def validate() -> None:
     require(
         "image: $CI_REGISTRY_IMAGE/build-env:latest" not in pipeline,
         "a CI job consumes the mutable build image alias",
+    )
+    require(
+        'CI_PIPELINE_SOURCE == "push"' in pipeline and "allow_failure: false" in pipeline,
+        "protected default-branch pushes cannot bootstrap a changed build image",
     )
     for local_source in ("AGENTS.md", ".agents/", ".codex/", ".plans/", "docs/"):
         require(local_source not in pipeline, f"CI references local-only input: {local_source}")
