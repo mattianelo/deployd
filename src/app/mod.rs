@@ -24,6 +24,7 @@ use gtk::glib;
 use gtk::prelude::*;
 use relm4::prelude::*;
 
+use self::order_snapshots::SnapshotAction;
 use self::types::{DownloadFilter, DownloadSort, ModFilter, WorkKind};
 
 mod state;
@@ -1810,17 +1811,20 @@ impl Component for App {
                 self.handle_self_update_download(&sender);
             }
             AppMsg::SaveModOrderSnapshot(name) => {
-                self.handle_save_mod_order_snapshot(name, &sender)
+                self.handle_snapshot_action(SnapshotAction::SaveMod(name), &sender)
             }
             AppMsg::SavePluginOrderSnapshot(name) => {
-                self.handle_save_plugin_order_snapshot(name, &sender)
+                self.handle_snapshot_action(SnapshotAction::SavePlugin(name), &sender)
             }
-            AppMsg::LoadModOrderSnapshot(id) => self.handle_load_mod_order_snapshot(id, &sender),
+            AppMsg::LoadModOrderSnapshot(id) => {
+                self.handle_snapshot_action(SnapshotAction::LoadMod(id), &sender)
+            }
             AppMsg::LoadPluginOrderSnapshot(id) => {
-                self.handle_load_plugin_order_snapshot(id, &sender)
+                self.handle_snapshot_action(SnapshotAction::LoadPlugin(id), &sender)
             }
-            AppMsg::DeleteModOrderSnapshot(id) => self.handle_delete_order_snapshot(id, &sender),
-            AppMsg::DeletePluginOrderSnapshot(id) => self.handle_delete_order_snapshot(id, &sender),
+            AppMsg::DeleteModOrderSnapshot(id) | AppMsg::DeletePluginOrderSnapshot(id) => {
+                self.handle_snapshot_action(SnapshotAction::Delete(id), &sender)
+            }
             AppMsg::SetModFilter(filter) => {
                 if self.mod_filter == filter {
                     return;

@@ -9,7 +9,31 @@ use super::free_fns::load_game_data;
 use super::messages::{AppCmdMsg, AppMsg};
 use super::types::LoadedData;
 
+pub(super) enum SnapshotAction {
+    SaveMod(String),
+    SavePlugin(String),
+    LoadMod(String),
+    LoadPlugin(String),
+    Delete(String),
+}
+
 impl App {
+    pub(super) fn handle_snapshot_action(
+        &mut self,
+        action: SnapshotAction,
+        sender: &ComponentSender<Self>,
+    ) {
+        match action {
+            SnapshotAction::SaveMod(name) => self.handle_save_mod_order_snapshot(name, sender),
+            SnapshotAction::SavePlugin(name) => {
+                self.handle_save_plugin_order_snapshot(name, sender)
+            }
+            SnapshotAction::LoadMod(id) => self.handle_load_mod_order_snapshot(id, sender),
+            SnapshotAction::LoadPlugin(id) => self.handle_load_plugin_order_snapshot(id, sender),
+            SnapshotAction::Delete(id) => self.handle_delete_order_snapshot(id, sender),
+        }
+    }
+
     pub(crate) fn reload_order_snapshots(&self, sender: &ComponentSender<Self>) {
         let Some(tracker) = self.tracker.clone() else {
             return;
@@ -46,11 +70,7 @@ impl App {
         );
     }
 
-    pub(crate) fn handle_save_mod_order_snapshot(
-        &mut self,
-        name: String,
-        sender: &ComponentSender<Self>,
-    ) {
+    fn handle_save_mod_order_snapshot(&mut self, name: String, sender: &ComponentSender<Self>) {
         let Some(tracker) = self.tracker.clone() else {
             return;
         };
@@ -86,11 +106,7 @@ impl App {
         });
     }
 
-    pub(crate) fn handle_save_plugin_order_snapshot(
-        &mut self,
-        name: String,
-        sender: &ComponentSender<Self>,
-    ) {
+    fn handle_save_plugin_order_snapshot(&mut self, name: String, sender: &ComponentSender<Self>) {
         let Some(tracker) = self.tracker.clone() else {
             return;
         };
@@ -123,7 +139,7 @@ impl App {
         });
     }
 
-    pub(crate) fn handle_load_mod_order_snapshot(
+    fn handle_load_mod_order_snapshot(
         &mut self,
         snapshot_id: String,
         sender: &ComponentSender<Self>,
@@ -150,7 +166,7 @@ impl App {
         });
     }
 
-    pub(crate) fn handle_load_plugin_order_snapshot(
+    fn handle_load_plugin_order_snapshot(
         &mut self,
         snapshot_id: String,
         sender: &ComponentSender<Self>,
@@ -177,7 +193,7 @@ impl App {
         });
     }
 
-    pub(crate) fn handle_delete_order_snapshot(
+    fn handle_delete_order_snapshot(
         &mut self,
         snapshot_id: String,
         sender: &ComponentSender<Self>,
