@@ -352,28 +352,6 @@ impl App {
         self.updating_profiles = false;
     }
 
-    pub(crate) fn reload_order_snapshots(&self, sender: &ComponentSender<Self>) {
-        use crate::app::messages::AppCmdMsg;
-        use crate::models::order_snapshot::SnapshotKind;
-        let Some(tracker) = self.tracker.clone() else {
-            return;
-        };
-        let Some(game) = self.selected_game().cloned() else {
-            return;
-        };
-        sender.oneshot_command(async move {
-            let mod_snaps = tracker
-                .list_order_snapshots(&game.id, SnapshotKind::Mod)
-                .await
-                .unwrap_or_default();
-            let plugin_snaps = tracker
-                .list_order_snapshots(&game.id, SnapshotKind::Plugin)
-                .await
-                .unwrap_or_default();
-            AppCmdMsg::OrderSnapshotsLoaded(mod_snaps, plugin_snaps)
-        });
-    }
-
     pub(crate) fn apply_loaded_data(
         &mut self,
         data: LoadedData,

@@ -2061,45 +2061,22 @@ impl Component for App {
                 sender.input(AppMsg::GameSelected(0));
             }
             AppCmdMsg::OrderSnapshotsLoaded(mod_snaps, plugin_snaps) => {
-                self.mod_order_snapshots = mod_snaps;
-                self.plugin_order_snapshots = plugin_snaps;
-                self.rebuild_snapshot_lists(&sender);
+                self.handle_cmd_order_snapshots_loaded(mod_snaps, plugin_snaps, &sender)
             }
             AppCmdMsg::ModOrderSnapshotSaved(result) => {
-                if let Err(e) = result {
-                    self.push_notification(&format!("Failed to save snapshot: {e}"));
-                } else {
-                    self.show_toast("Mod order snapshot saved");
-                    self.reload_order_snapshots(&sender);
-                }
+                self.handle_cmd_mod_order_snapshot_saved(result, &sender)
             }
             AppCmdMsg::PluginOrderSnapshotSaved(result) => {
-                if let Err(e) = result {
-                    self.push_notification(&format!("Failed to save snapshot: {e}"));
-                } else {
-                    self.show_toast("Plugin order snapshot saved");
-                    self.reload_order_snapshots(&sender);
-                }
+                self.handle_cmd_plugin_order_snapshot_saved(result, &sender)
             }
-            AppCmdMsg::ModOrderSnapshotRestored(result) => match result {
-                Ok(data) => {
-                    self.apply_loaded_data(data, &sender);
-                    self.show_toast("Mod order restored");
-                }
-                Err(e) => self.push_notification(&format!("Failed to restore snapshot: {e}")),
-            },
-            AppCmdMsg::PluginOrderSnapshotRestored(result) => match result {
-                Ok(data) => {
-                    self.apply_loaded_data(data, &sender);
-                    self.show_toast("Plugin order restored");
-                }
-                Err(e) => self.push_notification(&format!("Failed to restore snapshot: {e}")),
-            },
+            AppCmdMsg::ModOrderSnapshotRestored(result) => {
+                self.handle_cmd_mod_order_snapshot_restored(result, &sender)
+            }
+            AppCmdMsg::PluginOrderSnapshotRestored(result) => {
+                self.handle_cmd_plugin_order_snapshot_restored(result, &sender)
+            }
             AppCmdMsg::OrderSnapshotDeleted(result) => {
-                if let Err(e) = result {
-                    self.push_notification(&format!("Failed to delete snapshot: {e}"));
-                }
-                self.reload_order_snapshots(&sender);
+                self.handle_cmd_order_snapshot_deleted(result, &sender)
             }
             AppCmdMsg::NexusAvatarLoaded(bytes) => {
                 crate::dlog!(

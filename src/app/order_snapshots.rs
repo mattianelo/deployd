@@ -7,8 +7,29 @@ use crate::ui::mod_list::ModListItemKind;
 use super::App;
 use super::free_fns::load_game_data;
 use super::messages::{AppCmdMsg, AppMsg};
+use super::types::LoadedData;
 
 impl App {
+    pub(crate) fn reload_order_snapshots(&self, sender: &ComponentSender<Self>) {
+        let Some(tracker) = self.tracker.clone() else {
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            return;
+        };
+        sender.oneshot_command(async move {
+            let mod_snaps = tracker
+                .list_order_snapshots(&game.id, SnapshotKind::Mod)
+                .await
+                .unwrap_or_default();
+            let plugin_snaps = tracker
+                .list_order_snapshots(&game.id, SnapshotKind::Plugin)
+                .await
+                .unwrap_or_default();
+            AppCmdMsg::OrderSnapshotsLoaded(mod_snaps, plugin_snaps)
+        });
+    }
+
     /// Rebuild the Load popover listboxes from the current snapshot lists.
     pub(crate) fn rebuild_snapshot_lists(&self, sender: &ComponentSender<Self>) {
         rebuild_list(
@@ -173,6 +194,91 @@ impl App {
                     .map_err(|e| e.to_string()),
             )
         });
+    }
+
+    pub(crate) fn handle_cmd_order_snapshots_loaded(
+        &mut self,
+        mod_snapshots: Vec<OrderSnapshot>,
+        plugin_snapshots: Vec<OrderSnapshot>,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.mod_order_snapshots = mod_snapshots;
+        self.plugin_order_snapshots = plugin_snapshots;
+        self.rebuild_snapshot_lists(sender);
+    }
+
+    pub(crate) fn handle_cmd_mod_order_snapshot_saved(
+        &mut self,
+        result: Result<(), String>,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.handle_cmd_order_snapshot_saved(result, "Mod order snapshot saved", sender);
+    }
+
+    pub(crate) fn handle_cmd_plugin_order_snapshot_saved(
+        &mut self,
+        result: Result<(), String>,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.handle_cmd_order_snapshot_saved(result, "Plugin order snapshot saved", sender);
+    }
+
+    fn handle_cmd_order_snapshot_saved(
+        &mut self,
+        result: Result<(), String>,
+        success_message: &str,
+        sender: &ComponentSender<Self>,
+    ) {
+        if let Err(error) = result {
+            self.push_notification(&format!("Failed to save snapshot: {error}"));
+        } else {
+            self.show_toast(success_message);
+            self.reload_order_snapshots(sender);
+        }
+    }
+
+    pub(crate) fn handle_cmd_mod_order_snapshot_restored(
+        &mut self,
+        result: Result<LoadedData, String>,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.handle_cmd_order_snapshot_restored(result, "Mod order restored", sender);
+    }
+
+    pub(crate) fn handle_cmd_plugin_order_snapshot_restored(
+        &mut self,
+        result: Result<LoadedData, String>,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.handle_cmd_order_snapshot_restored(result, "Plugin order restored", sender);
+    }
+
+    fn handle_cmd_order_snapshot_restored(
+        &mut self,
+        result: Result<LoadedData, String>,
+        success_message: &str,
+        sender: &ComponentSender<Self>,
+    ) {
+        match result {
+            Ok(data) => {
+                self.apply_loaded_data(data, sender);
+                self.show_toast(success_message);
+            }
+            Err(error) => {
+                self.push_notification(&format!("Failed to restore snapshot: {error}"));
+            }
+        }
+    }
+
+    pub(crate) fn handle_cmd_order_snapshot_deleted(
+        &mut self,
+        result: Result<(), String>,
+        sender: &ComponentSender<Self>,
+    ) {
+        if let Err(error) = result {
+            self.push_notification(&format!("Failed to delete snapshot: {error}"));
+        }
+        self.reload_order_snapshots(sender);
     }
 }
 
