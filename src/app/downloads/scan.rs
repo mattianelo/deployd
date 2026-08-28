@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::core::game;
 use crate::models::download::{DownloadEntry, DownloadStatus, NexusIds};
 
 use super::super::App;
-use super::super::free_fns::{normalize_nexus_filename, parse_nexus_mod_id};
+use super::super::free_fns::normalize_nexus_filename;
 use super::super::messages::AppCmdMsg;
 use super::super::types::{DownloadScanResult, WorkKind};
+use super::discovery;
 
 impl App {
     pub(crate) fn handle_scan_downloads_folder(
@@ -46,58 +46,20 @@ impl App {
             AppCmdMsg::DownloadsScanned(result)
         });
     }
-
-    pub(crate) fn handle_cmd_downloads_scanned(
-        &mut self,
-        result: Result<DownloadScanResult, String>,
-        sender: &relm4::prelude::ComponentSender<Self>,
-    ) {
-        self.finish_work(WorkKind::ScanningDownloads);
-
-        let scan = match result {
-            Ok(scan) => scan,
-            Err(e) => {
-                self.initial_scan_done = true;
-                self.push_notification(&format!("Downloads scan failed: {e}"));
-                return;
-            }
-        };
-
-        self.all_downloads = scan.entries;
-        self.rebuild_downloads_view();
-
-        if !scan.removed_ids.is_empty()
-            && let Some(tracker) = self.tracker.clone()
-        {
-            let removed_ids = scan.removed_ids.clone();
-            sender.oneshot_command(async move {
-                let _ = tracker.delete_download_entries(&removed_ids).await;
-                AppCmdMsg::PrioritySaved(Ok(()))
-            });
-        }
-
-        if !scan.to_persist.is_empty()
-            && let Some(tracker) = self.tracker.clone()
-        {
-            let to_persist = scan.to_persist.clone();
-            sender.oneshot_command(async move {
-                for entry in &to_persist {
-                    let _ = tracker.save_download_entry(entry).await;
-                }
-                AppCmdMsg::PrioritySaved(Ok(()))
-            });
-        }
-
-        if self.initial_scan_done && scan.new_count > 0 {
-            self.show_toast(&format!("Found {} archive(s)", scan.new_count));
-        }
-        self.initial_scan_done = true;
-    }
 }
 
 fn scan_downloads(
     base_dir: PathBuf,
+    all_downloads: Vec<DownloadEntry>,
+) -> Result<DownloadScanResult, String> {
+    let archives = discovery::scan_archives(&base_dir);
+    reconcile_downloads(base_dir, all_downloads, archives)
+}
+
+fn reconcile_downloads(
+    base_dir: PathBuf,
     mut all_downloads: Vec<DownloadEntry>,
+    archives: Vec<discovery::DiscoveredArchive>,
 ) -> Result<DownloadScanResult, String> {
     let mut removed_ids = Vec::new();
     let mut changed_ids: Vec<String> = Vec::new();
@@ -128,139 +90,39 @@ fn scan_downloads(
                 .is_some_and(|p| p.exists() && p.starts_with(&base_dir))
     });
 
-    let archive_extensions = ["zip", "7z", "rar", "dazip"];
     let mut new_count = 0usize;
-
-    // Scan per-game subfolders (e.g. downloads_dir/skyrimspecialedition/)
-    for domain in game::all_nexus_domains() {
-        let game_dir = base_dir.join(domain);
-        let Ok(entries) = std::fs::read_dir(&game_dir) else {
+    for archive in archives {
+        let domain = archive.game_domain.as_deref();
+        if let Some(outcome) = reconcile_archive(
+            &mut all_downloads,
+            &archive.path,
+            domain,
+            &archive.nexus_ids,
+        ) {
+            changed_ids.extend(outcome.changed_ids);
+            removed_ids.extend(outcome.removed_ids);
             continue;
-        };
-
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-            let ext = path
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("")
-                .to_lowercase();
-            if !archive_extensions.contains(&ext.as_str()) {
-                continue;
-            }
-            let file_name = path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-            let nexus_ids = parse_nexus_mod_id(&file_name).map(|mod_id| NexusIds {
-                mod_id,
-                file_id: 0,
-                domain: domain.to_string(),
-            });
-
-            let mod_name = path
-                .file_stem()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-
-            if let Some(outcome) =
-                reconcile_archive(&mut all_downloads, &path, Some(domain), &nexus_ids)
-            {
-                changed_ids.extend(outcome.changed_ids);
-                removed_ids.extend(outcome.removed_ids);
-                continue;
-            }
-            let download_id = uuid::Uuid::new_v4().to_string();
-            let entry = DownloadEntry {
-                id: download_id,
-                mod_name,
-                status: DownloadStatus::Downloaded,
-                progress: 1.0,
-                status_msg: "Ready to install".to_string(),
-                error_msg: None,
-                nexus_ids,
-                archive_path: Some(path),
-                metadata_fetched: false,
-                game_domain: Some(domain.to_string()),
-                nexus_file_name: None,
-                nexus_is_primary: false,
-                archive_hash: None,
-                archive_md5: None,
-                version: None,
-                author: None,
-                hidden: false,
-            };
-            all_downloads.push(entry);
-            new_count += 1;
         }
-    }
-
-    // Also scan the flat root folder for unrecognized archives
-    // (backward compat + manual drops).
-    if let Ok(root_entries) = std::fs::read_dir(&base_dir) {
-        for entry in root_entries.flatten() {
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-            let ext = path
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("")
-                .to_lowercase();
-            if !archive_extensions.contains(&ext.as_str()) {
-                continue;
-            }
-            let file_name = path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-            let nexus_ids = parse_nexus_mod_id(&file_name).map(|mod_id| NexusIds {
-                mod_id,
-                file_id: 0,
-                domain: String::new(),
-            });
-
-            let mod_name = path
-                .file_stem()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-
-            if let Some(outcome) = reconcile_archive(&mut all_downloads, &path, None, &nexus_ids) {
-                changed_ids.extend(outcome.changed_ids);
-                removed_ids.extend(outcome.removed_ids);
-                continue;
-            }
-            let download_id = uuid::Uuid::new_v4().to_string();
-            let entry = DownloadEntry {
-                id: download_id,
-                mod_name,
-                status: DownloadStatus::Downloaded,
-                progress: 1.0,
-                status_msg: "Ready to install".to_string(),
-                error_msg: None,
-                nexus_ids,
-                archive_path: Some(path),
-                metadata_fetched: false,
-                game_domain: None,
-                nexus_file_name: None,
-                nexus_is_primary: false,
-                archive_hash: None,
-                archive_md5: None,
-                version: None,
-                author: None,
-                hidden: false,
-            };
-            all_downloads.push(entry);
-            new_count += 1;
-        }
+        all_downloads.push(DownloadEntry {
+            id: uuid::Uuid::new_v4().to_string(),
+            mod_name: archive.mod_name,
+            status: DownloadStatus::Downloaded,
+            progress: 1.0,
+            status_msg: "Ready to install".to_string(),
+            error_msg: None,
+            nexus_ids: archive.nexus_ids,
+            archive_path: Some(archive.path),
+            metadata_fetched: false,
+            game_domain: archive.game_domain,
+            nexus_file_name: None,
+            nexus_is_primary: false,
+            archive_hash: None,
+            archive_md5: None,
+            version: None,
+            author: None,
+            hidden: false,
+        });
+        new_count += 1;
     }
 
     let sweep = sweep_duplicate_downloads(&mut all_downloads);

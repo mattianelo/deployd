@@ -1,8 +1,12 @@
+mod cache;
 mod dazip;
+mod deployment;
 mod file_list;
+mod inspection;
 mod paths;
 
 pub(crate) use file_list::is_ignorable_file;
+pub use inspection::{PrepareResult, prepare_mod};
 pub use paths::auto_detect_install_target;
 pub(crate) use paths::{
     apply_redengine_path_fixups, route_aurora_paths, strip_data_subdir_prefix_str,
@@ -37,126 +41,25 @@ pub fn route_paths_for_preview(
 }
 
 use std::collections::{HashMap, HashSet};
-use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::Utc;
-use tempfile::TempDir;
 use uuid::Uuid;
 
-use crate::core::game::engine_handler;
 use crate::core::rules;
 use crate::core::tracker::Tracker;
-use crate::dlog;
 use crate::models::download::NexusIds;
 use crate::models::game::{Game, GameEngine};
-use crate::models::manifest::ModFile;
 use crate::models::mod_entry::{InstallTarget, ModEntry};
 use crate::models::plugin::Plugin;
 use crate::utils::paths as utils_paths;
-use crate::utils::{archive, fomod_resolver};
 
 #[derive(Debug)]
 pub struct AddResult {
     pub mod_entry: ModEntry,
     pub files_cached: usize,
     pub plugins_found: Vec<String>,
-}
-
-pub enum PrepareResult {
-    Normal {
-        file_list: Vec<(PathBuf, PathBuf)>,
-        /// Original wrapper dir name stripped by detect_wrapper (e.g. `"modSkipMovies"`).
-        /// Used by REDEngine path fixups to preserve the archive's folder name under `Mods/`.
-        stripped_wrapper: Option<String>,
-        tmp_dir: TempDir,
-    },
-    Fomod {
-        config: fomod_resolver::FomodUiConfig,
-        config_path: PathBuf,
-        tmp_dir: TempDir,
-    },
-}
-
-pub async fn prepare_mod(
-    archive_path: &Path,
-    on_extract_progress: Option<Box<dyn Fn(usize, usize) + Send>>,
-    on_processing: Option<Box<dyn FnOnce() + Send>>,
-) -> Result<PrepareResult> {
-    dlog!("[deployd] prepare_mod: {}", archive_path.display());
-    let path = archive_path.to_path_buf();
-    let tmp_dir = tokio::task::spawn_blocking(move || {
-        archive::extract_archive(&path, on_extract_progress)
-            .with_context(|| format!("Extraction failed for: {}", path.display()))
-    })
-    .await
-    .context("Extraction task panicked")??;
-
-    // Notify the UI that extraction finished and post-processing is starting.
-    // This keeps the progress message meaningful during the blocking work below.
-    if let Some(cb) = on_processing {
-        cb();
-    }
-
-    let is_dazip = archive_path
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.eq_ignore_ascii_case("dazip"))
-        .unwrap_or(false);
-
-    let stem = if is_dazip {
-        archive_path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("unknown")
-            .to_string()
-    } else {
-        String::new()
-    };
-
-    // Post-extraction work (dazip expansion, FOMOD/file-list discovery) involves
-    // directory scans and recursive I/O. Wrap in spawn_blocking so the tokio
-    // executor stays free and the UI remains responsive.
-    tokio::task::spawn_blocking(move || {
-        let extracted_root = tmp_dir.path();
-        dlog!("[deployd] extracted to: {}", extracted_root.display());
-
-        if is_dazip {
-            dazip::process_dazip_root(extracted_root, &stem)
-                .context("Failed to process dazip archive")?;
-        } else {
-            dazip::expand_dazip_files_in_place(extracted_root)
-                .context("Failed to expand nested .dazip files")?;
-        }
-
-        if let Some(config_path) = fomod_resolver::detect_fomod(extracted_root) {
-            dlog!("[deployd] FOMOD detected: {}", config_path.display());
-            let config = fomod_resolver::parse_fomod_config(&config_path).with_context(|| {
-                format!("Failed to parse FOMOD config: {}", config_path.display())
-            })?;
-            dlog!(
-                "[deployd] FOMOD config parsed: {} steps",
-                config.steps.len()
-            );
-            Ok(PrepareResult::Fomod {
-                config,
-                config_path,
-                tmp_dir,
-            })
-        } else {
-            let (file_list, stripped_wrapper) = file_list::resolve_file_list(extracted_root)
-                .context("Failed to resolve file list from extracted archive")?;
-            dlog!("[deployd] normal mod: {} files resolved", file_list.len());
-            Ok(PrepareResult::Normal {
-                file_list,
-                stripped_wrapper,
-                tmp_dir,
-            })
-        }
-    })
-    .await
-    .context("Post-extraction task panicked")?
 }
 
 #[allow(clippy::too_many_arguments)] // All parameters are meaningfully distinct; a builder struct would add complexity without clarity.
@@ -176,160 +79,22 @@ pub async fn add_mod_with_file_list(
 ) -> Result<AddResult> {
     let mod_id = Uuid::new_v4().to_string();
 
-    let game_rules = rules::rules_for_game(&game.id);
-    let file_list = filter_excluded_files(
+    let plan = deployment::route_and_plan(
         file_list,
-        &game_rules,
-        &game.engine,
-        &game.data_subdir,
-        excluded_files,
-    );
-    let handler = engine_handler::handler_for(&game.engine);
-    let file_list = handler.route_file_list(
         game,
         mod_name,
         stripped_wrapper.as_deref(),
-        file_list,
         &file_targets,
+        excluded_files,
     );
-
     let cache_dir = utils_paths::mod_cache_dir_in(cache_root, &mod_id);
-    fs::create_dir_all(&cache_dir)
-        .with_context(|| format!("Cannot create cache dir: {}", cache_dir.display()))?;
-
-    let total_files = file_list.len();
-    let mut mod_files: Vec<ModFile> = Vec::with_capacity(total_files);
-    let mut plugins_found: Vec<String> = Vec::new();
-    let mut plugin_cache_files: Vec<(String, PathBuf)> = Vec::new();
-    for (file_idx, (src_abs, dest_rel)) in file_list.iter().enumerate() {
-        let ruled_path = rules::apply_rules(&game_rules, &dest_rel.to_string_lossy());
-        let original_rel = ruled_path.replace('\\', "/");
-        let explicit_root = original_rel.starts_with("../");
-        let original_rel = if explicit_root {
-            original_rel[3..].to_string()
-        } else {
-            original_rel
-        };
-        let lowercase_rel = utils_paths::lowercase_path(Path::new(&original_rel));
-        let lowercase_rel =
-            self::paths::strip_data_subdir_prefix(&lowercase_rel, &game.data_subdir);
-        let original_rel =
-            self::paths::strip_data_subdir_prefix_str(&original_rel, &game.data_subdir);
-
-        // Directory sentinel: recorded with trailing '/' so the deployer creates the dir
-        // rather than hardlinking (e.g. JContainers' Domains/ folder must exist).
-        if src_abs.is_dir() {
-            if should_skip_empty_bethesda_sentinel(&game.engine, &lowercase_rel) {
-                if let Some(ref cb) = on_progress {
-                    cb(file_idx + 1, total_files);
-                }
-                continue;
-            }
-            let cache_sentinel = cache_dir.join(&lowercase_rel);
-            if let Err(e) = fs::create_dir_all(&cache_sentinel) {
-                eprintln!(
-                    "[deployd] WARNING: cannot create cache sentinel '{}': {e}",
-                    cache_sentinel.display()
-                );
-            }
-            if let Some(ref cb) = on_progress {
-                cb(file_idx + 1, total_files);
-            }
-            let rel_str = lowercase_rel.to_string_lossy();
-            let (recorded_rel, original_recorded_rel) = if explicit_root {
-                (format!("../{rel_str}/"), format!("../{original_rel}/"))
-            } else {
-                (format!("{rel_str}/"), format!("{original_rel}/"))
-            };
-            mod_files.push(ModFile {
-                mod_id: mod_id.clone(),
-                game_rel_lowercase: recorded_rel,
-                game_rel_original: original_recorded_rel,
-                cache_path: cache_sentinel.to_string_lossy().to_string(),
-            });
-            continue;
-        }
-
-        // Skip files the user opted to exclude in the pre-install dialog.
-        let file_key = ruled_path.replace('\\', "/");
-        if excluded_files.contains(&file_key) {
-            if let Some(ref cb) = on_progress {
-                cb(file_idx + 1, total_files);
-            }
-            continue;
-        }
-
-        let cache_file = cache_dir.join(&lowercase_rel);
-        if let Some(parent) = cache_file.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        match fs::copy(src_abs, &cache_file) {
-            Ok(_) => {}
-            Err(e) if e.raw_os_error() == Some(21) => {
-                // EISDIR: the source path resolved to a directory at copy time even
-                // though it appeared to be a file during FOMOD resolution. This can
-                // happen with malformed archives where a file and a same-named directory
-                // entry coexist. Skip with a warning rather than aborting the install.
-                eprintln!(
-                    "[deployd] WARNING: skipping '{}' — resolved as directory at copy time (EISDIR)",
-                    src_abs.display()
-                );
-                if let Some(ref cb) = on_progress {
-                    cb(file_idx + 1, total_files);
-                }
-                continue;
-            }
-            Err(e) => {
-                return Err(e).with_context(|| format!("Cache copy failed: {}", src_abs.display()));
-            }
-        }
-
-        if let Some(ref cb) = on_progress {
-            cb(file_idx + 1, total_files);
-        }
-
-        let deploy_to_root = handler.deploy_to_root(&file_key, &file_targets, explicit_root);
-
-        let rel_str = lowercase_rel.to_string_lossy();
-        let recorded_rel = if deploy_to_root {
-            format!("../{rel_str}")
-        } else {
-            rel_str.to_string()
-        };
-        let original_recorded_rel = if deploy_to_root {
-            format!("../{original_rel}")
-        } else {
-            original_rel.clone()
-        };
-
-        if is_plugin(&rel_str) {
-            let orig_path = Path::new(&original_rel);
-            if let Some(filename) = orig_path.file_name() {
-                let name = filename.to_string_lossy().to_string();
-                plugins_found.push(name.clone());
-                plugin_cache_files.push((name, cache_file.clone()));
-            }
-        }
-
-        mod_files.push(ModFile {
-            mod_id: mod_id.clone(),
-            game_rel_lowercase: recorded_rel,
-            game_rel_original: original_recorded_rel,
-            cache_path: cache_file.to_string_lossy().to_string(),
-        });
-    }
-
-    {
-        let mut seen = HashSet::new();
-        let mut deduped = Vec::with_capacity(mod_files.len());
-        for f in mod_files.into_iter().rev() {
-            if seen.insert(f.game_rel_lowercase.clone()) {
-                deduped.push(f);
-            }
-        }
-        deduped.reverse();
-        mod_files = deduped;
-    }
+    let cached = cache::write_files(&mod_id, &cache_dir, plan, on_progress.as_deref())?;
+    let mod_files = cached.mod_files;
+    let plugin_cache_files = cached.plugin_cache_files;
+    let plugins_found = plugin_cache_files
+        .iter()
+        .map(|(name, _)| name.clone())
+        .collect();
 
     let priority = tracker.next_priority(&game.id).await?;
 
@@ -419,151 +184,18 @@ pub async fn merge_files_into_mod(
     excluded_files: &HashSet<String>,
     on_progress: Option<Box<dyn Fn(usize, usize) + Send>>,
 ) -> Result<usize> {
-    let game_rules = rules::rules_for_game(&game.id);
-    let file_list = filter_excluded_files(
+    let plan = deployment::route_and_plan(
         file_list,
-        &game_rules,
-        &game.engine,
-        &game.data_subdir,
-        excluded_files,
-    );
-    let handler = engine_handler::handler_for(&game.engine);
-    let file_list = handler.route_file_list(
         game,
         mod_name,
         stripped_wrapper.as_deref(),
-        file_list,
         &file_targets,
+        excluded_files,
     );
-
     let cache_dir = utils_paths::mod_cache_dir_in(cache_root, existing_mod_id);
-    fs::create_dir_all(&cache_dir)
-        .with_context(|| format!("Cannot create cache dir: {}", cache_dir.display()))?;
-
-    let total_files = file_list.len();
-    let mut mod_files: Vec<ModFile> = Vec::with_capacity(total_files);
-    let mut new_plugin_cache_files: Vec<(String, PathBuf)> = Vec::new();
-    for (file_idx, (src_abs, dest_rel)) in file_list.iter().enumerate() {
-        let ruled_path = rules::apply_rules(&game_rules, &dest_rel.to_string_lossy());
-        let original_rel = ruled_path.replace('\\', "/");
-        let explicit_root = original_rel.starts_with("../");
-        let original_rel = if explicit_root {
-            original_rel[3..].to_string()
-        } else {
-            original_rel
-        };
-        let lowercase_rel = utils_paths::lowercase_path(Path::new(&original_rel));
-        let lowercase_rel =
-            self::paths::strip_data_subdir_prefix(&lowercase_rel, &game.data_subdir);
-        let original_rel =
-            self::paths::strip_data_subdir_prefix_str(&original_rel, &game.data_subdir);
-
-        if src_abs.is_dir() {
-            if should_skip_empty_bethesda_sentinel(&game.engine, &lowercase_rel) {
-                if let Some(ref cb) = on_progress {
-                    cb(file_idx + 1, total_files);
-                }
-                continue;
-            }
-            let cache_sentinel = cache_dir.join(&lowercase_rel);
-            if let Err(e) = fs::create_dir_all(&cache_sentinel) {
-                eprintln!(
-                    "[deployd] WARNING: cannot create cache sentinel '{}': {e}",
-                    cache_sentinel.display()
-                );
-            }
-            if let Some(ref cb) = on_progress {
-                cb(file_idx + 1, total_files);
-            }
-            let rel_str = lowercase_rel.to_string_lossy();
-            let (recorded_rel, original_recorded_rel) = if explicit_root {
-                (format!("../{rel_str}/"), format!("../{original_rel}/"))
-            } else {
-                (format!("{rel_str}/"), format!("{original_rel}/"))
-            };
-            mod_files.push(ModFile {
-                mod_id: existing_mod_id.to_string(),
-                game_rel_lowercase: recorded_rel,
-                game_rel_original: original_recorded_rel,
-                cache_path: cache_sentinel.to_string_lossy().to_string(),
-            });
-            continue;
-        }
-
-        // Skip files the user opted to exclude in the pre-install dialog.
-        let file_key = ruled_path.replace('\\', "/");
-        if excluded_files.contains(&file_key) {
-            if let Some(ref cb) = on_progress {
-                cb(file_idx + 1, total_files);
-            }
-            continue;
-        }
-
-        let cache_file = cache_dir.join(&lowercase_rel);
-        if let Some(parent) = cache_file.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        match fs::copy(src_abs, &cache_file) {
-            Ok(_) => {}
-            Err(e) if e.raw_os_error() == Some(21) => {
-                eprintln!(
-                    "[deployd] WARNING: skipping '{}' — resolved as directory at copy time (EISDIR)",
-                    src_abs.display()
-                );
-                if let Some(ref cb) = on_progress {
-                    cb(file_idx + 1, total_files);
-                }
-                continue;
-            }
-            Err(e) => {
-                return Err(e).with_context(|| format!("Cache copy failed: {}", src_abs.display()));
-            }
-        }
-
-        if let Some(ref cb) = on_progress {
-            cb(file_idx + 1, total_files);
-        }
-
-        let deploy_to_root = handler.deploy_to_root(&file_key, &file_targets, explicit_root);
-
-        let rel_str = lowercase_rel.to_string_lossy();
-        let recorded_rel = if deploy_to_root {
-            format!("../{rel_str}")
-        } else {
-            rel_str.to_string()
-        };
-        let original_recorded_rel = if deploy_to_root {
-            format!("../{original_rel}")
-        } else {
-            original_rel.clone()
-        };
-
-        if is_plugin(&rel_str)
-            && let Some(filename) = Path::new(&original_rel).file_name()
-        {
-            let name = filename.to_string_lossy().to_string();
-            new_plugin_cache_files.push((name, cache_file.clone()));
-        }
-
-        mod_files.push(ModFile {
-            mod_id: existing_mod_id.to_string(),
-            game_rel_lowercase: recorded_rel,
-            game_rel_original: original_recorded_rel,
-            cache_path: cache_file.to_string_lossy().to_string(),
-        });
-    }
-
-    {
-        let mut seen = HashSet::new();
-        let mut deduped = Vec::with_capacity(mod_files.len());
-        for f in mod_files.into_iter().rev() {
-            if seen.insert(f.game_rel_lowercase.clone()) {
-                deduped.push(f);
-            }
-        }
-        deduped.reverse();
-        mod_files = deduped;
-    }
+    let cached = cache::write_files(existing_mod_id, &cache_dir, plan, on_progress.as_deref())?;
+    let mod_files = cached.mod_files;
+    let new_plugin_cache_files = cached.plugin_cache_files;
 
     let files_merged = mod_files.len();
     tracker.upsert_mod_files(&mod_files).await?;
@@ -610,15 +242,6 @@ pub async fn merge_files_into_mod(
     }
 
     Ok(files_merged)
-}
-
-fn is_plugin(rel_path: &str) -> bool {
-    let l = rel_path.to_lowercase();
-    l.ends_with(".esp") || l.ends_with(".esm") || l.ends_with(".esl")
-}
-
-fn should_skip_empty_bethesda_sentinel(engine: &GameEngine, rel: &Path) -> bool {
-    *engine == GameEngine::Bethesda && rel.as_os_str().is_empty()
 }
 
 fn filter_excluded_files(
@@ -820,24 +443,5 @@ mod tests {
             dests(filtered),
             vec![PathBuf::from("Mods/SomeMod/content/scripts/foo.ws")]
         );
-    }
-
-    #[test]
-    fn skips_only_bethesda_empty_directory_sentinel() {
-        assert!(should_skip_empty_bethesda_sentinel(
-            &GameEngine::Bethesda,
-            Path::new("")
-        ));
-        assert!(!should_skip_empty_bethesda_sentinel(
-            &GameEngine::Bethesda,
-            Path::new("EmptyDir")
-        ));
-        assert!(!should_skip_empty_bethesda_sentinel(
-            &GameEngine::Aurora,
-            Path::new("")
-        ));
-
-        let rel_str = "";
-        assert_eq!(format!("{rel_str}/"), "/");
     }
 }

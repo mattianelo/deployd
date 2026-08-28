@@ -7,9 +7,56 @@ use crate::utils::paths;
 
 use super::super::App;
 use super::super::messages::{AppCmdMsg, AppMsg};
-use super::super::types::NxmDownloadResult;
+use super::super::types::{DownloadScanResult, NxmDownloadResult, WorkKind};
 
 impl App {
+    pub(crate) fn handle_cmd_downloads_scanned(
+        &mut self,
+        result: Result<DownloadScanResult, String>,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.finish_work(WorkKind::ScanningDownloads);
+
+        let scan = match result {
+            Ok(scan) => scan,
+            Err(error) => {
+                self.initial_scan_done = true;
+                self.push_notification(&format!("Downloads scan failed: {error}"));
+                return;
+            }
+        };
+
+        self.all_downloads = scan.entries;
+        self.rebuild_downloads_view();
+
+        if !scan.removed_ids.is_empty()
+            && let Some(tracker) = self.tracker.clone()
+        {
+            let removed_ids = scan.removed_ids.clone();
+            sender.oneshot_command(async move {
+                let _ = tracker.delete_download_entries(&removed_ids).await;
+                AppCmdMsg::PrioritySaved(Ok(()))
+            });
+        }
+
+        if !scan.to_persist.is_empty()
+            && let Some(tracker) = self.tracker.clone()
+        {
+            let to_persist = scan.to_persist.clone();
+            sender.oneshot_command(async move {
+                for entry in &to_persist {
+                    let _ = tracker.save_download_entry(entry).await;
+                }
+                AppCmdMsg::PrioritySaved(Ok(()))
+            });
+        }
+
+        if self.initial_scan_done && scan.new_count > 0 {
+            self.show_toast(&format!("Found {} archive(s)", scan.new_count));
+        }
+        self.initial_scan_done = true;
+    }
+
     pub(crate) fn handle_archive_md5_computed(
         &mut self,
         download_id: String,
