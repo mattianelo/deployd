@@ -7,7 +7,6 @@ use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 
 use crate::core::tracker::Tracker;
 use crate::core::{game as game_core, migration_bundle::ExportManifest};
-use crate::models::download::DownloadEntry;
 use crate::models::game::{Game, GameEngine};
 use crate::utils::paths;
 
@@ -15,32 +14,26 @@ mod bundle;
 mod database;
 mod filesystem;
 mod preview;
+mod report;
+mod transaction;
 
 use bundle::extract_import_bundle;
-use database::import_database_rows;
-use filesystem::{
-    ImportPaths, cleanup_copied_payload, copy_payload_to_snap, validate_export_dependencies,
-};
+use filesystem::{ImportPaths, copy_payload_to_snap, validate_export_dependencies};
 use preview::{ExistingGameState, read_preview_counts, tracker_game_state};
+use report::{build_import_result, import_warnings};
+use transaction::{import_database_transaction, rollback_copied_payload_on_error};
 
 pub use preview::{
     PreviewConflict, PreviewCounts, PreviewImportRequest, PreviewImportResult, ValidationItem,
     preview_import_bundle,
 };
+pub use report::ImportBundleResult;
 
 #[derive(Debug, Clone)]
 pub struct ImportBundleRequest {
     pub bundle_path: PathBuf,
     pub confirmed_game_path: PathBuf,
     pub confirmed_wine_prefix: PathBuf,
-}
-
-#[derive(Debug, Clone)]
-pub struct ImportBundleResult {
-    pub game: Game,
-    pub download_entries: Vec<DownloadEntry>,
-    pub counts: PreviewCounts,
-    pub warnings: Vec<String>,
 }
 
 pub async fn import_bundle(
@@ -84,14 +77,8 @@ pub async fn import_bundle(
     validate_import_collisions(tracker, &export_pool, &staged.manifest.game_id).await?;
 
     let copied_paths = copy_payload_to_snap(&staged.payload_root, &staged.manifest.game_id)?;
-    let mut warnings = staged.manifest.warnings.clone();
-    if counts.tools > 0 {
-        warnings.push(format!(
-            "{} external tool(s) were skipped. Re-add tools in the Snap so they use the Snap Wine runtime.",
-            counts.tools
-        ));
-    }
-    let import_result = import_database_rows(
+    let warnings = import_warnings(staged.manifest.warnings.clone(), counts.tools);
+    let import_result = import_database_transaction(
         tracker,
         &export_pool,
         &staged.manifest,
@@ -100,23 +87,19 @@ pub async fn import_bundle(
     )
     .await;
     export_pool.close().await;
-
-    if let Err(error) = import_result {
-        cleanup_copied_payload(&copied_paths);
-        return Err(error);
-    }
+    rollback_copied_payload_on_error(import_result, &copied_paths)?;
 
     let download_entries = tracker
         .load_download_entries()
         .await
         .context("Failed to load imported download entries")?;
 
-    Ok(ImportBundleResult {
-        game: imported_game,
+    Ok(build_import_result(
+        imported_game,
         download_entries,
         counts,
         warnings,
-    })
+    ))
 }
 
 fn validate_required_confirmation(path: &Path, label: &str) -> Result<()> {

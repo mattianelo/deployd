@@ -2,7 +2,6 @@ use anyhow::{Context, Result};
 use sqlx::{Row, Sqlite, Transaction};
 
 use crate::core::migration_bundle::ExportManifest;
-use crate::core::tracker::Tracker;
 use crate::models::game::{Game, GameEngine};
 
 use super::filesystem::{ImportPaths, rewrite_backup_path, rewrite_cache_path_for_row};
@@ -17,39 +16,29 @@ fn game_engine_db_value(engine: &GameEngine) -> &'static str {
 }
 
 pub(super) async fn import_database_rows(
-    tracker: &Tracker,
+    tx: &mut Transaction<'_, Sqlite>,
     export_pool: &sqlx::SqlitePool,
     manifest: &ExportManifest,
     game: &Game,
     import_paths: &ImportPaths,
 ) -> Result<()> {
-    let mut tx = tracker
-        .pool
-        .begin()
-        .await
-        .context("Failed to begin import")?;
-
-    import_game_row(&mut tx, game).await?;
-    import_mod_groups(&mut tx, export_pool).await?;
-    import_mods(&mut tx, export_pool).await?;
-    import_mod_files(&mut tx, export_pool, import_paths).await?;
-    import_plugins(&mut tx, export_pool).await?;
-    import_plugin_masters(&mut tx, export_pool).await?;
-    import_deployed_files(&mut tx, export_pool, import_paths).await?;
-    import_profiles(&mut tx, export_pool).await?;
-    import_profile_mods(&mut tx, export_pool).await?;
-    import_profile_plugins(&mut tx, export_pool).await?;
-    import_vanilla_files(&mut tx, export_pool).await?;
-    import_order_snapshots(&mut tx, export_pool).await?;
-    import_order_snapshot_entries(&mut tx, export_pool).await?;
-    import_vanilla_backups(&mut tx, export_pool, import_paths).await?;
-    import_download_entries(&mut tx, export_pool).await?;
-    backfill_imported_mod_source_metadata(&mut tx).await?;
-    import_settings(&mut tx, export_pool, &manifest.game_id).await?;
-
-    tx.commit()
-        .await
-        .context("Failed to commit AppImage export import")?;
+    import_game_row(tx, game).await?;
+    import_mod_groups(tx, export_pool).await?;
+    import_mods(tx, export_pool).await?;
+    import_mod_files(tx, export_pool, import_paths).await?;
+    import_plugins(tx, export_pool).await?;
+    import_plugin_masters(tx, export_pool).await?;
+    import_deployed_files(tx, export_pool, import_paths).await?;
+    import_profiles(tx, export_pool).await?;
+    import_profile_mods(tx, export_pool).await?;
+    import_profile_plugins(tx, export_pool).await?;
+    import_vanilla_files(tx, export_pool).await?;
+    import_order_snapshots(tx, export_pool).await?;
+    import_order_snapshot_entries(tx, export_pool).await?;
+    import_vanilla_backups(tx, export_pool, import_paths).await?;
+    import_download_entries(tx, export_pool).await?;
+    backfill_imported_mod_source_metadata(tx).await?;
+    import_settings(tx, export_pool, &manifest.game_id).await?;
     Ok(())
 }
 
