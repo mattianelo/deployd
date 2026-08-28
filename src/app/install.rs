@@ -8,6 +8,7 @@ use relm4::prelude::*;
 
 use crate::core::installer::{self, AddResult, PrepareResult};
 use crate::dlog;
+use crate::models::download::DownloadEntry;
 use crate::ui::fomod_dialog::{
     FomodDialog, FomodDialogInit, FomodDialogOutput, default_fomod_selections,
 };
@@ -17,9 +18,168 @@ use super::App;
 use super::free_fns::load_game_data;
 use super::messages::{AppCmdMsg, AppMsg, PrepareResultMsg};
 use super::progress::throttled_install_progress;
-use super::types::{PendingInstall, WorkKind};
+use super::types::{FileIdNeeded, PendingInstall, WorkKind};
+
+fn next_unresolved_sibling_id(
+    downloads: &[DownloadEntry],
+    resolved_download_id: &str,
+) -> Option<String> {
+    let resolved_mod_id = downloads
+        .iter()
+        .find(|entry| entry.id == resolved_download_id)
+        .and_then(|entry| entry.nexus_ids.as_ref())
+        .map(|ids| ids.mod_id)?;
+
+    downloads
+        .iter()
+        .find(|entry| {
+            entry.id != resolved_download_id
+                && entry.nexus_ids.as_ref().map(|ids| ids.mod_id) == Some(resolved_mod_id)
+                && entry.nexus_ids.as_ref().is_some_and(|ids| ids.file_id == 0)
+                && !entry.metadata_fetched
+        })
+        .map(|entry| entry.id.clone())
+}
+
+fn parse_fomod_selections(json: &str) -> Option<Vec<Vec<HashSet<usize>>>> {
+    let raw: Vec<Vec<Vec<usize>>> = serde_json::from_str(json).ok()?;
+    Some(
+        raw.into_iter()
+            .map(|step| {
+                step.into_iter()
+                    .map(|group| group.into_iter().collect())
+                    .collect()
+            })
+            .collect(),
+    )
+}
 
 impl App {
+    pub(crate) fn handle_open_pre_install_dialog_replacing_request(
+        &mut self,
+        id: String,
+        priority: i32,
+        root: &adw::ApplicationWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        if self
+            .pending_install
+            .as_ref()
+            .is_none_or(|pending| pending.fomod_config.is_none())
+        {
+            self.handle_open_pre_install_dialog_replacing(id, priority, root, sender);
+            return;
+        }
+
+        let old_name = self.mod_name_for_id(&id);
+        if let Some(pending) = &mut self.pending_install {
+            pending.mod_name = old_name;
+        }
+        self.pending_replace_mod_id = Some((id.clone(), priority));
+        self.pending_fetched_name = None;
+        self.pending_file_id_needed = None;
+        let tracker = self.tracker.clone();
+        sender.oneshot_command(async move {
+            let selections = if let Some(tracker) = tracker {
+                tracker
+                    .get_fomod_selections(&id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .and_then(|json| parse_fomod_selections(&json))
+            } else {
+                None
+            };
+            AppCmdMsg::FomodSelectionsLoaded(selections)
+        });
+    }
+
+    pub(crate) fn handle_cmd_fomod_selections_loaded(
+        &mut self,
+        selections: Option<Vec<Vec<HashSet<usize>>>>,
+        root: &adw::ApplicationWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.pending_fomod_selections = selections;
+        self.open_pre_install_dialog(root, sender);
+    }
+
+    pub(crate) fn handle_show_file_id_dialog(
+        &mut self,
+        download_id: String,
+        mod_id: i64,
+        domain: String,
+        partial_name: Option<String>,
+        root: &adw::ApplicationWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        if let Some(name) = partial_name {
+            self.pending_fetched_name = Some(name);
+        }
+        self.pending_file_id_needed = Some(FileIdNeeded {
+            download_id,
+            mod_id,
+            domain,
+        });
+        self.show_file_id_dialog(root, sender);
+    }
+
+    pub(crate) fn handle_cmd_pending_metadata_fetched(&mut self, name: String) {
+        self.pending_fetched_name = Some(name);
+    }
+
+    pub(crate) fn handle_cmd_pending_file_name_unresolved(
+        &mut self,
+        partial_name: String,
+        download_id: String,
+        mod_id: i64,
+        domain: String,
+    ) {
+        self.pending_fetched_name = Some(partial_name);
+        self.pending_file_id_needed = Some(FileIdNeeded {
+            download_id,
+            mod_id,
+            domain,
+        });
+    }
+
+    pub(crate) fn handle_cmd_file_id_fetched(
+        &mut self,
+        combined_name: Option<String>,
+        download_id: Option<String>,
+        version: Option<String>,
+        file_id: Option<i64>,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.finish_work(WorkKind::FetchingMetadata);
+        self.pending_file_id_needed = None;
+        if let Some(download_id) = download_id {
+            self.finish_download_metadata_fetch(&download_id);
+            if let Some(name) = combined_name {
+                self.handle_download_name_resolved(
+                    download_id.clone(),
+                    name,
+                    None,
+                    None,
+                    false,
+                    file_id,
+                    version,
+                    None,
+                    sender,
+                );
+            }
+            self.show_toast("Metadata updated");
+            if let Some(next_id) = next_unresolved_sibling_id(&self.all_downloads, &download_id) {
+                self.start_nexus_metadata_fetch(next_id, sender);
+            }
+        } else {
+            if let Some(name) = combined_name {
+                self.pending_fetched_name = Some(name);
+            }
+            let _ = sender.input_sender().send(AppMsg::OpenPreInstallDialog);
+        }
+    }
+
     pub(crate) fn handle_install_clicked(
         &mut self,
         root: &adw::ApplicationWindow,
@@ -718,6 +878,74 @@ impl App {
 
     pub(crate) fn handle_pre_install_create_new(&mut self, sender: &ComponentSender<Self>) {
         self.proceed_with_install(sender);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::models::download::{DownloadEntry, NexusIds};
+
+    use super::{next_unresolved_sibling_id, parse_fomod_selections};
+
+    fn download(id: &str, mod_id: i64, file_id: i64, metadata_fetched: bool) -> DownloadEntry {
+        let mut entry = DownloadEntry::new(
+            id.to_string(),
+            id.to_string(),
+            Some(NexusIds {
+                mod_id,
+                file_id,
+                domain: "skyrim".to_string(),
+            }),
+        );
+        entry.metadata_fetched = metadata_fetched;
+        entry
+    }
+
+    #[test]
+    fn selects_unresolved_sibling_for_same_mod() {
+        let downloads = vec![
+            download("resolved", 10, 123, true),
+            download("other-mod", 20, 0, false),
+            download("sibling", 10, 0, false),
+        ];
+
+        assert_eq!(
+            next_unresolved_sibling_id(&downloads, "resolved"),
+            Some("sibling".to_string())
+        );
+    }
+
+    #[test]
+    fn skips_siblings_with_resolved_metadata() {
+        let downloads = vec![
+            download("resolved", 10, 123, true),
+            download("known-file", 10, 456, false),
+            download("metadata-fetched", 10, 0, true),
+        ];
+
+        assert_eq!(next_unresolved_sibling_id(&downloads, "resolved"), None);
+    }
+
+    #[test]
+    fn returns_none_when_resolved_download_is_missing() {
+        let downloads = vec![download("sibling", 10, 0, false)];
+
+        assert_eq!(next_unresolved_sibling_id(&downloads, "missing"), None);
+    }
+
+    #[test]
+    fn parses_saved_fomod_selections_into_sets() {
+        let selections = parse_fomod_selections("[[[2,1,2],[4]]]").expect("valid selections");
+
+        assert_eq!(selections.len(), 1);
+        assert_eq!(selections[0].len(), 2);
+        assert_eq!(selections[0][0], [1, 2].into_iter().collect());
+        assert_eq!(selections[0][1], [4].into_iter().collect());
+    }
+
+    #[test]
+    fn rejects_invalid_saved_fomod_selections() {
+        assert_eq!(parse_fomod_selections("not json"), None);
     }
 }
 

@@ -4,8 +4,38 @@ use relm4::prelude::*;
 
 use super::super::App;
 use super::super::messages::AppMsg;
+use super::super::types::{DownloadFilter, ModFilter};
 
 impl App {
+    pub(crate) fn handle_set_mod_filter(&mut self, filter: ModFilter) {
+        if self.mod_filter == filter {
+            return;
+        }
+        self.mod_filter = filter;
+        self.apply_search_filter();
+    }
+
+    pub(crate) fn handle_set_download_filter(&mut self, filter: DownloadFilter) {
+        if self.download_filter == filter {
+            return;
+        }
+        self.download_filter = filter;
+        self.apply_search_filter();
+    }
+
+    pub(crate) fn handle_open_deployment_folder(&mut self) {
+        self.deploy_options_btn.popdown();
+        if let Some(game) = self.selected_game() {
+            let uri = gtk::gio::File::for_path(&game.path).uri();
+            if let Err(error) = gtk::gio::AppInfo::launch_default_for_uri(
+                uri.as_str(),
+                None::<&gtk::gio::AppLaunchContext>,
+            ) {
+                self.push_notification(&format!("Could not open deployment folder: {error}"));
+            }
+        }
+    }
+
     pub(crate) fn handle_rate_limit_updated(
         &mut self,
         info: crate::core::nexus_api::RateLimitInfo,

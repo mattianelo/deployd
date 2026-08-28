@@ -16,6 +16,15 @@ use super::messages::{AppCmdMsg, AppMsg};
 use super::types::PendingInstall;
 
 impl App {
+    pub(crate) fn handle_absorb_external_files_requested(
+        &mut self,
+        root: &adw::ApplicationWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.notifications_menu_btn.popdown();
+        self.handle_absorb_external_files(root, sender);
+    }
+
     pub(crate) fn handle_discard_external_files(
         &mut self,
         paths: Vec<PathBuf>,

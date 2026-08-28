@@ -7,6 +7,55 @@ use super::super::messages::{AppCmdMsg, AppMsg};
 use super::super::types::{InitData, LoadedData, WorkKind};
 
 impl App {
+    pub(crate) fn handle_cmd_last_deployed_profile_loaded(&mut self, id: Option<String>) {
+        self.last_deployed_profile_id = id;
+    }
+
+    pub(crate) fn handle_cmd_nexus_avatar_loaded(&mut self, bytes: Option<Vec<u8>>) {
+        crate::dlog!(
+            "[avatar] NexusAvatarLoaded: {:?}",
+            bytes.as_ref().map(Vec::len)
+        );
+        if let Some(bytes) = bytes {
+            match gtk::gdk::Texture::from_bytes(&gtk::glib::Bytes::from_owned(bytes)) {
+                Ok(texture) => {
+                    crate::dlog!("[avatar] texture created, setting custom image");
+                    self.nexus_avatar_widget.set_custom_image(Some(&texture));
+                }
+                Err(error) => {
+                    crate::dlog!("[avatar] Texture::from_bytes failed: {error}");
+                }
+            }
+        }
+    }
+
+    pub(crate) fn handle_cmd_nexus_user_refreshed(
+        &mut self,
+        username: Option<String>,
+        avatar_url: Option<String>,
+        is_premium: bool,
+        sender: &ComponentSender<Self>,
+    ) {
+        crate::dlog!(
+            "[avatar] NexusUserRefreshed: username={:?} avatar_url={:?}",
+            username,
+            avatar_url,
+        );
+        self.nexus_username = username.clone();
+        self.nexus_avatar_url = avatar_url.clone();
+        self.nexus_is_premium = is_premium;
+        self.nexus_avatar_widget.set_text(username.as_deref());
+        self.nexus_avatar_widget
+            .set_custom_image(None::<&gtk::gdk::Texture>);
+        if let Some(url) = avatar_url {
+            sender.oneshot_command(async move {
+                AppCmdMsg::NexusAvatarLoaded(fetch_avatar_bytes(&url).await)
+            });
+        } else {
+            crate::dlog!("[avatar] NexusUserRefreshed: no avatar URL, showing initials");
+        }
+    }
+
     pub(crate) fn handle_cmd_initialized(
         &mut self,
         result: Result<InitData, String>,

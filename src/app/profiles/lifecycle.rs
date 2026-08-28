@@ -33,6 +33,34 @@ fn resolve_profile_selection(requested_idx: usize, state: ProfileSelectionState)
 }
 
 impl App {
+    pub(crate) fn handle_new_profile_requested(&mut self, sender: &ComponentSender<Self>) {
+        self.profile_menu_btn.popdown();
+        self.handle_new_profile_clicked(sender);
+    }
+
+    pub(crate) fn handle_clone_profile_requested(&mut self, sender: &ComponentSender<Self>) {
+        self.profile_menu_btn.popdown();
+        self.handle_clone_profile_clicked(sender);
+    }
+
+    pub(crate) fn handle_delete_profile_requested(&mut self, sender: &ComponentSender<Self>) {
+        self.profile_menu_btn.popdown();
+        self.handle_delete_profile_clicked(sender);
+    }
+
+    pub(crate) fn handle_toggle_profile_save_mode_requested(
+        &mut self,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.profile_menu_btn.popdown();
+        self.handle_toggle_profile_save_mode(sender);
+    }
+
+    pub(crate) fn handle_sync_saves_requested(&mut self, sender: &ComponentSender<Self>) {
+        self.profile_menu_btn.popdown();
+        self.handle_sync_saves(sender);
+    }
+
     pub(crate) fn handle_profile_selected(&mut self, idx: u32, sender: &ComponentSender<Self>) {
         let state = ProfileSelectionState {
             displayed_idx: self.profile_dropdown.selected() as usize,

@@ -25,7 +25,7 @@ use gtk::prelude::*;
 use relm4::prelude::*;
 
 use self::order_snapshots::SnapshotAction;
-use self::types::{DownloadFilter, DownloadSort, ModFilter, WorkKind};
+use self::types::{DownloadFilter, DownloadSort, ModFilter};
 
 mod state;
 pub use state::App;
@@ -1483,19 +1483,10 @@ impl Component for App {
                 self.handle_move_selected_plugins_to(selected, from, to, &sender)
             }
             AppMsg::ProfileSelected(idx) => self.handle_profile_selected(idx, &sender),
-            AppMsg::NewProfileClicked => {
-                self.profile_menu_btn.popdown();
-                self.handle_new_profile_clicked(&sender);
-            }
-            AppMsg::CloneProfileClicked => {
-                self.profile_menu_btn.popdown();
-                self.handle_clone_profile_clicked(&sender);
-            }
+            AppMsg::NewProfileClicked => self.handle_new_profile_requested(&sender),
+            AppMsg::CloneProfileClicked => self.handle_clone_profile_requested(&sender),
             AppMsg::RenameProfile(name) => self.handle_rename_profile(name, &sender),
-            AppMsg::DeleteProfileClicked => {
-                self.profile_menu_btn.popdown();
-                self.handle_delete_profile_clicked(&sender);
-            }
+            AppMsg::DeleteProfileClicked => self.handle_delete_profile_requested(&sender),
             AppMsg::DeployClicked => self.handle_deploy_clicked(root, &sender),
             AppMsg::DeployConfirmed => self.execute_deploy(&sender),
             AppMsg::PurgeClicked => self.handle_purge_clicked(root, &sender),
@@ -1543,16 +1534,9 @@ impl Component for App {
             AppMsg::WelcomeWizardConfirmed(configs, hidden_ids) => {
                 self.handle_welcome_wizard_confirmed(configs, hidden_ids, &sender)
             }
-            AppMsg::WelcomeWizardSkipped => {
-                self.welcome_wizard = None;
-            }
+            AppMsg::WelcomeWizardSkipped => self.handle_welcome_wizard_skipped(),
             AppMsg::RemoveGame(id) => self.confirm_remove_game(id, root, &sender),
-            AppMsg::RemoveCurrentGame => {
-                if let Some(game) = self.games.get(self.selected_game_idx) {
-                    let id = game.id.clone();
-                    self.confirm_remove_game(id, root, &sender);
-                }
-            }
+            AppMsg::RemoveCurrentGame => self.handle_remove_current_game(root, &sender),
             AppMsg::RemoveGameConfirmed {
                 game_id,
                 delete_mods,
@@ -1615,17 +1599,14 @@ impl Component for App {
                 mod_id,
                 domain,
                 partial_name,
-            } => {
-                if let Some(name) = partial_name {
-                    self.pending_fetched_name = Some(name);
-                }
-                self.pending_file_id_needed = Some(crate::app::types::FileIdNeeded {
-                    download_id,
-                    mod_id,
-                    domain,
-                });
-                self.show_file_id_dialog(root, &sender);
-            }
+            } => self.handle_show_file_id_dialog(
+                download_id,
+                mod_id,
+                domain,
+                partial_name,
+                root,
+                &sender,
+            ),
             AppMsg::DownloadProgress(id, frac, msg) => self.handle_download_progress(id, frac, msg),
             AppMsg::DownloadNameResolved(
                 id,
@@ -1640,17 +1621,7 @@ impl Component for App {
                 id, name, domain, fname, is_primary, file_id, version, author, &sender,
             ),
             AppMsg::ArchiveMd5Computed(dl_id, md5) => {
-                if let Some(entry) = self.all_downloads.iter_mut().find(|e| e.id == dl_id) {
-                    entry.archive_md5 = Some(md5);
-                }
-                if let Some(tracker) = self.tracker.clone()
-                    && let Some(entry) = self.all_downloads.iter().find(|e| e.id == dl_id).cloned()
-                {
-                    sender.oneshot_command(async move {
-                        let _ = tracker.save_download_entry(&entry).await;
-                        AppCmdMsg::PrioritySaved(Ok(()))
-                    });
-                }
+                self.handle_archive_md5_computed(dl_id, md5, &sender)
             }
             AppMsg::FetchDownloadMetadata(idx) => {
                 self.handle_fetch_download_metadata(idx, root, &sender)
@@ -1695,8 +1666,7 @@ impl Component for App {
             AppMsg::ModPropertiesCancelled => self.handle_mod_properties_cancelled(),
             AppMsg::ScanExternalFiles => self.handle_scan_external_files(&sender),
             AppMsg::AbsorbExternalFiles => {
-                self.notifications_menu_btn.popdown();
-                self.handle_absorb_external_files(root, &sender);
+                self.handle_absorb_external_files_requested(root, &sender)
             }
             AppMsg::AbsorbFilesSelected(pairs) => {
                 self.handle_absorb_files_selected(pairs, root, &sender)
@@ -1724,50 +1694,7 @@ impl Component for App {
             AppMsg::ScanModFromCache(mod_id) => self.handle_scan_mod_from_cache(mod_id, &sender),
             AppMsg::OpenPreInstallDialog => self.handle_open_pre_install_dialog(root, &sender),
             AppMsg::OpenPreInstallDialogReplacing(id, priority) => {
-                if self
-                    .pending_install
-                    .as_ref()
-                    .is_some_and(|p| p.fomod_config.is_some())
-                {
-                    let old_name = self.mod_name_for_id(&id);
-                    if let Some(pending) = &mut self.pending_install {
-                        pending.mod_name = old_name;
-                    }
-                    self.pending_replace_mod_id = Some((id.clone(), priority));
-                    self.pending_fetched_name = None;
-                    self.pending_file_id_needed = None;
-                    let tracker = self.tracker.clone();
-                    sender.oneshot_command(async move {
-                        let selections = if let Some(t) = tracker {
-                            t.get_fomod_selections(&id)
-                                .await
-                                .ok()
-                                .flatten()
-                                .and_then(|json| {
-                                    let raw: Option<Vec<Vec<Vec<usize>>>> =
-                                        serde_json::from_str(&json).ok();
-                                    raw.map(|steps| {
-                                        steps
-                                            .into_iter()
-                                            .map(|step| {
-                                                step.into_iter()
-                                                    .map(|g| {
-                                                        g.into_iter()
-                                                            .collect::<std::collections::HashSet<usize>>()
-                                                    })
-                                                    .collect::<Vec<_>>()
-                                            })
-                                            .collect::<Vec<_>>()
-                                    })
-                                })
-                        } else {
-                            None
-                        };
-                        AppCmdMsg::FomodSelectionsLoaded(selections)
-                    });
-                } else {
-                    self.handle_open_pre_install_dialog_replacing(id, priority, root, &sender)
-                }
+                self.handle_open_pre_install_dialog_replacing_request(id, priority, root, &sender)
             }
             AppMsg::SortWithLoot => self.handle_sort_with_loot(&sender),
             AppMsg::EnableAllMods => self.handle_enable_all_mods(&sender),
@@ -1779,13 +1706,9 @@ impl Component for App {
             AppMsg::NotificationDismissed => self.handle_notification_dismissed(),
             AppMsg::ClearNotifications => self.handle_clear_notifications(),
             AppMsg::ToggleProfileSaveMode => {
-                self.profile_menu_btn.popdown();
-                self.handle_toggle_profile_save_mode(&sender);
+                self.handle_toggle_profile_save_mode_requested(&sender)
             }
-            AppMsg::SyncSaves => {
-                self.profile_menu_btn.popdown();
-                self.handle_sync_saves(&sender);
-            }
+            AppMsg::SyncSaves => self.handle_sync_saves_requested(&sender),
             AppMsg::AppUpdateAvailable(version, url) => {
                 self.handle_app_update_available(version, url)
             }
@@ -1806,32 +1729,9 @@ impl Component for App {
             AppMsg::DeleteModOrderSnapshot(id) | AppMsg::DeletePluginOrderSnapshot(id) => {
                 self.handle_snapshot_action(SnapshotAction::Delete(id), &sender)
             }
-            AppMsg::SetModFilter(filter) => {
-                if self.mod_filter == filter {
-                    return;
-                }
-                self.mod_filter = filter;
-                self.apply_search_filter();
-            }
-            AppMsg::SetDownloadFilter(filter) => {
-                if self.download_filter == filter {
-                    return;
-                }
-                self.download_filter = filter;
-                self.apply_search_filter();
-            }
-            AppMsg::OpenDeploymentFolder => {
-                self.deploy_options_btn.popdown();
-                if let Some(game) = self.selected_game() {
-                    let uri = gtk::gio::File::for_path(&game.path).uri();
-                    if let Err(e) = gtk::gio::AppInfo::launch_default_for_uri(
-                        uri.as_str(),
-                        None::<&gtk::gio::AppLaunchContext>,
-                    ) {
-                        self.push_notification(&format!("Could not open deployment folder: {e}"));
-                    }
-                }
-            }
+            AppMsg::SetModFilter(filter) => self.handle_set_mod_filter(filter),
+            AppMsg::SetDownloadFilter(filter) => self.handle_set_download_filter(filter),
+            AppMsg::OpenDeploymentFolder => self.handle_open_deployment_folder(),
             AppMsg::PauseDownload(idx) => self.handle_pause_download(idx),
             AppMsg::ResumeDownload(idx) => self.handle_resume_download(idx, &sender),
             AppMsg::SetColorScheme(idx) => self.handle_set_color_scheme(idx),
@@ -1867,77 +1767,31 @@ impl Component for App {
         match msg {
             AppCmdMsg::Initialized(result) => self.handle_cmd_initialized(result, &sender),
             AppCmdMsg::PendingMetadataFetched(name) => {
-                self.pending_fetched_name = Some(name);
+                self.handle_cmd_pending_metadata_fetched(name)
             }
             AppCmdMsg::PendingFileNameUnresolved {
                 partial_name,
                 download_id,
                 mod_id,
                 domain,
-            } => {
-                self.pending_fetched_name = Some(partial_name);
-                self.pending_file_id_needed = Some(crate::app::types::FileIdNeeded {
-                    download_id,
-                    mod_id,
-                    domain,
-                });
-            }
+            } => self.handle_cmd_pending_file_name_unresolved(
+                partial_name,
+                download_id,
+                mod_id,
+                domain,
+            ),
             AppCmdMsg::FileIdFetched {
                 combined_name,
                 download_id,
                 version,
                 file_id,
-            } => {
-                self.finish_work(WorkKind::FetchingMetadata);
-                self.pending_file_id_needed = None;
-                if let Some(dl_id) = download_id {
-                    // Standalone (right-click) path: update the download entry directly.
-                    self.finish_download_metadata_fetch(&dl_id);
-                    if let Some(name) = combined_name {
-                        self.handle_download_name_resolved(
-                            dl_id.clone(),
-                            name,
-                            None,
-                            None,
-                            false,
-                            file_id,
-                            version,
-                            None,
-                            &sender,
-                        );
-                    }
-                    self.show_toast("Metadata updated");
-                    // Auto-trigger the next unresolved download for the same mod so the
-                    // user doesn't have to manually right-click each one.
-                    let resolved_mod_id = self
-                        .all_downloads
-                        .iter()
-                        .find(|e| e.id == dl_id)
-                        .and_then(|e| e.nexus_ids.as_ref())
-                        .map(|ids| ids.mod_id);
-                    if let Some(mod_id) = resolved_mod_id {
-                        let sibling = self
-                            .all_downloads
-                            .iter()
-                            .find(|e| {
-                                e.id != dl_id
-                                    && e.nexus_ids.as_ref().map(|ids| ids.mod_id) == Some(mod_id)
-                                    && e.nexus_ids.as_ref().is_some_and(|ids| ids.file_id == 0)
-                                    && !e.metadata_fetched
-                            })
-                            .map(|e| e.id.clone());
-                        if let Some(next_id) = sibling {
-                            self.start_nexus_metadata_fetch(next_id, &sender);
-                        }
-                    }
-                } else {
-                    // Install path: hand off to the pre-install dialog flow.
-                    if let Some(name) = combined_name {
-                        self.pending_fetched_name = Some(name);
-                    }
-                    let _ = sender.input_sender().send(AppMsg::OpenPreInstallDialog);
-                }
-            }
+            } => self.handle_cmd_file_id_fetched(
+                combined_name,
+                download_id,
+                version,
+                file_id,
+                &sender,
+            ),
             AppCmdMsg::ModsLoaded(result, preserve) => {
                 self.handle_cmd_mods_loaded(result, preserve, &sender)
             }
@@ -2033,18 +1887,14 @@ impl Component for App {
                 self.handle_cmd_save_mode_toggled(result, &sender)
             }
             AppCmdMsg::SavesSynced(result) => self.handle_cmd_saves_synced(result),
-            AppCmdMsg::LastDeployedProfileLoaded(id) => self.last_deployed_profile_id = id,
+            AppCmdMsg::LastDeployedProfileLoaded(id) => {
+                self.handle_cmd_last_deployed_profile_loaded(id)
+            }
             AppCmdMsg::AppUpdateResult(result) => self.handle_cmd_app_update_result(result),
             AppCmdMsg::FomodSelectionsLoaded(selections) => {
-                self.pending_fomod_selections = selections;
-                self.open_pre_install_dialog(root, &sender);
+                self.handle_cmd_fomod_selections_loaded(selections, root, &sender)
             }
-            AppCmdMsg::GamesPersisted => {
-                // Reset the selection sentinel so handle_game_selected's same-index
-                // guard does not skip the reload when the index was already 0.
-                self.selected_game_idx = usize::MAX;
-                sender.input(AppMsg::GameSelected(0));
-            }
+            AppCmdMsg::GamesPersisted => self.handle_cmd_games_persisted(&sender),
             AppCmdMsg::OrderSnapshotsLoaded(mod_snaps, plugin_snaps) => {
                 self.handle_cmd_order_snapshots_loaded(mod_snaps, plugin_snaps, &sender)
             }
@@ -2063,44 +1913,9 @@ impl Component for App {
             AppCmdMsg::OrderSnapshotDeleted(result) => {
                 self.handle_cmd_order_snapshot_deleted(result, &sender)
             }
-            AppCmdMsg::NexusAvatarLoaded(bytes) => {
-                crate::dlog!(
-                    "[avatar] NexusAvatarLoaded: {:?}",
-                    bytes.as_ref().map(|b| b.len())
-                );
-                if let Some(bytes) = bytes {
-                    match gtk::gdk::Texture::from_bytes(&gtk::glib::Bytes::from_owned(bytes)) {
-                        Ok(texture) => {
-                            crate::dlog!("[avatar] texture created, setting custom image");
-                            self.nexus_avatar_widget.set_custom_image(Some(&texture));
-                        }
-                        Err(e) => {
-                            crate::dlog!("[avatar] Texture::from_bytes failed: {e}");
-                        }
-                    }
-                }
-            }
+            AppCmdMsg::NexusAvatarLoaded(bytes) => self.handle_cmd_nexus_avatar_loaded(bytes),
             AppCmdMsg::NexusUserRefreshed(username, avatar_url, is_premium) => {
-                crate::dlog!(
-                    "[avatar] NexusUserRefreshed: username={:?} avatar_url={:?}",
-                    username,
-                    avatar_url,
-                );
-                self.nexus_username = username.clone();
-                self.nexus_avatar_url = avatar_url.clone();
-                self.nexus_is_premium = is_premium;
-                self.nexus_avatar_widget.set_text(username.as_deref());
-                self.nexus_avatar_widget
-                    .set_custom_image(None::<&gtk::gdk::Texture>);
-                if let Some(url) = avatar_url {
-                    sender.oneshot_command(async move {
-                        AppCmdMsg::NexusAvatarLoaded(
-                            crate::app::free_fns::fetch_avatar_bytes(&url).await,
-                        )
-                    });
-                } else {
-                    crate::dlog!("[avatar] NexusUserRefreshed: no avatar URL, showing initials");
-                }
+                self.handle_cmd_nexus_user_refreshed(username, avatar_url, is_premium, &sender)
             }
         }
     }

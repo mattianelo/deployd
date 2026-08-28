@@ -24,6 +24,26 @@ use super::super::messages::{AppCmdMsg, AppMsg};
 use super::super::types::WorkKind;
 
 impl App {
+    pub(crate) fn handle_welcome_wizard_skipped(&mut self) {
+        self.welcome_wizard = None;
+    }
+
+    pub(crate) fn handle_remove_current_game(
+        &mut self,
+        root: &adw::ApplicationWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        if let Some(game) = self.games.get(self.selected_game_idx) {
+            self.confirm_remove_game(game.id.clone(), root, sender);
+        }
+    }
+
+    pub(crate) fn handle_cmd_games_persisted(&mut self, sender: &ComponentSender<Self>) {
+        // Force the reload even when the newly persisted game is already index zero.
+        self.selected_game_idx = usize::MAX;
+        sender.input(AppMsg::GameSelected(0));
+    }
+
     pub(crate) fn handle_settings_clicked(
         &mut self,
         root: &adw::ApplicationWindow,

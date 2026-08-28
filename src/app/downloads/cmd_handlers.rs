@@ -10,6 +10,33 @@ use super::super::messages::{AppCmdMsg, AppMsg};
 use super::super::types::NxmDownloadResult;
 
 impl App {
+    pub(crate) fn handle_archive_md5_computed(
+        &mut self,
+        download_id: String,
+        md5: String,
+        sender: &ComponentSender<Self>,
+    ) {
+        if let Some(entry) = self
+            .all_downloads
+            .iter_mut()
+            .find(|entry| entry.id == download_id)
+        {
+            entry.archive_md5 = Some(md5);
+        }
+        if let Some(tracker) = self.tracker.clone()
+            && let Some(entry) = self
+                .all_downloads
+                .iter()
+                .find(|entry| entry.id == download_id)
+                .cloned()
+        {
+            sender.oneshot_command(async move {
+                let _ = tracker.save_download_entry(&entry).await;
+                AppCmdMsg::PrioritySaved(Ok(()))
+            });
+        }
+    }
+
     pub(crate) fn handle_cmd_nexus_metadata_fetched(
         &mut self,
         dl_id: Option<String>,
