@@ -11,6 +11,23 @@ struct ProgressState {
     last_emit: Option<Instant>,
 }
 
+impl ProgressState {
+    fn should_emit(&mut self, now: Instant, done: usize, total: usize) -> bool {
+        let first = self.last_emit.is_none();
+        let final_update = total > 0 && done >= total;
+        let elapsed = self
+            .last_emit
+            .map(|last| now.duration_since(last) >= MIN_PROGRESS_INTERVAL)
+            .unwrap_or(true);
+        if first || final_update || elapsed {
+            self.last_emit = Some(now);
+            true
+        } else {
+            false
+        }
+    }
+}
+
 pub(crate) fn throttled_install_progress(
     sender: Sender<AppMsg>,
     label: &'static str,
@@ -23,18 +40,7 @@ pub(crate) fn throttled_install_progress(
                 Ok(state) => state,
                 Err(_) => return,
             };
-            let first = state.last_emit.is_none();
-            let final_update = total > 0 && done >= total;
-            let elapsed = state
-                .last_emit
-                .map(|last| now.duration_since(last) >= MIN_PROGRESS_INTERVAL)
-                .unwrap_or(true);
-            if first || final_update || elapsed {
-                state.last_emit = Some(now);
-                true
-            } else {
-                false
-            }
+            state.should_emit(now, done, total)
         };
 
         if should_emit {
@@ -64,18 +70,7 @@ pub(crate) fn throttled_download_install_progress(
                 Ok(state) => state,
                 Err(_) => return,
             };
-            let first = state.last_emit.is_none();
-            let final_update = total > 0 && done >= total;
-            let elapsed = state
-                .last_emit
-                .map(|last| now.duration_since(last) >= MIN_PROGRESS_INTERVAL)
-                .unwrap_or(true);
-            if first || final_update || elapsed {
-                state.last_emit = Some(now);
-                true
-            } else {
-                false
-            }
+            state.should_emit(now, done, total)
         };
 
         if should_emit {
@@ -100,4 +95,28 @@ pub(crate) fn throttled_download_install_progress(
             ));
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn suppresses_intermediate_progress_until_interval_elapses() {
+        let start = Instant::now();
+        let mut state = ProgressState { last_emit: None };
+
+        assert!(state.should_emit(start, 1, 10));
+        assert!(!state.should_emit(start + Duration::from_millis(74), 2, 10));
+        assert!(state.should_emit(start + MIN_PROGRESS_INTERVAL, 3, 10));
+    }
+
+    #[test]
+    fn final_progress_bypasses_the_interval() {
+        let start = Instant::now();
+        let mut state = ProgressState { last_emit: None };
+
+        assert!(state.should_emit(start, 1, 10));
+        assert!(state.should_emit(start + Duration::from_millis(1), 10, 10));
+    }
 }

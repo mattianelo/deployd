@@ -35,21 +35,45 @@ impl ToolProcessHandle {
     }
 
     fn terminate_process_tree(&self) {
-        #[cfg(unix)]
-        if let Some(process_group_id) = self.process_group_id {
-            signals::send_process_group(process_group_id, libc::SIGTERM);
-            std::thread::sleep(TOOL_TERMINATE_GRACE);
-            if signals::process_group_exists(process_group_id) {
-                signals::send_process_group(process_group_id, libc::SIGKILL);
-            }
-            return;
-        }
+        terminate_target_with(
+            self.process_target(),
+            signals::send,
+            signals::exists,
+            std::thread::sleep,
+        );
+    }
 
-        signals::send_process(self.pid, libc::SIGTERM);
-        std::thread::sleep(TOOL_TERMINATE_GRACE);
-        if signals::process_exists(self.pid) {
-            signals::send_process(self.pid, libc::SIGKILL);
+    fn process_target(&self) -> ProcessTarget {
+        #[cfg(unix)]
+        {
+            self.process_group_id
+                .map(ProcessTarget::Group)
+                .unwrap_or(ProcessTarget::Process(self.pid))
         }
+        #[cfg(not(unix))]
+        {
+            ProcessTarget::Process(self.pid)
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProcessTarget {
+    Process(u32),
+    #[cfg(unix)]
+    Group(i32),
+}
+
+fn terminate_target_with(
+    target: ProcessTarget,
+    send: impl Fn(ProcessTarget, libc::c_int),
+    exists: impl Fn(ProcessTarget) -> bool,
+    wait: impl Fn(Duration),
+) {
+    send(target, libc::SIGTERM);
+    wait(TOOL_TERMINATE_GRACE);
+    if exists(target) {
+        send(target, libc::SIGKILL);
     }
 }
 
@@ -62,11 +86,8 @@ pub(super) fn supervise(mut plan: LaunchPlan, hooks: ToolLaunchHooks) -> Result<
         plan.command.process_group(0);
     }
 
-    let mut child = plan.command.spawn().map_err(|error| {
-        anyhow!(
-            "Could not start process for \"{}\".\nError: {error}",
-            plan.tool_name
-        )
+    let child = spawn_process_with(&mut plan.command, &plan.tool_name, |command| {
+        command.spawn()
     })?;
     let process_id = child.id();
     diagnostic_log(&format!(
@@ -85,7 +106,16 @@ pub(super) fn supervise(mut plan: LaunchPlan, hooks: ToolLaunchHooks) -> Result<
         callback(handle);
     }
 
-    let tool_name = plan.tool_name;
+    supervise_exit(child, plan.tool_name, hooks.on_exit);
+
+    Ok(process_id)
+}
+
+fn supervise_exit(
+    mut child: std::process::Child,
+    tool_name: String,
+    on_exit: Option<Box<dyn FnOnce(Option<String>) + Send + 'static>>,
+) {
     let stderr_thread = child.stderr.take().map(|stderr| {
         std::thread::spawn(move || {
             use std::io::Read;
@@ -130,12 +160,23 @@ pub(super) fn supervise(mut plan: LaunchPlan, hooks: ToolLaunchHooks) -> Result<
             }
             _ => None,
         };
-        if let Some(callback) = hooks.on_exit {
+        if let Some(callback) = on_exit {
             callback(error);
         }
     });
+}
 
-    Ok(process_id)
+fn spawn_process_with<T>(
+    command: &mut std::process::Command,
+    tool_name: &str,
+    spawn: impl FnOnce(&mut std::process::Command) -> std::io::Result<T>,
+) -> Result<T> {
+    spawn(command).map_err(|error| {
+        anyhow!(
+            "Could not start process for \"{}\".\nError: {error}",
+            tool_name
+        )
+    })
 }
 
 fn log_tool_command(tool_name: &str, command: &std::process::Command) {
@@ -253,39 +294,49 @@ pub(super) fn run_output_cancellable(
 }
 
 mod signals {
-    pub(super) fn send_process(process_id: u32, signal: libc::c_int) {
-        // SAFETY: the pid comes from `Child::id` and `signal` is a libc signal
-        // constant. A stale pid only causes `kill` to return an ignored error.
-        unsafe {
-            libc::kill(process_id as libc::pid_t, signal);
+    use super::ProcessTarget;
+
+    pub(super) fn send(target: ProcessTarget, signal: libc::c_int) {
+        match target {
+            ProcessTarget::Process(process_id) => {
+                // SAFETY: the pid comes from `Child::id` and `signal` is a libc signal
+                // constant. A stale pid only causes `kill` to return an ignored error.
+                unsafe {
+                    libc::kill(process_id as libc::pid_t, signal);
+                }
+            }
+            #[cfg(unix)]
+            ProcessTarget::Group(process_group_id) => {
+                // SAFETY: the negative id targets the group created for this child by
+                // `CommandExt::process_group(0)`, so Deployd never signals an inherited group.
+                unsafe {
+                    libc::kill(-process_group_id, signal);
+                }
+            }
         }
     }
 
-    pub(super) fn process_exists(process_id: u32) -> bool {
-        // SAFETY: signal 0 only probes the pid returned by `Child::id`; it does
-        // not deliver a signal or dereference memory.
-        unsafe { libc::kill(process_id as libc::pid_t, 0) == 0 }
-    }
-
-    #[cfg(unix)]
-    pub(super) fn send_process_group(process_group_id: i32, signal: libc::c_int) {
-        // SAFETY: the negative id targets the group created for this child by
-        // `CommandExt::process_group(0)`, so Deployd never signals an inherited group.
-        unsafe {
-            libc::kill(-process_group_id, signal);
+    pub(super) fn exists(target: ProcessTarget) -> bool {
+        match target {
+            ProcessTarget::Process(process_id) => {
+                // SAFETY: signal 0 only probes the pid returned by `Child::id`; it does
+                // not deliver a signal or dereference memory.
+                unsafe { libc::kill(process_id as libc::pid_t, 0) == 0 }
+            }
+            #[cfg(unix)]
+            ProcessTarget::Group(process_group_id) => {
+                // SAFETY: signal 0 only probes the Deployd-created process group and
+                // does not deliver a signal.
+                unsafe { libc::kill(-process_group_id, 0) == 0 }
+            }
         }
-    }
-
-    #[cfg(unix)]
-    pub(super) fn process_group_exists(process_group_id: i32) -> bool {
-        // SAFETY: signal 0 only probes the Deployd-created process group and
-        // does not deliver a signal.
-        unsafe { libc::kill(-process_group_id, 0) == 0 }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+    use std::io;
     use std::process::Command;
     use std::sync::mpsc;
     use std::time::{Duration, Instant};
@@ -294,22 +345,34 @@ mod tests {
 
     #[test]
     fn spawn_failure_names_the_tool_and_os_error() {
-        let plan = LaunchPlan {
-            command: Command::new("deployd-command-that-does-not-exist"),
-            tool_name: "Missing Tool".to_string(),
-        };
-        let result = supervise(
-            plan,
-            ToolLaunchHooks {
-                cancel: Arc::new(AtomicBool::new(false)),
-                on_spawn: None,
-                on_exit: None,
-            },
-        );
+        let mut command = Command::new("ignored-by-test-boundary");
+        let result: Result<()> = spawn_process_with(&mut command, "Missing Tool", |_| {
+            Err(io::Error::new(io::ErrorKind::PermissionDenied, "confined"))
+        });
 
         let error = result.err().expect("missing command must fail to spawn");
         assert!(error.to_string().contains("Missing Tool"));
         assert!(error.to_string().contains("Could not start process"));
+        assert!(error.to_string().contains("confined"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn termination_escalates_when_process_group_survives_grace_period() {
+        let sent = RefCell::new(Vec::new());
+        let target = ProcessTarget::Group(42);
+
+        terminate_target_with(
+            target,
+            |target, signal| sent.borrow_mut().push((target, signal)),
+            |probed| probed == target,
+            |_| {},
+        );
+
+        assert_eq!(
+            sent.into_inner(),
+            vec![(target, libc::SIGTERM), (target, libc::SIGKILL)]
+        );
     }
 
     #[cfg(unix)]
@@ -349,10 +412,11 @@ mod tests {
             "signal termination must report a non-zero exit"
         );
         let deadline = Instant::now() + Duration::from_secs(3);
-        while signals::process_group_exists(handle.pid as i32) && Instant::now() < deadline {
+        let target = ProcessTarget::Group(handle.pid as i32);
+        while signals::exists(target) && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(25));
         }
-        assert!(!signals::process_group_exists(handle.pid as i32));
+        assert!(!signals::exists(target));
         Ok(())
     }
 }

@@ -40,52 +40,88 @@ pub(crate) fn validate_selected_folder(
     path: &Path,
     kind: SelectedFolderKind,
 ) -> Result<(), String> {
-    if !is_snap() {
-        return Ok(());
-    }
+    let environment = SnapEnvironment::from_process();
+    validate_selected_folder_with(path, kind, environment.as_ref(), inspect_selected_folder)
+}
 
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-    let snap_user_common = user_common_dir();
-    let snap_user_data = std::env::var_os("SNAP_USER_DATA").map(PathBuf::from);
+#[derive(Debug)]
+struct SnapEnvironment {
+    home: Option<PathBuf>,
+    user_common: Option<PathBuf>,
+    user_data: Option<PathBuf>,
+}
+
+impl SnapEnvironment {
+    fn from_process() -> Option<Self> {
+        is_snap().then(|| Self {
+            home: std::env::var_os("HOME").map(PathBuf::from),
+            user_common: user_common_dir(),
+            user_data: std::env::var_os("SNAP_USER_DATA").map(PathBuf::from),
+        })
+    }
+}
+
+enum FolderAccessError {
+    Metadata(std::io::Error),
+    NotDirectory,
+    Read(std::io::Error),
+    Write(std::io::Error),
+}
+
+fn validate_selected_folder_with(
+    path: &Path,
+    kind: SelectedFolderKind,
+    environment: Option<&SnapEnvironment>,
+    inspect: impl FnOnce(&Path) -> Result<(), FolderAccessError>,
+) -> Result<(), String> {
+    let Some(environment) = environment else {
+        return Ok(());
+    };
 
     if let Some(message) = classify_snap_path(
         path,
-        home.as_deref(),
-        snap_user_common.as_deref(),
-        snap_user_data.as_deref(),
+        environment.home.as_deref(),
+        environment.user_common.as_deref(),
+        environment.user_data.as_deref(),
     ) {
         return Err(message);
     }
 
-    let meta = std::fs::metadata(path).map_err(|e| {
-        format!(
+    inspect(path).map_err(|error| match error {
+        FolderAccessError::Metadata(error) => format!(
             "Cannot access selected {} '{}': {e}",
             kind.label(),
-            path.display()
-        )
-    })?;
-    if !meta.is_dir() {
-        return Err(format!(
+            path.display(),
+            e = error
+        ),
+        FolderAccessError::NotDirectory => format!(
             "Selected {} is not a folder: {}",
             kind.label(),
             path.display()
-        ));
-    }
-
-    std::fs::read_dir(path).map_err(|e| {
-        format!(
+        ),
+        FolderAccessError::Read(error) => format!(
             "Cannot read selected {} '{}': {e}",
             kind.label(),
-            path.display()
-        )
-    })?;
-    probe_folder_writable(path).map_err(|e| {
-        format!(
+            path.display(),
+            e = error
+        ),
+        FolderAccessError::Write(error) => format!(
             "Cannot write to selected {} '{}': {e}",
             kind.label(),
-            path.display()
-        )
-    })?;
+            path.display(),
+            e = error
+        ),
+    })
+}
+
+fn inspect_selected_folder(path: &Path) -> Result<(), FolderAccessError> {
+    let meta = std::fs::metadata(path).map_err(FolderAccessError::Metadata)?;
+    if !meta.is_dir() {
+        return Err(FolderAccessError::NotDirectory);
+    }
+
+    std::fs::read_dir(path).map_err(FolderAccessError::Read)?;
+    probe_folder_writable(path).map_err(FolderAccessError::Write)?;
 
     Ok(())
 }
@@ -171,6 +207,7 @@ fn probe_folder_writable(path: &Path) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::io;
     use std::path::Path;
 
     use super::*;
@@ -229,6 +266,74 @@ mod tests {
         assert_eq!(
             classify_snap_path(path, Some(Path::new("/home/alex")), None, None),
             None
+        );
+    }
+
+    // @variants: appimage
+    #[test]
+    fn appimage_validation_does_not_probe_the_filesystem() {
+        let result = validate_selected_folder_with(
+            Path::new("/unrestricted/appimage/path"),
+            SelectedFolderKind::GameFolder,
+            None,
+            |_| panic!("AppImage validation must remain a no-op"),
+        );
+
+        assert_eq!(result, Ok(()));
+    }
+
+    // @variants: snap
+    #[test]
+    fn snap_validation_reports_the_failed_filesystem_operation() {
+        let environment = SnapEnvironment {
+            home: Some(PathBuf::from("/home/alex")),
+            user_common: Some(PathBuf::from("/home/alex/snap/deployd/common")),
+            user_data: None,
+        };
+        let path = Path::new("/home/alex/Games/Skyrim");
+
+        let error = validate_selected_folder_with(
+            path,
+            SelectedFolderKind::GameFolder,
+            Some(&environment),
+            |_| {
+                Err(FolderAccessError::Write(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "confined",
+                )))
+            },
+        )
+        .expect_err("failed write probe must reject the selected folder");
+
+        assert!(error.contains("Cannot write to selected game folder"));
+        assert!(error.contains("confined"));
+    }
+
+    // @variants: snap
+    #[test]
+    fn snap_validation_accepts_portal_grant_after_access_probe() {
+        let environment = SnapEnvironment {
+            home: Some(PathBuf::from("/home/alex")),
+            user_common: None,
+            user_data: None,
+        };
+        let path = Path::new("/run/user/1000/doc/abcd/Game");
+        let mut probed = false;
+
+        let result = validate_selected_folder_with(
+            path,
+            SelectedFolderKind::GameFolder,
+            Some(&environment),
+            |_| {
+                probed = true;
+                Ok(())
+            },
+        );
+
+        assert_eq!(result, Ok(()));
+        assert!(
+            probed,
+            "portal grants must still be checked for live access"
         );
     }
 }
