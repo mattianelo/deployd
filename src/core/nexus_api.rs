@@ -32,7 +32,7 @@ fn parse_rate_limits(headers: &HeaderMap) -> Option<RateLimitInfo> {
 }
 
 pub struct NexusClient {
-    client: Client,
+    client: std::result::Result<Client, String>,
     api_key: String,
 }
 
@@ -50,14 +50,20 @@ impl NexusClient {
         let client = Client::builder()
             .default_headers(default_headers)
             .build()
-            .expect("failed to build HTTP client");
+            .map_err(|error| format!("failed to build Nexus HTTP client: {error}"));
         Self { client, api_key }
+    }
+
+    fn client(&self) -> Result<&Client> {
+        self.client
+            .as_ref()
+            .map_err(|error| anyhow::anyhow!(error.clone()))
     }
 
     /// Validate the API key and return user info + rate limits.
     pub async fn validate_key(&self) -> Result<(NexusUser, Option<RateLimitInfo>)> {
         let resp = self
-            .client
+            .client()?
             .get(format!("{BASE_URL}/users/validate.json"))
             .header("apikey", &self.api_key)
             .send()
@@ -86,7 +92,7 @@ impl NexusClient {
         mod_id: i64,
     ) -> Result<(NexusModInfo, Option<RateLimitInfo>)> {
         let resp = self
-            .client
+            .client()?
             .get(format!("{BASE_URL}/games/{domain}/mods/{mod_id}.json"))
             .header("apikey", &self.api_key)
             .send()
@@ -112,7 +118,7 @@ impl NexusClient {
         mod_id: i64,
     ) -> Result<(NexusFilesResponse, Option<RateLimitInfo>)> {
         let resp = self
-            .client
+            .client()?
             .get(format!(
                 "{BASE_URL}/games/{domain}/mods/{mod_id}/files.json"
             ))
@@ -147,7 +153,7 @@ impl NexusClient {
         Option<RateLimitInfo>,
     )> {
         let resp = self
-            .client
+            .client()?
             .get(format!(
                 "{BASE_URL}/games/{domain}/mods/md5_search/{md5}.json"
             ))
@@ -192,7 +198,7 @@ impl NexusClient {
         }
 
         let resp = self
-            .client
+            .client()?
             .get(url)
             .header("apikey", &self.api_key)
             .send()
@@ -224,7 +230,7 @@ impl NexusClient {
         on_progress: impl Fn(u64, u64) + Send,
     ) -> Result<()> {
         let resp = self
-            .client
+            .client()?
             .get(url)
             .send()
             .await

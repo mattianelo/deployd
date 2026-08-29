@@ -70,7 +70,7 @@ impl App {
             let sender = sender.input_sender().clone();
             dialog.connect_response(None, move |_, response| {
                 if response == "close" {
-                    sender.send(AppMsg::ConfirmClose).unwrap();
+                    let _ = sender.send(AppMsg::ConfirmClose);
                 }
             });
             dialog.present(Some(root));

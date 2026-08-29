@@ -60,6 +60,8 @@ The Nexus Mods page remains available for users who prefer that distribution cha
   busy messages while keeping the interface responsive; Downloads rows mirror install phases and
   Nexus metadata work without leaving completed downloads or installs stuck as active; External
   Tools launches stay cancellable through the running Deployd-owned process
+- **Resilient workflows** — Startup and installation failures report actionable errors, while
+  callbacks from dialogs that have already closed are discarded without terminating Deployd
 - **GNOME HIG interface** — Libadwaita navigation, adaptive split views, toolbar views,
   status pages, toast feedback, dialogs, list rows, and appearance settings keep Deployd aligned
   with modern GNOME app conventions

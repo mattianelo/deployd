@@ -79,7 +79,7 @@ mod tests {
     fn parse_full_nxm_link() {
         let link =
             NxmLink::parse("nxm://skyrimspecialedition/mods/2347/files/12345?key=abc&expires=999")
-                .unwrap();
+                .expect("full NXM link should parse");
         assert_eq!(link.domain, "skyrimspecialedition");
         assert_eq!(link.mod_id, 2347);
         assert_eq!(link.file_id, 12345);
@@ -89,7 +89,8 @@ mod tests {
 
     #[test]
     fn parse_nxm_link_without_key() {
-        let link = NxmLink::parse("nxm://fallout4/mods/100/files/200").unwrap();
+        let link = NxmLink::parse("nxm://fallout4/mods/100/files/200")
+            .expect("NXM link without a key should parse");
         assert_eq!(link.domain, "fallout4");
         assert_eq!(link.mod_id, 100);
         assert_eq!(link.file_id, 200);

@@ -90,12 +90,14 @@ pub(super) fn build_model(
             .ellipsize(gtk::pango::EllipsizeMode::End)
             .xalign(0.0_f32)
             .build();
-        item.downcast_ref::<gtk::ListItem>()
-            .unwrap()
-            .set_child(Some(&label));
+        if let Some(list_item) = item.downcast_ref::<gtk::ListItem>() {
+            list_item.set_child(Some(&label));
+        }
     });
     game_factory.connect_bind(|_, item| {
-        let list_item = item.downcast_ref::<gtk::ListItem>().unwrap();
+        let Some(list_item) = item.downcast_ref::<gtk::ListItem>() else {
+            return;
+        };
         if let Some(s) = list_item.item().and_downcast::<gtk::StringObject>()
             && let Some(lbl) = list_item.child().and_downcast::<gtk::Label>()
         {
@@ -108,12 +110,14 @@ pub(super) fn build_model(
     let game_list_factory = gtk::SignalListItemFactory::new();
     game_list_factory.connect_setup(|_, item| {
         let label = gtk::Label::builder().xalign(0.0_f32).build();
-        item.downcast_ref::<gtk::ListItem>()
-            .unwrap()
-            .set_child(Some(&label));
+        if let Some(list_item) = item.downcast_ref::<gtk::ListItem>() {
+            list_item.set_child(Some(&label));
+        }
     });
     game_list_factory.connect_bind(|_, item| {
-        let list_item = item.downcast_ref::<gtk::ListItem>().unwrap();
+        let Some(list_item) = item.downcast_ref::<gtk::ListItem>() else {
+            return;
+        };
         if let Some(s) = list_item.item().and_downcast::<gtk::StringObject>()
             && let Some(lbl) = list_item.child().and_downcast::<gtk::Label>()
         {
@@ -278,7 +282,7 @@ pub(super) fn build_model(
             rename_apply.connect_clicked(move |_| {
                 let new_name = entry_ref.text().to_string();
                 if !new_name.is_empty() {
-                    sender.send(AppMsg::RenameProfile(new_name)).unwrap();
+                    let _ = sender.send(AppMsg::RenameProfile(new_name));
                 }
                 popover.popdown();
                 profile_menu_btn.popdown();
@@ -287,7 +291,7 @@ pub(super) fn build_model(
         entry_ref.connect_activate(move |e| {
             let new_name = e.text().to_string();
             if !new_name.is_empty() {
-                sender.send(AppMsg::RenameProfile(new_name)).unwrap();
+                let _ = sender.send(AppMsg::RenameProfile(new_name));
             }
             popover.popdown();
             profile_menu_btn.popdown();
@@ -324,17 +328,13 @@ pub(super) fn build_model(
     {
         let sender = sender.input_sender().clone();
         search_entry.connect_search_changed(move |entry| {
-            sender
-                .send(AppMsg::SearchChanged(entry.text().to_string()))
-                .unwrap();
+            let _ = sender.send(AppMsg::SearchChanged(entry.text().to_string()));
         });
     }
     {
         let sender = sender.input_sender().clone();
         scope_dropdown.connect_selected_notify(move |dd| {
-            sender
-                .send(AppMsg::SearchScopeChanged(dd.selected()))
-                .unwrap();
+            let _ = sender.send(AppMsg::SearchScopeChanged(dd.selected()));
         });
     }
 
@@ -381,7 +381,9 @@ pub(super) fn wire_drag_drop(
         let Some(widget) = target.widget() else {
             return false;
         };
-        let list_box = widget.downcast::<gtk::ListBox>().unwrap();
+        let Ok(list_box) = widget.downcast::<gtk::ListBox>() else {
+            return false;
+        };
         clear_drop_indicators(&list_box);
         let Ok(data) = value.get::<String>() else {
             return false;
@@ -400,7 +402,7 @@ pub(super) fn wire_drag_drop(
             if let Some(row) = row_at_y {
                 let to = half_row_index(&row, y, len);
                 if from != to {
-                    mod_sender.send(AppMsg::MoveGroupTo(from, to)).unwrap();
+                    let _ = mod_sender.send(AppMsg::MoveGroupTo(from, to));
                 }
             }
             return true;
@@ -421,11 +423,9 @@ pub(super) fn wire_drag_drop(
             list_box.unselect_all();
             if selected.contains(&from) && selected.len() > 1 {
                 selected.sort_unstable();
-                mod_sender
-                    .send(AppMsg::MoveSelectedModsTo { selected, from, to })
-                    .unwrap();
+                let _ = mod_sender.send(AppMsg::MoveSelectedModsTo { selected, from, to });
             } else if from != to {
-                mod_sender.send(AppMsg::MoveModTo(from, to)).unwrap();
+                let _ = mod_sender.send(AppMsg::MoveModTo(from, to));
             }
         }
         true
@@ -434,7 +434,9 @@ pub(super) fn wire_drag_drop(
     let vadj_motion = mod_scroll.vadjustment();
     mod_drop.connect_motion(move |target, _x, y| {
         if let Some(widget) = target.widget() {
-            let list_box = widget.clone().downcast::<gtk::ListBox>().unwrap();
+            let Ok(list_box) = widget.clone().downcast::<gtk::ListBox>() else {
+                return gtk::gdk::DragAction::MOVE;
+            };
             update_drop_indicator(&list_box, y);
 
             const EDGE: f64 = 40.0;
@@ -479,8 +481,9 @@ pub(super) fn wire_drag_drop(
         if let Some(id) = scroll_leave.borrow_mut().take() {
             id.remove();
         }
-        if let Some(widget) = target.widget() {
-            let list_box = widget.downcast::<gtk::ListBox>().unwrap();
+        if let Some(widget) = target.widget()
+            && let Ok(list_box) = widget.downcast::<gtk::ListBox>()
+        {
             clear_drop_indicators(&list_box);
         }
     });
@@ -492,7 +495,9 @@ pub(super) fn wire_drag_drop(
         let Some(widget) = target.widget() else {
             return false;
         };
-        let list_box = widget.downcast::<gtk::ListBox>().unwrap();
+        let Ok(list_box) = widget.downcast::<gtk::ListBox>() else {
+            return false;
+        };
         clear_drop_indicators(&list_box);
         let Ok(data) = value.get::<String>() else {
             return false;
@@ -508,21 +513,23 @@ pub(super) fn wire_drag_drop(
             let to = half_row_index(&row, y, len);
             list_box.unselect_all();
             if from != to {
-                plugin_sender.send(AppMsg::MovePluginTo(from, to)).unwrap();
+                let _ = plugin_sender.send(AppMsg::MovePluginTo(from, to));
             }
         }
         true
     });
     plugin_drop.connect_motion(|target, _x, y| {
-        if let Some(widget) = target.widget() {
-            let list_box = widget.downcast::<gtk::ListBox>().unwrap();
+        if let Some(widget) = target.widget()
+            && let Ok(list_box) = widget.downcast::<gtk::ListBox>()
+        {
             update_drop_indicator(&list_box, y);
         }
         gtk::gdk::DragAction::MOVE
     });
     plugin_drop.connect_leave(|target| {
-        if let Some(widget) = target.widget() {
-            let list_box = widget.downcast::<gtk::ListBox>().unwrap();
+        if let Some(widget) = target.widget()
+            && let Ok(list_box) = widget.downcast::<gtk::ListBox>()
+        {
             clear_drop_indicators(&list_box);
         }
     });

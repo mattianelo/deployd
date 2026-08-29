@@ -65,7 +65,7 @@ impl FactoryComponent for ToolRow {
                 add_css_class: "flat",
                 #[watch] set_tooltip_text: Some(&self.wdir_tooltip()),
                 connect_clicked[sender, index] => move |_| {
-                    sender.output(ToolRowOutput::ChangeWorkingDir(index.clone())).unwrap();
+                    let _ = sender.output(ToolRowOutput::ChangeWorkingDir(index.clone()));
                 },
             },
 
@@ -74,7 +74,7 @@ impl FactoryComponent for ToolRow {
                 add_css_class: "flat",
                 set_tooltip_text: Some("Remove tool"),
                 connect_clicked[sender, index] => move |_| {
-                    sender.output(ToolRowOutput::Remove(index.clone())).unwrap();
+                    let _ = sender.output(ToolRowOutput::Remove(index.clone()));
                 },
             },
         }
@@ -183,7 +183,7 @@ impl ToolManager {
 
             let input_sender = sender.input_sender().clone();
             add_btn.connect_clicked(move |_| {
-                input_sender.send(ToolManagerMsg::AddPreset(i)).unwrap();
+                let _ = input_sender.send(ToolManagerMsg::AddPreset(i));
             });
 
             row.add_suffix(&add_btn);
@@ -378,7 +378,7 @@ impl Component for ToolManager {
                     if let Ok(file) = result
                         && let Some(path) = file.path()
                     {
-                        input_sender.send(ToolManagerMsg::ExeChosen(path)).unwrap();
+                        let _ = input_sender.send(ToolManagerMsg::ExeChosen(path));
                     }
                 });
             }
@@ -459,9 +459,7 @@ impl Component for ToolManager {
                         if let Ok(file) = result
                             && let Some(path) = file.path()
                         {
-                            input_sender
-                                .send(ToolManagerMsg::PresetExeChosen(idx, path))
-                                .unwrap();
+                            let _ = input_sender.send(ToolManagerMsg::PresetExeChosen(idx, path));
                         }
                     });
                 }
@@ -510,9 +508,7 @@ impl Component for ToolManager {
                     if let Ok(folder) = result
                         && let Some(path) = folder.path()
                     {
-                        input_sender
-                            .send(ToolManagerMsg::WorkingDirChosen(idx, path))
-                            .unwrap();
+                        let _ = input_sender.send(ToolManagerMsg::WorkingDirChosen(idx, path));
                     }
                 });
             }

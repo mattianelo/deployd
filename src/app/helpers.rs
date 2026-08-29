@@ -498,9 +498,7 @@ impl App {
             let tool_id = tool.id.clone();
             let input_sender = sender.input_sender().clone();
             btn.connect_clicked(move |_| {
-                input_sender
-                    .send(AppMsg::LaunchTool(tool_id.clone()))
-                    .unwrap();
+                let _ = input_sender.send(AppMsg::LaunchTool(tool_id.clone()));
             });
 
             self.tool_buttons_box.append(&btn);
@@ -518,9 +516,7 @@ impl App {
                 let tool_id = tool.id.clone();
                 let input_sender = sender.input_sender().clone();
                 btn.connect_clicked(move |b| {
-                    input_sender
-                        .send(AppMsg::LaunchTool(tool_id.clone()))
-                        .unwrap();
+                    let _ = input_sender.send(AppMsg::LaunchTool(tool_id.clone()));
                     if let Some(p) = b
                         .ancestor(gtk::Popover::static_type())
                         .and_downcast::<gtk::Popover>()

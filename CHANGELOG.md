@@ -17,6 +17,8 @@
 - Updated XML, concurrency, random-number, QUIC, and TLS certificate dependencies to RustSec-patched
   releases, restricted SQLx to the SQLite feature set used by Deployd, and made auditing reject the
   reviewed inactive-driver exception if RSA ever becomes reachable.
+- Recoverable startup, installation, and stale-dialog failures now report or safely cancel the
+  affected action instead of terminating Deployd.
 
 ## [2.3.3]
 

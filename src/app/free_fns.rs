@@ -33,11 +33,7 @@ pub(crate) fn extract_nexus_timestamp(filename: &str) -> Option<i64> {
         .rsplit_once('.')
         .map(|(l, _)| l)
         .unwrap_or(filename);
-    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let re = RE.get_or_init(|| regex::Regex::new(r"-(\d{10})$").unwrap());
-    re.captures(stem)
-        .and_then(|c| c.get(1))
-        .and_then(|m| m.as_str().parse().ok())
+    nexus_timestamp_suffix(stem)?.parse().ok()
 }
 
 /// Normalizes a Nexus filename for comparison against `NexusFileEntry.file_name`.
@@ -48,9 +44,16 @@ pub(crate) fn extract_nexus_timestamp(filename: &str) -> Option<i64> {
 /// normalized before comparing.
 pub(crate) fn normalize_nexus_filename(s: &str) -> String {
     let stem = s.rsplit_once('.').map(|(l, _)| l).unwrap_or(s);
-    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let re = RE.get_or_init(|| regex::Regex::new(r"-\d{10}$").unwrap());
-    re.replace(stem, "").into_owned()
+    nexus_timestamp_suffix(stem)
+        .and_then(|timestamp| stem.strip_suffix(timestamp))
+        .and_then(|prefix| prefix.strip_suffix('-'))
+        .unwrap_or(stem)
+        .to_string()
+}
+
+fn nexus_timestamp_suffix(value: &str) -> Option<&str> {
+    let (_, suffix) = value.rsplit_once('-')?;
+    (suffix.len() == 10 && suffix.bytes().all(|byte| byte.is_ascii_digit())).then_some(suffix)
 }
 
 /// Parse a Nexus mod ID from a filename following the convention `ModName-MODID-VERSION.ext`.
@@ -471,7 +474,30 @@ mod tests {
     use anyhow::Result;
     use tempfile::tempdir;
 
-    use super::{parse_nexus_mod_id, parse_nexus_mod_id_from_input, scan_vanilla_plugins};
+    use super::{
+        extract_nexus_timestamp, normalize_nexus_filename, parse_nexus_mod_id,
+        parse_nexus_mod_id_from_input, scan_vanilla_plugins,
+    };
+
+    #[test]
+    fn extracts_only_ten_digit_nexus_timestamp_suffixes() {
+        assert_eq!(
+            extract_nexus_timestamp("mod-1756684569.7z"),
+            Some(1_756_684_569)
+        );
+        assert_eq!(extract_nexus_timestamp("mod-175668456.7z"), None);
+        assert_eq!(extract_nexus_timestamp("mod-175668456x.7z"), None);
+    }
+
+    #[test]
+    fn normalizes_only_nexus_timestamp_suffixes() {
+        assert_eq!(normalize_nexus_filename("foo-1.0-1756684569.7z"), "foo-1.0");
+        assert_eq!(
+            normalize_nexus_filename("foo-1.0-175668456.7z"),
+            "foo-1.0-175668456"
+        );
+        assert_eq!(normalize_nexus_filename("foo-1.0.zip"), "foo-1.0");
+    }
 
     // Regression: manually fetched metadata for NEO must target the page ID, not the CDN timestamp.
     // @variants: both

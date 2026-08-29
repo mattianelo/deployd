@@ -233,9 +233,8 @@ impl SimpleComponent for PreInstallDialog {
         {
             let input_sender = sender.input_sender().clone();
             widgets.name_entry.connect_changed(move |entry| {
-                input_sender
-                    .send(PreInstallDialogMsg::NameChanged(entry.text().to_string()))
-                    .unwrap();
+                let _ =
+                    input_sender.send(PreInstallDialogMsg::NameChanged(entry.text().to_string()));
             });
         }
 

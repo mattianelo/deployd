@@ -368,9 +368,7 @@ impl Component for SettingsDialog {
                     if let Ok(file) = result
                         && let Some(path) = file.path()
                     {
-                        input_sender
-                            .send(SettingsMsg::DownloadsDirChosen(path))
-                            .unwrap();
+                        let _ = input_sender.send(SettingsMsg::DownloadsDirChosen(path));
                     }
                 });
             }

@@ -205,7 +205,7 @@ impl App {
             if let Ok(file) = result
                 && let Some(path) = file.path()
             {
-                input_sender.send(AppMsg::FileChosen(path)).unwrap();
+                let _ = input_sender.send(AppMsg::FileChosen(path));
             }
         });
     }
@@ -967,9 +967,14 @@ impl App {
                 archive_hash,
                 archive_path,
             }) => {
-                let game = self.selected_game().cloned().expect(
-                    "PrepareResult received without a selected game — UI invariant violated",
-                );
+                let Some(game) = self.selected_game().cloned() else {
+                    self.installing = false;
+                    self.finish_current_work();
+                    self.reinstall_mode = false;
+                    self.pending_nexus_ids = None;
+                    self.push_notification("Add failed: no game is selected");
+                    return;
+                };
                 self.pending_install = Some(PendingInstall {
                     tmp_dir,
                     mod_name: mod_name.clone(),
@@ -1053,9 +1058,14 @@ impl App {
                 archive_hash,
                 archive_path,
             }) => {
-                let game = self.selected_game().cloned().expect(
-                    "PrepareResult received without a selected game — UI invariant violated",
-                );
+                let Some(game) = self.selected_game().cloned() else {
+                    self.installing = false;
+                    self.finish_current_work();
+                    self.reinstall_mode = false;
+                    self.pending_nexus_ids = None;
+                    self.push_notification("Add failed: no game is selected");
+                    return;
+                };
                 self.pending_install = Some(PendingInstall {
                     tmp_dir,
                     mod_name: mod_name.clone(),
@@ -1303,10 +1313,12 @@ impl App {
                         add_result.mod_entry.nexus_domain.as_deref(),
                     )
                 {
-                    let tracker = self
-                        .tracker
-                        .clone()
-                        .expect("tracker not initialized at absorb result handling");
+                    let Some(tracker) = self.tracker.clone() else {
+                        self.push_notification(
+                            "Nexus metadata was not refreshed because the database is unavailable",
+                        );
+                        return;
+                    };
                     let mod_id = add_result.mod_entry.id.clone();
                     let domain = nexus_domain.to_string();
                     let nexus_file_id = add_result.mod_entry.nexus_file_id;

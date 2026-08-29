@@ -358,11 +358,9 @@ fn rebuild_list(
         let s = sender.input_sender().clone();
         restore_btn.connect_clicked(move |btn| {
             if is_mod {
-                s.send(AppMsg::LoadModOrderSnapshot(snap_id.clone()))
-                    .unwrap();
+                let _ = s.send(AppMsg::LoadModOrderSnapshot(snap_id.clone()));
             } else {
-                s.send(AppMsg::LoadPluginOrderSnapshot(snap_id.clone()))
-                    .unwrap();
+                let _ = s.send(AppMsg::LoadPluginOrderSnapshot(snap_id.clone()));
             }
             if let Some(popover) = btn
                 .ancestor(gtk::Popover::static_type())
@@ -376,11 +374,9 @@ fn rebuild_list(
         let s = sender.input_sender().clone();
         delete_btn.connect_clicked(move |btn| {
             if is_mod {
-                s.send(AppMsg::DeleteModOrderSnapshot(snap_id.clone()))
-                    .unwrap();
+                let _ = s.send(AppMsg::DeleteModOrderSnapshot(snap_id.clone()));
             } else {
-                s.send(AppMsg::DeletePluginOrderSnapshot(snap_id.clone()))
-                    .unwrap();
+                let _ = s.send(AppMsg::DeletePluginOrderSnapshot(snap_id.clone()));
             }
             if let Some(popover) = btn
                 .ancestor(gtk::Popover::static_type())

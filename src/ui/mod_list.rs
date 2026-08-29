@@ -253,7 +253,7 @@ impl FactoryComponent for ModListItem {
                         add_css_class: "flat",
                         add_css_class: "circular",
                         connect_clicked[sender, index] => move |_| {
-                            sender.output(ModListItemOutput::ToggleGroupCollapse(index.clone())).unwrap();
+                            let _ = sender.output(ModListItemOutput::ToggleGroupCollapse(index.clone()));
                         }
                     },
 
@@ -264,7 +264,7 @@ impl FactoryComponent for ModListItem {
                         add_css_class: "flat",
                         add_css_class: "circular",
                         connect_clicked[sender, index] => move |_| {
-                            sender.output(ModListItemOutput::DeleteGroup(index.clone())).unwrap();
+                            let _ = sender.output(ModListItemOutput::DeleteGroup(index.clone()));
                         }
                     },
                 },
@@ -318,7 +318,7 @@ impl FactoryComponent for ModListItem {
                         #[watch]
                         set_visible: matches!(&self.kind, ModListItemKind::Mod(r) if r.reinstall_from_file),
                         connect_clicked[sender, index] => move |_| {
-                            sender.output(ModListItemOutput::Reinstall(index.clone())).unwrap();
+                            let _ = sender.output(ModListItemOutput::Reinstall(index.clone()));
                         }
                     },
 
@@ -358,7 +358,7 @@ impl FactoryComponent for ModListItem {
                         set_valign: gtk::Align::Center,
                         add_css_class: "flat",
                         connect_clicked[sender, index] => move |_| {
-                            sender.output(ModListItemOutput::OpenProperties(index.clone())).unwrap();
+                            let _ = sender.output(ModListItemOutput::OpenProperties(index.clone()));
                         }
                     },
 
@@ -521,9 +521,7 @@ impl FactoryComponent for ModListItem {
             apply_btn.connect_clicked(move |_| {
                 let new_name = entry.text().to_string();
                 if !new_name.is_empty() {
-                    sender2
-                        .output(ModListItemOutput::RenameGroup(idx.clone(), new_name))
-                        .unwrap();
+                    let _ = sender2.output(ModListItemOutput::RenameGroup(idx.clone(), new_name));
                 }
                 popover_ref.popdown();
             });
@@ -566,9 +564,7 @@ impl FactoryComponent for ModListItem {
                 if let Some(widget) = gesture.widget() {
                     widget.unset_state_flags(gtk::StateFlags::PRELIGHT);
                 }
-                sender3
-                    .output(ModListItemOutput::OpenProperties(idx3.clone()))
-                    .unwrap();
+                let _ = sender3.output(ModListItemOutput::OpenProperties(idx3.clone()));
             });
             root_ref.add_controller(right_click);
         }

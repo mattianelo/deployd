@@ -1,3 +1,8 @@
+#![cfg_attr(
+    not(test),
+    deny(clippy::expect_used, clippy::panic, clippy::unwrap_used)
+)]
+
 use std::sync::OnceLock;
 
 use gio::prelude::*;
@@ -14,8 +19,10 @@ mod utils;
 pub static NXM_SENDER: OnceLock<relm4::Sender<app::AppMsg>> = OnceLock::new();
 
 fn main() {
-    gio::resources_register_include!("resources.gresource")
-        .expect("failed to register app resources");
+    if let Err(error) = gio::resources_register_include!("resources.gresource") {
+        eprintln!("deployd: failed to register application resources: {error}");
+        return;
+    }
 
     // Suppress GTK noise that is not actionable from app code.
     // GTK4 routes these through GLib's structured logging path, so we must use
@@ -54,8 +61,14 @@ fn main() {
     });
 
     // Initialize GTK and libadwaita (required when using RelmApp::from_app)
-    gtk::init().expect("GTK initialisation failed — no display server available");
-    libadwaita::init().expect("libadwaita initialisation failed — no display server available");
+    if let Err(error) = gtk::init() {
+        eprintln!("deployd: GTK initialization failed: {error}");
+        return;
+    }
+    if let Err(error) = libadwaita::init() {
+        eprintln!("deployd: libadwaita initialization failed: {error}");
+        return;
+    }
 
     glib::log_set_default_handler(|domain, level, message| {
         if matches!(level, glib::LogLevel::Error | glib::LogLevel::Critical) {

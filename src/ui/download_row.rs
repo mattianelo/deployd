@@ -114,7 +114,7 @@ impl FactoryComponent for DownloadRow {
                     #[watch]
                     set_visible: self.entry.is_installable(),
                     connect_clicked[sender, index] => move |_| {
-                        sender.output(DownloadRowOutput::Install(index.clone())).unwrap();
+                        let _ = sender.output(DownloadRowOutput::Install(index.clone()));
                     },
                 },
 

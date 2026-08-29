@@ -384,7 +384,7 @@ mod tests {
         sqlx::query("INSERT INTO games (id, title, path, data_subdir) VALUES ('g', 'Test', '/tmp/g', 'Data')")
             .execute(&tracker.pool)
             .await
-            .unwrap();
+            .expect("insert test game");
         tracker
     }
 
@@ -422,7 +422,7 @@ mod tests {
         .bind(path)
         .execute(&tracker.pool)
         .await
-        .unwrap();
+        .expect("insert test file");
     }
 
     /// A single mod whose two Override/ files share a filename must not produce
@@ -433,7 +433,7 @@ mod tests {
         tracker
             .insert_mod(&mod_entry("a", "ModA", 1))
             .await
-            .unwrap();
+            .expect("insert first test mod");
         insert_file(&tracker, "a", "override/readme.xml").await;
         insert_file(&tracker, "a", "override/sub/readme.xml").await;
 
@@ -442,7 +442,7 @@ mod tests {
         let result = tracker
             .compute_overrides("g", handler, &mod_names)
             .await
-            .unwrap();
+            .expect("compute single-mod overrides");
 
         assert!(
             result.is_empty(),
@@ -458,11 +458,11 @@ mod tests {
         tracker
             .insert_mod(&mod_entry("a", "ModA", 2))
             .await
-            .unwrap();
+            .expect("insert winning test mod");
         tracker
             .insert_mod(&mod_entry("b", "ModB", 1))
             .await
-            .unwrap();
+            .expect("insert losing test mod");
         insert_file(&tracker, "a", "override/items.xml").await;
         insert_file(&tracker, "b", "override/sub/items.xml").await;
 
@@ -474,7 +474,7 @@ mod tests {
         let result = tracker
             .compute_overrides("g", handler, &mod_names)
             .await
-            .unwrap();
+            .expect("compute conflicting overrides");
 
         let winner = result.get("a").expect("winner entry");
         assert_eq!(winner.overrides, 1);
@@ -493,11 +493,11 @@ mod tests {
         tracker
             .insert_mod(&mod_entry("a", "ModA", 2))
             .await
-            .unwrap();
+            .expect("insert first ignored-file test mod");
         tracker
             .insert_mod(&mod_entry("b", "ModB", 1))
             .await
-            .unwrap();
+            .expect("insert second ignored-file test mod");
         insert_file(&tracker, "a", "override/readme.txt").await;
         insert_file(&tracker, "b", "override/readme.txt").await;
 
@@ -509,7 +509,7 @@ mod tests {
         let result = tracker
             .compute_overrides("g", handler, &mod_names)
             .await
-            .unwrap();
+            .expect("compute ignored-file overrides");
 
         assert!(
             result.is_empty(),

@@ -494,10 +494,18 @@ fn strip_zip_unicode_extra_fields(data: &mut [u8]) -> bool {
         return false;
     }
     // Both slices are exactly 4 bytes: guaranteed by the bounds check above.
-    let cd_size =
-        u32::from_le_bytes(data[eocd_pos + 12..eocd_pos + 16].try_into().unwrap()) as usize;
-    let cd_offset =
-        u32::from_le_bytes(data[eocd_pos + 16..eocd_pos + 20].try_into().unwrap()) as usize;
+    let cd_size = u32::from_le_bytes([
+        data[eocd_pos + 12],
+        data[eocd_pos + 13],
+        data[eocd_pos + 14],
+        data[eocd_pos + 15],
+    ]) as usize;
+    let cd_offset = u32::from_le_bytes([
+        data[eocd_pos + 16],
+        data[eocd_pos + 17],
+        data[eocd_pos + 18],
+        data[eocd_pos + 19],
+    ]) as usize;
 
     // Skip ZIP64 archives (offset sentinel = 0xFFFFFFFF) and perform a basic sanity check.
     if cd_offset == 0xFFFF_FFFF || cd_offset.saturating_add(cd_size) > len {

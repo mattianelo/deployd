@@ -38,10 +38,16 @@ pub fn apply_rules(rules: &[Rule], rel_path: &str) -> String {
 }
 
 // Compiled once; Regex::clone() is O(1) (internally Arc-wrapped).
-static DATA_PREFIX_RE: OnceLock<Regex> = OnceLock::new();
+static DATA_PREFIX_RE: OnceLock<Option<Regex>> = OnceLock::new();
 
-fn data_prefix_re() -> &'static Regex {
-    DATA_PREFIX_RE.get_or_init(|| Regex::new(r"(?i)^data/").expect("invalid data prefix regex"))
+fn data_prefix_re() -> Option<&'static Regex> {
+    DATA_PREFIX_RE
+        .get_or_init(|| {
+            Regex::new(r"(?i)^data/")
+                .map_err(|error| eprintln!("deployd: invalid built-in Data path rule: {error}"))
+                .ok()
+        })
+        .as_ref()
 }
 
 pub fn rules_for_game(game_id: &str) -> Vec<Rule> {
@@ -49,12 +55,13 @@ pub fn rules_for_game(game_id: &str) -> Vec<Rule> {
         // Strip redundant Data/ prefix. Everything else stays as-is since
         // we deploy relative to the game's Data directory already.
         "skyrimse" | "skyrimse-steam" | "skyrimvr" | "fallout4" | "fallout4-steam"
-        | "falloutnv" | "falloutnv-steam" | "starfield" => {
-            vec![Rule::Prefix {
-                pattern: data_prefix_re().clone(),
+        | "falloutnv" | "falloutnv-steam" | "starfield" => data_prefix_re()
+            .map(|pattern| Rule::Prefix {
+                pattern: pattern.clone(),
                 replacement: String::new(),
-            }]
-        }
+            })
+            .into_iter()
+            .collect(),
         _ => vec![],
     }
 }

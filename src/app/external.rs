@@ -78,9 +78,7 @@ impl App {
         let input_sender = sender.input_sender().clone();
         dialog.connect_response(None, move |_, response| {
             if response == "reset" {
-                input_sender
-                    .send(AppMsg::ResetVanillaBaselineConfirmed)
-                    .unwrap();
+                let _ = input_sender.send(AppMsg::ResetVanillaBaselineConfirmed);
             }
         });
         dialog.present(Some(root));
@@ -373,10 +371,17 @@ impl App {
         );
         let is_bethesda = game.engine == crate::models::game::GameEngine::Bethesda;
         let is_aurora = game.engine == crate::models::game::GameEngine::Aurora;
+        let tmp_dir = match tempfile::tempdir() {
+            Ok(tmp_dir) => tmp_dir,
+            Err(error) => {
+                self.show_toast(&format!("Could not prepare external changes: {error}"));
+                return;
+            }
+        };
         self.pending_external_files.clear();
         self.external_changes_count = 0;
         self.pending_install = Some(PendingInstall {
-            tmp_dir: tempfile::tempdir().expect("tempdir"),
+            tmp_dir,
             mod_name: mod_name.clone(),
             game,
             file_list: Some(file_list),

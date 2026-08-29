@@ -191,7 +191,7 @@ impl App {
         let input_sender = sender.input_sender().clone();
         dialog.connect_response(None, move |_, response| {
             if response == "purge" {
-                input_sender.send(AppMsg::PurgeConfirmed).unwrap();
+                let _ = input_sender.send(AppMsg::PurgeConfirmed);
             }
         });
         dialog.present(Some(root));

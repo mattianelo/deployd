@@ -471,20 +471,23 @@ impl Component for WelcomeWizard {
                     .known_opts
                     .iter()
                     .enumerate()
-                    .filter(|&(i, _)| self.selected[i] && self.install_paths[i].is_some())
-                    .map(|(i, opt)| {
+                    .filter_map(|(i, opt)| {
+                        if !self.selected.get(i).copied().unwrap_or(false) {
+                            return None;
+                        }
+                        let path = self.install_paths.get(i)?.clone()?;
                         let engine = opt.engine.clone();
-                        GameConfig {
+                        Some(GameConfig {
                             game: Game {
                                 id: opt.deployd_id.to_string(),
                                 title: opt.title.to_string(),
-                                path: self.install_paths[i].clone().unwrap(),
+                                path,
                                 data_subdir: opt.data_subdir.to_string(),
                                 engine,
-                                wine_prefix: self.wine_prefixes[i].clone(),
+                                wine_prefix: self.wine_prefixes.get(i).cloned().flatten(),
                             },
                             custom: true,
-                        }
+                        })
                     })
                     .collect();
 

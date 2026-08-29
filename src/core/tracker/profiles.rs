@@ -353,14 +353,13 @@ impl Tracker {
         }
 
         let profiles = self.list_profiles(game_id).await?;
-        if !profiles.is_empty() {
+        if let Some(first_profile) = profiles.first() {
             let last_key = format!("last_profile_{game_id}");
             let preferred_id = self.get_setting(&last_key).await.ok().flatten();
             let target = preferred_id
                 .as_deref()
                 .and_then(|id| profiles.iter().find(|p| p.id == id))
-                .or_else(|| profiles.first())
-                .unwrap() // safe: profiles is non-empty
+                .unwrap_or(first_profile)
                 .clone();
             sqlx::query("UPDATE profiles SET is_active = TRUE WHERE id = ?")
                 .bind(&target.id)
