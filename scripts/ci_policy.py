@@ -214,6 +214,15 @@ def validate() -> None:
         "cargo build --locked --release --features loot,libarchive-fallback" in snap,
         "Snap feature composition drifted",
     )
+    require(
+        f"rust-channel: '{rust_version}'" in snap,
+        "Snap Rust channel does not match the repository toolchain",
+    )
+    require("      - rustup" in snap, "hosted Snap builds do not provision rustup")
+    require(
+        "build-snaps: [rustup]" not in snap,
+        "Snap build uses the incompatible core26-based rustup snap",
+    )
     require("      - home" in snap and "      - network" in snap, "Snap required plugs drifted")
 
     dockerfile = (ROOT / "packaging" / "appimage" / "Dockerfile").read_text()

@@ -23,7 +23,8 @@ sudo snap install deployd
 ```
 
 You can also install from the [Deployd Snap Store page](https://snapcraft.io/deployd).
-The Snap package uses the core24 runtime and currently targets 64-bit x86 (`amd64`) Linux systems.
+The Snap package uses the core24 runtime, a pinned Rust toolchain, and currently targets 64-bit
+x86 (`amd64`) Linux systems.
 Stable Snap Store updates are built and published from Deployd's stable version tags.
 The Nexus Mods page remains available for users who prefer that distribution channel:
 [Deployd on Nexus Mods](https://www.nexusmods.com/skyrimspecialedition/mods/174218).
