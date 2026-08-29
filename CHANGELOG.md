@@ -25,6 +25,9 @@
 - Hosted core24 Snap builds now provision the pinned Rust toolchain through Snapcraft's recognized
   `rust-deps` part and Ubuntu's package-compatible default-toolchain flow, avoiding clean-runner
   validation failures and the incompatible core26-based Rustup build snap.
+- GitLab now creates pipelines only for explicit manual preflights, scheduled maintenance, and
+  exact stable release tags; ordinary commits and merge-request updates no longer consume runner
+  minutes, and Pages publication is release-driven or manually requested.
 
 ## [2.3.3]
 

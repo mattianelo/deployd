@@ -225,8 +225,8 @@ Launch modding tools through the package-managed runtime from the **Tools** pane
 Deployd treats downloaded archives and installer metadata as untrusted input. Keep the application
 updated so archive, XML, and network-parser security fixes are applied with new releases.
 
-Development changes are checked with compiler-backed semantic and structural analysis in the
-project's isolated development environment.
+Development changes are checked in explicit pre-release pipelines with compiler-backed semantic
+and structural analysis in the project's isolated development environment.
 
 ---
 

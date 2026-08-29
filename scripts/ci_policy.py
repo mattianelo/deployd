@@ -6,6 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
+STABLE_TAG_RULE = "'$CI_COMMIT_TAG =~ /^v\\d+\\.\\d+\\.\\d+$/'"
 
 
 class PolicyError(RuntimeError):
@@ -22,6 +23,33 @@ def shell_value(source: str, name: str) -> str:
     if match is None:
         raise PolicyError(f"missing shell pin: {name}")
     return match.group(1)
+
+
+def validate_pipeline_gating(pipeline: str) -> None:
+    workflow = pipeline.split("\nworkflow:\n", maxsplit=1)[1].split(
+        "\nvariables:\n", maxsplit=1
+    )[0]
+    require(
+        STABLE_TAG_RULE in workflow
+        and '$CI_PIPELINE_SOURCE == "web"' in workflow
+        and '$CI_PIPELINE_SOURCE == "schedule"' in workflow
+        and "    - when: never" in workflow,
+        "GitLab pipelines are not restricted to manual, scheduled, and release runs",
+    )
+    require(
+        'CI_PIPELINE_SOURCE == "push"' not in workflow
+        and 'CI_PIPELINE_SOURCE == "merge_request_event"' not in workflow,
+        "GitLab creates automatic commit or merge-request pipelines",
+    )
+    shared_rules = pipeline.split("\n.shared-pipeline:\n", maxsplit=1)[1].split(
+        "\n.rust-job:\n", maxsplit=1
+    )[0]
+    require(
+        shared_rules.count('$CI_PIPELINE_SOURCE == "web"') == 1
+        and "merge_request_event" not in shared_rules
+        and 'CI_PIPELINE_SOURCE == "push"' not in shared_rules,
+        "full GitLab validation is not restricted to manual preflights",
+    )
 
 
 def validate() -> None:
@@ -44,6 +72,7 @@ def validate() -> None:
         )
 
     pipeline = (ROOT / ".gitlab-ci.yml").read_text()
+    validate_pipeline_gating(pipeline)
     revision_match = re.search(
         r'^\s*BUILD_ENV_IMAGE_REVISION: "(v[1-9][0-9]*)"$', pipeline, re.MULTILINE
     )
@@ -78,14 +107,20 @@ def validate() -> None:
         re.search(r"ci-ownership\.sh.*CARGO_(?:HOME|TARGET_DIR)", pipeline) is None,
         "CI applies ownership policy to runner-managed cache roots",
     )
+    build_env_job = pipeline.split("\nbuild-env-image:\n", maxsplit=1)[1].split(
+        "\nbuild-appimage:\n", maxsplit=1
+    )[0]
     require(
-        'CI_PIPELINE_SOURCE == "push"' in pipeline and "allow_failure: false" in pipeline,
-        "protected default-branch pushes cannot bootstrap a changed build image",
+        '$CI_PIPELINE_SOURCE == "web"' in build_env_job
+        and 'CI_PIPELINE_SOURCE == "push"' not in build_env_job
+        and "when: manual" not in build_env_job,
+        "manual preflights do not automatically verify the immutable build image",
     )
     require(
-        './scripts/ci-fossil.sh diff .ci-artifacts/fossil '
-        '"$CI_MERGE_REQUEST_DIFF_BASE_SHA"' in pipeline,
-        "merge requests do not run the Fossil diff gate against their target base",
+        'git fetch origin "$CI_DEFAULT_BRANCH"' in pipeline
+        and 'git merge-base "$CI_COMMIT_SHA" FETCH_HEAD' in pipeline
+        and './scripts/ci-fossil.sh diff .ci-artifacts/fossil "$base_sha"' in pipeline,
+        "manual preflights do not run the Fossil diff gate against the default branch",
     )
     fossil_ci = (ROOT / "scripts" / "ci-fossil.sh").read_text()
     require(
@@ -122,9 +157,8 @@ def validate() -> None:
         and "python3 scripts/ci_file_size.py" in pipeline,
         "CI does not test and enforce the Rust file-size policy",
     )
-    stable_tag_rule = "'$CI_COMMIT_TAG =~ /^v\\d+\\.\\d+\\.\\d+$/'"
     require(
-        pipeline.count(stable_tag_rule) == 3,
+        pipeline.count(STABLE_TAG_RULE) == 5,
         "GitLab release jobs do not share the exact stable SemVer tag rule",
     )
     require(
@@ -135,9 +169,22 @@ def validate() -> None:
         "- job: release-metadata" in pipeline,
         "AppImage builds do not depend on release metadata validation",
     )
+    build_appimage_job = pipeline.split("\nbuild-appimage:\n", maxsplit=1)[1].split(
+        "\nupload-nexus:\n", maxsplit=1
+    )[0]
+    require(
+        '$CI_PIPELINE_SOURCE == "web"' in build_appimage_job
+        and "when: manual" not in build_appimage_job,
+        "manual preflights do not automatically build the AppImage",
+    )
     require(
         "python3 scripts/test_release_metadata.py" in pipeline,
         "CI does not run release metadata regression tests",
+    )
+    pages_job = pipeline.split("\npages:\n", maxsplit=1)[1]
+    require(
+        "when: manual" in pages_job and "allow_failure: true" in pages_job,
+        "manual preflights are blocked by optional Pages publication",
     )
     for secret_name in ("SNAPCRAFT_STORE_CREDENTIALS", "SNAP_STORE_LOGIN"):
         require(

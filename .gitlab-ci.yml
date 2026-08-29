@@ -12,6 +12,13 @@ include:
   - template: Security/SAST.gitlab-ci.yml
   - template: Security/Secret-Detection.gitlab-ci.yml
 
+workflow:
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - when: never
+
 variables:
   SECRET_DETECTION_ENABLED: "true"
   BUILD_ENV_IMAGE_REVISION: "v2"
@@ -22,8 +29,7 @@ variables:
 
 .shared-pipeline:
   rules: &shared-pipeline-rules
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE != "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
 
 .rust-job:
   image: $BUILD_ENV_IMAGE
@@ -63,6 +69,7 @@ policy-validation:
     - python3 scripts/ci_file_size.py
     - python3 scripts/test_ci_test_inventory.py
     - python3 scripts/ci_test_inventory.py validate
+    - python3 scripts/test_ci_policy.py
     - python3 scripts/ci_policy.py
     - ./scripts/test_ci_environment.sh
     - ./scripts/test_check_wrapper.sh
@@ -82,7 +89,7 @@ instruction-drift:
   stage: validate
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
   script:
     - python3 scripts/test_ci_instruction_drift.py
     - python3 scripts/ci_instruction_drift.py
@@ -174,7 +181,7 @@ fossil-observation:
   variables:
     GIT_DEPTH: "0"
   rules:
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE != "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
       when: always
   allow_failure: true
   script:
@@ -193,9 +200,11 @@ fossil-diff:
   variables:
     GIT_DEPTH: "0"
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
   script:
-    - ./scripts/ci-fossil.sh diff .ci-artifacts/fossil "$CI_MERGE_REQUEST_DIFF_BASE_SHA"
+    - git fetch origin "$CI_DEFAULT_BRANCH"
+    - base_sha="$(git merge-base "$CI_COMMIT_SHA" FETCH_HEAD)"
+    - ./scripts/ci-fossil.sh diff .ci-artifacts/fossil "$base_sha"
   artifacts:
     when: always
     expire_in: 90 days
@@ -233,7 +242,7 @@ mcp-protocol-smoke:
   stage: test
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
       changes:
         - fossil.toml
         - packaging/appimage/Dockerfile
@@ -266,19 +275,7 @@ build-env-image:
     DOCKER_TLS_VERIFY: 1
     DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
   rules:
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
-      changes:
-        - rust-toolchain.toml
-        - packaging/appimage/Dockerfile
-        - packaging/appimage/mcp-versions.sh
-        - packaging/appimage/install-fossil.sh
-        - packaging/appimage/install-rust-analyzer-mcp.sh
-        - packaging/appimage/provision-mcp.sh
-      when: manual
-      allow_failure: false
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "web"'
-      when: manual
-      allow_failure: false
     - when: never
   script:
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
@@ -306,7 +303,6 @@ build-appimage:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/'
     - if: '$CI_PIPELINE_SOURCE == "web"'
-      when: manual
 
 upload-nexus:
   stage: deploy
@@ -347,4 +343,7 @@ pages:
       - out
   publish: out
   rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/'
+    - if: '$CI_PIPELINE_SOURCE == "web" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual
+      allow_failure: true
