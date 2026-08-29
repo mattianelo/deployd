@@ -215,10 +215,19 @@ def validate() -> None:
         "Snap feature composition drifted",
     )
     require(
-        f"rust-channel: '{rust_version}'" in snap,
-        "Snap Rust channel does not match the repository toolchain",
+        "  rust-deps:\n" in snap and "    plugin: nil\n" in snap,
+        "Snap does not provide the Rust plugin's required dependency part",
     )
-    require("      - rustup" in snap, "hosted Snap builds do not provision rustup")
+    require(
+        "    after: [rust-deps]\n" in snap and "    rust-channel: 'none'\n" in snap,
+        "Snap Rust part does not consume the dedicated toolchain part",
+    )
+    require(
+        "      - rustup\n" in snap
+        and f"      rustup toolchain install {rust_version} --profile minimal\n" in snap
+        and f"      - RUSTUP_TOOLCHAIN: '{rust_version}'\n" in snap,
+        "hosted Snap builds do not provision the repository Rust toolchain",
+    )
     require(
         "build-snaps: [rustup]" not in snap,
         "Snap build uses the incompatible core26-based rustup snap",

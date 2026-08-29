@@ -22,8 +22,9 @@
 - Stable version tags now validate all release metadata before GitLab publishes the AppImage to
   Nexus Mods and the GitHub mirror independently builds and publishes the Snap to the stable
   Snap Store channel; manual GitHub runs build an auditable Snap artifact without store access.
-- Hosted core24 Snap builds now provision Rustup from Ubuntu and select the repository's pinned
-  compiler, fixing clean GitHub runners that could not initialize the Rust plugin.
+- Hosted core24 Snap builds now provision the pinned Rust toolchain through Snapcraft's recognized
+  `rust-deps` part, avoiding clean-runner validation failures and the incompatible core26-based
+  Rustup build snap.
 
 ## [2.3.3]
 

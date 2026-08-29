@@ -58,14 +58,22 @@ apps:
     desktop: usr/share/applications/io.mattianelo.deployd.desktop
 
 parts:
+  rust-deps:
+    plugin: nil
+    build-packages:
+      - rustup
+    override-build: |
+      rustup toolchain install 1.96.1 --profile minimal
+
   deployd:
     plugin: rust
     source: .
-    rust-channel: '1.96.1'
+    after: [rust-deps]
+    rust-channel: 'none'
+    build-environment:
+      - RUSTUP_TOOLCHAIN: '1.96.1'
     parse-info: [usr/share/metainfo/io.mattianelo.deployd.metainfo.xml]
     build-packages:
-      # Hosted core24 builders are clean; use Noble's rustup package instead of the core26 snap.
-      - rustup
       - libsqlite3-dev
       - libssl-dev
       - pkg-config
