@@ -1,0 +1,81 @@
+name: Release Snap
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: snap-store-production
+  cancel-in-progress: false
+
+jobs:
+  classify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      release: ${{ steps.metadata.outputs.release }}
+      version: ${{ steps.metadata.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - id: metadata
+        name: Validate release metadata
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT_NAME" = "push" ]; then
+            python3 scripts/release_metadata.py \
+              --tag "$REF_NAME" \
+              --github-output "$GITHUB_OUTPUT"
+          else
+            python3 scripts/release_metadata.py \
+              --github-output "$GITHUB_OUTPUT"
+          fi
+
+  preflight:
+    if: github.event_name == 'workflow_dispatch'
+    needs: classify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - id: build
+        uses: canonical/action-build@6d723b848ffb875da54b8fa7a8fe060e6c3f55a7
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: deployd-snap-${{ needs.classify.outputs.version }}-amd64
+          path: ${{ steps.build.outputs.snap }}
+          retention-days: 90
+
+  release:
+    if: needs.classify.outputs.release == 'true'
+    needs: classify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    environment: snap-store-production
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - id: build
+        uses: canonical/action-build@6d723b848ffb875da54b8fa7a8fe060e6c3f55a7
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: deployd-snap-${{ needs.classify.outputs.version }}-amd64
+          path: ${{ steps.build.outputs.snap }}
+          retention-days: 90
+      - uses: canonical/action-publish@895633656038d69bfc68efdccc0964053d60ad2f
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAP_STORE_LOGIN }}
+        with:
+          snap: ${{ steps.build.outputs.snap }}
+          release: stable

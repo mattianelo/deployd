@@ -122,8 +122,83 @@ def validate() -> None:
         and "python3 scripts/ci_file_size.py" in pipeline,
         "CI does not test and enforce the Rust file-size policy",
     )
+    stable_tag_rule = "'$CI_COMMIT_TAG =~ /^v\\d+\\.\\d+\\.\\d+$/'"
+    require(
+        pipeline.count(stable_tag_rule) == 3,
+        "GitLab release jobs do not share the exact stable SemVer tag rule",
+    )
+    require(
+        'python3 scripts/release_metadata.py --tag "$CI_COMMIT_TAG"' in pipeline,
+        "GitLab does not validate tagged release metadata",
+    )
+    require(
+        "- job: release-metadata" in pipeline,
+        "AppImage builds do not depend on release metadata validation",
+    )
+    require(
+        "python3 scripts/test_release_metadata.py" in pipeline,
+        "CI does not run release metadata regression tests",
+    )
+    for secret_name in ("SNAPCRAFT_STORE_CREDENTIALS", "SNAP_STORE_LOGIN"):
+        require(
+            secret_name not in pipeline,
+            f"GitLab must not receive the GitHub Snap secret: {secret_name}",
+        )
     for local_source in ("AGENTS.md", ".agents/", ".codex/", ".plans/", "docs/"):
         require(local_source not in pipeline, f"CI references local-only input: {local_source}")
+
+    github_workflow = (ROOT / ".github" / "workflows" / "release-snap.yml").read_text()
+    for action in (
+        "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+        "canonical/action-build@6d723b848ffb875da54b8fa7a8fe060e6c3f55a7",
+        "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+        "canonical/action-publish@895633656038d69bfc68efdccc0964053d60ad2f",
+    ):
+        require(action in github_workflow, f"GitHub workflow action pin drifted: {action}")
+    require(
+        '      - "v[0-9]+.[0-9]+.[0-9]+"' in github_workflow
+        and "  workflow_dispatch:" in github_workflow,
+        "GitHub workflow does not separate stable tags from manual preflights",
+    )
+    require(
+        "permissions:\n  contents: read" in github_workflow,
+        "GitHub workflow permissions are not read-only",
+    )
+    require(
+        "group: snap-store-production" in github_workflow
+        and "cancel-in-progress: false" in github_workflow,
+        "Snap Store publication concurrency is not protected",
+    )
+    require(
+        github_workflow.count("runs-on: ubuntu-24.04") == 3
+        and "timeout-minutes: 5" in github_workflow
+        and github_workflow.count("timeout-minutes: 90") == 2,
+        "GitHub Snap jobs do not use the approved runner and timeouts",
+    )
+    require(
+        github_workflow.count("retention-days: 90") == 2,
+        "GitHub Snap artifacts are not retained for 90 days",
+    )
+    require(
+        "if: github.event_name == 'workflow_dispatch'" in github_workflow
+        and "if: needs.classify.outputs.release == 'true'" in github_workflow,
+        "manual builds and stable publication are not isolated",
+    )
+    preflight_job = github_workflow.split("\n  preflight:\n", maxsplit=1)[1].split(
+        "\n  release:\n", maxsplit=1
+    )[0]
+    require(
+        "action-publish" not in preflight_job
+        and "SNAPCRAFT_STORE_CREDENTIALS" not in preflight_job
+        and "SNAP_STORE_LOGIN" not in preflight_job,
+        "manual Snap preflight can access publication credentials",
+    )
+    require(
+        "environment: snap-store-production" in github_workflow
+        and "SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAP_STORE_LOGIN }}" in github_workflow
+        and "release: stable" in github_workflow,
+        "Snap publication is not restricted to the stable production environment",
+    )
 
     require(fossil["dead_code"]["min_confidence"] == "high", "Fossil dead code must be high confidence")
     require(fossil["dead_code"]["include_tests"] is False, "Fossil must exclude test-only dead code")
