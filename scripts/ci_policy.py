@@ -112,6 +112,16 @@ def validate() -> None:
         ".ci-artifacts/fossil/fossil-diff.json" in fossil_diff_job,
         "Fossil diff report is not retained for clone-growth review",
     )
+    file_size_source = (ROOT / "scripts" / "ci_file_size.py").read_text()
+    require(
+        "MAX_RUST_LINES = 1_500" in file_size_source,
+        "Rust file-size policy does not enforce the 1,500-line threshold",
+    )
+    require(
+        "python3 scripts/test_ci_file_size.py" in pipeline
+        and "python3 scripts/ci_file_size.py" in pipeline,
+        "CI does not test and enforce the Rust file-size policy",
+    )
     for local_source in ("AGENTS.md", ".agents/", ".codex/", ".plans/", "docs/"):
         require(local_source not in pipeline, f"CI references local-only input: {local_source}")
 

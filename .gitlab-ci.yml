@@ -59,6 +59,8 @@ policy-validation:
   rules: *shared-pipeline-rules
   script:
     - bash -n check.sh scripts/*.sh scripts/mcp/*.sh packaging/appimage/*.sh
+    - python3 scripts/test_ci_file_size.py
+    - python3 scripts/ci_file_size.py
     - python3 scripts/test_ci_test_inventory.py
     - python3 scripts/ci_test_inventory.py validate
     - python3 scripts/ci_policy.py

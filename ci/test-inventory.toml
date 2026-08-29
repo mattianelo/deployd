@@ -19,6 +19,18 @@ interface = "home"
 interface_state = "connected"
 
 [[variant_tests]]
+path = "src/app/downloads/updates.rs"
+name = "appimage_package_replaces_running_image"
+variant = "appimage"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/app/downloads/updates.rs"
+name = "non_appimage_packages_open_release_page"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
 path = "src/app/mods/state.rs"
 name = "suppresses_missing_masters_after_incomplete_scan"
 variant = "snap"
@@ -162,6 +174,52 @@ variant = "snap"
 interface_state = "not_applicable"
 
 [[variant_tests]]
+path = "src/core/tool_launcher.rs"
+name = "umu_command_does_not_reference_shared_steam_runtime"
+variant = "appimage"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tool_launcher.rs"
+name = "umu_command_prefers_bodyslide_x64_sibling"
+variant = "appimage"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tool_launcher.rs"
+name = "umu_command_uses_deployd_runtime_folder"
+variant = "appimage"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tool_launcher/snap.rs"
+name = "snap_plan_uses_only_content_runtime_paths"
+variant = "snap"
+interface = "wine-content"
+interface_state = "connected"
+
+[[variant_tests]]
+path = "src/core/tool_launcher/snap.rs"
+name = "snap_setup_uses_content_runtime_without_host_preload"
+variant = "snap"
+interface = "wine-content"
+interface_state = "connected"
+
+[[variant_tests]]
+path = "src/core/update_check.rs"
+name = "update_request_uses_injected_endpoint_and_api_key"
+variant = "both"
+interface = "network"
+interface_state = "connected"
+
+[[variant_tests]]
+path = "src/core/update_check.rs"
+name = "update_request_treats_http_failure_as_no_update"
+variant = "both"
+interface = "network"
+interface_state = "disconnected"
+
+[[variant_tests]]
 path = "src/core/tracker/profiles.rs"
 name = "resolves_last_deployed_profiles_independently_per_game"
 variant = "both"
@@ -224,6 +282,26 @@ variant = "snap"
 interface = "document-portal"
 interface_state = "connected"
 
+[[variant_tests]]
+path = "src/utils/snap.rs"
+name = "appimage_validation_does_not_probe_the_filesystem"
+variant = "appimage"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/snap.rs"
+name = "snap_validation_reports_the_failed_filesystem_operation"
+variant = "snap"
+interface = "home"
+interface_state = "disconnected"
+
+[[variant_tests]]
+path = "src/utils/snap.rs"
+name = "snap_validation_accepts_portal_grant_after_access_probe"
+variant = "snap"
+interface = "document-portal"
+interface_state = "connected"
+
 [[engine_tests]]
 path = "src/core/installer/mod.rs"
 name = "excludes_bethesda_root_file_before_root_target_recording"
@@ -231,7 +309,7 @@ engine = "bethesda"
 case = "positive"
 
 [[engine_tests]]
-path = "src/core/installer/mod.rs"
+path = "src/core/installer/deployment.rs"
 name = "skips_only_bethesda_empty_directory_sentinel"
 engine = "bethesda"
 case = "negative"
@@ -267,7 +345,7 @@ engine = "redengine"
 case = "positive"
 
 [[engine_tests]]
-path = "src/core/installer/mod.rs"
+path = "src/core/installer/deployment.rs"
 name = "skips_only_bethesda_empty_directory_sentinel"
 engine = "redengine"
 case = "negative"
