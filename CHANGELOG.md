@@ -23,8 +23,8 @@
   Nexus Mods and the GitHub mirror independently builds and publishes the Snap to the stable
   Snap Store channel; manual GitHub runs build an auditable Snap artifact without store access.
 - Hosted core24 Snap builds now provision the pinned Rust toolchain through Snapcraft's recognized
-  `rust-deps` part, avoiding clean-runner validation failures and the incompatible core26-based
-  Rustup build snap.
+  `rust-deps` part and Ubuntu's package-compatible default-toolchain flow, avoiding clean-runner
+  validation failures and the incompatible core26-based Rustup build snap.
 
 ## [2.3.3]
 

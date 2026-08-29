@@ -224,9 +224,14 @@ def validate() -> None:
     )
     require(
         "      - rustup\n" in snap
-        and f"      rustup toolchain install {rust_version} --profile minimal\n" in snap
+        and "      rustup set profile minimal\n" in snap
+        and f"      rustup default {rust_version}\n" in snap
         and f"      - RUSTUP_TOOLCHAIN: '{rust_version}'\n" in snap,
         "hosted Snap builds do not provision the repository Rust toolchain",
+    )
+    require(
+        "rustup toolchain install" not in snap,
+        "Ubuntu's packaged rustup must use the default-toolchain flow",
     )
     require(
         "build-snaps: [rustup]" not in snap,
