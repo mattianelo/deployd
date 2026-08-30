@@ -1,0 +1,246 @@
+use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use anyhow::{Context, Result};
+
+use super::backup::{backup_vanilla_file, bake_modified_plugins, restore_vanilla_for_paths};
+use super::filesystem::{
+    build_dir_canonical_map, create_dirs_case_insensitive, ensure_dirs_case_insensitive,
+    remove_deployed_file, resolve_deploy_path, split_deploy_target,
+};
+use super::planning::compute_winners;
+use super::report::DeployResult;
+use crate::core::game;
+use crate::core::mod_folders;
+use crate::core::tracker::Tracker;
+use crate::dlog;
+use crate::models::game::Game;
+use crate::models::manifest::ModFile;
+
+pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result<DeployResult> {
+    let game_data = game::deploy_dir(game);
+
+    bake_modified_plugins(game, tracker, &game_data).await;
+
+    let deployed = tracker.get_deployed_files(&game.id).await?;
+    let deployed_map: HashMap<&str, &ModFile> = deployed
+        .iter()
+        .map(|f| (f.game_rel_lowercase.as_str(), f))
+        .collect();
+
+    let vanilla_snapshot = tracker.get_vanilla_metadata(&game.id).await?;
+
+    let (winners, conflicts_resolved) =
+        compute_winners(tracker, &game.id, game::handler_for(&game.engine)).await?;
+    let winners_map: HashMap<&str, &ModFile> = winners
+        .iter()
+        .map(|f| (f.game_rel_lowercase.as_str(), f))
+        .collect();
+
+    eprintln!(
+        "[deployd] delta: deployed={}, winners={}",
+        deployed.len(),
+        winners.len()
+    );
+
+    let mut to_remove: Vec<&ModFile> = Vec::new();
+    for dep in &deployed {
+        match winners_map.get(dep.game_rel_lowercase.as_str()) {
+            None => to_remove.push(dep),
+            Some(want) if want.cache_path != dep.cache_path => to_remove.push(dep),
+            _ => {}
+        }
+    }
+
+    let mut to_add: Vec<&ModFile> = Vec::new();
+    for winner in &winners {
+        match deployed_map.get(winner.game_rel_lowercase.as_str()) {
+            None => to_add.push(winner),
+            Some(dep) if dep.cache_path != winner.cache_path => to_add.push(winner),
+            _ => {}
+        }
+    }
+
+    eprintln!(
+        "[deployd] delta: to_remove={}, to_add={}",
+        to_remove.len(),
+        to_add.len()
+    );
+    if !to_add.is_empty() {
+        let w = &to_add[0];
+        if let Some(dep) = deployed_map.get(w.game_rel_lowercase.as_str()) {
+            eprintln!("[deployd] sample mismatch path={:?}", w.game_rel_lowercase);
+            eprintln!("[deployd]   deployed cache_path={:?}", dep.cache_path);
+            eprintln!("[deployd]   winner  cache_path={:?}", w.cache_path);
+        } else {
+            eprintln!(
+                "[deployd] sample new path={:?} (not in deployed_map)",
+                w.game_rel_lowercase
+            );
+        }
+    }
+
+    // Distinguish stale case-variant paths from vanilla game files during removal.
+    let deployed_lower: HashSet<String> = deployed
+        .iter()
+        .filter_map(|d| {
+            resolve_deploy_path(&d.game_rel_original, &game.path, &game_data)
+                .ok()
+                .map(|p| p.to_string_lossy().to_lowercase())
+        })
+        .collect();
+
+    // Needed to restore vanilla backups after the removal loop.
+    let removed_rels: Vec<String> = to_remove
+        .iter()
+        .map(|f| f.game_rel_original.clone())
+        .collect();
+
+    for f in &to_remove {
+        remove_deployed_file(f, game, &game_data);
+    }
+
+    restore_vanilla_for_paths(game, tracker, &game_data, &removed_rels).await;
+
+    let canonical_dirs = build_dir_canonical_map(&winners);
+
+    let mut newly_linked: Vec<ModFile> = Vec::new();
+    let mut dir_cache: HashMap<PathBuf, HashMap<String, PathBuf>> = HashMap::new();
+    for f in &to_add {
+        let cache_file = PathBuf::from(&f.cache_path);
+
+        if f.game_rel_lowercase.ends_with('/') {
+            let (base, rel, anchor) =
+                split_deploy_target(&f.game_rel_original, &game.path, &game_data)?;
+            let rel = rel.trim_end_matches('/');
+            let dir_comps: Vec<&str> = rel.split('/').filter(|s| !s.is_empty()).collect();
+            let dir_path = match create_dirs_case_insensitive(
+                &base,
+                &dir_comps,
+                &canonical_dirs,
+                &mut dir_cache,
+            ) {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("[deployd] WARNING: cannot create sentinel dir '{rel}': {e}");
+                    continue;
+                }
+            };
+            dlog!("[deployd] sentinel dir: {}", dir_path.display());
+            let actual_rel = dir_path
+                .strip_prefix(&base)
+                .unwrap_or(&dir_path)
+                .to_string_lossy()
+                .to_string();
+            let actual_original = anchor.with_prefix(&format!("{actual_rel}/"));
+            newly_linked.push(ModFile {
+                mod_id: f.mod_id.clone(),
+                game_rel_lowercase: f.game_rel_lowercase.clone(),
+                game_rel_original: actual_original,
+                cache_path: f.cache_path.clone(),
+            });
+            continue;
+        }
+
+        let (base, rel, anchor) =
+            split_deploy_target(&f.game_rel_original, &game.path, &game_data)?;
+        let deploy_target =
+            ensure_dirs_case_insensitive(&base, rel, &canonical_dirs, &mut dir_cache)?;
+
+        if deploy_target.exists() {
+            // If this file was not previously deployed by deployd it's a vanilla/user
+            // file — copy it to our backup store before replacing it with the mod file.
+            let deploy_target_lower = deploy_target.to_string_lossy().to_lowercase();
+            let is_ours = deployed_lower.contains(&deploy_target_lower);
+            let is_vanilla = vanilla_snapshot.contains_key(&f.game_rel_lowercase);
+            if !is_ours && is_vanilla {
+                backup_vanilla_file(game, tracker, &f.game_rel_original, &deploy_target).await;
+            }
+            fs::remove_file(&deploy_target)?;
+        } else if let (Some(parent), Some(fname)) =
+            (deploy_target.parent(), deploy_target.file_name())
+        {
+            // Remove stale case-variant files that were previously deployed by us
+            // but survived because the purge step only removed exact-path entries.
+            if let Ok(entries) = fs::read_dir(parent) {
+                for entry in entries.flatten() {
+                    let entry_path = entry.path();
+                    if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false)
+                        && entry.file_name().eq_ignore_ascii_case(fname)
+                        && entry_path != deploy_target
+                    {
+                        let was_ours =
+                            deployed_lower.contains(&entry_path.to_string_lossy().to_lowercase());
+                        if was_ours {
+                            let _ = fs::remove_file(&entry_path);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Try hardlink first (zero-copy, same inode). Game dirs accessed via a
+        // separate filesystem permission (e.g. Steam Snap) are on a
+        // different bind-mount from the cache, so hard_link returns EXDEV
+        // (errno=18). Fall back to a plain copy in that case.
+        if let Err(e) = fs::hard_link(&cache_file, &deploy_target) {
+            if e.raw_os_error() == Some(18) {
+                fs::copy(&cache_file, &deploy_target).with_context(|| {
+                    format!(
+                        "Copy fallback failed: {} → {}",
+                        cache_file.display(),
+                        deploy_target.display()
+                    )
+                })?;
+            } else {
+                return Err(e).with_context(|| {
+                    format!(
+                        "Hardlink failed: {} → {}",
+                        cache_file.display(),
+                        deploy_target.display()
+                    )
+                });
+            }
+        }
+
+        let actual_rel = deploy_target
+            .strip_prefix(&base)
+            .unwrap_or(&deploy_target)
+            .to_string_lossy()
+            .to_string();
+        let actual_original = anchor.with_prefix(&actual_rel);
+        newly_linked.push(ModFile {
+            mod_id: f.mod_id.clone(),
+            game_rel_lowercase: f.game_rel_lowercase.clone(),
+            game_rel_original: actual_original,
+            cache_path: f.cache_path.clone(),
+        });
+    }
+
+    let remove_paths: Vec<&str> = to_remove
+        .iter()
+        .map(|f| f.game_rel_lowercase.as_str())
+        .collect();
+    tracker
+        .remove_deployed_files(&game.id, &remove_paths)
+        .await?;
+    tracker
+        .record_deployed_files(&game.id, &newly_linked)
+        .await?;
+
+    game::handler_for(&game.engine)
+        .post_deploy(game, tracker)
+        .await?;
+
+    if let Err(e) = mod_folders::refresh_named_mod_folders(tracker, &game.id, cache_root).await {
+        eprintln!("[deployd] named_mods refresh failed: {e}");
+    }
+
+    Ok(DeployResult {
+        files_total: winners.len(),
+        files_added: newly_linked.len(),
+        files_removed: to_remove.len(),
+        conflicts_resolved,
+    })
+}
