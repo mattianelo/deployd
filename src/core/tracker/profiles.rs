@@ -392,7 +392,7 @@ mod tests {
     use super::*;
 
     async fn profile_tracker() -> Result<Tracker> {
-        Tracker::open("sqlite::memory:").await
+        Ok(Tracker::open("sqlite::memory:").await?.tracker)
     }
 
     // @variants: both

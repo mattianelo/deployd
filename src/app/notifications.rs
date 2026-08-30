@@ -12,7 +12,7 @@ impl App {
     pub(crate) fn show_toast(&mut self, message: &str) {
         let toast = adw::Toast::new(message);
         toast.set_timeout(4);
-        self.toast_overlay.add_toast(toast);
+        self.ui.toast_overlay.add_toast(toast);
     }
 
     pub(crate) fn handle_show_toast(&mut self, message: String) {
@@ -20,14 +20,14 @@ impl App {
     }
 
     pub(crate) fn handle_notification_dismissed(&mut self) {
-        self.notification_count = self.notification_count.saturating_sub(1);
+        self.ui.notification_count = self.ui.notification_count.saturating_sub(1);
     }
 
     pub(crate) fn handle_clear_notifications(&mut self) {
-        while let Some(child) = self.notification_list.first_child() {
-            self.notification_list.remove(&child);
+        while let Some(child) = self.ui.notification_list.first_child() {
+            self.ui.notification_list.remove(&child);
         }
-        self.notification_count = 0;
+        self.ui.notification_count = 0;
     }
 
     /// Add an actionable notification to the persistent notification panel.
@@ -46,12 +46,14 @@ impl App {
         dismiss_btn.set_tooltip_text(Some("Dismiss"));
 
         let row_ref = row.clone();
-        let s = self.notification_sender.clone();
+        let s = self.ui.notification_sender.clone();
         dismiss_btn.connect_clicked(move |_| {
             if let Some(lb) = row_ref.parent().and_downcast::<gtk::ListBox>() {
                 lb.remove(&row_ref);
             }
-            let _ = s.send(AppMsg::NotificationDismissed);
+            let _ = s.send(AppMsg::Shell(
+                crate::app::messages::ShellMsg::NotificationDismissed,
+            ));
         });
 
         row.add_suffix(&dismiss_btn);
@@ -72,7 +74,7 @@ impl App {
         detail_row.set_selectable(false);
         row.add_row(&detail_row);
 
-        self.notification_list.prepend(&row);
-        self.notification_count += 1;
+        self.ui.notification_list.prepend(&row);
+        self.ui.notification_count += 1;
     }
 }

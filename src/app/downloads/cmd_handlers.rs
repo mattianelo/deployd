@@ -20,41 +20,41 @@ impl App {
         let scan = match result {
             Ok(scan) => scan,
             Err(error) => {
-                self.initial_scan_done = true;
+                self.download.initial_scan_done = true;
                 self.push_notification(&format!("Downloads scan failed: {error}"));
                 return;
             }
         };
 
-        self.all_downloads = scan.entries;
+        self.download.all = scan.entries;
         self.rebuild_downloads_view();
 
         if !scan.removed_ids.is_empty()
-            && let Some(tracker) = self.tracker.clone()
+            && let Some(tracker) = self.session.tracker.clone()
         {
             let removed_ids = scan.removed_ids.clone();
             sender.oneshot_command(async move {
                 let _ = tracker.delete_download_entries(&removed_ids).await;
-                AppCmdMsg::PrioritySaved(Ok(()))
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(())))
             });
         }
 
         if !scan.to_persist.is_empty()
-            && let Some(tracker) = self.tracker.clone()
+            && let Some(tracker) = self.session.tracker.clone()
         {
             let to_persist = scan.to_persist.clone();
             sender.oneshot_command(async move {
                 for entry in &to_persist {
                     let _ = tracker.save_download_entry(entry).await;
                 }
-                AppCmdMsg::PrioritySaved(Ok(()))
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(())))
             });
         }
 
-        if self.initial_scan_done && scan.new_count > 0 {
+        if self.download.initial_scan_done && scan.new_count > 0 {
             self.show_toast(&format!("Found {} archive(s)", scan.new_count));
         }
-        self.initial_scan_done = true;
+        self.download.initial_scan_done = true;
     }
 
     pub(crate) fn handle_archive_md5_computed(
@@ -64,22 +64,24 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         if let Some(entry) = self
-            .all_downloads
+            .download
+            .all
             .iter_mut()
             .find(|entry| entry.id == download_id)
         {
             entry.archive_md5 = Some(md5);
         }
-        if let Some(tracker) = self.tracker.clone()
+        if let Some(tracker) = self.session.tracker.clone()
             && let Some(entry) = self
-                .all_downloads
+                .download
+                .all
                 .iter()
                 .find(|entry| entry.id == download_id)
                 .cloned()
         {
             sender.oneshot_command(async move {
                 let _ = tracker.save_download_entry(&entry).await;
-                AppCmdMsg::PrioritySaved(Ok(()))
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(())))
             });
         }
     }
@@ -97,12 +99,13 @@ impl App {
                 if let Some(ref id) = dl_id {
                     self.finish_download_metadata_fetch(id);
                     let needs_update = self
-                        .all_downloads
+                        .download
+                        .all
                         .iter()
                         .find(|e| &e.id == id)
                         .is_some_and(|e| !e.metadata_fetched);
                     if needs_update {
-                        if let Some(entry) = self.all_downloads.iter_mut().find(|e| &e.id == id) {
+                        if let Some(entry) = self.download.all.iter_mut().find(|e| &e.id == id) {
                             entry.mod_name = nexus_name.clone();
                             if entry.nexus_file_name.is_none() {
                                 entry.nexus_file_name = nexus_file_name.clone();
@@ -113,7 +116,7 @@ impl App {
                             }
                         }
                         {
-                            let mut guard = self.downloads.guard();
+                            let mut guard = self.download.rows.guard();
                             for i in 0..guard.len() {
                                 if let Some(row) = guard.get_mut(i)
                                     && row.entry.id == *id
@@ -130,18 +133,20 @@ impl App {
                                 }
                             }
                         }
-                        if let Some(tracker) = self.tracker.clone()
+                        if let Some(tracker) = self.session.tracker.clone()
                             && let Some(entry) =
-                                self.all_downloads.iter().find(|e| &e.id == id).cloned()
+                                self.download.all.iter().find(|e| &e.id == id).cloned()
                         {
                             sender.oneshot_command(async move {
                                 let _ = tracker.save_download_entry(&entry).await;
-                                AppCmdMsg::PrioritySaved(Ok(()))
+                                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(
+                                    Ok(()),
+                                ))
                             });
                         }
                     }
                 }
-                let mut guard = self.mods.guard();
+                let mut guard = self.mods.rows.guard();
                 for i in 0..guard.len() {
                     if let Some(row) = guard.get_mut(i)
                         && let Some(init) = row.mod_row_mut()
@@ -164,46 +169,22 @@ impl App {
                 // For disk-scanned entries with a known mod_id but unresolved file_id,
                 // offer the dialog so the user can at least store the file_id for the next retry.
                 if let Some(ref id) = dl_id
-                    && let Some(entry) = self.all_downloads.iter().find(|e| &e.id == id)
+                    && let Some(entry) = self.download.all.iter().find(|e| &e.id == id)
                     && let Some(NexusIds {
                         mod_id,
                         file_id: 0,
                         ref domain,
                     }) = entry.nexus_ids
                 {
-                    let _ = sender.input_sender().send(AppMsg::ShowFileIdDialog {
-                        download_id: id.clone(),
-                        mod_id,
-                        domain: domain.clone(),
-                        partial_name: None,
-                    });
-                }
-            }
-        }
-    }
-
-    pub(crate) fn handle_cmd_updates_checked(
-        &mut self,
-        result: Result<Vec<(String, String, String)>, String>,
-        sender: &ComponentSender<Self>,
-    ) {
-        match result {
-            Ok(updates) => {
-                if updates.is_empty() {
-                    self.show_toast("All mods are up to date");
-                } else {
-                    let names: Vec<_> = updates.iter().map(|(_, name, _)| name.as_str()).collect();
-                    self.push_notification(&format!(
-                        "{} mod(s) have updates: {}",
-                        updates.len(),
-                        names.join(", ")
+                    let _ = sender.input_sender().send(AppMsg::Downloads(
+                        crate::app::messages::DownloadsMsg::ShowFileIdDialog {
+                            download_id: id.clone(),
+                            mod_id,
+                            domain: domain.clone(),
+                            partial_name: None,
+                        },
                     ));
-                    // Reload to show update indicators
-                    self.reload_mods(sender);
                 }
-            }
-            Err(e) => {
-                self.push_notification(&format!("Update check failed: {e}"));
             }
         }
     }
@@ -223,7 +204,8 @@ impl App {
                 });
                 // Update backing store
                 if let Some(entry) = self
-                    .all_downloads
+                    .download
+                    .all
                     .iter_mut()
                     .find(|e| e.id == nxm_result.download_id)
                 {
@@ -238,7 +220,7 @@ impl App {
                     entry.metadata_fetched = true;
                 }
                 // Update factory
-                let mut guard = self.downloads.guard();
+                let mut guard = self.download.rows.guard();
                 for i in 0..guard.len() {
                     if let Some(row) = guard.get_mut(i)
                         && row.entry.id == nxm_result.download_id
@@ -258,23 +240,24 @@ impl App {
                 drop(guard);
                 // When this was the last active download, rebuild the view so the
                 // sort order and filter chips (Active/Completed) reflect the new status.
-                if !self.all_downloads.iter().any(|e| e.is_active()) {
+                if !self.download.all.iter().any(|e| e.is_active()) {
                     self.rebuild_downloads_view();
                 } else {
                     self.refresh_download_counts();
                 }
 
                 // Persist completed download entry
-                if let Some(tracker) = self.tracker.clone()
+                if let Some(tracker) = self.session.tracker.clone()
                     && let Some(entry) = self
-                        .all_downloads
+                        .download
+                        .all
                         .iter()
                         .find(|e| e.id == nxm_result.download_id)
                 {
                     let entry = entry.clone();
                     sender.oneshot_command(async move {
                         let _ = tracker.save_download_entry(&entry).await;
-                        AppCmdMsg::PrioritySaved(Ok(()))
+                        AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(())))
                     });
                 }
 
@@ -296,9 +279,9 @@ impl App {
 
     pub(crate) fn handle_cmd_downloads_dir_updated(&mut self, dir: Option<PathBuf>) {
         if let Some(dir) = dir {
-            self.downloads_dir = dir;
+            self.download.directory = dir;
         } else {
-            self.downloads_dir = paths::default_downloads_dir();
+            self.download.directory = paths::default_downloads_dir();
         }
     }
 }

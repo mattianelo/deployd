@@ -39,7 +39,7 @@ impl App {
             conflicting_mod_names,
             conflicted_by_mod_names,
         ) = {
-            let guard = self.mods.guard();
+            let guard = self.mods.rows.guard();
             if let Some(item) = guard.get(idx)
                 && let crate::ui::mod_list::ModListItemKind::Mod(row) = &item.kind
             {
@@ -68,7 +68,7 @@ impl App {
             .selected_game()
             .and_then(|g| self.cache_root_for(&g.id).ok())
             .unwrap_or_else(|| crate::utils::paths::cache_root().unwrap_or_default());
-        self.mod_properties_dialog = Some(
+        self.ui.mod_properties_dialog = Some(
             ModPropertiesDialog::builder()
                 .transient_for(root)
                 .launch(ModPropertiesInit {
@@ -89,7 +89,7 @@ impl App {
                         nexus_id_changed,
                         install_target,
                         file_targets,
-                    } => AppMsg::ModPropertiesApplied {
+                    } => AppMsg::Mods(crate::app::messages::ModsMsg::ModPropertiesApplied {
                         mod_id: mod_id_for_output.clone(),
                         mod_idx: idx,
                         name,
@@ -98,12 +98,16 @@ impl App {
                         nexus_id_changed,
                         install_target,
                         file_targets,
-                    },
-                    ModPropertiesOutput::Cancelled => AppMsg::ModPropertiesCancelled,
-                    ModPropertiesOutput::ScanCache { mod_id } => AppMsg::ScanModFromCache(mod_id),
+                    }),
+                    ModPropertiesOutput::Cancelled => {
+                        AppMsg::Mods(crate::app::messages::ModsMsg::ModPropertiesCancelled)
+                    }
+                    ModPropertiesOutput::ScanCache { mod_id } => {
+                        AppMsg::Mods(crate::app::messages::ModsMsg::ScanModFromCache(mod_id))
+                    }
                 }),
         );
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
         let mod_id_for_load = mod_id;
@@ -112,7 +116,7 @@ impl App {
                 .get_mod_files(&mod_id_for_load)
                 .await
                 .unwrap_or_default();
-            AppCmdMsg::ModFilesLoaded(files)
+            AppCmdMsg::Mods(crate::app::messages::ModsCmdMsg::ModFilesLoaded(files))
         });
     }
 
@@ -131,8 +135,8 @@ impl App {
             install_target,
             file_targets,
         } = applied;
-        self.mod_properties_dialog = None;
-        let Some(tracker) = self.tracker.clone() else {
+        self.ui.mod_properties_dialog = None;
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
 
@@ -142,7 +146,7 @@ impl App {
         let mut nexus_file_id = None;
         let nexus_update_allowed = nexus_mod_id.is_none() || nexus_domain.is_some();
         {
-            let mut guard = self.mods.guard();
+            let mut guard = self.mods.rows.guard();
             if let Some(item) = guard.get_mut(mod_idx)
                 && let crate::ui::mod_list::ModListItemKind::Mod(row) = &mut item.kind
             {
@@ -203,37 +207,49 @@ impl App {
             .await;
 
             if let Err(e) = save_result {
-                return AppCmdMsg::ModNexusMetadataRefreshed {
-                    mod_id: mod_id_clone,
-                    result: Err(format!("Failed to save mod properties: {e}")),
-                };
+                return AppCmdMsg::Mods(
+                    crate::app::messages::ModsCmdMsg::ModNexusMetadataRefreshed {
+                        mod_id: mod_id_clone,
+                        result: Err(format!("Failed to save mod properties: {e}")),
+                    },
+                );
             }
 
             let Some(nexus_mod_id) = nexus_mod_id else {
-                return AppCmdMsg::ModNexusMetadataRefreshed {
-                    mod_id: mod_id_clone,
-                    result: Ok((String::new(), String::new(), String::new())),
-                };
+                return AppCmdMsg::Mods(
+                    crate::app::messages::ModsCmdMsg::ModNexusMetadataRefreshed {
+                        mod_id: mod_id_clone,
+                        result: Ok((String::new(), String::new(), String::new())),
+                    },
+                );
             };
             let Some(domain) = nexus_domain else {
-                return AppCmdMsg::ModNexusMetadataRefreshed {
-                    mod_id: mod_id_clone,
-                    result: Ok((String::new(), String::new(), String::new())),
-                };
+                return AppCmdMsg::Mods(
+                    crate::app::messages::ModsCmdMsg::ModNexusMetadataRefreshed {
+                        mod_id: mod_id_clone,
+                        result: Ok((String::new(), String::new(), String::new())),
+                    },
+                );
             };
             let api_key = match tracker.get_setting("nexus_api_key").await {
                 Ok(Some(key)) if !key.is_empty() => key,
                 Ok(_) => {
-                    return AppCmdMsg::ModNexusMetadataRefreshed {
-                        mod_id: mod_id_clone,
-                        result: Err("No Nexus API key configured. Set it in Settings.".to_string()),
-                    };
+                    return AppCmdMsg::Mods(
+                        crate::app::messages::ModsCmdMsg::ModNexusMetadataRefreshed {
+                            mod_id: mod_id_clone,
+                            result: Err(
+                                "No Nexus API key configured. Set it in Settings.".to_string()
+                            ),
+                        },
+                    );
                 }
                 Err(e) => {
-                    return AppCmdMsg::ModNexusMetadataRefreshed {
-                        mod_id: mod_id_clone,
-                        result: Err(e.to_string()),
-                    };
+                    return AppCmdMsg::Mods(
+                        crate::app::messages::ModsCmdMsg::ModNexusMetadataRefreshed {
+                            mod_id: mod_id_clone,
+                            result: Err(e.to_string()),
+                        },
+                    );
                 }
             };
             let client = crate::core::nexus_api::NexusClient::new(api_key);
@@ -249,19 +265,23 @@ impl App {
                         .await
                         .map(|_| (info.version, info.author, info.name))
                         .map_err(|e| e.to_string());
-                    AppCmdMsg::ModNexusMetadataRefreshed {
-                        mod_id: mod_id_clone,
-                        result,
-                    }
+                    AppCmdMsg::Mods(
+                        crate::app::messages::ModsCmdMsg::ModNexusMetadataRefreshed {
+                            mod_id: mod_id_clone,
+                            result,
+                        },
+                    )
                 }
-                Err(e) => AppCmdMsg::ModNexusMetadataRefreshed {
-                    mod_id: mod_id_clone,
-                    result: Err(e.to_string()),
-                },
+                Err(e) => AppCmdMsg::Mods(
+                    crate::app::messages::ModsCmdMsg::ModNexusMetadataRefreshed {
+                        mod_id: mod_id_clone,
+                        result: Err(e.to_string()),
+                    },
+                ),
             }
         });
 
-        self.needs_deploy = true;
+        self.shell.needs_deploy = true;
         self.show_toast(&format!("Properties updated for {name}"));
     }
 
@@ -275,7 +295,7 @@ impl App {
                 if version.is_empty() && author.is_empty() {
                     return;
                 }
-                let mut guard = self.mods.guard();
+                let mut guard = self.mods.rows.guard();
                 for i in 0..guard.len() {
                     if let Some(row) = guard.get_mut(i)
                         && let Some(init) = row.mod_row_mut()
@@ -296,7 +316,7 @@ impl App {
     }
 
     pub(crate) fn handle_mod_properties_cancelled(&mut self) {
-        self.mod_properties_dialog = None;
+        self.ui.mod_properties_dialog = None;
     }
 
     pub(crate) fn handle_scan_mod_from_cache(
@@ -304,7 +324,7 @@ impl App {
         mod_id: String,
         sender: &ComponentSender<Self>,
     ) {
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
         let mod_name = self.mod_name_for_id(&mod_id);
@@ -380,7 +400,7 @@ impl App {
                 Ok(format!("{} — {} file(s) registered", mod_name, files.len()))
             }
             .await;
-            AppCmdMsg::ModFilesRescanned(result)
+            AppCmdMsg::Mods(crate::app::messages::ModsCmdMsg::ModFilesRescanned(result))
         });
     }
 }

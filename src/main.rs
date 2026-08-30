@@ -16,7 +16,7 @@ mod utils;
 
 /// Global sender for forwarding NXM links to the running App component.
 /// Set once during Component::init(), used by the command-line signal handler.
-pub static NXM_SENDER: OnceLock<relm4::Sender<app::AppMsg>> = OnceLock::new();
+pub(crate) static NXM_SENDER: OnceLock<relm4::Sender<app::AppMsg>> = OnceLock::new();
 
 fn main() {
     if let Err(error) = gio::resources_register_include!("resources.gresource") {
@@ -102,7 +102,9 @@ fn main() {
             let s = arg.to_string_lossy();
             if s.starts_with("nxm://") {
                 if let Some(sender) = NXM_SENDER.get() {
-                    let _ = sender.send(app::AppMsg::NxmLinkReceived(s.to_string()));
+                    let _ = sender.send(app::AppMsg::Downloads(
+                        app::DownloadsMsg::NxmLinkReceived(s.to_string()),
+                    ));
                 }
                 break;
             }

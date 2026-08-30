@@ -5,8 +5,8 @@ use relm4::prelude::*;
 use crate::utils::paths;
 
 use super::App;
-use super::cache;
 use super::messages::AppCmdMsg;
+use crate::core::cache;
 
 impl App {
     pub(crate) fn handle_cache_dir_change_requested(
@@ -15,10 +15,11 @@ impl App {
         new_dir: PathBuf,
         sender: &ComponentSender<Self>,
     ) {
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
         let game_path = self
+            .session
             .games
             .iter()
             .find(|g| g.id == game_id)
@@ -44,11 +45,11 @@ impl App {
             )
             .await
             .map_err(|e| e.to_string());
-            AppCmdMsg::CacheDirMoved {
+            AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::CacheDirMoved {
                 game_id,
                 new_dir,
                 result,
-            }
+            })
         });
     }
 
@@ -57,7 +58,7 @@ impl App {
         game_id: String,
         sender: &ComponentSender<Self>,
     ) {
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
         let current_cache_root = self
@@ -81,10 +82,10 @@ impl App {
             )
             .await
             .map_err(|e| e.to_string());
-            AppCmdMsg::CacheDirReset {
+            AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::CacheDirReset {
                 game_id: game_id_clone,
                 result,
-            }
+            })
         });
     }
 
@@ -96,7 +97,7 @@ impl App {
     ) {
         match result {
             Ok(()) => {
-                self.game_cache_dirs.insert(game_id, new_dir);
+                self.session.game_cache_dirs.insert(game_id, new_dir);
                 self.show_toast("Cache moved successfully");
             }
             Err(e) => {
@@ -112,7 +113,7 @@ impl App {
     ) {
         match result {
             Ok(()) => {
-                self.game_cache_dirs.remove(&game_id);
+                self.session.game_cache_dirs.remove(&game_id);
                 self.show_toast("Cache location reset to default");
             }
             Err(e) => {

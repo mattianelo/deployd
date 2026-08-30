@@ -149,13 +149,19 @@ def validate() -> None:
     )
     file_size_source = (ROOT / "scripts" / "ci_file_size.py").read_text()
     require(
-        "MAX_RUST_LINES = 1_500" in file_size_source,
-        "Rust file-size policy does not enforce the 1,500-line threshold",
+        "MAX_PRODUCTION_RUST_LINES = 1_000" in file_size_source
+        and "MAX_TOTAL_RUST_LINES = 1_500" in file_size_source,
+        "Rust file-size policy does not enforce the production and total thresholds",
     )
     require(
         "python3 scripts/test_ci_file_size.py" in pipeline
         and "python3 scripts/ci_file_size.py" in pipeline,
         "CI does not test and enforce the Rust file-size policy",
+    )
+    require(
+        "python3 scripts/test_ci_dependency_direction.py" in pipeline
+        and "python3 scripts/ci_dependency_direction.py" in pipeline,
+        "CI does not test and enforce Rust dependency direction",
     )
     require(
         pipeline.count(STABLE_TAG_RULE) == 5,

@@ -20,6 +20,12 @@ pub struct Tracker {
     pub(super) pool: SqlitePool,
 }
 
+#[derive(Debug)]
+pub(crate) struct TrackerOpenReport {
+    pub(crate) tracker: Tracker,
+    pub(crate) warnings: Vec<String>,
+}
+
 impl std::fmt::Debug for Tracker {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Tracker").finish_non_exhaustive()
@@ -48,7 +54,7 @@ pub struct OverrideInfo {
 }
 
 impl Tracker {
-    pub async fn open(db_url: &str) -> Result<Self> {
+    pub(crate) async fn open(db_url: &str) -> Result<TrackerOpenReport> {
         let opts = SqliteConnectOptions::from_str(db_url)?
             .journal_mode(SqliteJournalMode::Wal)
             .busy_timeout(std::time::Duration::from_secs(5));
@@ -283,67 +289,66 @@ impl Tracker {
         migrations::migrate_install_target_column(&pool).await?;
         migrations::migrate_notes_column(&pool).await?;
 
-        if let Err(e) = migrations::migrate_version_columns(&pool).await {
-            eprintln!("Version column migration failed (non-fatal): {e}");
-        }
-        if let Err(e) = migrations::backfill_plugin_masters(&pool).await {
-            eprintln!("Plugin master backfill failed (non-fatal): {e}");
-        }
-        if let Err(e) = migrations::backfill_download_statuses(&pool).await {
-            eprintln!("Download status backfill failed (non-fatal): {e}");
-        }
-        if let Err(e) = migrations::backfill_mod_source_metadata(&pool).await {
-            eprintln!("Mod source metadata backfill failed (non-fatal): {e}");
-        }
-        if let Err(e) = migrations::backfill_archive_hashes(&pool).await {
-            eprintln!("Archive hash backfill failed (non-fatal): {e}");
-        }
-        if let Err(e) = migrations::migrate_deployed_files_game_id(&pool).await {
-            eprintln!("deployed_files migration failed (non-fatal): {e}");
-        }
-        if let Err(e) = migrations::migrate_aurora_file_paths(&pool).await {
-            eprintln!("Aurora path migration failed (non-fatal): {e}");
-        }
-        if let Err(e) = migrations::migrate_aurora_root_paths(&pool).await {
-            eprintln!("Aurora root path migration failed (non-fatal): {e}");
-        }
-        if let Err(e) = migrations::migrate_aurora_data_system_paths(&pool).await {
-            eprintln!("Aurora data-system path migration failed (non-fatal): {e}");
-        }
-        if let Err(e) = migrations::migrate_aurora_external_file_paths(&pool).await {
-            eprintln!("Aurora external-file path fix failed (non-fatal): {e}");
-        }
-        if let Err(e) = migrations::migrate_aurora_vanilla_root_paths(&pool).await {
-            eprintln!("Aurora vanilla root path migration failed (non-fatal): {e}");
-        }
-        if let Err(e) = migrations::migrate_eclipse_file_paths(&pool).await {
-            eprintln!("Eclipse path migration failed (non-fatal): {e}");
-        }
-        if let Err(e) = migrations::migrate_fomod_selections_column(&pool).await {
-            eprintln!("FOMOD selections column migration failed (non-fatal): {e}");
-        }
-        if let Err(e) = migrations::migrate_archive_path_column(&pool).await {
-            eprintln!("archive_path column migration failed (non-fatal): {e}");
-        }
-        if let Err(e) = migrations::migrate_group_color_column(&pool).await {
-            eprintln!("group color column migration failed (non-fatal): {e}");
-        }
+        migrations::migrate_deployed_files_game_id(&pool).await?;
+        migrations::migrate_fomod_selections_column(&pool).await?;
+        migrations::migrate_archive_path_column(&pool).await?;
+        migrations::migrate_group_color_column(&pool).await?;
+        migrations::migrate_profile_save_mode_column(&pool).await?;
 
-        let _ =
-            sqlx::query("ALTER TABLE profiles ADD COLUMN save_mode TEXT NOT NULL DEFAULT 'global'")
-                .execute(&pool)
-                .await;
-
-        for stmt in &[
+        for statement in &[
             "CREATE INDEX IF NOT EXISTS idx_mods_game_id      ON mods(game_id)",
             "CREATE INDEX IF NOT EXISTS idx_mod_files_mod_id  ON mod_files(mod_id)",
             "CREATE INDEX IF NOT EXISTS idx_plugins_mod_id    ON plugins(mod_id)",
             "CREATE INDEX IF NOT EXISTS idx_deployed_mod_id   ON deployed_files(mod_id)",
             "CREATE INDEX IF NOT EXISTS idx_profile_mods_prof ON profile_mods(profile_id)",
         ] {
-            let _ = sqlx::query(stmt).execute(&pool).await;
+            sqlx::query(statement)
+                .execute(&pool)
+                .await
+                .with_context(|| format!("Failed to create required index: {statement}"))?;
         }
 
-        Ok(Self { pool })
+        let mut warnings = Vec::new();
+
+        if let Err(e) = migrations::migrate_version_columns(&pool).await {
+            warnings.push(format!("Version metadata backfill will be retried: {e}"));
+        }
+        if let Err(e) = migrations::backfill_plugin_masters(&pool).await {
+            warnings.push(format!("Plugin master backfill will be retried: {e}"));
+        }
+        if let Err(e) = migrations::backfill_download_statuses(&pool).await {
+            warnings.push(format!("Download status backfill will be retried: {e}"));
+        }
+        if let Err(e) = migrations::backfill_mod_source_metadata(&pool).await {
+            warnings.push(format!("Mod source metadata backfill will be retried: {e}"));
+        }
+        if let Err(e) = migrations::backfill_archive_hashes(&pool).await {
+            warnings.push(format!("Archive hash backfill will be retried: {e}"));
+        }
+        if let Err(e) = migrations::migrate_aurora_file_paths(&pool).await {
+            warnings.push(format!("Aurora path backfill will be retried: {e}"));
+        }
+        if let Err(e) = migrations::migrate_aurora_root_paths(&pool).await {
+            warnings.push(format!("Aurora root-path backfill will be retried: {e}"));
+        }
+        if let Err(e) = migrations::migrate_aurora_data_system_paths(&pool).await {
+            warnings.push(format!("Aurora data-system backfill will be retried: {e}"));
+        }
+        if let Err(e) = migrations::migrate_aurora_external_file_paths(&pool).await {
+            warnings.push(format!(
+                "Aurora external-file backfill will be retried: {e}"
+            ));
+        }
+        if let Err(e) = migrations::migrate_aurora_vanilla_root_paths(&pool).await {
+            warnings.push(format!("Aurora vanilla-path backfill will be retried: {e}"));
+        }
+        if let Err(e) = migrations::migrate_eclipse_file_paths(&pool).await {
+            warnings.push(format!("Eclipse path backfill will be retried: {e}"));
+        }
+
+        Ok(TrackerOpenReport {
+            tracker: Self { pool },
+            warnings,
+        })
     }
 }

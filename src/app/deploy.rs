@@ -20,7 +20,7 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         // Validate preconditions before showing any dialog.
-        if self.tracker.is_none() {
+        if self.session.tracker.is_none() {
             self.push_notification("Database not ready yet");
             return;
         }
@@ -29,15 +29,19 @@ impl App {
             return;
         };
         if !game.path.exists() {
-            sender.input(AppMsg::GrantGameFolderAccess);
+            sender.input(AppMsg::Shell(
+                crate::app::messages::ShellMsg::GrantGameFolderAccess,
+            ));
             return;
         }
 
         let current_id = self
+            .session
             .profiles
-            .get(self.active_profile_idx)
+            .get(self.session.active_profile_idx)
             .map(|p| p.id.clone());
         let mismatch = self
+            .session
             .last_deployed_profile_id
             .as_ref()
             .zip(current_id.as_ref())
@@ -45,14 +49,16 @@ impl App {
 
         if mismatch {
             let last_name = self
+                .session
                 .last_deployed_profile_id
                 .as_deref()
-                .and_then(|id| self.profiles.iter().find(|p| p.id == id))
+                .and_then(|id| self.session.profiles.iter().find(|p| p.id == id))
                 .map(|p| p.name.clone())
                 .unwrap_or_else(|| "another profile".to_string());
             let cur_name = self
+                .session
                 .profiles
-                .get(self.active_profile_idx)
+                .get(self.session.active_profile_idx)
                 .map(|p| p.name.clone())
                 .unwrap_or_default();
 
@@ -73,7 +79,9 @@ impl App {
             let s = sender.input_sender().clone();
             dialog.connect_response(None, move |_, response| {
                 if response == "deploy" {
-                    let _ = s.send(AppMsg::DeployConfirmed);
+                    let _ = s.send(AppMsg::Shell(
+                        crate::app::messages::ShellMsg::DeployConfirmed,
+                    ));
                 }
             });
             dialog.present(Some(root));
@@ -85,7 +93,7 @@ impl App {
 
     /// Run the deploy operation directly (after any required confirmation dialog).
     pub(crate) fn execute_deploy(&mut self, sender: &ComponentSender<Self>) {
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             self.push_notification("Database not ready yet");
             return;
         };
@@ -94,28 +102,31 @@ impl App {
             return;
         };
         let Some(profile_id) = self
+            .session
             .profiles
-            .get(self.active_profile_idx)
+            .get(self.session.active_profile_idx)
             .map(|profile| profile.id.clone())
         else {
             self.push_notification("No profile selected");
             return;
         };
         if !game.path.exists() {
-            sender.input(AppMsg::GrantGameFolderAccess);
+            sender.input(AppMsg::Shell(
+                crate::app::messages::ShellMsg::GrantGameFolderAccess,
+            ));
             return;
         }
         let cache_root = self
             .cache_root_for(&game.id)
             .unwrap_or_else(|_| paths::cache_root().unwrap_or_default());
 
-        self.deploying = true;
+        self.shell.deploying = true;
         self.begin_work(WorkKind::Deploying, "Deploying...");
 
         sender.oneshot_command(async move {
             if let Err(error) = tracker.save_to_profile(&profile_id, &game.id).await {
-                return AppCmdMsg::DeployDone(Err(format!(
-                    "Failed to save the active profile before deployment: {error}"
+                return AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::DeployDone(Err(
+                    format!("Failed to save the active profile before deployment: {error}"),
                 )));
             }
             let timing_start = std::time::Instant::now();
@@ -136,7 +147,7 @@ impl App {
                 }
                 Err(error) => Err(error.to_string()),
             };
-            AppCmdMsg::DeployDone(result)
+            AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::DeployDone(result))
         });
     }
 
@@ -145,13 +156,15 @@ impl App {
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
-        self.deploy_options_btn.popdown();
-        self.overflow_menu_btn.popdown();
+        self.ui.deploy_options_btn.popdown();
+        self.ui.overflow_menu_btn.popdown();
         let current_id = self
+            .session
             .profiles
-            .get(self.active_profile_idx)
+            .get(self.session.active_profile_idx)
             .map(|p| p.id.clone());
         let mismatch = self
+            .session
             .last_deployed_profile_id
             .as_ref()
             .zip(current_id.as_ref())
@@ -159,14 +172,16 @@ impl App {
 
         let detail = if mismatch {
             let last_name = self
+                .session
                 .last_deployed_profile_id
                 .as_deref()
-                .and_then(|id| self.profiles.iter().find(|p| p.id == id))
+                .and_then(|id| self.session.profiles.iter().find(|p| p.id == id))
                 .map(|p| p.name.clone())
                 .unwrap_or_else(|| "another profile".to_string());
             let cur_name = self
+                .session
                 .profiles
-                .get(self.active_profile_idx)
+                .get(self.session.active_profile_idx)
                 .map(|p| p.name.clone())
                 .unwrap_or_default();
             format!(
@@ -191,14 +206,16 @@ impl App {
         let input_sender = sender.input_sender().clone();
         dialog.connect_response(None, move |_, response| {
             if response == "purge" {
-                let _ = input_sender.send(AppMsg::PurgeConfirmed);
+                let _ = input_sender.send(AppMsg::Shell(
+                    crate::app::messages::ShellMsg::PurgeConfirmed,
+                ));
             }
         });
         dialog.present(Some(root));
     }
 
     pub(crate) fn handle_purge_confirmed(&mut self, sender: &ComponentSender<Self>) {
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             self.push_notification("Database not ready yet");
             return;
         };
@@ -207,22 +224,24 @@ impl App {
             return;
         };
         if !game.path.exists() {
-            sender.input(AppMsg::GrantGameFolderAccess);
+            sender.input(AppMsg::Shell(
+                crate::app::messages::ShellMsg::GrantGameFolderAccess,
+            ));
             return;
         }
         let cache_root = self
             .cache_root_for(&game.id)
             .unwrap_or_else(|_| paths::cache_root().unwrap_or_default());
 
-        self.deploying = true;
+        self.shell.deploying = true;
         self.begin_work(WorkKind::Purging, "Purging...");
 
         sender.oneshot_command(async move {
-            AppCmdMsg::PurgeDone(
+            AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PurgeDone(
                 deployer::purge(&game, &tracker, &cache_root)
                     .await
                     .map_err(|e| e.to_string()),
-            )
+            ))
         });
     }
 
@@ -244,7 +263,11 @@ impl App {
             if let Ok(file) = result
                 && let Some(path) = file.path()
             {
-                input_sender.send(AppMsg::GameFolderGranted(path)).ok();
+                input_sender
+                    .send(AppMsg::Shell(
+                        crate::app::messages::ShellMsg::GameFolderGranted(path),
+                    ))
+                    .ok();
             }
         });
     }
@@ -259,16 +282,16 @@ impl App {
             self.push_notification(&message);
             return;
         }
-        let idx = self.selected_game_idx;
-        let Some(game) = self.games.get_mut(idx) else {
+        let idx = self.session.selected_game_idx;
+        let Some(game) = self.session.games.get_mut(idx) else {
             return;
         };
         game.path = path.clone();
-        if let Some(tracker) = self.tracker.clone() {
+        if let Some(tracker) = self.session.tracker.clone() {
             let game_id = game.id.clone();
             sender.oneshot_command(async move {
                 tracker.upsert_game_path(&game_id, &path).await.ok();
-                AppCmdMsg::PrioritySaved(Ok(()))
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(())))
             });
         }
         self.show_toast("Game folder confirmed — you can now deploy");
@@ -283,12 +306,12 @@ impl App {
         result: Result<DeployCompletion, String>,
         sender: &ComponentSender<Self>,
     ) {
-        self.deploying = false;
+        self.shell.deploying = false;
         self.finish_work(WorkKind::Deploying);
         match result {
             Ok(completion) => {
-                self.needs_deploy = false;
-                self.last_deployed_profile_id = Some(completion.profile_id);
+                self.shell.needs_deploy = false;
+                self.session.last_deployed_profile_id = Some(completion.profile_id);
                 if let Some(error) = completion.record_error {
                     self.push_notification(&format!(
                         "Deployment succeeded, but its profile could not be remembered: {error}"
@@ -316,7 +339,9 @@ impl App {
                     msg.push_str(&format!(", {conflicts} conflict(s) resolved"));
                 }
                 self.show_toast(&msg);
-                sender.input(AppMsg::ScanExternalFiles);
+                sender.input(AppMsg::Mods(
+                    crate::app::messages::ModsMsg::ScanExternalFiles,
+                ));
             }
             Err(e) => {
                 self.push_notification(&format!("Deploy failed: {e}"));
@@ -325,11 +350,11 @@ impl App {
     }
 
     pub(crate) fn handle_cmd_purge_done(&mut self, result: Result<usize, String>) {
-        self.deploying = false;
+        self.shell.deploying = false;
         self.finish_work(WorkKind::Purging);
         match result {
             Ok(count) => {
-                self.needs_deploy = true;
+                self.shell.needs_deploy = true;
                 if count == 0 {
                     self.push_notification(
                         "No deployed files tracked — the game folder may already be clean, or try redeploying first",

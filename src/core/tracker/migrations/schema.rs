@@ -18,9 +18,10 @@ pub(in crate::core::tracker) async fn migrate_games_columns(pool: &SqlitePool) -
         ("hidden", "INTEGER DEFAULT 0"),
     ] {
         if !existing.contains(*col) {
-            let _ = sqlx::query(&format!("ALTER TABLE games ADD COLUMN {col} {typedef}"))
+            sqlx::query(&format!("ALTER TABLE games ADD COLUMN {col} {typedef}"))
                 .execute(pool)
-                .await;
+                .await
+                .with_context(|| format!("Failed to add required column games.{col}"))?;
         }
     }
     Ok(())
@@ -417,7 +418,7 @@ pub(in crate::core::tracker) async fn backfill_archive_hashes(pool: &SqlitePool)
         }
         // Hash on a blocking thread — archive files can be several GB.
         let hash = tokio::task::spawn_blocking(move || {
-            crate::utils::archive::hash_archive_file(&path).ok()
+            crate::core::archive::hash_archive_file(&path).ok()
         })
         .await
         .unwrap_or(None);
@@ -504,16 +505,46 @@ pub(in crate::core::tracker) async fn migrate_deployed_files_game_id(
 pub(in crate::core::tracker) async fn migrate_fomod_selections_column(
     pool: &SqlitePool,
 ) -> Result<()> {
-    let _ = sqlx::query("ALTER TABLE mods ADD COLUMN fomod_selections TEXT")
-        .execute(pool)
-        .await;
+    add_column_if_missing(pool, "mods", "fomod_selections", "TEXT").await?;
     Ok(())
 }
 
 pub(in crate::core::tracker) async fn migrate_archive_path_column(pool: &SqlitePool) -> Result<()> {
-    let _ = sqlx::query("ALTER TABLE mods ADD COLUMN archive_path TEXT")
+    add_column_if_missing(pool, "mods", "archive_path", "TEXT").await?;
+    Ok(())
+}
+
+pub(in crate::core::tracker) async fn migrate_profile_save_mode_column(
+    pool: &SqlitePool,
+) -> Result<()> {
+    add_column_if_missing(
+        pool,
+        "profiles",
+        "save_mode",
+        "TEXT NOT NULL DEFAULT 'global'",
+    )
+    .await?;
+    Ok(())
+}
+
+async fn add_column_if_missing(
+    pool: &SqlitePool,
+    table: &str,
+    column: &str,
+    definition: &str,
+) -> Result<()> {
+    let query = format!("PRAGMA table_info({table})");
+    let columns: Vec<(i32, String, String, i32, Option<String>, i32)> =
+        sqlx::query_as(&query).fetch_all(pool).await?;
+    if columns.iter().any(|row| row.1 == column) {
+        return Ok(());
+    }
+
+    let statement = format!("ALTER TABLE {table} ADD COLUMN {column} {definition}");
+    sqlx::query(&statement)
         .execute(pool)
-        .await;
+        .await
+        .with_context(|| format!("Failed to add required column {table}.{column}"))?;
     Ok(())
 }
 
@@ -543,7 +574,7 @@ mod tests {
 
     #[tokio::test]
     async fn backfills_installed_mod_source_metadata_from_download_entries() -> Result<()> {
-        let tracker = Tracker::open("sqlite::memory:").await?;
+        let tracker = Tracker::open("sqlite::memory:").await?.tracker;
 
         sqlx::query(
             "INSERT INTO games (id, title, path, data_subdir)

@@ -4,8 +4,8 @@ use crate::core::{game, save_manager};
 use crate::models::profile::SaveMode;
 
 use super::super::App;
-use super::super::free_fns::{GameLoadMode, load_game_data};
 use super::super::messages::AppCmdMsg;
+use super::super::session::{GameLoadMode, load_game_data};
 
 #[derive(Clone, Copy)]
 enum ProfileSelectionPhase {
@@ -34,17 +34,17 @@ fn resolve_profile_selection(requested_idx: usize, state: ProfileSelectionState)
 
 impl App {
     pub(crate) fn handle_new_profile_requested(&mut self, sender: &ComponentSender<Self>) {
-        self.profile_menu_btn.popdown();
+        self.ui.profile_menu_btn.popdown();
         self.handle_new_profile_clicked(sender);
     }
 
     pub(crate) fn handle_clone_profile_requested(&mut self, sender: &ComponentSender<Self>) {
-        self.profile_menu_btn.popdown();
+        self.ui.profile_menu_btn.popdown();
         self.handle_clone_profile_clicked(sender);
     }
 
     pub(crate) fn handle_delete_profile_requested(&mut self, sender: &ComponentSender<Self>) {
-        self.profile_menu_btn.popdown();
+        self.ui.profile_menu_btn.popdown();
         self.handle_delete_profile_clicked(sender);
     }
 
@@ -52,21 +52,21 @@ impl App {
         &mut self,
         sender: &ComponentSender<Self>,
     ) {
-        self.profile_menu_btn.popdown();
+        self.ui.profile_menu_btn.popdown();
         self.handle_toggle_profile_save_mode(sender);
     }
 
     pub(crate) fn handle_sync_saves_requested(&mut self, sender: &ComponentSender<Self>) {
-        self.profile_menu_btn.popdown();
+        self.ui.profile_menu_btn.popdown();
         self.handle_sync_saves(sender);
     }
 
     pub(crate) fn handle_profile_selected(&mut self, idx: u32, sender: &ComponentSender<Self>) {
         let state = ProfileSelectionState {
-            displayed_idx: self.profile_dropdown.selected() as usize,
-            active_idx: self.active_profile_idx,
-            profile_count: self.profiles.len(),
-            phase: if self.updating_profiles {
+            displayed_idx: self.ui.profile_dropdown.selected() as usize,
+            active_idx: self.session.active_profile_idx,
+            profile_count: self.session.profiles.len(),
+            phase: if self.session.updating_profiles {
                 ProfileSelectionPhase::Updating
             } else {
                 ProfileSelectionPhase::Ready
@@ -76,16 +76,20 @@ impl App {
             return;
         };
 
-        let target_profile_id = self.profiles[idx].id.clone();
-        let target_save_mode = self.profiles[idx].save_mode.clone();
-        let Some(tracker) = self.tracker.clone() else {
+        let target_profile_id = self.session.profiles[idx].id.clone();
+        let target_save_mode = self.session.profiles[idx].save_mode.clone();
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
             return;
         };
 
-        let old_profile = self.profiles.get(self.active_profile_idx).cloned();
+        let old_profile = self
+            .session
+            .profiles
+            .get(self.session.active_profile_idx)
+            .cloned();
         let old_profile_id = old_profile.as_ref().map(|p| p.id.clone());
         let old_save_mode = old_profile.map(|p| p.save_mode).unwrap_or(SaveMode::Global);
 
@@ -117,21 +121,27 @@ impl App {
                 let data = load_game_data(&tracker, &game, GameLoadMode::Refresh).await?;
                 Ok::<_, String>((data, save_sync))
             };
-            AppCmdMsg::ProfileSwitched(result.await)
+            AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::ProfileSwitched(
+                result.await,
+            ))
         });
     }
 
     pub(crate) fn handle_new_profile_clicked(&mut self, sender: &ComponentSender<Self>) {
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
             return;
         };
 
-        let existing_names: std::collections::HashSet<&str> =
-            self.profiles.iter().map(|p| p.name.as_str()).collect();
-        let mut counter = self.profiles.len() + 1;
+        let existing_names: std::collections::HashSet<&str> = self
+            .session
+            .profiles
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect();
+        let mut counter = self.session.profiles.len() + 1;
         let new_name = loop {
             let candidate = format!("Profile {counter}");
             if !existing_names.contains(candidate.as_str()) {
@@ -140,8 +150,9 @@ impl App {
             counter += 1;
         };
         let active_profile_id = self
+            .session
             .profiles
-            .get(self.active_profile_idx)
+            .get(self.session.active_profile_idx)
             .map(|p| p.id.clone());
 
         sender.oneshot_command(async move {
@@ -162,18 +173,25 @@ impl App {
                     .map_err(|e| e.to_string())?;
                 load_game_data(&tracker, &game, GameLoadMode::Refresh).await
             };
-            AppCmdMsg::ProfileCreated(result.await)
+            AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::ProfileCreated(
+                result.await,
+            ))
         });
     }
 
     pub(crate) fn handle_clone_profile_clicked(&mut self, sender: &ComponentSender<Self>) {
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
             return;
         };
-        let Some(source_profile) = self.profiles.get(self.active_profile_idx).cloned() else {
+        let Some(source_profile) = self
+            .session
+            .profiles
+            .get(self.session.active_profile_idx)
+            .cloned()
+        else {
             return;
         };
 
@@ -195,23 +213,27 @@ impl App {
                     .map_err(|e| e.to_string())?;
                 load_game_data(&tracker, &game, GameLoadMode::Refresh).await
             };
-            AppCmdMsg::ProfileCloned(result.await)
+            AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::ProfileCloned(
+                result.await,
+            ))
         });
     }
 
     pub(crate) fn handle_delete_profile_clicked(&mut self, sender: &ComponentSender<Self>) {
-        if self.profiles.len() <= 1 {
+        if self.session.profiles.len() <= 1 {
             self.show_toast("Cannot delete the last profile");
             return;
         }
 
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
             return;
         };
-        let delete_id = self.profiles[self.active_profile_idx].id.clone();
+        let delete_id = self.session.profiles[self.session.active_profile_idx]
+            .id
+            .clone();
 
         sender.oneshot_command(async move {
             let result = async {
@@ -235,7 +257,9 @@ impl App {
                 }
                 load_game_data(&tracker, &game, GameLoadMode::Refresh).await
             };
-            AppCmdMsg::ProfileDeleted(result.await)
+            AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::ProfileDeleted(
+                result.await,
+            ))
         });
     }
 
@@ -244,10 +268,10 @@ impl App {
         new_name: String,
         sender: &ComponentSender<Self>,
     ) {
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
-        let Some(profile) = self.profiles.get(self.active_profile_idx) else {
+        let Some(profile) = self.session.profiles.get(self.session.active_profile_idx) else {
             return;
         };
         let profile_id = profile.id.clone();
@@ -257,15 +281,20 @@ impl App {
                 .rename_profile(&profile_id, &new_name)
                 .await
                 .map_err(|e| e.to_string());
-            AppCmdMsg::ProfileRenamed(result)
+            AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::ProfileRenamed(result))
         });
     }
 
     pub(crate) fn handle_toggle_profile_save_mode(&mut self, sender: &ComponentSender<Self>) {
-        let Some(profile) = self.profiles.get(self.active_profile_idx).cloned() else {
+        let Some(profile) = self
+            .session
+            .profiles
+            .get(self.session.active_profile_idx)
+            .cloned()
+        else {
             return;
         };
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
@@ -288,12 +317,19 @@ impl App {
                     .await
                     .map_err(|e| e.to_string())
             };
-            AppCmdMsg::SaveModeToggled(result.await)
+            AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::SaveModeToggled(
+                result.await,
+            ))
         });
     }
 
     pub(crate) fn handle_sync_saves(&mut self, sender: &ComponentSender<Self>) {
-        let Some(profile) = self.profiles.get(self.active_profile_idx).cloned() else {
+        let Some(profile) = self
+            .session
+            .profiles
+            .get(self.session.active_profile_idx)
+            .cloned()
+        else {
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
@@ -304,21 +340,21 @@ impl App {
             let result = save_manager::sync_profile_saves(&game, &profile_id)
                 .await
                 .map_err(|e| e.to_string());
-            AppCmdMsg::SavesSynced(result)
+            AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::SavesSynced(result))
         });
     }
 
     pub(crate) fn save_last_profile(&self, sender: &ComponentSender<Self>) {
         if let (Some(tracker), Some(game), Some(profile)) = (
-            self.tracker.clone(),
+            self.session.tracker.clone(),
             self.selected_game().cloned(),
-            self.profiles.get(self.active_profile_idx),
+            self.session.profiles.get(self.session.active_profile_idx),
         ) {
             let key = format!("last_profile_{}", game.id);
             let id = profile.id.clone();
             sender.oneshot_command(async move {
                 let _ = tracker.set_setting(&key, &id).await;
-                AppCmdMsg::PrioritySaved(Ok(()))
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(())))
             });
         }
     }

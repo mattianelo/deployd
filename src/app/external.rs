@@ -21,7 +21,7 @@ impl App {
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
-        self.notifications_menu_btn.popdown();
+        self.ui.notifications_menu_btn.popdown();
         self.handle_absorb_external_files(root, sender);
     }
 
@@ -30,7 +30,7 @@ impl App {
         paths: Vec<PathBuf>,
         sender: &ComponentSender<Self>,
     ) {
-        if let Some(dialog) = self.absorb_dialog.take() {
+        if let Some(dialog) = self.ui.absorb_dialog.take() {
             dialog.widget().destroy();
         }
         let mut deleted = 0usize;
@@ -51,11 +51,13 @@ impl App {
         } else if deleted > 0 {
             self.show_toast(&format!("Discarded {deleted} external file(s)"));
         }
-        sender.input(AppMsg::ScanExternalFiles);
+        sender.input(AppMsg::Mods(
+            crate::app::messages::ModsMsg::ScanExternalFiles,
+        ));
     }
 
     pub(crate) fn handle_create_mod_from_external_cancelled(&mut self) {
-        if let Some(dialog) = self.absorb_dialog.take() {
+        if let Some(dialog) = self.ui.absorb_dialog.take() {
             dialog.widget().destroy();
         }
     }
@@ -65,7 +67,7 @@ impl App {
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
-        self.overflow_menu_btn.popdown();
+        self.ui.overflow_menu_btn.popdown();
         let dialog = adw::AlertDialog::builder()
             .heading("Reset vanilla baseline?")
             .body("This re-snapshots the current game folder as the new vanilla state. Any files added since the last snapshot will no longer be reported as external changes. Use this after a clean game reinstall.")
@@ -78,7 +80,9 @@ impl App {
         let input_sender = sender.input_sender().clone();
         dialog.connect_response(None, move |_, response| {
             if response == "reset" {
-                let _ = input_sender.send(AppMsg::ResetVanillaBaselineConfirmed);
+                let _ = input_sender.send(AppMsg::Plugins(
+                    crate::app::messages::PluginsMsg::ResetVanillaBaselineConfirmed,
+                ));
             }
         });
         dialog.present(Some(root));
@@ -88,7 +92,7 @@ impl App {
         &mut self,
         sender: &ComponentSender<Self>,
     ) {
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
@@ -104,7 +108,9 @@ impl App {
                     .map_err(|e: anyhow::Error| e.to_string())
             }
             .await;
-            AppCmdMsg::VanillaBaselineReset(result)
+            AppCmdMsg::Plugins(crate::app::messages::PluginsCmdMsg::VanillaBaselineReset(
+                result,
+            ))
         });
     }
 
@@ -113,7 +119,7 @@ impl App {
         files: Vec<crate::core::detector::ExternalFile>,
         sender: &ComponentSender<Self>,
     ) {
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
@@ -139,7 +145,9 @@ impl App {
                 Ok::<usize, String>(entries.len())
             }
             .await;
-            AppCmdMsg::VanillaEntriesUpdated(result)
+            AppCmdMsg::Plugins(crate::app::messages::PluginsCmdMsg::VanillaEntriesUpdated(
+                result,
+            ))
         });
     }
 
@@ -151,10 +159,10 @@ impl App {
         if files.is_empty() {
             return;
         }
-        if let Some(dialog) = self.absorb_dialog.take() {
+        if let Some(dialog) = self.ui.absorb_dialog.take() {
             dialog.widget().destroy();
         }
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
@@ -216,7 +224,9 @@ impl App {
                 Ok::<usize, String>(adopted)
             }
             .await;
-            AppCmdMsg::ManagedPluginsAdopted(result)
+            AppCmdMsg::Plugins(crate::app::messages::PluginsCmdMsg::ManagedPluginsAdopted(
+                result,
+            ))
         });
     }
 
@@ -228,10 +238,10 @@ impl App {
         if files.is_empty() {
             return;
         }
-        if let Some(dialog) = self.absorb_dialog.take() {
+        if let Some(dialog) = self.ui.absorb_dialog.take() {
             dialog.widget().destroy();
         }
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
@@ -281,12 +291,12 @@ impl App {
                 Ok::<usize, String>(restored)
             }
             .await;
-            AppCmdMsg::BackupRestored(result)
+            AppCmdMsg::Plugins(crate::app::messages::PluginsCmdMsg::BackupRestored(result))
         });
     }
 
     pub(crate) fn handle_scan_external_files(&mut self, sender: &ComponentSender<Self>) {
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
@@ -313,7 +323,7 @@ impl App {
                 Ok::<_, String>(files)
             }
             .await;
-            AppCmdMsg::ExternalScanDone(result)
+            AppCmdMsg::Mods(crate::app::messages::ModsCmdMsg::ExternalScanDone(result))
         });
     }
 
@@ -322,29 +332,33 @@ impl App {
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
-        let files = self.pending_external_files.clone();
+        let files = self.mods.pending_external_files.clone();
         if files.is_empty() {
             return;
         }
-        self.absorb_dialog = Some(
+        self.ui.absorb_dialog = Some(
             AbsorbDialog::builder()
                 .transient_for(root)
                 .launch(files)
                 .forward(sender.input_sender(), |output| match output {
-                    AbsorbDialogOutput::Selected(file_list) => {
-                        AppMsg::AbsorbFilesSelected(file_list)
+                    AbsorbDialogOutput::Selected(file_list) => AppMsg::Mods(
+                        crate::app::messages::ModsMsg::AbsorbFilesSelected(file_list),
+                    ),
+                    AbsorbDialogOutput::Discarded(paths) => {
+                        AppMsg::Mods(crate::app::messages::ModsMsg::DiscardExternalFiles(paths))
                     }
-                    AbsorbDialogOutput::Discarded(paths) => AppMsg::DiscardExternalFiles(paths),
-                    AbsorbDialogOutput::MarkedAsVanilla(files) => {
-                        AppMsg::MarkExternalFilesAsVanilla(files)
+                    AbsorbDialogOutput::MarkedAsVanilla(files) => AppMsg::Plugins(
+                        crate::app::messages::PluginsMsg::MarkExternalFilesAsVanilla(files),
+                    ),
+                    AbsorbDialogOutput::AdoptManagedChanges(files) => AppMsg::Plugins(
+                        crate::app::messages::PluginsMsg::AdoptManagedPluginChanges(files),
+                    ),
+                    AbsorbDialogOutput::RestoreFromBackup(files) => AppMsg::Plugins(
+                        crate::app::messages::PluginsMsg::RestoreFromXEditBackup(files),
+                    ),
+                    AbsorbDialogOutput::Cancelled => {
+                        AppMsg::Mods(crate::app::messages::ModsMsg::CreateModFromExternalCancelled)
                     }
-                    AbsorbDialogOutput::AdoptManagedChanges(files) => {
-                        AppMsg::AdoptManagedPluginChanges(files)
-                    }
-                    AbsorbDialogOutput::RestoreFromBackup(files) => {
-                        AppMsg::RestoreFromXEditBackup(files)
-                    }
-                    AbsorbDialogOutput::Cancelled => AppMsg::CreateModFromExternalCancelled,
                 }),
         );
     }
@@ -378,9 +392,9 @@ impl App {
                 return;
             }
         };
-        self.pending_external_files.clear();
-        self.external_changes_count = 0;
-        self.pending_install = Some(PendingInstall {
+        self.mods.pending_external_files.clear();
+        self.mods.external_changes_count = 0;
+        self.install.pending = Some(PendingInstall {
             tmp_dir,
             mod_name: mod_name.clone(),
             game,
@@ -396,6 +410,7 @@ impl App {
         });
         let mod_names: Vec<String> = self
             .mods
+            .rows
             .iter()
             .filter_map(|item| {
                 if item.is_separator() {
@@ -405,7 +420,7 @@ impl App {
                 }
             })
             .collect();
-        self.pre_install_dialog = Some(
+        self.ui.pre_install_dialog = Some(
             PreInstallDialog::builder()
                 .transient_for(root)
                 .launch(PreInstallDialogInit {
@@ -418,9 +433,13 @@ impl App {
                 })
                 .forward(sender.input_sender(), |output| match output {
                     PreInstallDialogOutput::Confirmed(name, targets, excluded) => {
-                        AppMsg::PreInstallConfirmed(name, targets, excluded)
+                        AppMsg::Install(crate::app::messages::InstallMsg::PreInstallConfirmed(
+                            name, targets, excluded,
+                        ))
                     }
-                    PreInstallDialogOutput::Cancelled => AppMsg::PreInstallCancelled,
+                    PreInstallDialogOutput::Cancelled => {
+                        AppMsg::Install(crate::app::messages::InstallMsg::PreInstallCancelled)
+                    }
                 }),
         );
     }
@@ -435,8 +454,8 @@ impl App {
     ) {
         match result {
             Ok(files) => {
-                self.external_changes_count = files.len();
-                self.pending_external_files = files;
+                self.mods.external_changes_count = files.len();
+                self.mods.pending_external_files = files;
             }
             Err(e) => {
                 eprintln!("deployd: external scan failed: {e}");
@@ -461,13 +480,19 @@ impl App {
                     .map(|g| crate::core::loot_sort::game_has_loot_support(&g.id))
                     .unwrap_or(false)
                 {
-                    sender.input(AppMsg::SortWithLoot);
+                    sender.input(AppMsg::Plugins(
+                        crate::app::messages::PluginsMsg::SortWithLoot,
+                    ));
                 }
-                sender.input(AppMsg::ScanExternalFiles);
+                sender.input(AppMsg::Mods(
+                    crate::app::messages::ModsMsg::ScanExternalFiles,
+                ));
             }
             Err(e) => {
                 self.push_notification(&format!("Failed to adopt plugin: {e}"));
-                sender.input(AppMsg::ScanExternalFiles);
+                sender.input(AppMsg::Mods(
+                    crate::app::messages::ModsMsg::ScanExternalFiles,
+                ));
             }
         }
     }
@@ -491,13 +516,19 @@ impl App {
                     .map(|g| crate::core::loot_sort::game_has_loot_support(&g.id))
                     .unwrap_or(false)
                 {
-                    sender.input(AppMsg::SortWithLoot);
+                    sender.input(AppMsg::Plugins(
+                        crate::app::messages::PluginsMsg::SortWithLoot,
+                    ));
                 }
-                sender.input(AppMsg::ScanExternalFiles);
+                sender.input(AppMsg::Mods(
+                    crate::app::messages::ModsMsg::ScanExternalFiles,
+                ));
             }
             Err(e) => {
                 self.push_notification(&format!("Failed to restore from backup: {e}"));
-                sender.input(AppMsg::ScanExternalFiles);
+                sender.input(AppMsg::Mods(
+                    crate::app::messages::ModsMsg::ScanExternalFiles,
+                ));
             }
         }
     }
@@ -510,7 +541,9 @@ impl App {
         match result {
             Ok(()) => {
                 self.show_toast("Vanilla baseline reset — rescanning…");
-                sender.input(AppMsg::ScanExternalFiles);
+                sender.input(AppMsg::Mods(
+                    crate::app::messages::ModsMsg::ScanExternalFiles,
+                ));
             }
             Err(e) => self.push_notification(&format!("Reset failed: {e}")),
         }
@@ -524,7 +557,9 @@ impl App {
         match result {
             Ok(count) => {
                 self.show_toast(&format!("Marked {count} file(s) as vanilla"));
-                sender.input(AppMsg::ScanExternalFiles);
+                sender.input(AppMsg::Mods(
+                    crate::app::messages::ModsMsg::ScanExternalFiles,
+                ));
             }
             Err(e) => self.push_notification(&format!("Mark as vanilla failed: {e}")),
         }

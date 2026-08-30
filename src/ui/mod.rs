@@ -1,7 +1,11 @@
 pub mod absorb_dialog;
+pub(crate) mod bottom_status;
 pub mod download_row;
+pub(crate) mod downloads_pane;
+pub(crate) mod drag;
 pub mod fomod_dialog;
 pub mod game_setup_dialog;
+pub(crate) mod header;
 pub mod mod_list;
 pub mod mod_properties_dialog;
 pub mod plugin_list;

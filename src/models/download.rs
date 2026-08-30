@@ -1,5 +1,21 @@
 use std::path::PathBuf;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum DownloadSort {
+    #[default]
+    Default,
+    Name,
+    Status,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum DownloadFilter {
+    #[default]
+    All,
+    Active,
+    Completed,
+}
+
 /// Nexus Mods identity triple for a download: mod ID, file ID, and game domain.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NexusIds {

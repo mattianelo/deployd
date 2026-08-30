@@ -25,7 +25,7 @@ impl App {
                     return;
                 }
                 if !preserve_collapsed {
-                    self.collapsed_groups = data
+                    self.mods.collapsed_groups = data
                         .groups
                         .iter()
                         .filter(|g| g.collapsed)
@@ -33,15 +33,19 @@ impl App {
                         .collect();
                 }
                 self.apply_loaded_data(data, sender);
-                sender.input(AppMsg::ScanExternalFiles);
+                sender.input(AppMsg::Mods(
+                    crate::app::messages::ModsMsg::ScanExternalFiles,
+                ));
                 // Reload last-deployed profile for the newly selected game.
                 if let (Some(tracker), Some(game)) =
-                    (self.tracker.clone(), self.selected_game().cloned())
+                    (self.session.tracker.clone(), self.selected_game().cloned())
                 {
                     let key = format!("last_deployed_profile_{}", game.id);
                     sender.oneshot_command(async move {
-                        AppCmdMsg::LastDeployedProfileLoaded(
-                            tracker.get_setting(&key).await.ok().flatten(),
+                        AppCmdMsg::Games(
+                            crate::app::messages::GamesCmdMsg::LastDeployedProfileLoaded(
+                                tracker.get_setting(&key).await.ok().flatten(),
+                            ),
                         )
                     });
                 }
@@ -62,7 +66,7 @@ impl App {
     ) {
         match result {
             Ok(_) => {
-                self.pending_scroll_restore = None;
+                self.mods.pending_scroll_restore = None;
                 self.show_toast("Mod removed. Deploy to update game files");
                 let changed = self.reset_installed_download_for_mod(
                     nexus_ids,
@@ -70,7 +74,7 @@ impl App {
                     archive_hash.as_deref(),
                 );
                 if !changed.is_empty()
-                    && let Some(tracker) = self.tracker.clone()
+                    && let Some(tracker) = self.session.tracker.clone()
                 {
                     tokio::spawn(async move {
                         for entry in &changed {
@@ -80,12 +84,12 @@ impl App {
                 }
                 self.auto_save_profile(sender);
                 if let (Some(tracker), Some(game)) =
-                    (self.tracker.clone(), self.selected_game().cloned())
+                    (self.session.tracker.clone(), self.selected_game().cloned())
                 {
                     let game_id = game.id.clone();
                     let engine = game.engine.clone();
                     let mod_names: HashMap<String, String> = {
-                        let guard = self.mods.guard();
+                        let guard = self.mods.rows.guard();
                         (0..guard.len())
                             .filter_map(|i| {
                                 guard
@@ -96,12 +100,12 @@ impl App {
                             .collect()
                     };
                     sender.oneshot_command(async move {
-                        AppCmdMsg::OverridesRefreshed(
+                        AppCmdMsg::Mods(crate::app::messages::ModsCmdMsg::OverridesRefreshed(
                             tracker
                                 .compute_overrides(&game_id, game::handler_for(&engine), &mod_names)
                                 .await
                                 .map_err(|e| e.to_string()),
-                        )
+                        ))
                     });
                 }
             }
@@ -130,7 +134,7 @@ impl App {
         let Ok(overrides) = result else {
             return;
         };
-        let mut guard = self.mods.guard();
+        let mut guard = self.mods.rows.guard();
         let len = guard.len();
         for i in 0..len {
             let needs_update = guard.get(i).and_then(|r| r.mod_row()).is_some_and(|r| {
@@ -184,7 +188,7 @@ impl App {
     ) {
         match result {
             Ok(msg) => {
-                self.needs_deploy = true;
+                self.shell.needs_deploy = true;
                 self.reload_mods(sender);
                 self.show_toast(&msg);
             }
@@ -198,7 +202,7 @@ impl App {
         &mut self,
         files: Vec<crate::models::manifest::ModFile>,
     ) {
-        if let Some(ctrl) = &self.mod_properties_dialog {
+        if let Some(ctrl) = &self.ui.mod_properties_dialog {
             ctrl.sender()
                 .send(crate::ui::mod_properties_dialog::ModPropertiesMsg::LoadFiles(files))
                 .ok();

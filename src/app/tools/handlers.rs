@@ -8,8 +8,7 @@ use adw::prelude::*;
 use gtk::prelude::*;
 use relm4::prelude::*;
 
-use crate::core::game;
-use crate::core::tool_launcher;
+use crate::core::{game, tool_launcher};
 use crate::models::game::GameEngine;
 use crate::ui::tool_manager::{ToolManager, ToolManagerOutput};
 
@@ -86,12 +85,12 @@ impl App {
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
-        if self.needs_deploy {
+        if self.shell.needs_deploy {
             self.show_toast("Deploy your mods before launching tools");
             return;
         }
 
-        let Some(tool) = self.tools.iter().find(|t| t.id == tool_id).cloned() else {
+        let Some(tool) = self.tools.entries.iter().find(|t| t.id == tool_id).cloned() else {
             self.show_toast("Tool not found");
             return;
         };
@@ -100,12 +99,16 @@ impl App {
         };
 
         if let game::SnapWineStatus::Missing(missing) = game::snap_wine_status() {
-            sender.input(AppMsg::ConfirmSnapWineSetup(tool_id, missing));
+            sender.input(AppMsg::Tools(
+                crate::app::messages::ToolsMsg::ConfirmSnapWineSetup(tool_id, missing),
+            ));
             return;
         }
 
         if !game::is_snap() && !game::proton_runtime_available() && !allow_umu_setup {
-            sender.input(AppMsg::ConfirmProtonSetup(tool_id));
+            sender.input(AppMsg::Tools(
+                crate::app::messages::ToolsMsg::ConfirmProtonSetup(tool_id),
+            ));
             return;
         }
 
@@ -126,9 +129,11 @@ impl App {
         if game.engine == GameEngine::Eclipse && game::snap_wine_available() {
             let sentinel = wine_config.prefix.join(".deployd_mono_prompt_v1");
             if !sentinel.exists() {
-                sender.input(AppMsg::ConfirmMonoPrompt(
-                    tool_id,
-                    wine_config.prefix.clone(),
+                sender.input(AppMsg::Tools(
+                    crate::app::messages::ToolsMsg::ConfirmMonoPrompt(
+                        tool_id,
+                        wine_config.prefix.clone(),
+                    ),
                 ));
                 return;
             }
@@ -157,7 +162,9 @@ impl App {
         let s = sender.input_sender().clone();
         dialog.connect_response(None, move |_, response| {
             if response == "setup" {
-                let _ = s.send(AppMsg::ProtonSetupConfirmed(tool_id.clone()));
+                let _ = s.send(AppMsg::Tools(
+                    crate::app::messages::ToolsMsg::ProtonSetupConfirmed(tool_id.clone()),
+                ));
             }
         });
         dialog.present(Some(root));
@@ -238,7 +245,9 @@ impl App {
         dialog.connect_response(None, move |_, response| {
             if response == "launch" {
                 let _ = std::fs::write(prefix.join(".deployd_mono_prompt_v1"), b"");
-                let _ = s.send(AppMsg::LaunchTool(tool_id.clone()));
+                let _ = s.send(AppMsg::Tools(crate::app::messages::ToolsMsg::LaunchTool(
+                    tool_id.clone(),
+                )));
             }
         });
         dialog.present(Some(root));
@@ -251,7 +260,7 @@ impl App {
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
-        self.proton_setup = true;
+        self.tools.proton_setup = true;
         self.begin_work(
             WorkKind::SettingUpRuntime,
             "Setting up Proton GE and launching tool...",
@@ -260,8 +269,8 @@ impl App {
     }
 
     pub(crate) fn handle_proton_setup_ready(&mut self) {
-        if self.proton_setup {
-            self.proton_setup = false;
+        if self.tools.proton_setup {
+            self.tools.proton_setup = false;
             self.finish_work(WorkKind::SettingUpRuntime);
             self.show_toast("Proton GE setup complete");
         }
@@ -274,7 +283,8 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         let was_cancelling = self
-            .tool_launch_session
+            .tools
+            .launch_session
             .as_ref()
             .is_some_and(|session| session.state == ToolSessionState::Cancelling);
         let actions = post_tool_exit_actions(
@@ -285,7 +295,7 @@ impl App {
             },
             self.selected_game().map(|game| game.id.as_str()),
         );
-        if let Some(session) = self.tool_launch_session.as_ref() {
+        if let Some(session) = self.tools.launch_session.as_ref() {
             crate::dlog!(
                 "deployd: tool session ended tool_id={} variant={} elapsed_ms={}",
                 session.tool_id,
@@ -294,8 +304,8 @@ impl App {
             );
         }
         self.close_tool_launch_dialog();
-        self.tool_launch_session = None;
-        self.proton_setup = false;
+        self.tools.launch_session = None;
+        self.tools.proton_setup = false;
         self.finish_work(WorkKind::LaunchingTool);
         self.finish_work(WorkKind::SettingUpRuntime);
 
@@ -306,15 +316,21 @@ impl App {
 
         self.show_toast(&format!("{tool_name} closed — scanning for changes…"));
         if actions.scan_external_files {
-            sender.input(AppMsg::ScanExternalFiles);
+            sender.input(AppMsg::Mods(
+                crate::app::messages::ModsMsg::ScanExternalFiles,
+            ));
         }
         if actions.sort_with_loot {
             if actions.deploy == Some(PostToolDeploy::AfterLoot) {
-                self.pending_post_loot_action = PostLootAction::Deploy;
+                self.plugins.pending_post_loot_action = PostLootAction::Deploy;
             }
-            sender.input(AppMsg::SortWithLoot);
+            sender.input(AppMsg::Plugins(
+                crate::app::messages::PluginsMsg::SortWithLoot,
+            ));
         } else if actions.deploy == Some(PostToolDeploy::Now) {
-            sender.input(AppMsg::DeployConfirmed);
+            sender.input(AppMsg::Shell(
+                crate::app::messages::ShellMsg::DeployConfirmed,
+            ));
         }
     }
 
@@ -323,7 +339,7 @@ impl App {
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
-        self.overflow_menu_btn.popdown();
+        self.ui.overflow_menu_btn.popdown();
         let Some(game) = self.selected_game() else {
             return;
         };
@@ -332,9 +348,9 @@ impl App {
         let game_engine = game.engine.clone();
         let deploy_dir = game::tool_search_dir(game);
         let wine_prefix = game::detect_wine_config(game).map(|wc| wc.prefix);
-        let tools = self.tools.clone();
+        let tools = self.tools.entries.clone();
 
-        self.tool_manager_dialog = Some(
+        self.ui.tool_manager_dialog = Some(
             ToolManager::builder()
                 .transient_for(root)
                 .launch((
@@ -346,12 +362,18 @@ impl App {
                     deploy_dir,
                 ))
                 .forward(sender.input_sender(), |output| match output {
-                    ToolManagerOutput::ToolAdded(tool) => AppMsg::ToolAdded(tool),
-                    ToolManagerOutput::ToolRemoved(id) => AppMsg::ToolRemoved(id),
-                    ToolManagerOutput::ToolWorkingDirChanged(id, dir) => {
-                        AppMsg::ToolWorkingDirChanged(id, dir)
+                    ToolManagerOutput::ToolAdded(tool) => {
+                        AppMsg::Tools(crate::app::messages::ToolsMsg::ToolAdded(tool))
                     }
-                    ToolManagerOutput::Closed => AppMsg::ToolManagerClosed,
+                    ToolManagerOutput::ToolRemoved(id) => {
+                        AppMsg::Tools(crate::app::messages::ToolsMsg::ToolRemoved(id))
+                    }
+                    ToolManagerOutput::ToolWorkingDirChanged(id, dir) => AppMsg::Tools(
+                        crate::app::messages::ToolsMsg::ToolWorkingDirChanged(id, dir),
+                    ),
+                    ToolManagerOutput::Closed => {
+                        AppMsg::Tools(crate::app::messages::ToolsMsg::ToolManagerClosed)
+                    }
                 }),
         );
     }
@@ -362,35 +384,35 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         let tool_clone = tool.clone();
-        self.tools.push(tool);
+        self.tools.entries.push(tool);
         self.rebuild_tool_buttons(sender);
 
-        if let Some(tracker) = self.tracker.clone() {
+        if let Some(tracker) = self.session.tracker.clone() {
             sender.oneshot_command(async move {
-                AppCmdMsg::ToolSaved(
+                AppCmdMsg::Tools(crate::app::messages::ToolsCmdMsg::Saved(
                     tracker
                         .insert_tool(&tool_clone)
                         .await
                         .map_err(|e| e.to_string()),
-                )
+                ))
             });
         }
     }
 
     pub(crate) fn handle_tool_removed(&mut self, tool_id: String, sender: &ComponentSender<Self>) {
-        self.tools.retain(|t| t.id != tool_id);
+        self.tools.entries.retain(|t| t.id != tool_id);
         self.rebuild_tool_buttons(sender);
 
-        if let Some(tracker) = self.tracker.clone() {
+        if let Some(tracker) = self.session.tracker.clone() {
             let id = tool_id.clone();
             sender.oneshot_command(async move {
-                AppCmdMsg::ToolDeleted(
+                AppCmdMsg::Tools(crate::app::messages::ToolsCmdMsg::Deleted(
                     tracker
                         .delete_tool(&id)
                         .await
                         .map(|_| id)
                         .map_err(|e| e.to_string()),
-                )
+                ))
             });
         }
     }
@@ -401,30 +423,30 @@ impl App {
         new_dir: String,
         sender: &ComponentSender<Self>,
     ) {
-        if let Some(tool) = self.tools.iter_mut().find(|t| t.id == tool_id) {
+        if let Some(tool) = self.tools.entries.iter_mut().find(|t| t.id == tool_id) {
             tool.working_dir = new_dir.clone();
         }
 
-        if let Some(tracker) = self.tracker.clone() {
+        if let Some(tracker) = self.session.tracker.clone() {
             sender.oneshot_command(async move {
-                AppCmdMsg::ToolWorkingDirSaved(
+                AppCmdMsg::Tools(crate::app::messages::ToolsCmdMsg::WorkingDirSaved(
                     tracker
                         .update_tool_working_dir(&tool_id, &new_dir)
                         .await
                         .map_err(|e| e.to_string()),
-                )
+                ))
             });
         }
     }
 
     pub(crate) fn handle_tool_manager_closed(&mut self) {
-        if let Some(dialog) = self.tool_manager_dialog.take() {
+        if let Some(dialog) = self.ui.tool_manager_dialog.take() {
             dialog.widget().destroy();
         }
     }
 
     pub(crate) fn handle_cancel_tool_launch(&mut self) {
-        if let Some(session) = self.tool_launch_session.as_mut()
+        if let Some(session) = self.tools.launch_session.as_mut()
             && let Some(process) = session.process.clone()
         {
             session.state = ToolSessionState::Cancelling;
@@ -439,14 +461,14 @@ impl App {
             return;
         }
 
-        let had_launch = if let Some(cancel) = self.tool_launch_cancel.take() {
+        let had_launch = if let Some(cancel) = self.tools.launch_cancel.take() {
             cancel.store(true, Ordering::SeqCst);
             true
         } else {
             false
         };
         self.close_tool_launch_dialog();
-        self.proton_setup = false;
+        self.tools.proton_setup = false;
         self.finish_work(WorkKind::LaunchingTool);
         self.finish_work(WorkKind::SettingUpRuntime);
         if had_launch {
@@ -458,7 +480,7 @@ impl App {
         &mut self,
         handle: crate::core::tool_launcher::ToolProcessHandle,
     ) {
-        if let Some(session) = self.tool_launch_session.as_mut() {
+        if let Some(session) = self.tools.launch_session.as_mut() {
             session.process = Some(handle);
             session.state = ToolSessionState::Running;
             let message = format!("{} is running", session.tool_name);
@@ -467,10 +489,10 @@ impl App {
     }
 
     pub(crate) fn close_tool_launch_dialog(&mut self) {
-        if let Some(dialog) = self.tool_launch_dialog.take() {
+        if let Some(dialog) = self.ui.tool_launch_dialog.take() {
             dialog.close();
         }
-        self.tool_launch_cancel = None;
+        self.tools.launch_cancel = None;
     }
 
     /// Shared inner launch logic used by both the normal path and the UMU-confirmed path.
@@ -496,8 +518,8 @@ impl App {
             format!("Launching {}...", tool_name),
         );
         let cancel = Arc::new(AtomicBool::new(false));
-        self.tool_launch_cancel = Some(cancel.clone());
-        self.tool_launch_session = Some(ToolLaunchSession {
+        self.tools.launch_cancel = Some(cancel.clone());
+        self.tools.launch_session = Some(ToolLaunchSession {
             tool_id: tool.id.clone(),
             tool_name: tool_name.clone(),
             package_variant: if game::is_snap() { "snap" } else { "appimage" },
@@ -526,10 +548,14 @@ impl App {
                     tool_launcher::ToolLaunchHooks {
                         cancel: session_cancel,
                         on_spawn: Some(Box::new(move |handle| {
-                            let _ = spawn_sender.send(AppMsg::ToolSessionStarted(handle));
+                            let _ = spawn_sender.send(AppMsg::Tools(
+                                crate::app::messages::ToolsMsg::ToolSessionStarted(handle),
+                            ));
                         })),
                         on_exit: Some(Box::new(move |error| {
-                            let _ = exit_sender.send(AppMsg::ToolExited(exit_tool_name, error));
+                            let _ = exit_sender.send(AppMsg::Tools(
+                                crate::app::messages::ToolsMsg::ToolExited(exit_tool_name, error),
+                            ));
                         })),
                     },
                 )
@@ -546,11 +572,13 @@ impl App {
                 Some(1),
             );
             match result {
-                Ok(name) if cancel.load(Ordering::SeqCst) => AppCmdMsg::ToolLaunchCancelled(name),
-                Err(_) if cancel.load(Ordering::SeqCst) => {
-                    AppCmdMsg::ToolLaunchCancelled(original_tool_name)
+                Ok(name) if cancel.load(Ordering::SeqCst) => {
+                    AppCmdMsg::Tools(crate::app::messages::ToolsCmdMsg::LaunchCancelled(name))
                 }
-                other => AppCmdMsg::ToolLaunched(other),
+                Err(_) if cancel.load(Ordering::SeqCst) => AppCmdMsg::Tools(
+                    crate::app::messages::ToolsCmdMsg::LaunchCancelled(original_tool_name),
+                ),
+                other => AppCmdMsg::Tools(crate::app::messages::ToolsCmdMsg::Launched(other)),
             }
         });
     }
@@ -590,11 +618,13 @@ impl App {
         let input_sender = sender.input_sender().clone();
         dialog.connect_response(None, move |_, response| {
             if response == "cancel" {
-                let _ = input_sender.send(AppMsg::CancelToolLaunch);
+                let _ = input_sender.send(AppMsg::Tools(
+                    crate::app::messages::ToolsMsg::CancelToolLaunch,
+                ));
             }
         });
         dialog.present(Some(root));
-        self.tool_launch_dialog = Some(dialog);
+        self.ui.tool_launch_dialog = Some(dialog);
     }
 }
 
@@ -602,7 +632,9 @@ fn monitor_deployd_proton_runtime(sender: relm4::Sender<AppMsg>) {
     std::thread::spawn(move || {
         for _ in 0..1800 {
             if game::proton_runtime_available() {
-                let _ = sender.send(AppMsg::ProtonSetupReady);
+                let _ = sender.send(AppMsg::Tools(
+                    crate::app::messages::ToolsMsg::ProtonSetupReady,
+                ));
                 return;
             }
             std::thread::sleep(std::time::Duration::from_secs(1));

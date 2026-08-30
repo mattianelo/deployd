@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use adw;
 use gtk::glib;
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -12,8 +11,8 @@ use crate::models::plugin::PluginDirtyInfo;
 use crate::ui::plugin_list::PluginRowInit;
 
 use super::App;
-use super::free_fns::{GameLoadMode, load_game_data};
 use super::messages::AppCmdMsg;
+use super::session::{GameLoadMode, load_game_data};
 use super::types::PostLootAction;
 
 impl App {
@@ -23,17 +22,17 @@ impl App {
         to: usize,
         sender: &ComponentSender<Self>,
     ) {
-        let mut guard = self.plugins.guard();
+        let mut guard = self.plugins.rows.guard();
         let len = guard.len();
         if from >= len || to >= len || from == to {
             return;
         }
-        if self.plugin_selection_active
-            && self.selected_plugins.contains(&from)
-            && self.selected_plugins.len() > 1
+        if self.plugins.selection_active
+            && self.plugins.selected.contains(&from)
+            && self.plugins.selected.len() > 1
         {
             drop(guard);
-            let mut selected: Vec<usize> = self.selected_plugins.iter().copied().collect();
+            let mut selected: Vec<usize> = self.plugins.selected.iter().copied().collect();
             selected.sort_unstable();
             self.handle_move_selected_plugins_to(selected, from, to, sender);
             return;
@@ -48,9 +47,9 @@ impl App {
             }
         }
         drop(guard);
-        self.needs_deploy = true;
-        if self.plugin_selection_active {
-            self.plugin_selection_dirty = true;
+        self.shell.needs_deploy = true;
+        if self.plugins.selection_active {
+            self.plugins.selection_dirty = true;
         }
         self.refresh_plugin_order_labels();
         self.save_plugin_order(sender);
@@ -63,9 +62,9 @@ impl App {
         to: usize,
         sender: &ComponentSender<Self>,
     ) {
-        let len = self.plugins.guard().len();
+        let len = self.plugins.rows.guard().len();
         let selected: Vec<usize> = {
-            let guard = self.plugins.guard();
+            let guard = self.plugins.rows.guard();
             selected
                 .into_iter()
                 .filter(|&idx| guard.get(idx).is_some_and(|row| !row.is_vanilla))
@@ -80,11 +79,11 @@ impl App {
         if selected.iter().enumerate().all(|(i, &s)| anchor + i == s) {
             return;
         }
-        let vadj = self.plugin_scroll.vadjustment();
+        let vadj = self.plugins.scroll.vadjustment();
         let saved_pos = vadj.value();
 
         let items: Vec<PluginRowInit> = {
-            let guard = self.plugins.guard();
+            let guard = self.plugins.rows.guard();
             selected
                 .iter()
                 .filter_map(|&idx| {
@@ -102,38 +101,38 @@ impl App {
                 .collect()
         };
         {
-            let mut guard = self.plugins.guard();
+            let mut guard = self.plugins.rows.guard();
             for &idx in selected.iter().rev() {
                 guard.remove(idx);
             }
         }
         {
-            let mut guard = self.plugins.guard();
+            let mut guard = self.plugins.rows.guard();
             for (i, item) in items.into_iter().enumerate() {
                 guard.insert(anchor + i, item);
             }
         }
-        self.selected_plugins.clear();
+        self.plugins.selected.clear();
         {
-            let mut guard = self.plugins.guard();
+            let mut guard = self.plugins.rows.guard();
             for i in 0..guard.len() {
                 let selected = i >= anchor && i < anchor + n;
                 if let Some(row) = guard.get_mut(i) {
                     row.selected = selected;
-                    row.selection_mode = self.plugin_selection_active;
-                    row.drag_enabled.set(self.plugin_selection_active);
+                    row.selection_mode = self.plugins.selection_active;
+                    row.drag_enabled.set(self.plugins.selection_active);
                 }
                 if selected {
-                    self.selected_plugins.insert(i);
+                    self.plugins.selected.insert(i);
                 }
             }
         }
         glib::idle_add_local_once(move || {
             vadj.set_value(saved_pos);
         });
-        self.needs_deploy = true;
-        if self.plugin_selection_active {
-            self.plugin_selection_dirty = true;
+        self.shell.needs_deploy = true;
+        if self.plugins.selection_active {
+            self.plugins.selection_dirty = true;
         }
         self.refresh_plugin_order_labels();
         self.save_plugin_order(sender);
@@ -141,7 +140,7 @@ impl App {
 
     fn refresh_plugin_order_labels(&mut self) {
         let mut count = 0usize;
-        let mut guard = self.plugins.guard();
+        let mut guard = self.plugins.rows.guard();
         let len = guard.len();
         for i in 0..len {
             if let Some(row) = guard.get_mut(i)
@@ -154,23 +153,24 @@ impl App {
     }
 
     pub(crate) fn handle_enable_all_plugins(&mut self, sender: &ComponentSender<Self>) {
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
             return;
         };
         let profile_id = self
+            .session
             .profiles
-            .get(self.active_profile_idx)
+            .get(self.session.active_profile_idx)
             .map(|p| p.id.clone());
         {
-            let mut guard = self.plugins.guard();
+            let mut guard = self.plugins.rows.guard();
             for row in guard.iter_mut() {
                 row.plugin.enabled = true;
             }
         }
-        self.needs_deploy = true;
+        self.shell.needs_deploy = true;
         sender.oneshot_command(async move {
             let result = async {
                 tracker.set_all_plugins_enabled(&game.id, true).await?;
@@ -179,28 +179,31 @@ impl App {
                 }
                 Ok::<(), anyhow::Error>(())
             };
-            AppCmdMsg::PluginOrderSaved(result.await.map_err(|e| e.to_string()))
+            AppCmdMsg::Plugins(crate::app::messages::PluginsCmdMsg::PluginOrderSaved(
+                result.await.map_err(|e| e.to_string()),
+            ))
         });
     }
 
     pub(crate) fn handle_disable_all_plugins(&mut self, sender: &ComponentSender<Self>) {
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
             return;
         };
         let profile_id = self
+            .session
             .profiles
-            .get(self.active_profile_idx)
+            .get(self.session.active_profile_idx)
             .map(|p| p.id.clone());
         {
-            let mut guard = self.plugins.guard();
+            let mut guard = self.plugins.rows.guard();
             for row in guard.iter_mut() {
                 row.plugin.enabled = false;
             }
         }
-        self.needs_deploy = true;
+        self.shell.needs_deploy = true;
         sender.oneshot_command(async move {
             let result = async {
                 tracker.set_all_plugins_enabled(&game.id, false).await?;
@@ -209,22 +212,25 @@ impl App {
                 }
                 Ok::<(), anyhow::Error>(())
             };
-            AppCmdMsg::PluginOrderSaved(result.await.map_err(|e| e.to_string()))
+            AppCmdMsg::Plugins(crate::app::messages::PluginsCmdMsg::PluginOrderSaved(
+                result.await.map_err(|e| e.to_string()),
+            ))
         });
     }
 
     pub(crate) fn handle_toggle_show_vanilla_plugins(&mut self) {
-        self.show_vanilla_plugins = !self.show_vanilla_plugins;
-        let mut guard = self.plugins.guard();
-        if self.show_vanilla_plugins {
-            for (i, filename) in self.vanilla_plugin_names.clone().iter().enumerate() {
+        self.plugins.show_vanilla = !self.plugins.show_vanilla;
+        let mut guard = self.plugins.rows.guard();
+        if self.plugins.show_vanilla {
+            for (i, filename) in self.plugins.vanilla_names.clone().iter().enumerate() {
                 #[cfg(feature = "loot")]
-                let dirty_info = self.dirty_plugins.get(&filename.to_lowercase()).cloned();
+                let dirty_info = self.plugins.dirty.get(&filename.to_lowercase()).cloned();
                 #[cfg(not(feature = "loot"))]
                 let dirty_info: Option<PluginDirtyInfo> = None;
 
                 let mod_name = if self
-                    .vanilla_derived_plugins
+                    .plugins
+                    .vanilla_derived
                     .contains(&filename.to_lowercase())
                 {
                     "Vanilla / Modified".to_string()
@@ -252,7 +258,7 @@ impl App {
                 );
             }
         } else {
-            for _ in 0..self.vanilla_plugin_names.len() {
+            for _ in 0..self.plugins.vanilla_names.len() {
                 guard.remove(0);
             }
         }
@@ -269,13 +275,13 @@ impl App {
             .into_iter()
             .find_map(|p| p.parent().map(|d| d.to_path_buf()));
         let plugin_names: Vec<String> = {
-            let guard = self.plugins.guard();
+            let guard = self.plugins.rows.guard();
             let mut names: Vec<String> = guard
                 .iter()
                 .filter(|r| !r.is_vanilla)
                 .map(|r| r.plugin.filename.clone())
                 .collect();
-            names.extend(self.vanilla_plugin_names.iter().cloned());
+            names.extend(self.plugins.vanilla_names.iter().cloned());
             names
         };
 
@@ -283,7 +289,7 @@ impl App {
         {
             let result_game_id = game_id.clone();
             sender.oneshot_command(async move {
-                AppCmdMsg::LootSortDone(
+                AppCmdMsg::Plugins(crate::app::messages::PluginsCmdMsg::LootSortDone(
                     result_game_id,
                     crate::core::loot_sort::sort_plugins(
                         &game_id,
@@ -294,7 +300,7 @@ impl App {
                     )
                     .await
                     .map_err(|e| format!("{e:#}")),
-                )
+                ))
             });
         }
         #[cfg(not(feature = "loot"))]
@@ -328,7 +334,7 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         if self.selected_game().map(|game| game.id.as_str()) != Some(game_id.as_str()) {
-            self.pending_post_loot_action = PostLootAction::None;
+            self.plugins.pending_post_loot_action = PostLootAction::None;
             self.push_notification(
                 "LOOT finished after the selected game changed; its result was not applied",
             );
@@ -337,10 +343,10 @@ impl App {
         match result {
             Ok((sorted_names, dirty)) => {
                 let dirty_count = dirty.len();
-                self.dirty_plugins = dirty;
-                let post_action = std::mem::take(&mut self.pending_post_loot_action);
+                self.plugins.dirty = dirty;
+                let post_action = std::mem::take(&mut self.plugins.pending_post_loot_action);
 
-                self.needs_deploy = true;
+                self.shell.needs_deploy = true;
                 if post_action == PostLootAction::Deploy {
                     self.show_toast("Load order sorted by LOOT — deploying…");
                 } else {
@@ -356,7 +362,7 @@ impl App {
                 }
 
                 let updates: Vec<(String, i32)> = {
-                    let guard = self.plugins.guard();
+                    let guard = self.plugins.rows.guard();
                     let id_map: std::collections::HashMap<String, String> = (0..guard.len())
                         .filter_map(|i| {
                             guard
@@ -376,7 +382,7 @@ impl App {
                 };
 
                 if let (Some(tracker), Some(game)) =
-                    (self.tracker.clone(), self.selected_game().cloned())
+                    (self.session.tracker.clone(), self.selected_game().cloned())
                 {
                     sender.oneshot_command(async move {
                         let result = async {
@@ -389,7 +395,10 @@ impl App {
                             load_game_data(&tracker, &game, GameLoadMode::Refresh).await
                         }
                         .await;
-                        AppCmdMsg::LootOrderApplied(result, post_action)
+                        AppCmdMsg::Plugins(crate::app::messages::PluginsCmdMsg::LootOrderApplied(
+                            Box::new(result),
+                            post_action,
+                        ))
                     });
                 } else {
                     self.push_notification(
@@ -398,7 +407,7 @@ impl App {
                 }
             }
             Err(e) => {
-                self.pending_post_loot_action = PostLootAction::None;
+                self.plugins.pending_post_loot_action = PostLootAction::None;
                 self.show_toast(&format!("LOOT sort failed: {e}"));
             }
         }
@@ -424,27 +433,11 @@ impl App {
         }
     }
 
-    pub(crate) fn handle_set_color_scheme(&mut self, idx: u32) {
-        self.color_scheme_idx = idx;
-        let scheme = match idx {
-            1 => adw::ColorScheme::ForceLight,
-            2 => adw::ColorScheme::ForceDark,
-            _ => adw::ColorScheme::Default,
-        };
-        adw::StyleManager::default().set_color_scheme(scheme);
-        if let Some(tracker) = self.tracker.clone() {
-            let val = idx.to_string();
-            tokio::spawn(async move {
-                let _ = tracker.set_setting("color_scheme", &val).await;
-            });
-        }
-    }
-
     pub(crate) fn handle_enter_plugin_selection_mode(&mut self) {
-        self.plugin_selection_active = true;
-        self.plugin_selection_dirty = false;
-        self.selected_plugins.clear();
-        let mut g = self.plugins.guard();
+        self.plugins.selection_active = true;
+        self.plugins.selection_dirty = false;
+        self.plugins.selected.clear();
+        let mut g = self.plugins.rows.guard();
         for row in g.iter_mut() {
             row.selection_mode = true;
             row.selected = false;
@@ -453,10 +446,10 @@ impl App {
     }
 
     pub(crate) fn handle_exit_plugin_selection_mode(&mut self) {
-        self.plugin_selection_active = false;
-        self.plugin_selection_dirty = false;
-        self.selected_plugins.clear();
-        let mut g = self.plugins.guard();
+        self.plugins.selection_active = false;
+        self.plugins.selection_dirty = false;
+        self.plugins.selected.clear();
+        let mut g = self.plugins.rows.guard();
         for row in g.iter_mut() {
             row.selection_mode = false;
             row.selected = false;
@@ -465,59 +458,60 @@ impl App {
     }
 
     pub(crate) fn handle_toggle_plugin_row_selected(&mut self, idx: usize) {
-        if !self.plugin_selection_active {
+        if !self.plugins.selection_active {
             return;
         }
-        let mut g = self.plugins.guard();
+        let mut g = self.plugins.rows.guard();
         let Some(row) = g.get_mut(idx) else { return };
         if row.is_vanilla {
             return;
         }
         row.selected = !row.selected;
         if row.selected {
-            self.selected_plugins.insert(idx);
+            self.plugins.selected.insert(idx);
         } else {
-            self.selected_plugins.remove(&idx);
+            self.plugins.selected.remove(&idx);
         }
     }
 
     pub(crate) fn handle_set_plugin_row_selected(&mut self, idx: usize, selected: bool) {
-        if !self.plugin_selection_active {
+        if !self.plugins.selection_active {
             return;
         }
-        let mut g = self.plugins.guard();
+        let mut g = self.plugins.rows.guard();
         let Some(row) = g.get_mut(idx) else { return };
         if row.is_vanilla || row.selected == selected {
             return;
         }
         row.selected = selected;
         if selected {
-            self.selected_plugins.insert(idx);
+            self.plugins.selected.insert(idx);
         } else {
-            self.selected_plugins.remove(&idx);
+            self.plugins.selected.remove(&idx);
         }
     }
 
     pub(crate) fn handle_enable_selected_plugins(&mut self, sender: &ComponentSender<Self>) {
-        if self.selected_plugins.is_empty() {
+        if self.plugins.selected.is_empty() {
             return;
         }
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
             return;
         };
         let profile_id = self
+            .session
             .profiles
-            .get(self.active_profile_idx)
+            .get(self.session.active_profile_idx)
             .map(|p| p.id.clone());
 
-        let indices: Vec<usize> = self.selected_plugins.iter().copied().collect();
+        let indices: Vec<usize> = self.plugins.selected.iter().copied().collect();
         let mut plugin_ids: Vec<String> = Vec::new();
 
         {
-            let mut guard = self.plugins.guard();
+            let mut guard = self.plugins.rows.guard();
             for &idx in &indices {
                 let Some(row) = guard.get_mut(idx) else {
                     continue;
@@ -526,8 +520,8 @@ impl App {
                 plugin_ids.push(row.plugin.id.clone());
             }
         }
-        self.needs_deploy = true;
-        self.plugin_selection_dirty = true;
+        self.shell.needs_deploy = true;
+        self.plugins.selection_dirty = true;
 
         let _game_id = game.id.clone();
         sender.oneshot_command(async move {
@@ -540,32 +534,35 @@ impl App {
                 }
                 Ok::<(), anyhow::Error>(())
             };
-            AppCmdMsg::PluginOrderSaved(result.await.map_err(|e| e.to_string()))
+            AppCmdMsg::Plugins(crate::app::messages::PluginsCmdMsg::PluginOrderSaved(
+                result.await.map_err(|e| e.to_string()),
+            ))
         });
 
         self.handle_exit_plugin_selection_mode();
     }
 
     pub(crate) fn handle_disable_selected_plugins(&mut self, sender: &ComponentSender<Self>) {
-        if self.selected_plugins.is_empty() {
+        if self.plugins.selected.is_empty() {
             return;
         }
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
             return;
         };
         let profile_id = self
+            .session
             .profiles
-            .get(self.active_profile_idx)
+            .get(self.session.active_profile_idx)
             .map(|p| p.id.clone());
 
-        let indices: Vec<usize> = self.selected_plugins.iter().copied().collect();
+        let indices: Vec<usize> = self.plugins.selected.iter().copied().collect();
         let mut plugin_ids: Vec<String> = Vec::new();
 
         {
-            let mut guard = self.plugins.guard();
+            let mut guard = self.plugins.rows.guard();
             for &idx in &indices {
                 let Some(row) = guard.get_mut(idx) else {
                     continue;
@@ -574,8 +571,8 @@ impl App {
                 plugin_ids.push(row.plugin.id.clone());
             }
         }
-        self.needs_deploy = true;
-        self.plugin_selection_dirty = true;
+        self.shell.needs_deploy = true;
+        self.plugins.selection_dirty = true;
 
         sender.oneshot_command(async move {
             let result = async {
@@ -587,7 +584,9 @@ impl App {
                 }
                 Ok::<(), anyhow::Error>(())
             };
-            AppCmdMsg::PluginOrderSaved(result.await.map_err(|e| e.to_string()))
+            AppCmdMsg::Plugins(crate::app::messages::PluginsCmdMsg::PluginOrderSaved(
+                result.await.map_err(|e| e.to_string()),
+            ))
         });
 
         self.handle_exit_plugin_selection_mode();

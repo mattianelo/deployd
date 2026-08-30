@@ -1,3 +1,5 @@
+pub(crate) mod archive;
+pub(crate) mod cache;
 pub mod deployer;
 pub mod detector;
 pub mod game;
@@ -9,6 +11,7 @@ pub mod migration_export;
 pub mod migration_import;
 pub mod mod_folders;
 pub mod nexus_api;
+pub(crate) mod nexus_identity;
 pub mod nxm;
 pub mod rules;
 pub mod save_manager;

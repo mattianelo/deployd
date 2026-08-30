@@ -20,6 +20,14 @@ pub struct Game {
     pub wine_prefix: Option<PathBuf>,
 }
 
+/// A game configuration confirmed by setup UI and ready for persistence.
+#[derive(Debug, Clone)]
+pub struct GameConfig {
+    pub game: Game,
+    /// `true` when the user added the game manually.
+    pub custom: bool,
+}
+
 impl Game {
     pub fn data_dir(&self) -> PathBuf {
         self.path.join(&self.data_subdir)

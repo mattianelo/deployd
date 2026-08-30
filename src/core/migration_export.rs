@@ -407,7 +407,7 @@ mod tests {
         let temp = TempDir::new()?;
         let db = temp.path().join("export.db");
         let url = sqlite_url(&db);
-        let tracker = crate::core::tracker::Tracker::open(&url).await?;
+        let tracker = crate::core::tracker::Tracker::open(&url).await?.tracker;
 
         tracker
             .upsert_game(

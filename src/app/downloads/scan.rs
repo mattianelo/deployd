@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use crate::core::nexus_identity::normalize_nexus_filename;
 use crate::models::download::{DownloadEntry, DownloadStatus, NexusIds};
 
 use super::super::App;
-use super::super::free_fns::normalize_nexus_filename;
 use super::super::messages::AppCmdMsg;
 use super::super::types::{DownloadScanResult, WorkKind};
 use super::discovery;
@@ -14,12 +14,12 @@ impl App {
         &mut self,
         sender: &relm4::prelude::ComponentSender<Self>,
     ) {
-        let base_dir = self.downloads_dir.clone();
+        let base_dir = self.download.directory.clone();
         if !base_dir.exists() {
-            if self.initial_scan_done {
+            if self.download.initial_scan_done {
                 self.push_notification("Downloads folder not found");
             }
-            self.initial_scan_done = true;
+            self.download.initial_scan_done = true;
             return;
         }
 
@@ -28,7 +28,7 @@ impl App {
             .selected_game()
             .map(|game| game.id.clone())
             .unwrap_or_else(|| "unknown".to_string());
-        let entries = self.all_downloads.clone();
+        let entries = self.download.all.clone();
         sender.oneshot_command(async move {
             let timing_start = std::time::Instant::now();
             let result = tokio::task::spawn_blocking(move || scan_downloads(base_dir, entries))
@@ -43,7 +43,9 @@ impl App {
                     Some(scan.entries.len()),
                 );
             }
-            AppCmdMsg::DownloadsScanned(result)
+            AppCmdMsg::Downloads(crate::app::messages::DownloadsCmdMsg::DownloadsScanned(
+                result,
+            ))
         });
     }
 }

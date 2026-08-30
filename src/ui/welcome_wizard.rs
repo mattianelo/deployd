@@ -4,9 +4,8 @@ use adw::prelude::*;
 use gtk::prelude::*;
 use relm4::prelude::*;
 
-use crate::app::messages::GameConfig;
 use crate::core::game;
-use crate::models::game::Game;
+use crate::models::game::{Game, GameConfig};
 use crate::utils::snap::{self, SelectedFolderKind};
 
 pub struct WelcomeWizard {

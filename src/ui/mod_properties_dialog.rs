@@ -747,7 +747,7 @@ impl SimpleComponent for ModPropertiesDialog {
                 let parsed_nexus_id = if raw_nexus_id.is_empty() {
                     None
                 } else {
-                    match crate::app::free_fns::parse_nexus_mod_id_from_input(raw_nexus_id) {
+                    match crate::core::nexus_identity::parse_nexus_mod_id_from_input(raw_nexus_id) {
                         Some(id) => Some(id),
                         None => {
                             self.nexus_id_invalid = true;

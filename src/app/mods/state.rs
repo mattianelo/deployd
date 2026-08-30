@@ -15,8 +15,8 @@ use crate::ui::mod_list::{ModListItemInit, ModListItemKind, ModRowInit};
 use crate::ui::plugin_list::PluginRowInit;
 
 use super::super::App;
-use super::super::free_fns::{GameLoadMode, load_game_data};
 use super::super::messages::AppCmdMsg;
+use super::super::session::{GameLoadMode, load_game_data};
 use super::super::types::{LoadedData, loaded_game_is_current};
 
 struct PluginDiscovery<'a> {
@@ -63,7 +63,9 @@ impl App {
         sync_txt: bool,
         preserve_collapsed: bool,
     ) {
-        if let (Some(tracker), Some(game)) = (self.tracker.clone(), self.selected_game().cloned()) {
+        if let (Some(tracker), Some(game)) =
+            (self.session.tracker.clone(), self.selected_game().cloned())
+        {
             sender.oneshot_command(async move {
                 let mode = if sync_txt {
                     GameLoadMode::OpenGame
@@ -71,7 +73,10 @@ impl App {
                     GameLoadMode::Refresh
                 };
                 let result = async { load_game_data(&tracker, &game, mode).await };
-                AppCmdMsg::ModsLoaded(result.await, preserve_collapsed)
+                AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::ModsLoaded(
+                    result.await,
+                    preserve_collapsed,
+                ))
             });
         }
     }
@@ -89,13 +94,14 @@ impl App {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        let vadj = self.mod_scroll.vadjustment();
+        let vadj = self.mods.scroll.vadjustment();
         let saved_pos = self
+            .mods
             .pending_scroll_restore
             .take()
             .unwrap_or_else(|| vadj.value());
 
-        let mut guard = self.mods.guard();
+        let mut guard = self.mods.rows.guard();
         guard.clear();
 
         let mut group_idx = 0;
@@ -105,7 +111,7 @@ impl App {
             while group_idx < sorted_groups.len() && sorted_groups[group_idx].position <= seq as f64
             {
                 let g = &sorted_groups[group_idx];
-                let collapsed = self.collapsed_groups.contains(&g.id);
+                let collapsed = self.mods.collapsed_groups.contains(&g.id);
                 guard.push_back(ModListItemInit {
                     kind: ModListItemKind::Separator {
                         group_id: g.id.clone(),
@@ -136,7 +142,7 @@ impl App {
             let reinstall_from_file = m
                 .archive_path
                 .as_ref()
-                .map(|p| !std::path::Path::new(p).starts_with(&self.downloads_dir))
+                .map(|p| !std::path::Path::new(p).starts_with(&self.download.directory))
                 .unwrap_or(false);
             mod_display_idx += 1;
             guard.push_back(ModListItemInit {
@@ -159,7 +165,7 @@ impl App {
 
         while group_idx < sorted_groups.len() {
             let g = &sorted_groups[group_idx];
-            let collapsed = self.collapsed_groups.contains(&g.id);
+            let collapsed = self.mods.collapsed_groups.contains(&g.id);
             guard.push_back(ModListItemInit {
                 kind: ModListItemKind::Separator {
                     group_id: g.id.clone(),
@@ -249,16 +255,16 @@ impl App {
                 .then_with(|| mc(a).cmp(&mc(b)))
                 .then_with(|| a.to_lowercase().cmp(&b.to_lowercase()))
         });
-        self.vanilla_plugin_names = vanilla_sorted;
-        self.vanilla_derived_plugins = vanilla_derived.clone();
+        self.plugins.vanilla_names = vanilla_sorted;
+        self.plugins.vanilla_derived = vanilla_derived.clone();
 
-        let mut guard = self.plugins.guard();
+        let mut guard = self.plugins.rows.guard();
         guard.clear();
 
-        if self.show_vanilla_plugins {
-            for filename in &self.vanilla_plugin_names {
+        if self.plugins.show_vanilla {
+            for filename in &self.plugins.vanilla_names {
                 #[cfg(feature = "loot")]
-                let dirty_info = self.dirty_plugins.get(&filename.to_lowercase()).cloned();
+                let dirty_info = self.plugins.dirty.get(&filename.to_lowercase()).cloned();
                 #[cfg(not(feature = "loot"))]
                 let dirty_info: Option<PluginDirtyInfo> = None;
 
@@ -308,7 +314,7 @@ impl App {
                 .map(|m| m.enabled)
                 .unwrap_or(true);
             #[cfg(feature = "loot")]
-            let dirty_info = self.dirty_plugins.get(&p.filename.to_lowercase()).cloned();
+            let dirty_info = self.plugins.dirty.get(&p.filename.to_lowercase()).cloned();
             #[cfg(not(feature = "loot"))]
             let dirty_info: Option<PluginDirtyInfo> = None;
 
@@ -329,27 +335,33 @@ impl App {
             managed_display_idx += 1;
         }
 
-        self.managed_plugins_count = guard.len()
-            - if self.show_vanilla_plugins {
-                self.vanilla_plugin_names.len()
+        self.plugins.managed_count = guard.len()
+            - if self.plugins.show_vanilla {
+                self.plugins.vanilla_names.len()
             } else {
                 0
             };
     }
 
     pub(crate) fn update_profile_list(&mut self, profiles: Vec<Profile>, active_idx: usize) {
-        self.updating_profiles = true;
-        self.profiles = profiles;
-        self.active_profile_idx = active_idx;
+        self.session.updating_profiles = true;
+        self.session.profiles = profiles;
+        self.session.active_profile_idx = active_idx;
 
-        let names: Vec<&str> = self.profiles.iter().map(|p| p.name.as_str()).collect();
-        self.profile_model
-            .splice(0, self.profile_model.n_items(), &names);
-        self.profile_dropdown.set_selected(active_idx as u32);
-        if let Some(p) = self.profiles.get(active_idx) {
-            self.profile_rename_entry.set_text(&p.name);
+        let names: Vec<&str> = self
+            .session
+            .profiles
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect();
+        self.ui
+            .profile_model
+            .splice(0, self.ui.profile_model.n_items(), &names);
+        self.ui.profile_dropdown.set_selected(active_idx as u32);
+        if let Some(p) = self.session.profiles.get(active_idx) {
+            self.ui.profile_rename_entry.set_text(&p.name);
         }
-        self.updating_profiles = false;
+        self.session.updating_profiles = false;
     }
 
     pub(crate) fn apply_loaded_data(
@@ -380,8 +392,8 @@ impl App {
         );
         self.populate_mods(data.mods, &data.groups, &data.overrides);
         self.update_profile_list(data.profiles, data.active_profile_idx);
-        self.tools = data.tools;
-        self.plugin_masters = data.plugin_masters;
+        self.tools.entries = data.tools;
+        self.plugins.masters = data.plugin_masters;
         self.rebuild_tool_buttons(sender);
         self.reload_order_snapshots(sender);
         self.apply_search_filter();
@@ -391,7 +403,7 @@ impl App {
     /// Update the `#N` priority labels for all mod rows in-place after a reorder.
     pub(crate) fn refresh_priority_labels(&mut self) {
         let mut count = 0usize;
-        let mut guard = self.mods.guard();
+        let mut guard = self.mods.rows.guard();
         let len = guard.len();
         for i in 0..len {
             if let Some(item) = guard.get_mut(i)
@@ -404,7 +416,7 @@ impl App {
     }
 
     pub(crate) fn save_group_positions(&mut self) {
-        let guard = self.mods.guard();
+        let guard = self.mods.rows.guard();
         let mut updates: Vec<(String, f64)> = Vec::new();
         let mut mod_count = 0usize;
         for i in 0..guard.len() {
@@ -421,7 +433,7 @@ impl App {
         if updates.is_empty() {
             return;
         }
-        if let Some(tracker) = self.tracker.clone() {
+        if let Some(tracker) = self.session.tracker.clone() {
             tokio::spawn(async move {
                 for (group_id, position) in updates {
                     let _ = tracker.move_group(&group_id, position).await;
@@ -431,7 +443,7 @@ impl App {
     }
 
     pub(crate) fn save_mod_priorities(&mut self, sender: &ComponentSender<Self>) {
-        let guard = self.mods.guard();
+        let guard = self.mods.rows.guard();
         let updates: Vec<(String, i32)> = (0..guard.len())
             .filter_map(|i| {
                 guard
@@ -449,7 +461,7 @@ impl App {
             .collect();
         drop(guard);
 
-        if let (Some(tracker), Some(game)) = (self.tracker.clone(), self.selected_game()) {
+        if let (Some(tracker), Some(game)) = (self.session.tracker.clone(), self.selected_game()) {
             let game_id = game.id.clone();
             let engine = game.engine.clone();
             let cache_root = self
@@ -457,51 +469,53 @@ impl App {
                 .unwrap_or_else(|_| crate::utils::paths::cache_root().unwrap_or_default());
             sender.oneshot_command(async move {
                 if let Err(e) = tracker.update_priorities(&updates).await {
-                    return AppCmdMsg::OverridesRefreshed(Err(e.to_string()));
+                    return AppCmdMsg::Mods(crate::app::messages::ModsCmdMsg::OverridesRefreshed(
+                        Err(e.to_string()),
+                    ));
                 }
                 if let Err(e) =
                     mod_folders::refresh_named_mod_folders(&tracker, &game_id, &cache_root).await
                 {
                     eprintln!("[deployd] named_mods refresh failed: {e}");
                 }
-                AppCmdMsg::OverridesRefreshed(
+                AppCmdMsg::Mods(crate::app::messages::ModsCmdMsg::OverridesRefreshed(
                     tracker
                         .compute_overrides(&game_id, game::handler_for(&engine), &mod_names)
                         .await
                         .map_err(|e| e.to_string()),
-                )
+                ))
             });
         }
     }
 
     pub(crate) fn save_plugin_order(&mut self, sender: &ComponentSender<Self>) {
-        let guard = self.plugins.guard();
+        let guard = self.plugins.rows.guard();
         let updates: Vec<(String, i32)> = (0..guard.len())
             .filter_map(|i| guard.get(i).map(|row| (row.plugin.id.clone(), i as i32)))
             .collect();
         drop(guard);
 
-        if let Some(tracker) = self.tracker.clone() {
+        if let Some(tracker) = self.session.tracker.clone() {
             sender.oneshot_command(async move {
-                AppCmdMsg::PluginOrderSaved(
+                AppCmdMsg::Plugins(crate::app::messages::PluginsCmdMsg::PluginOrderSaved(
                     tracker
                         .update_plugin_order(&updates)
                         .await
                         .map_err(|e| e.to_string()),
-                )
+                ))
             });
         }
     }
 
     pub(crate) fn auto_save_profile(&self, sender: &ComponentSender<Self>) {
-        if let (Some(tracker), Some(game)) = (self.tracker.clone(), self.selected_game())
-            && let Some(profile) = self.profiles.get(self.active_profile_idx)
+        if let (Some(tracker), Some(game)) = (self.session.tracker.clone(), self.selected_game())
+            && let Some(profile) = self.session.profiles.get(self.session.active_profile_idx)
         {
             let profile_id = profile.id.clone();
             let game_id = game.id.clone();
             sender.oneshot_command(async move {
                 let _ = tracker.save_to_profile(&profile_id, &game_id).await;
-                AppCmdMsg::PrioritySaved(Ok(()))
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(())))
             });
         }
     }

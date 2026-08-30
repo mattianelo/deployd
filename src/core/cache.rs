@@ -1,5 +1,5 @@
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 
@@ -198,20 +198,4 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
         }
     }
     Ok(())
-}
-
-/// Resolve the path to show as the current cache location for a game in the UI.
-pub fn display_cache_root(custom: Option<&PathBuf>) -> String {
-    match custom {
-        Some(p) => p.to_string_lossy().into_owned(),
-        None => paths::cache_root()
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_else(|_| {
-                if std::env::var_os("SNAP_USER_COMMON").is_some() {
-                    "$SNAP_USER_COMMON/deployd/cache".to_string()
-                } else {
-                    "~/.local/share/deployd/cache".to_string()
-                }
-            }),
-    }
 }

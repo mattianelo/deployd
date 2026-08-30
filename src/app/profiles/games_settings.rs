@@ -25,7 +25,7 @@ use super::super::types::WorkKind;
 
 impl App {
     pub(crate) fn handle_welcome_wizard_skipped(&mut self) {
-        self.welcome_wizard = None;
+        self.ui.welcome_wizard = None;
     }
 
     pub(crate) fn handle_remove_current_game(
@@ -33,15 +33,17 @@ impl App {
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
-        if let Some(game) = self.games.get(self.selected_game_idx) {
+        if let Some(game) = self.session.games.get(self.session.selected_game_idx) {
             self.confirm_remove_game(game.id.clone(), root, sender);
         }
     }
 
     pub(crate) fn handle_cmd_games_persisted(&mut self, sender: &ComponentSender<Self>) {
         // Force the reload even when the newly persisted game is already index zero.
-        self.selected_game_idx = usize::MAX;
-        sender.input(AppMsg::GameSelected(0));
+        self.session.selected_game_idx = usize::MAX;
+        sender.input(AppMsg::Games(crate::app::messages::GamesMsg::GameSelected(
+            0,
+        )));
     }
 
     pub(crate) fn handle_settings_clicked(
@@ -49,35 +51,45 @@ impl App {
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
-        self.overflow_menu_btn.popdown();
-        let Some(tracker) = self.tracker.clone() else {
+        self.ui.overflow_menu_btn.popdown();
+        let Some(tracker) = self.session.tracker.clone() else {
             self.push_notification("Database not ready yet");
             return;
         };
-        self.settings_dialog = Some(
+        self.ui.settings_dialog = Some(
             SettingsDialog::builder()
                 .transient_for(root)
                 .launch((
                     tracker,
-                    self.nexus_username.is_some(),
-                    self.color_scheme_idx,
+                    self.shell.nexus_username.is_some(),
+                    self.shell.color_scheme_idx,
                     game::is_snap() && utils::experimental_enabled(),
                 ))
                 .forward(sender.input_sender(), |output| match output {
-                    SettingsDialogOutput::Closed => AppMsg::SettingsClosed,
-                    SettingsDialogOutput::ApiKeyChanged => AppMsg::NexusApiKeyUpdated,
-                    SettingsDialogOutput::ManageGames => AppMsg::ManageGamesClicked,
-                    SettingsDialogOutput::PreviewAppImageExport => AppMsg::PreviewAppImageExport,
-                    SettingsDialogOutput::ColorSchemeChanged(idx) => AppMsg::SetColorScheme(idx),
+                    SettingsDialogOutput::Closed => {
+                        AppMsg::Games(crate::app::messages::GamesMsg::SettingsClosed)
+                    }
+                    SettingsDialogOutput::ApiKeyChanged => {
+                        AppMsg::Games(crate::app::messages::GamesMsg::NexusApiKeyUpdated)
+                    }
+                    SettingsDialogOutput::ManageGames => {
+                        AppMsg::Games(crate::app::messages::GamesMsg::ManageGamesClicked)
+                    }
+                    SettingsDialogOutput::PreviewAppImageExport => {
+                        AppMsg::Migration(crate::app::messages::MigrationMsg::PreviewAppImageExport)
+                    }
+                    SettingsDialogOutput::ColorSchemeChanged(idx) => {
+                        AppMsg::Shell(crate::app::messages::ShellMsg::SetColorScheme(idx))
+                    }
                 }),
         );
     }
 
     pub(crate) fn handle_settings_closed(&mut self, sender: &ComponentSender<Self>) {
-        if let Some(dialog) = self.settings_dialog.take() {
+        if let Some(dialog) = self.ui.settings_dialog.take() {
             dialog.widget().destroy();
         }
-        if let Some(tracker) = self.tracker.clone() {
+        if let Some(tracker) = self.session.tracker.clone() {
             sender.oneshot_command(async move {
                 let dir = tracker
                     .get_setting("downloads_dir")
@@ -85,7 +97,9 @@ impl App {
                     .ok()
                     .flatten()
                     .map(PathBuf::from);
-                AppCmdMsg::DownloadsDirUpdated(dir)
+                AppCmdMsg::Downloads(crate::app::messages::DownloadsCmdMsg::DownloadsDirUpdated(
+                    dir,
+                ))
             });
         }
     }
@@ -93,7 +107,7 @@ impl App {
     pub(crate) fn handle_nexus_api_key_updated(&mut self, sender: &ComponentSender<Self>) {
         self.show_toast("Nexus Mods key updated.");
         // Re-validate to refresh username and avatar displayed in the headerbar.
-        if let Some(tracker) = self.tracker.clone() {
+        if let Some(tracker) = self.session.tracker.clone() {
             sender.oneshot_command(async move {
                 let api_key = tracker
                     .get_setting("nexus_api_key")
@@ -107,24 +121,32 @@ impl App {
                         match client.validate_key().await {
                             Ok((user, _)) => {
                                 let _ = tracker.save_nexus_user(&user).await;
-                                AppCmdMsg::NexusUserRefreshed(
-                                    Some(user.name),
-                                    user.profile_url,
-                                    user.is_premium,
+                                AppCmdMsg::Shell(
+                                    crate::app::messages::ShellCmdMsg::NexusUserRefreshed(
+                                        Some(user.name),
+                                        user.profile_url,
+                                        user.is_premium,
+                                    ),
                                 )
                             }
-                            Err(_) => AppCmdMsg::NexusUserRefreshed(None, None, false),
+                            Err(_) => AppCmdMsg::Shell(
+                                crate::app::messages::ShellCmdMsg::NexusUserRefreshed(
+                                    None, None, false,
+                                ),
+                            ),
                         }
                     }
-                    None => AppCmdMsg::NexusUserRefreshed(None, None, false),
+                    None => AppCmdMsg::Shell(
+                        crate::app::messages::ShellCmdMsg::NexusUserRefreshed(None, None, false),
+                    ),
                 }
             });
         }
     }
 
     pub(crate) fn handle_nexus_login_clicked(&mut self, sender: &ComponentSender<Self>) {
-        self.nexus_user_btn.popdown();
-        let Some(tracker) = self.tracker.clone() else {
+        self.ui.nexus_user_btn.popdown();
+        let Some(tracker) = self.session.tracker.clone() else {
             self.push_notification("Database not ready yet");
             return;
         };
@@ -133,30 +155,40 @@ impl App {
             match crate::core::nexus_api::sso_login().await {
                 Ok(api_key) => {
                     if let Err(e) = tracker.set_setting("nexus_api_key", &api_key).await {
-                        let _ = input.send(AppMsg::ShowToast(format!("Login error: {e}")));
+                        let _ = input.send(AppMsg::Shell(
+                            crate::app::messages::ShellMsg::ShowToast(format!("Login error: {e}")),
+                        ));
                         return;
                     }
                     if let Err(e) = tracker.set_setting("nexus_login_source", "sso").await {
-                        let _ = input.send(AppMsg::ShowToast(format!("Login error: {e}")));
+                        let _ = input.send(AppMsg::Shell(
+                            crate::app::messages::ShellMsg::ShowToast(format!("Login error: {e}")),
+                        ));
                         return;
                     }
-                    let _ = input.send(AppMsg::NexusApiKeyUpdated);
+                    let _ = input.send(AppMsg::Games(
+                        crate::app::messages::GamesMsg::NexusApiKeyUpdated,
+                    ));
                 }
                 Err(e) => {
-                    let _ = input.send(AppMsg::ShowToast(format!("Nexus login failed: {e}")));
+                    let _ = input.send(AppMsg::Shell(crate::app::messages::ShellMsg::ShowToast(
+                        format!("Nexus login failed: {e}"),
+                    )));
                 }
             }
         });
     }
 
     pub(crate) fn handle_nexus_logout_clicked(&mut self, sender: &ComponentSender<Self>) {
-        self.nexus_user_btn.popdown();
-        let Some(tracker) = self.tracker.clone() else {
+        self.ui.nexus_user_btn.popdown();
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
         sender.oneshot_command(async move {
             let _ = tracker.clear_nexus_user().await;
-            AppCmdMsg::NexusUserRefreshed(None, None, false)
+            AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::NexusUserRefreshed(
+                None, None, false,
+            ))
         });
         self.show_toast("Logged out of Nexus Mods");
     }
@@ -166,13 +198,13 @@ impl App {
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
-        let detected: Vec<crate::models::game::Game> = self.games.clone();
-        let cache_dirs = self.game_cache_dirs.clone();
-        let can_export_for_snap = self.running_as_appimage
+        let detected: Vec<crate::models::game::Game> = self.session.games.clone();
+        let cache_dirs = self.session.game_cache_dirs.clone();
+        let can_export_for_snap = self.shell.running_as_appimage
             && std::env::var_os("SNAP").is_none()
             && utils::experimental_enabled();
 
-        self.game_setup_dialog = Some(
+        self.ui.game_setup_dialog = Some(
             GameSetupDialog::builder()
                 .transient_for(root)
                 .launch((detected, vec![], cache_dirs, can_export_for_snap))
@@ -180,17 +212,26 @@ impl App {
                     GameSetupOutput::Confirmed {
                         enabled,
                         hidden_ids,
-                    } => AppMsg::GamesConfigured(enabled, hidden_ids),
-                    GameSetupOutput::Closed => AppMsg::ManageGamesClosed,
+                    } => AppMsg::Games(crate::app::messages::GamesMsg::GamesConfigured(
+                        enabled, hidden_ids,
+                    )),
+                    GameSetupOutput::Closed => {
+                        AppMsg::Games(crate::app::messages::GamesMsg::ManageGamesClosed)
+                    }
                     GameSetupOutput::CacheDirChangeRequested { game_id, new_dir } => {
-                        AppMsg::CacheDirChangeRequested { game_id, new_dir }
+                        AppMsg::Games(crate::app::messages::GamesMsg::CacheDirChangeRequested {
+                            game_id,
+                            new_dir,
+                        })
                     }
                     GameSetupOutput::CacheDirResetRequested { game_id } => {
-                        AppMsg::CacheDirResetRequested { game_id }
+                        AppMsg::Games(crate::app::messages::GamesMsg::CacheDirResetRequested {
+                            game_id,
+                        })
                     }
-                    GameSetupOutput::ExportForSnapRequested { game_id } => {
-                        AppMsg::ExportGameForSnap(game_id)
-                    }
+                    GameSetupOutput::ExportForSnapRequested { game_id } => AppMsg::Migration(
+                        crate::app::messages::MigrationMsg::ExportGameForSnap(game_id),
+                    ),
                 }),
         );
     }
@@ -201,7 +242,7 @@ impl App {
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
-        if !self.running_as_appimage || std::env::var_os("SNAP").is_some() {
+        if !self.shell.running_as_appimage || std::env::var_os("SNAP").is_some() {
             self.show_toast("Snap migration export is only available from the AppImage.");
             return;
         }
@@ -209,7 +250,7 @@ impl App {
             self.show_toast("Snap migration export is experimental and disabled.");
             return;
         }
-        let Some(game) = self.games.iter().find(|g| g.id == game_id) else {
+        let Some(game) = self.session.games.iter().find(|g| g.id == game_id) else {
             self.show_toast("Game is no longer managed.");
             return;
         };
@@ -238,10 +279,12 @@ impl App {
             {
                 let output_path = normalize_export_path(path);
                 input_sender
-                    .send(AppMsg::ExportGameForSnapChosen {
-                        game_id: game_id.clone(),
-                        output_path,
-                    })
+                    .send(AppMsg::Migration(
+                        crate::app::messages::MigrationMsg::ExportGameForSnapChosen {
+                            game_id: game_id.clone(),
+                            output_path,
+                        },
+                    ))
                     .ok();
             }
         });
@@ -253,7 +296,7 @@ impl App {
         output_path: PathBuf,
         sender: &ComponentSender<Self>,
     ) {
-        if !self.running_as_appimage || std::env::var_os("SNAP").is_some() {
+        if !self.shell.running_as_appimage || std::env::var_os("SNAP").is_some() {
             self.show_toast("Snap migration export is only available from the AppImage.");
             return;
         }
@@ -261,7 +304,7 @@ impl App {
             self.show_toast("Snap migration export is experimental and disabled.");
             return;
         }
-        let Some(game) = self.games.iter().find(|g| g.id == game_id).cloned() else {
+        let Some(game) = self.session.games.iter().find(|g| g.id == game_id).cloned() else {
             self.show_toast("Game is no longer managed.");
             return;
         };
@@ -278,13 +321,13 @@ impl App {
         let request = ExportGameRequest {
             game,
             cache_root,
-            downloads_dir: self.downloads_dir.clone(),
+            downloads_dir: self.download.directory.clone(),
             output_path,
         };
         sender.oneshot_command(async move {
-            AppCmdMsg::GameExportedForSnap(
+            AppCmdMsg::Migration(crate::app::messages::MigrationCmdMsg::GameExportedForSnap(
                 export_game_bundle(request).await.map_err(|e| e.to_string()),
-            )
+            ))
         });
     }
 
@@ -343,7 +386,9 @@ impl App {
                 && let Some(path) = file.path()
             {
                 input_sender
-                    .send(AppMsg::PreviewAppImageExportChosen(path))
+                    .send(AppMsg::Migration(
+                        crate::app::messages::MigrationMsg::PreviewAppImageExportChosen(path),
+                    ))
                     .ok();
             }
         });
@@ -362,7 +407,7 @@ impl App {
             self.show_toast("AppImage export import is experimental and disabled.");
             return;
         }
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             self.push_notification("Database not ready yet.");
             return;
         };
@@ -372,10 +417,12 @@ impl App {
             "Previewing AppImage export...",
         );
         sender.oneshot_command(async move {
-            AppCmdMsg::AppImageExportPreviewed(
-                preview_import_bundle(&tracker, PreviewImportRequest { bundle_path })
-                    .await
-                    .map_err(|e| e.to_string()),
+            AppCmdMsg::Migration(
+                crate::app::messages::MigrationCmdMsg::AppImageExportPreviewed(
+                    preview_import_bundle(&tracker, PreviewImportRequest { bundle_path })
+                        .await
+                        .map_err(|e| e.to_string()),
+                ),
             )
         });
     }
@@ -407,7 +454,7 @@ impl App {
             self.show_toast("AppImage export import is experimental and disabled.");
             return;
         }
-        self.pending_migration_import = Some(PendingMigrationImport {
+        self.ui.pending_migration_import = Some(PendingMigrationImport {
             bundle_path,
             confirmed_game_path: None,
             confirmed_wine_prefix: None,
@@ -426,7 +473,7 @@ impl App {
             self.push_notification(&message);
             return;
         }
-        let Some(pending) = self.pending_migration_import.as_mut() else {
+        let Some(pending) = self.ui.pending_migration_import.as_mut() else {
             return;
         };
         pending.confirmed_game_path = Some(path);
@@ -443,7 +490,7 @@ impl App {
             self.push_notification(&message);
             return;
         }
-        let Some(pending) = self.pending_migration_import.as_mut() else {
+        let Some(pending) = self.ui.pending_migration_import.as_mut() else {
             return;
         };
         pending.confirmed_wine_prefix = Some(path);
@@ -459,7 +506,7 @@ impl App {
             self.show_toast("AppImage export import is experimental and disabled.");
             return;
         }
-        let Some(pending) = self.pending_migration_import.take() else {
+        let Some(pending) = self.ui.pending_migration_import.take() else {
             return;
         };
         let Some(confirmed_game_path) = pending.confirmed_game_path else {
@@ -470,7 +517,7 @@ impl App {
             self.show_toast("Import cancelled: Wine prefix was not confirmed.");
             return;
         };
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             self.push_notification("Database not ready yet.");
             return;
         };
@@ -482,10 +529,12 @@ impl App {
             confirmed_wine_prefix,
         };
         sender.oneshot_command(async move {
-            AppCmdMsg::AppImageExportImported(
-                import_bundle(&tracker, request)
-                    .await
-                    .map_err(|e| e.to_string()),
+            AppCmdMsg::Migration(
+                crate::app::messages::MigrationCmdMsg::AppImageExportImported(
+                    import_bundle(&tracker, request)
+                        .await
+                        .map_err(|e| e.to_string()),
+                ),
             )
         });
     }
@@ -499,14 +548,21 @@ impl App {
         match result {
             Ok(result) => {
                 let imported_id = result.game.id.clone();
-                self.all_downloads = result.download_entries;
-                if self.games.iter().all(|game| game.id != imported_id) {
-                    self.game_model.append(&result.game.title);
-                    self.games.push(result.game.clone());
+                self.download.all = result.download_entries;
+                if self.session.games.iter().all(|game| game.id != imported_id) {
+                    self.ui.game_model.append(&result.game.title);
+                    self.session.games.push(result.game.clone());
                 }
-                if let Some(idx) = self.games.iter().position(|game| game.id == imported_id) {
-                    self.game_dropdown.set_selected(idx as u32);
-                    sender.input(AppMsg::GameSelected(idx as u32));
+                if let Some(idx) = self
+                    .session
+                    .games
+                    .iter()
+                    .position(|game| game.id == imported_id)
+                {
+                    self.ui.game_dropdown.set_selected(idx as u32);
+                    sender.input(AppMsg::Games(crate::app::messages::GamesMsg::GameSelected(
+                        idx as u32,
+                    )));
                 }
                 self.rebuild_downloads_view();
                 if !result.warnings.is_empty() {
@@ -543,7 +599,11 @@ impl App {
             if let Ok(file) = result
                 && let Some(path) = file.path()
             {
-                input_sender.send(AppMsg::ImportGameFolderChosen(path)).ok();
+                input_sender
+                    .send(AppMsg::Migration(
+                        crate::app::messages::MigrationMsg::ImportGameFolderChosen(path),
+                    ))
+                    .ok();
             }
         });
     }
@@ -562,18 +622,22 @@ impl App {
             if let Ok(file) = result
                 && let Some(path) = file.path()
             {
-                input_sender.send(AppMsg::ImportWinePrefixChosen(path)).ok();
+                input_sender
+                    .send(AppMsg::Migration(
+                        crate::app::messages::MigrationMsg::ImportWinePrefixChosen(path),
+                    ))
+                    .ok();
             }
         });
     }
 
     pub(crate) fn handle_games_configured(
         &mut self,
-        configs: Vec<crate::app::messages::GameConfig>,
+        configs: Vec<crate::models::game::GameConfig>,
         hidden_ids: Vec<String>,
         sender: &ComponentSender<Self>,
     ) {
-        if let Some(dialog) = self.game_setup_dialog.take() {
+        if let Some(dialog) = self.ui.game_setup_dialog.take() {
             dialog.widget().close();
         }
 
@@ -581,21 +645,21 @@ impl App {
             return;
         }
 
-        let n_existing = self.game_model.n_items();
+        let n_existing = self.ui.game_model.n_items();
         for _ in 0..n_existing {
-            self.game_model.remove(0);
+            self.ui.game_model.remove(0);
         }
-        self.games.clear();
+        self.session.games.clear();
 
         for cfg in &configs {
-            self.game_model.append(&cfg.game.title);
-            self.games.push(cfg.game.clone());
+            self.ui.game_model.append(&cfg.game.title);
+            self.session.games.push(cfg.game.clone());
         }
 
-        if let Some(tracker) = self.tracker.clone() {
+        if let Some(tracker) = self.session.tracker.clone() {
             let configs_for_db = configs.clone();
             let hidden_for_db = hidden_ids;
-            let first_game_id = self.games.first().map(|g| g.id.clone());
+            let first_game_id = self.session.games.first().map(|g| g.id.clone());
             sender.oneshot_command(async move {
                 for cfg in &configs_for_db {
                     let engine_str = match cfg.game.engine {
@@ -622,33 +686,33 @@ impl App {
                 if let Some(id) = first_game_id {
                     let _ = tracker.set_setting("last_game_id", &id).await;
                 }
-                AppCmdMsg::GamesPersisted
+                AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::GamesPersisted)
             });
         }
 
-        self.pending_new_game_ids.clear();
-        self.selected_game_idx = 0;
-        self.game_dropdown.set_selected(0);
+        self.session.pending_new_game_ids.clear();
+        self.session.selected_game_idx = 0;
+        self.ui.game_dropdown.set_selected(0);
     }
 
     pub(crate) fn handle_manage_games_closed(&mut self, sender: &ComponentSender<Self>) {
-        let ids = std::mem::take(&mut self.pending_new_game_ids);
+        let ids = std::mem::take(&mut self.session.pending_new_game_ids);
         if ids.is_empty() {
             return;
         }
         // Remove the new (unconfirmed) games from the in-memory list and the dropdown.
         for id in &ids {
-            if let Some(idx) = self.games.iter().position(|g| &g.id == id) {
-                self.games.remove(idx);
-                self.game_model.remove(idx as u32);
+            if let Some(idx) = self.session.games.iter().position(|g| &g.id == id) {
+                self.session.games.remove(idx);
+                self.ui.game_model.remove(idx as u32);
             }
         }
-        if let Some(tracker) = self.tracker.clone() {
+        if let Some(tracker) = self.session.tracker.clone() {
             sender.oneshot_command(async move {
                 for id in &ids {
                     let _ = tracker.hide_game(id).await;
                 }
-                AppCmdMsg::PrioritySaved(Ok(()))
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(())))
             });
         }
     }
@@ -658,7 +722,7 @@ impl App {
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
-        self.welcome_wizard = Some(
+        self.ui.welcome_wizard = Some(
             WelcomeWizard::builder()
                 .transient_for(root)
                 .launch(())
@@ -666,23 +730,27 @@ impl App {
                     WelcomeWizardOutput::Confirmed {
                         enabled,
                         hidden_ids,
-                    } => AppMsg::WelcomeWizardConfirmed(enabled, hidden_ids),
-                    WelcomeWizardOutput::Skipped => AppMsg::WelcomeWizardSkipped,
+                    } => AppMsg::Games(crate::app::messages::GamesMsg::WelcomeWizardConfirmed(
+                        enabled, hidden_ids,
+                    )),
+                    WelcomeWizardOutput::Skipped => {
+                        AppMsg::Games(crate::app::messages::GamesMsg::WelcomeWizardSkipped)
+                    }
                 }),
         );
     }
 
     pub(crate) fn handle_welcome_wizard_confirmed(
         &mut self,
-        configs: Vec<crate::app::messages::GameConfig>,
+        configs: Vec<crate::models::game::GameConfig>,
         hidden_ids: Vec<String>,
         sender: &ComponentSender<Self>,
     ) {
-        if let Some(w) = self.welcome_wizard.take() {
+        if let Some(w) = self.ui.welcome_wizard.take() {
             w.widget().close();
         }
         // Persist the wizard-shown marker so we don't show it again.
-        if let Some(ref tracker) = self.tracker {
+        if let Some(ref tracker) = self.session.tracker {
             let t = tracker.clone();
             relm4::spawn(async move {
                 let _ = t.set_setting("welcome_wizard_shown", "1").await;
@@ -694,7 +762,9 @@ impl App {
         // External-file scan is deliberately omitted here: it must run *after* GameSelected
         // loads the game data and creates the vanilla snapshot, otherwise every game file
         // would be flagged as a new external change.
-        sender.input(AppMsg::ScanDownloadsFolder);
+        sender.input(AppMsg::Downloads(
+            crate::app::messages::DownloadsMsg::ScanDownloadsFolder,
+        ));
     }
 
     pub(crate) fn confirm_remove_game(
@@ -715,16 +785,20 @@ impl App {
         let s = sender.input_sender().clone();
         dialog.connect_response(None, move |_, response| match response {
             "remove" => {
-                let _ = s.send(AppMsg::RemoveGameConfirmed {
-                    game_id: game_id.clone(),
-                    delete_mods: false,
-                });
+                let _ = s.send(AppMsg::Games(
+                    crate::app::messages::GamesMsg::RemoveGameConfirmed {
+                        game_id: game_id.clone(),
+                        delete_mods: false,
+                    },
+                ));
             }
             "remove-delete" => {
-                let _ = s.send(AppMsg::RemoveGameConfirmed {
-                    game_id: game_id.clone(),
-                    delete_mods: true,
-                });
+                let _ = s.send(AppMsg::Games(
+                    crate::app::messages::GamesMsg::RemoveGameConfirmed {
+                        game_id: game_id.clone(),
+                        delete_mods: true,
+                    },
+                ));
             }
             _ => {}
         });
@@ -737,14 +811,14 @@ impl App {
         delete_mods: bool,
         sender: &ComponentSender<Self>,
     ) {
-        let Some(idx) = self.games.iter().position(|g| g.id == game_id) else {
+        let Some(idx) = self.session.games.iter().position(|g| g.id == game_id) else {
             return;
         };
 
-        self.games.remove(idx);
-        self.game_model.remove(idx as u32);
+        self.session.games.remove(idx);
+        self.ui.game_model.remove(idx as u32);
 
-        if let Some(tracker) = self.tracker.clone() {
+        if let Some(tracker) = self.session.tracker.clone() {
             let cache_root = self
                 .cache_root_for(&game_id)
                 .unwrap_or_else(|_| crate::utils::paths::cache_root().unwrap_or_default());
@@ -761,18 +835,20 @@ impl App {
                         }
                     }
                 }
-                AppCmdMsg::PrioritySaved(Ok(()))
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(())))
             });
         }
 
-        if self.games.is_empty() {
+        if self.session.games.is_empty() {
             return;
         }
 
-        let new_idx = idx.min(self.games.len() - 1);
-        self.selected_game_idx = new_idx;
-        self.game_dropdown.set_selected(new_idx as u32);
-        sender.input(AppMsg::GameSelected(new_idx as u32));
+        let new_idx = idx.min(self.session.games.len() - 1);
+        self.session.selected_game_idx = new_idx;
+        self.ui.game_dropdown.set_selected(new_idx as u32);
+        sender.input(AppMsg::Games(crate::app::messages::GamesMsg::GameSelected(
+            new_idx as u32,
+        )));
     }
 }
 
@@ -843,7 +919,9 @@ fn show_migration_preview_dialog(
     dialog.connect_response(None, move |_, response| {
         if response == "import" {
             input_sender
-                .send(AppMsg::ImportAppImageExport(bundle_path.clone()))
+                .send(AppMsg::Migration(
+                    crate::app::messages::MigrationMsg::ImportAppImageExport(bundle_path.clone()),
+                ))
                 .ok();
         }
     });

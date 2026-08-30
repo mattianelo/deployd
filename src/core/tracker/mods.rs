@@ -204,15 +204,6 @@ impl Tracker {
                 .context("Failed to get FOMOD selections")?;
         Ok(row.and_then(|(v,)| v))
     }
-
-    /// Get all mods that have Nexus IDs (for update checking).
-    pub async fn mods_with_nexus_ids(&self, game_id: &str) -> Result<Vec<ModEntry>> {
-        let all = self.list_mods(game_id).await?;
-        Ok(all
-            .into_iter()
-            .filter(|m| m.nexus_mod_id.is_some())
-            .collect())
-    }
 }
 
 #[cfg(test)]
@@ -220,7 +211,7 @@ mod tests {
     use super::*;
 
     async fn make_tracker() -> Result<Tracker> {
-        let tracker = Tracker::open("sqlite::memory:").await?;
+        let tracker = Tracker::open("sqlite::memory:").await?.tracker;
         sqlx::query(
             "INSERT INTO games (id, title, path, data_subdir)
              VALUES ('g', 'Test', '/tmp/g', 'Data')",

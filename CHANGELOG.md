@@ -19,6 +19,8 @@
   reviewed inactive-driver exception if RSA ever becomes reachable.
 - Recoverable startup, installation, and stale-dialog failures now report or safely cancel the
   affected action instead of terminating Deployd.
+- Database startup now stops with actionable context when a required schema upgrade cannot be
+  applied, while retryable metadata backfills surface warnings and are retried on a later launch.
 - Stable version tags now validate all release metadata before GitLab publishes the AppImage to
   Nexus Mods and the GitHub mirror independently builds and publishes the Snap to the stable
   Snap Store channel; manual GitHub runs build an auditable Snap artifact without store access.

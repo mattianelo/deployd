@@ -2,13 +2,13 @@ use gtk::prelude::*;
 use relm4::prelude::*;
 
 use super::super::App;
-use super::super::free_fns::{GameLoadMode, fetch_avatar_bytes, load_game_data};
 use super::super::messages::{AppCmdMsg, AppMsg};
+use super::super::session::{GameLoadMode, fetch_avatar_bytes, load_game_data};
 use super::super::types::{InitData, LoadedData, WorkKind};
 
 impl App {
     pub(crate) fn handle_cmd_last_deployed_profile_loaded(&mut self, id: Option<String>) {
-        self.last_deployed_profile_id = id;
+        self.session.last_deployed_profile_id = id;
     }
 
     pub(crate) fn handle_cmd_nexus_avatar_loaded(&mut self, bytes: Option<Vec<u8>>) {
@@ -20,7 +20,7 @@ impl App {
             match gtk::gdk::Texture::from_bytes(&gtk::glib::Bytes::from_owned(bytes)) {
                 Ok(texture) => {
                     crate::dlog!("[avatar] texture created, setting custom image");
-                    self.nexus_avatar_widget.set_custom_image(Some(&texture));
+                    self.ui.nexus_avatar_widget.set_custom_image(Some(&texture));
                 }
                 Err(error) => {
                     crate::dlog!("[avatar] Texture::from_bytes failed: {error}");
@@ -41,15 +41,18 @@ impl App {
             username,
             avatar_url,
         );
-        self.nexus_username = username.clone();
-        self.nexus_avatar_url = avatar_url.clone();
-        self.nexus_is_premium = is_premium;
-        self.nexus_avatar_widget.set_text(username.as_deref());
-        self.nexus_avatar_widget
+        self.shell.nexus_username = username.clone();
+        self.shell.nexus_avatar_url = avatar_url.clone();
+        self.shell.nexus_is_premium = is_premium;
+        self.ui.nexus_avatar_widget.set_text(username.as_deref());
+        self.ui
+            .nexus_avatar_widget
             .set_custom_image(None::<&gtk::gdk::Texture>);
         if let Some(url) = avatar_url {
             sender.oneshot_command(async move {
-                AppCmdMsg::NexusAvatarLoaded(fetch_avatar_bytes(&url).await)
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::NexusAvatarLoaded(
+                    fetch_avatar_bytes(&url).await,
+                ))
             });
         } else {
             crate::dlog!("[avatar] NexusUserRefreshed: no avatar URL, showing initials");
@@ -63,9 +66,9 @@ impl App {
     ) {
         match result {
             Ok(data) => {
-                self.tracker = Some(data.tracker);
+                self.session.tracker = Some(data.tracker);
 
-                for game in &mut self.games {
+                for game in &mut self.session.games {
                     if let Some(persisted) = data.persisted_games.iter().find(|p| p.id == game.id) {
                         game.path = persisted.path.clone();
                         if persisted.wine_prefix.is_some() {
@@ -75,7 +78,7 @@ impl App {
                 }
 
                 let known_ids: std::collections::HashSet<String> =
-                    self.games.iter().map(|g| g.id.clone()).collect();
+                    self.session.games.iter().map(|g| g.id.clone()).collect();
                 for persisted in data.persisted_games.iter().filter(|p| p.custom) {
                     if !known_ids.contains(&persisted.id) {
                         let engine = match persisted.engine.as_str() {
@@ -84,8 +87,8 @@ impl App {
                             "aurora" => crate::models::game::GameEngine::Aurora,
                             _ => crate::models::game::GameEngine::Bethesda,
                         };
-                        self.game_model.append(&persisted.title);
-                        self.games.push(crate::models::game::Game {
+                        self.ui.game_model.append(&persisted.title);
+                        self.session.games.push(crate::models::game::Game {
                             id: persisted.id.clone(),
                             title: persisted.title.clone(),
                             path: persisted.path.clone(),
@@ -100,8 +103,9 @@ impl App {
 
                 // One-time migration: persist any corrected data_subdir values to DB
                 // so subsequent loads get the right value directly.
-                if let Some(tracker) = self.tracker.clone() {
+                if let Some(tracker) = self.session.tracker.clone() {
                     let migrations: Vec<_> = self
+                        .session
                         .games
                         .iter()
                         .filter_map(|g| {
@@ -154,53 +158,59 @@ impl App {
                 if !data.hidden_game_ids.is_empty() {
                     let hidden: std::collections::HashSet<&str> =
                         data.hidden_game_ids.iter().map(String::as_str).collect();
-                    let n = self.game_model.n_items();
+                    let n = self.ui.game_model.n_items();
                     for _ in 0..n {
-                        self.game_model.remove(0);
+                        self.ui.game_model.remove(0);
                     }
-                    self.games.retain(|g| !hidden.contains(g.id.as_str()));
-                    for g in &self.games {
-                        self.game_model.append(&g.title);
+                    self.session
+                        .games
+                        .retain(|g| !hidden.contains(g.id.as_str()));
+                    for g in &self.session.games {
+                        self.ui.game_model.append(&g.title);
                     }
                 }
 
-                // Resolve the correct game index now that self.games is fully merged
+                // Resolve the correct game index now that self.session.games is fully merged
                 // and pruned. Computing this from persisted_games order (as init.rs did)
-                // was wrong because self.games uses the detected-games order.
+                // was wrong because self.session.games uses the detected-games order.
                 let target_idx = data
                     .init_game_id
                     .as_deref()
-                    .and_then(|id| self.games.iter().position(|g| g.id == id))
+                    .and_then(|id| self.session.games.iter().position(|g| g.id == id))
                     .unwrap_or(0);
-                self.selected_game_idx = target_idx;
-                self.game_dropdown.set_selected(target_idx as u32);
+                self.session.selected_game_idx = target_idx;
+                self.ui.game_dropdown.set_selected(target_idx as u32);
 
-                self.nexus_username = data.nexus_username.clone();
-                self.nexus_avatar_url = data.nexus_avatar_url.clone();
-                self.nexus_is_premium = data.nexus_is_premium;
+                self.shell.nexus_username = data.nexus_username.clone();
+                self.shell.nexus_avatar_url = data.nexus_avatar_url.clone();
+                self.shell.nexus_is_premium = data.nexus_is_premium;
                 crate::dlog!(
                     "[avatar] init: username={:?} avatar_url={:?}",
-                    self.nexus_username,
-                    self.nexus_avatar_url,
+                    self.shell.nexus_username,
+                    self.shell.nexus_avatar_url,
                 );
                 if let Some(username) = data.nexus_username.as_deref() {
-                    self.nexus_avatar_widget.set_text(Some(username));
+                    self.ui.nexus_avatar_widget.set_text(Some(username));
                 }
                 if let Some(url) = data.nexus_avatar_url.clone() {
                     sender.oneshot_command(async move {
-                        AppCmdMsg::NexusAvatarLoaded(fetch_avatar_bytes(&url).await)
+                        AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::NexusAvatarLoaded(
+                            fetch_avatar_bytes(&url).await,
+                        ))
                     });
                 } else {
                     crate::dlog!("[avatar] init: no avatar URL, showing initials");
                 }
 
                 if data.first_launch {
-                    self.initializing = false;
-                    sender.input(AppMsg::ShowWelcomeWizard);
+                    self.session.initializing = false;
+                    sender.input(AppMsg::Games(
+                        crate::app::messages::GamesMsg::ShowWelcomeWizard,
+                    ));
                     return;
                 }
 
-                self.collapsed_groups = data
+                self.mods.collapsed_groups = data
                     .groups
                     .iter()
                     .filter(|g| g.collapsed)
@@ -223,25 +233,27 @@ impl App {
                     plugin_scan_complete: data.plugin_scan_complete,
                 };
                 self.apply_loaded_data(loaded, sender);
-                self.last_deployed_profile_id = data.last_deployed_profile_id;
+                self.session.last_deployed_profile_id = data.last_deployed_profile_id;
 
                 if let Some(dir) = data.downloads_dir {
-                    self.downloads_dir = dir;
+                    self.download.directory = dir;
                 }
 
-                self.game_cache_dirs = data.game_cache_dirs;
-                self.all_downloads = data.download_entries;
+                self.session.game_cache_dirs = data.game_cache_dirs;
+                self.download.all = data.download_entries;
                 self.rebuild_downloads_view();
 
-                self.rate_limit_info = data.rate_limit_info;
+                self.download.rate_limit = data.rate_limit_info;
 
                 self.handle_set_color_scheme(data.color_scheme_idx);
 
-                if let Some(nxm) = self.pending_nxm.take() {
-                    sender.input(AppMsg::NxmLinkReceived(nxm));
+                if let Some(nxm) = self.download.pending_nxm.take() {
+                    sender.input(AppMsg::Downloads(
+                        crate::app::messages::DownloadsMsg::NxmLinkReceived(nxm),
+                    ));
                 }
 
-                self.initializing = false;
+                self.session.initializing = false;
 
                 if data.restored_from_backup {
                     self.push_notification(
@@ -250,11 +262,15 @@ impl App {
                     );
                 }
 
-                sender.input(AppMsg::ScanDownloadsFolder);
-                sender.input(AppMsg::ScanExternalFiles);
+                sender.input(AppMsg::Downloads(
+                    crate::app::messages::DownloadsMsg::ScanDownloadsFolder,
+                ));
+                sender.input(AppMsg::Mods(
+                    crate::app::messages::ModsMsg::ScanExternalFiles,
+                ));
 
                 let input = sender.input_sender().clone();
-                let tracker_for_update = self.tracker.clone();
+                let tracker_for_update = self.session.tracker.clone();
                 relm4::spawn(async move {
                     let api_key = if let Some(ref t) = tracker_for_update {
                         t.get_setting("nexus_api_key").await.ok().flatten()
@@ -264,12 +280,17 @@ impl App {
                     if let Some(info) =
                         crate::core::update_check::check_for_app_update(api_key).await
                     {
-                        let _ = input.send(AppMsg::AppUpdateAvailable(info.version, info.url));
+                        let _ = input.send(AppMsg::Shell(
+                            crate::app::messages::ShellMsg::AppUpdateAvailable(
+                                info.version,
+                                info.url,
+                            ),
+                        ));
                     }
                 });
             }
             Err(e) => {
-                self.initializing = false;
+                self.session.initializing = false;
                 self.push_notification(&format!("Init failed: {e}"));
             }
         }
@@ -288,7 +309,7 @@ impl App {
     ) {
         match result {
             Ok((data, save_sync)) => {
-                self.needs_deploy = true;
+                self.shell.needs_deploy = true;
                 self.apply_loaded_data(data, sender);
                 self.save_last_profile(sender);
                 if let Some(sync) = save_sync {
@@ -311,7 +332,7 @@ impl App {
         match result {
             Ok(data) => {
                 self.apply_loaded_data(data, sender);
-                self.needs_deploy = true;
+                self.shell.needs_deploy = true;
                 self.save_last_profile(sender);
                 self.show_toast("Empty profile created — Deploy to purge game folder");
             }
@@ -331,8 +352,9 @@ impl App {
                 self.apply_loaded_data(data, sender);
                 self.save_last_profile(sender);
                 let name = self
+                    .session
                     .profiles
-                    .get(self.active_profile_idx)
+                    .get(self.session.active_profile_idx)
                     .map(|p| p.name.clone())
                     .unwrap_or_default();
                 self.show_toast(&format!("Cloned as '{name}'"));
@@ -350,7 +372,7 @@ impl App {
     ) {
         match result {
             Ok(data) => {
-                self.needs_deploy = true;
+                self.shell.needs_deploy = true;
                 self.apply_loaded_data(data, sender);
                 self.show_toast("Profile deleted");
             }
@@ -363,17 +385,28 @@ impl App {
     pub(crate) fn handle_cmd_profile_renamed(&mut self, result: Result<(), String>) {
         match result {
             Ok(()) => {
-                let new_name = self.profile_rename_entry.text().to_string();
-                if let Some(p) = self.profiles.get_mut(self.active_profile_idx) {
+                let new_name = self.ui.profile_rename_entry.text().to_string();
+                if let Some(p) = self
+                    .session
+                    .profiles
+                    .get_mut(self.session.active_profile_idx)
+                {
                     p.name = new_name;
                 }
-                let names: Vec<&str> = self.profiles.iter().map(|p| p.name.as_str()).collect();
-                self.updating_profiles = true;
-                self.profile_model
-                    .splice(0, self.profile_model.n_items(), &names);
-                self.profile_dropdown
-                    .set_selected(self.active_profile_idx as u32);
-                self.updating_profiles = false;
+                let names: Vec<&str> = self
+                    .session
+                    .profiles
+                    .iter()
+                    .map(|p| p.name.as_str())
+                    .collect();
+                self.session.updating_profiles = true;
+                self.ui
+                    .profile_model
+                    .splice(0, self.ui.profile_model.n_items(), &names);
+                self.ui
+                    .profile_dropdown
+                    .set_selected(self.session.active_profile_idx as u32);
+                self.session.updating_profiles = false;
                 self.show_toast("Profile renamed");
             }
             Err(e) => {
@@ -404,7 +437,7 @@ impl App {
         match result {
             Ok(name) => {
                 self.show_toast(&format!("Launched {name}"));
-                if let Some(session) = self.tool_launch_session.as_ref() {
+                if let Some(session) = self.tools.launch_session.as_ref() {
                     self.update_work(
                         WorkKind::LaunchingTool,
                         format!("{} is running", session.tool_name),
@@ -414,15 +447,15 @@ impl App {
                     self.close_tool_launch_dialog();
                     self.finish_work(WorkKind::LaunchingTool);
                 }
-                if self.proton_setup {
+                if self.tools.proton_setup {
                     self.begin_work(WorkKind::SettingUpRuntime, "Finishing Proton GE setup...");
                 }
             }
             Err(e) => {
                 self.close_tool_launch_dialog();
-                self.tool_launch_session = None;
+                self.tools.launch_session = None;
                 self.finish_work(WorkKind::LaunchingTool);
-                self.proton_setup = false;
+                self.tools.proton_setup = false;
                 self.finish_work(WorkKind::SettingUpRuntime);
                 crate::dlog!("deployd: tool launch error: {e}");
                 self.push_notification(&format!("Launch failed: {e}"));
@@ -432,8 +465,8 @@ impl App {
 
     pub(crate) fn handle_cmd_tool_launch_cancelled(&mut self, _name: String) {
         self.close_tool_launch_dialog();
-        self.tool_launch_session = None;
-        self.proton_setup = false;
+        self.tools.launch_session = None;
+        self.tools.proton_setup = false;
         self.finish_work(WorkKind::LaunchingTool);
         self.finish_work(WorkKind::SettingUpRuntime);
     }
@@ -445,14 +478,14 @@ impl App {
     ) {
         match result {
             Ok(()) => {
-                if let Some(tracker) = self.tracker.clone()
+                if let Some(tracker) = self.session.tracker.clone()
                     && let Some(game) = self.selected_game().cloned()
                 {
                     sender.oneshot_command(async move {
-                        AppCmdMsg::ModsLoaded(
+                        AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::ModsLoaded(
                             load_game_data(&tracker, &game, GameLoadMode::Refresh).await,
                             true,
-                        )
+                        ))
                     });
                 }
             }
@@ -468,7 +501,11 @@ impl App {
     ) {
         match result {
             Ok(sync) => {
-                if let Some(p) = self.profiles.get_mut(self.active_profile_idx) {
+                if let Some(p) = self
+                    .session
+                    .profiles
+                    .get_mut(self.session.active_profile_idx)
+                {
                     p.save_synced_at = Some(std::time::SystemTime::now());
                 }
                 self.show_toast(&sync.to_toast());

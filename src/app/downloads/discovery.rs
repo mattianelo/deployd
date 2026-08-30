@@ -1,9 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use crate::core::game;
+use crate::core::nexus_identity::parse_nexus_mod_id;
 use crate::models::download::NexusIds;
-
-use super::super::free_fns::parse_nexus_mod_id;
 
 pub(super) struct DiscoveredArchive {
     pub path: PathBuf,

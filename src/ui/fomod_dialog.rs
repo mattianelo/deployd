@@ -28,7 +28,6 @@ pub fn default_fomod_selections(
 ) -> FomodSelections {
     FomodSelections {
         selections: compute_default_selections(config, active_files),
-        flags: std::collections::HashMap::new(),
     }
 }
 
@@ -94,11 +93,6 @@ impl FomodDialog {
             }
         }
         flags
-    }
-
-    /// Accumulate all flags from all steps.
-    fn all_flags(&self) -> HashMap<String, String> {
-        self.accumulated_flags(self.config.steps.len())
     }
 
     /// Check if a step should be shown: has user-input groups AND visibility conditions are met.
@@ -739,10 +733,8 @@ impl SimpleComponent for FomodDialog {
                 self.update_preview();
             }
             FomodDialogMsg::Confirm => {
-                let flags = self.all_flags();
                 let selections = FomodSelections {
                     selections: self.selections.clone(),
-                    flags,
                 };
                 sender.output(FomodDialogOutput::Confirmed(selections)).ok();
             }

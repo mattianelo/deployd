@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use relm4::Sender;
 
 use super::messages::AppMsg;
+use super::state::InstallIdentity;
 
 const MIN_PROGRESS_INTERVAL: Duration = Duration::from_millis(75);
 
@@ -30,6 +31,7 @@ impl ProgressState {
 
 pub(crate) fn throttled_install_progress(
     sender: Sender<AppMsg>,
+    identity: InstallIdentity,
     label: &'static str,
 ) -> Box<dyn Fn(usize, usize) + Send> {
     let state = Mutex::new(ProgressState { last_emit: None });
@@ -49,9 +51,12 @@ pub(crate) fn throttled_install_progress(
             } else {
                 done as f64 / total as f64
             };
-            let _ = sender.send(AppMsg::InstallProgress(
-                fraction.clamp(0.0, 1.0),
-                format!("{label} file {done}/{total}"),
+            let _ = sender.send(AppMsg::Install(
+                crate::app::messages::InstallMsg::InstallProgress(
+                    identity.clone(),
+                    fraction.clamp(0.0, 1.0),
+                    format!("{label} file {done}/{total}"),
+                ),
             ));
         }
     })
@@ -59,6 +64,7 @@ pub(crate) fn throttled_install_progress(
 
 pub(crate) fn throttled_download_install_progress(
     sender: Sender<AppMsg>,
+    identity: InstallIdentity,
     download_id: String,
     phase_message: &'static str,
 ) -> Box<dyn Fn(usize, usize) + Send> {
@@ -84,14 +90,19 @@ pub(crate) fn throttled_download_install_progress(
             } else {
                 format!("{phase_message} ({done}/{total})")
             };
-            let _ = sender.send(AppMsg::InstallProgress(
-                fraction.clamp(0.0, 1.0),
-                detail.clone(),
+            let _ = sender.send(AppMsg::Install(
+                crate::app::messages::InstallMsg::InstallProgress(
+                    identity.clone(),
+                    fraction.clamp(0.0, 1.0),
+                    detail.clone(),
+                ),
             ));
-            let _ = sender.send(AppMsg::DownloadProgress(
-                download_id.clone(),
-                fraction.clamp(0.0, 1.0),
-                detail,
+            let _ = sender.send(AppMsg::Downloads(
+                crate::app::messages::DownloadsMsg::DownloadProgress(
+                    download_id.clone(),
+                    fraction.clamp(0.0, 1.0),
+                    detail,
+                ),
             ));
         }
     })

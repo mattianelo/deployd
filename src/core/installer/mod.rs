@@ -62,21 +62,36 @@ pub struct AddResult {
     pub plugins_found: Vec<String>,
 }
 
-#[allow(clippy::too_many_arguments)] // All parameters are meaningfully distinct; a builder struct would add complexity without clarity.
-pub async fn add_mod_with_file_list(
-    file_list: Vec<(PathBuf, PathBuf)>,
-    game: &Game,
-    mod_name: &str,
-    tracker: &Tracker,
-    cache_root: &Path,
-    nexus_ids: Option<NexusIds>,
-    archive_hash: Option<String>,
-    archive_path: Option<String>,
-    file_targets: HashMap<String, InstallTarget>,
-    stripped_wrapper: Option<String>,
-    excluded_files: &HashSet<String>,
-    on_progress: Option<Box<dyn Fn(usize, usize) + Send>>,
-) -> Result<AddResult> {
+pub(crate) struct AddModRequest<'a> {
+    pub(crate) file_list: Vec<(PathBuf, PathBuf)>,
+    pub(crate) game: &'a Game,
+    pub(crate) mod_name: &'a str,
+    pub(crate) tracker: &'a Tracker,
+    pub(crate) cache_root: &'a Path,
+    pub(crate) nexus_ids: Option<NexusIds>,
+    pub(crate) archive_hash: Option<String>,
+    pub(crate) archive_path: Option<String>,
+    pub(crate) file_targets: HashMap<String, InstallTarget>,
+    pub(crate) stripped_wrapper: Option<String>,
+    pub(crate) excluded_files: &'a HashSet<String>,
+    pub(crate) on_progress: Option<Box<dyn Fn(usize, usize) + Send>>,
+}
+
+pub(crate) async fn add_mod_with_file_list(request: AddModRequest<'_>) -> Result<AddResult> {
+    let AddModRequest {
+        file_list,
+        game,
+        mod_name,
+        tracker,
+        cache_root,
+        nexus_ids,
+        archive_hash,
+        archive_path,
+        file_targets,
+        stripped_wrapper,
+        excluded_files,
+        on_progress,
+    } = request;
     let mod_id = Uuid::new_v4().to_string();
 
     let plan = deployment::route_and_plan(
@@ -171,19 +186,32 @@ pub async fn add_mod_with_file_list(
     })
 }
 
-#[allow(clippy::too_many_arguments)] // All parameters are meaningfully distinct; a builder struct would add complexity without clarity.
-pub async fn merge_files_into_mod(
-    file_list: Vec<(PathBuf, PathBuf)>,
-    game: &Game,
-    mod_name: &str,
-    existing_mod_id: &str,
-    tracker: &Tracker,
-    cache_root: &Path,
-    file_targets: HashMap<String, InstallTarget>,
-    stripped_wrapper: Option<String>,
-    excluded_files: &HashSet<String>,
-    on_progress: Option<Box<dyn Fn(usize, usize) + Send>>,
-) -> Result<usize> {
+pub(crate) struct MergeModRequest<'a> {
+    pub(crate) file_list: Vec<(PathBuf, PathBuf)>,
+    pub(crate) game: &'a Game,
+    pub(crate) mod_name: &'a str,
+    pub(crate) existing_mod_id: &'a str,
+    pub(crate) tracker: &'a Tracker,
+    pub(crate) cache_root: &'a Path,
+    pub(crate) file_targets: HashMap<String, InstallTarget>,
+    pub(crate) stripped_wrapper: Option<String>,
+    pub(crate) excluded_files: &'a HashSet<String>,
+    pub(crate) on_progress: Option<Box<dyn Fn(usize, usize) + Send>>,
+}
+
+pub(crate) async fn merge_files_into_mod(request: MergeModRequest<'_>) -> Result<usize> {
+    let MergeModRequest {
+        file_list,
+        game,
+        mod_name,
+        existing_mod_id,
+        tracker,
+        cache_root,
+        file_targets,
+        stripped_wrapper,
+        excluded_files,
+        on_progress,
+    } = request;
     let plan = deployment::route_and_plan(
         file_list,
         game,

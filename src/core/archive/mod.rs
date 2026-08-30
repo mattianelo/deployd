@@ -7,8 +7,8 @@ use md5::Md5;
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
-use super::paths;
 use crate::dlog;
+use crate::utils::paths;
 
 /// Compute a SHA-256 hex digest of an archive file.
 ///

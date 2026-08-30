@@ -23,7 +23,7 @@ pub struct DeployResult {
 }
 
 pub async fn purge(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result<usize> {
-    let game_data = paths::game_data_dir(game);
+    let game_data = game::deploy_dir(game);
     bake_modified_plugins(game, tracker, &game_data).await;
 
     let deployed = tracker.get_deployed_files(&game.id).await?;
@@ -63,7 +63,7 @@ pub async fn purge(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result<
 }
 
 pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result<DeployResult> {
-    let game_data = paths::game_data_dir(game);
+    let game_data = game::deploy_dir(game);
 
     bake_modified_plugins(game, tracker, &game_data).await;
 

@@ -13,9 +13,11 @@ REQUIRED_FILES = (
     "fossil.toml",
     "rust-toolchain.toml",
     "scripts/ci_file_size.py",
+    "scripts/ci_dependency_direction.py",
     "scripts/ci_policy.py",
     "scripts/rust-command.sh",
     "scripts/test_ci_file_size.py",
+    "scripts/test_ci_dependency_direction.py",
 )
 INSTRUCTION_FILES = ("README.md",)
 STALE_PATHS = (

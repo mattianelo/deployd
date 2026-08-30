@@ -15,9 +15,9 @@ impl App {
         use crate::core::nexus_api::NexusClient;
         use crate::core::nxm::NxmLink;
 
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             // DB not initialized yet, store for processing after init completes
-            self.pending_nxm = Some(uri);
+            self.download.pending_nxm = Some(uri);
             return;
         };
 
@@ -44,17 +44,17 @@ impl App {
             domain: link.domain.clone(),
         });
         let entry = DownloadEntry::new(download_id.clone(), mod_name, nexus_ids);
-        self.all_downloads.push(entry.clone());
+        self.download.all.push(entry.clone());
         // Push directly to the factory instead of calling rebuild_downloads_view().
         // rebuild_downloads_view() has an early-return guard for active downloads,
         // so it would skip adding this entry — leaving it invisible until the next
         // unguarded rebuild (e.g. sort or scan). Pushing directly avoids that.
         {
-            let mut guard = self.downloads.guard();
+            let mut guard = self.download.rows.guard();
             guard.push_back(entry);
         }
         self.refresh_download_counts();
-        self.downloads_visible = true;
+        self.download.visible = true;
 
         let input_sender = sender.input_sender().clone();
         sender.oneshot_command(async move {
@@ -84,19 +84,23 @@ impl App {
                     client.get_mod_info(&link.domain, link.mod_id).await
                 {
                     if let Some(rl) = rate_limits {
-                        let _ = input_sender.send(AppMsg::RateLimitUpdated(rl));
+                        let _ = input_sender.send(AppMsg::Downloads(
+                            crate::app::messages::DownloadsMsg::RateLimitUpdated(rl),
+                        ));
                     }
                     mod_info_version = Some(mod_info.version.clone());
                     let mod_author = mod_info.author.clone();
-                    let _ = input_sender.send(AppMsg::DownloadNameResolved(
-                        download_id.clone(),
-                        mod_info.name,
-                        Some(link.domain.clone()),
-                        None,
-                        false,
-                        None,
-                        None,
-                        Some(mod_author),
+                    let _ = input_sender.send(AppMsg::Downloads(
+                        crate::app::messages::DownloadsMsg::DownloadNameResolved(
+                            download_id.clone(),
+                            mod_info.name,
+                            Some(link.domain.clone()),
+                            None,
+                            false,
+                            None,
+                            None,
+                            Some(mod_author),
+                        ),
                     ));
                 }
 
@@ -112,7 +116,9 @@ impl App {
                     .await
                     .map_err(|e| e.to_string())?;
                 if let Some(rl) = rate_limits {
-                    let _ = input_sender.send(AppMsg::RateLimitUpdated(rl));
+                    let _ = input_sender.send(AppMsg::Downloads(
+                        crate::app::messages::DownloadsMsg::RateLimitUpdated(rl),
+                    ));
                 }
 
                 let download_url = links
@@ -126,7 +132,9 @@ impl App {
                     .await
                     .map_err(|e| e.to_string())?;
                 if let Some(rl) = rate_limits {
-                    let _ = input_sender.send(AppMsg::RateLimitUpdated(rl));
+                    let _ = input_sender.send(AppMsg::Downloads(
+                        crate::app::messages::DownloadsMsg::RateLimitUpdated(rl),
+                    ));
                 }
 
                 let nexus_file = files.files.iter().find(|f| f.file_id == link.file_id);
@@ -169,10 +177,12 @@ impl App {
                             let frac = downloaded as f64 / total as f64;
                             let mb_done = downloaded as f64 / 1_048_576.0;
                             let mb_total = total as f64 / 1_048_576.0;
-                            let _ = progress_sender.send(AppMsg::DownloadProgress(
-                                dl_id.clone(),
-                                frac,
-                                format!("Downloading {mb_done:.1}/{mb_total:.1} MB"),
+                            let _ = progress_sender.send(AppMsg::Downloads(
+                                crate::app::messages::DownloadsMsg::DownloadProgress(
+                                    dl_id.clone(),
+                                    frac,
+                                    format!("Downloading {mb_done:.1}/{mb_total:.1} MB"),
+                                ),
                             ));
                         }
                     })
@@ -192,7 +202,10 @@ impl App {
                 })
             }
             .await;
-            AppCmdMsg::NxmDownloadComplete(download_id, result)
+            AppCmdMsg::Downloads(crate::app::messages::DownloadsCmdMsg::NxmDownloadComplete(
+                download_id,
+                result,
+            ))
         });
     }
 }

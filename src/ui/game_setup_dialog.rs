@@ -5,11 +5,10 @@ use adw::prelude::*;
 use gtk::prelude::*;
 use relm4::prelude::*;
 
-use crate::app::cache;
-use crate::app::messages::GameConfig;
 use crate::core::game;
 use crate::core::tracker::PersistedGame;
-use crate::models::game::{Game, GameEngine};
+use crate::models::game::{Game, GameConfig, GameEngine};
+use crate::utils::paths;
 use crate::utils::snap::{self, SelectedFolderKind};
 
 /// One row in the games list: a manually added game.
@@ -215,7 +214,7 @@ impl GameSetupDialog {
         let cache_row = adw::ActionRow::new();
         cache_row.set_title("Cache Folder");
         cache_row.set_subtitle_lines(1);
-        let cache_subtitle = cache::display_cache_root(cache_dir.as_ref());
+        let cache_subtitle = display_cache_root(cache_dir.as_ref());
         cache_row.set_subtitle(&gtk::glib::markup_escape_text(&cache_subtitle));
 
         let cache_browse_btn = gtk::Button::from_icon_name("folder-symbolic");
@@ -283,6 +282,21 @@ impl GameSetupDialog {
         dialog.set_default_response(Some("close"));
         dialog.set_close_response("close");
         dialog.present(Some(root));
+    }
+}
+
+fn display_cache_root(custom: Option<&PathBuf>) -> String {
+    match custom {
+        Some(path) => path.to_string_lossy().into_owned(),
+        None => paths::cache_root()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| {
+                if std::env::var_os("SNAP_USER_COMMON").is_some() {
+                    "$SNAP_USER_COMMON/deployd/cache".to_string()
+                } else {
+                    "~/.local/share/deployd/cache".to_string()
+                }
+            }),
     }
 }
 

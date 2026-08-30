@@ -23,27 +23,11 @@ pub enum SearchScope {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) enum DownloadSort {
-    #[default]
-    Default,
-    Name,
-    Status,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ModFilter {
     #[default]
     All,
     Enabled,
     Issues,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum DownloadFilter {
-    #[default]
-    All,
-    Active,
-    Completed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -176,7 +160,7 @@ pub struct InitData {
     pub active_profile_idx: usize,
     pub tools: Vec<Tool>,
     /// ID of the game that should be selected on startup. Resolved to a list index
-    /// in handle_cmd_initialized after self.games is fully merged and pruned.
+    /// in handle_cmd_initialized after self.session.games is fully merged and pruned.
     pub init_game_id: Option<String>,
     pub downloads_dir: Option<PathBuf>,
     pub game_cache_dirs: HashMap<String, PathBuf>,

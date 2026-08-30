@@ -3,8 +3,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::SystemTime;
 
-use gtk::prelude::{ListModelExt, WidgetExt};
-
 use crate::core::tracker::Tracker;
 use crate::core::{detector, game, save_manager};
 use crate::models::game::Game;
@@ -12,6 +10,8 @@ use crate::models::profile::SaveMode;
 use crate::utils::snap::{self, SelectedFolderKind};
 
 use super::types::LoadedData;
+
+mod state;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 struct VanillaHeaderCacheKey {
@@ -23,129 +23,6 @@ struct VanillaHeaderCacheKey {
 
 static VANILLA_HEADER_CACHE: OnceLock<Mutex<HashMap<VanillaHeaderCacheKey, usize>>> =
     OnceLock::new();
-
-/// Extracts the 10-digit Nexus CDN timestamp appended to downloaded filenames
-/// (e.g. `ModName-12345-1.0-1604483725.7z` → `Some(1604483725)`).
-/// This timestamp corresponds to `NexusFileEntry::uploaded_timestamp` and is used
-/// as a tiebreaker when multiple Nexus files normalize to the same base name.
-pub(crate) fn extract_nexus_timestamp(filename: &str) -> Option<i64> {
-    let stem = filename
-        .rsplit_once('.')
-        .map(|(l, _)| l)
-        .unwrap_or(filename);
-    nexus_timestamp_suffix(stem)?.parse().ok()
-}
-
-/// Normalizes a Nexus filename for comparison against `NexusFileEntry.file_name`.
-///
-/// Strips the file extension and then the 10-digit Unix timestamp that the Nexus CDN
-/// appends during browser/manager downloads (e.g. `foo-1.0-1756684569.7z` → `foo-1.0`).
-/// The API stores the canonical name without the timestamp, so both sides must be
-/// normalized before comparing.
-pub(crate) fn normalize_nexus_filename(s: &str) -> String {
-    let stem = s.rsplit_once('.').map(|(l, _)| l).unwrap_or(s);
-    nexus_timestamp_suffix(stem)
-        .and_then(|timestamp| stem.strip_suffix(timestamp))
-        .and_then(|prefix| prefix.strip_suffix('-'))
-        .unwrap_or(stem)
-        .to_string()
-}
-
-fn nexus_timestamp_suffix(value: &str) -> Option<&str> {
-    let (_, suffix) = value.rsplit_once('-')?;
-    (suffix.len() == 10 && suffix.bytes().all(|byte| byte.is_ascii_digit())).then_some(suffix)
-}
-
-/// Parse a Nexus mod ID from a filename following the convention `ModName-MODID-VERSION.ext`.
-///
-/// Primary strategy: first 3+ digit number between dashes (skips 1-2 digit version segments).
-/// Fallback: first all-digit segment < 1_000_000_000 (handles 1-2 digit mod IDs, filters out
-/// the 10-digit Unix timestamp file_id that Nexus appends as the last segment).
-///
-/// Examples:
-/// - `SkyUI_5_2_SE-12604-5-2SE.zip` → Some(12604)
-/// - `Unofficial Skyrim Special Edition Patch-266-4-3-0a.zip` → Some(266)
-/// - `LooksMenu v1-6-20-12631-1-6-20-1604483725.7z` → Some(12631)
-/// - `BodySlide and Outfit Studio - v5.7.1-201-5-7-1-1753636918` → Some(201)
-/// - `my_custom_mod.zip` → None
-pub(crate) fn parse_nexus_mod_id(filename: &str) -> Option<i64> {
-    // Primary: first 3+ digit number between dashes (handles most mods; version segments are ≤2 digits)
-    if let Ok(re) = regex::Regex::new(r"-(\d{3,})-")
-        && let Some(caps) = re.captures(filename)
-        && let Some(id) = caps.get(1).and_then(|m| m.as_str().parse::<i64>().ok())
-        && id > 0
-        && id < 1_000_000_000
-    {
-        return Some(id);
-    }
-    // Fallback: first all-digit segment < 1B (handles 1-2 digit mod IDs; excludes timestamp file_ids)
-    let stem = filename
-        .rsplit_once('.')
-        .map(|(s, _)| s)
-        .unwrap_or(filename);
-    for part in stem.split('-') {
-        if !part.is_empty()
-            && part.chars().all(|c| c.is_ascii_digit())
-            && let Ok(n) = part.parse::<i64>()
-            && n > 0
-            && n < 1_000_000_000
-        {
-            return Some(n);
-        }
-    }
-    None
-}
-
-/// Parse a Nexus mod ID from direct user input.
-///
-/// Accepts a bare positive integer or a Nexus URL whose path contains the mod ID
-/// as a numeric segment, such as `https://www.nexusmods.com/witcher/mods/101`.
-pub(crate) fn parse_nexus_mod_id_from_input(raw: &str) -> Option<i64> {
-    let raw = raw.trim();
-    if let Ok(id) = raw.parse::<i64>() {
-        return (id > 0).then_some(id);
-    }
-
-    let path = raw.split(['?', '#']).next().unwrap_or(raw);
-    path.trim_end_matches('/')
-        .rsplit('/')
-        .find_map(|seg| seg.parse::<i64>().ok().filter(|&id| id > 0))
-}
-
-/// Clear all drop indicator CSS classes from a ListBox's rows.
-pub(crate) fn clear_drop_indicators(list_box: &gtk::ListBox) {
-    let mut idx = 0;
-    while let Some(row) = list_box.row_at_index(idx) {
-        row.remove_css_class("drop-above");
-        row.remove_css_class("drop-below");
-        idx += 1;
-    }
-}
-
-/// Show a drop indicator on the row under the cursor.
-/// Separator rows (group headers) are skipped — the indicator is placed on the
-/// nearest mod row above or below the cursor instead.
-pub(crate) fn update_drop_indicator(list_box: &gtk::ListBox, y: f64) {
-    clear_drop_indicators(list_box);
-    // If the cursor is past the last row, show a drop-below indicator on it.
-    let row = list_box.row_at_y(y as i32).or_else(|| {
-        let n = list_box.observe_children().n_items();
-        n.checked_sub(1)
-            .and_then(|i| list_box.row_at_index(i as i32))
-    });
-    if let Some(row) = row {
-        if row.has_css_class("mod-separator-row") {
-            return;
-        }
-        let alloc = row.allocation();
-        let mid = alloc.y() + alloc.height() / 2;
-        if (y as i32) < mid {
-            row.add_css_class("drop-above");
-        } else {
-            row.add_css_class("drop-below");
-        }
-    }
-}
 
 #[derive(Clone, Copy)]
 pub(crate) enum GameLoadMode {
@@ -474,74 +351,7 @@ mod tests {
     use anyhow::Result;
     use tempfile::tempdir;
 
-    use super::{
-        extract_nexus_timestamp, normalize_nexus_filename, parse_nexus_mod_id,
-        parse_nexus_mod_id_from_input, scan_vanilla_plugins,
-    };
-
-    #[test]
-    fn extracts_only_ten_digit_nexus_timestamp_suffixes() {
-        assert_eq!(
-            extract_nexus_timestamp("mod-1756684569.7z"),
-            Some(1_756_684_569)
-        );
-        assert_eq!(extract_nexus_timestamp("mod-175668456.7z"), None);
-        assert_eq!(extract_nexus_timestamp("mod-175668456x.7z"), None);
-    }
-
-    #[test]
-    fn normalizes_only_nexus_timestamp_suffixes() {
-        assert_eq!(normalize_nexus_filename("foo-1.0-1756684569.7z"), "foo-1.0");
-        assert_eq!(
-            normalize_nexus_filename("foo-1.0-175668456.7z"),
-            "foo-1.0-175668456"
-        );
-        assert_eq!(normalize_nexus_filename("foo-1.0.zip"), "foo-1.0");
-    }
-
-    // Regression: manually fetched metadata for NEO must target the page ID, not the CDN timestamp.
-    // @variants: both
-    #[test]
-    fn parses_nexus_mod_id_from_timestamped_archive_name() {
-        assert_eq!(
-            parse_nexus_mod_id("NEO-65761-3-1-1-1763043682"),
-            Some(65761)
-        );
-    }
-
-    #[test]
-    fn parses_bare_nexus_mod_id() {
-        assert_eq!(parse_nexus_mod_id_from_input("101"), Some(101));
-        assert_eq!(parse_nexus_mod_id_from_input("  101  "), Some(101));
-    }
-
-    #[test]
-    fn parses_nexus_mod_id_from_url() {
-        assert_eq!(
-            parse_nexus_mod_id_from_input("https://www.nexusmods.com/witcher/mods/101"),
-            Some(101)
-        );
-        assert_eq!(
-            parse_nexus_mod_id_from_input(
-                "https://www.nexusmods.com/skyrimspecialedition/mods/12604/"
-            ),
-            Some(12604)
-        );
-        assert_eq!(
-            parse_nexus_mod_id_from_input(
-                "https://www.nexusmods.com/skyrimspecialedition/mods/12604?tab=files"
-            ),
-            Some(12604)
-        );
-    }
-
-    #[test]
-    fn rejects_invalid_nexus_mod_id_input() {
-        assert_eq!(parse_nexus_mod_id_from_input(""), None);
-        assert_eq!(parse_nexus_mod_id_from_input("0"), None);
-        assert_eq!(parse_nexus_mod_id_from_input("-1"), None);
-        assert_eq!(parse_nexus_mod_id_from_input("not a nexus id"), None);
-    }
+    use super::scan_vanilla_plugins;
 
     // Regression: a stale Snap document-portal grant must not look like an empty Data folder.
     // @variants: snap

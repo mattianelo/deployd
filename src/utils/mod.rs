@@ -1,4 +1,3 @@
-pub mod archive;
 pub mod fomod_resolver;
 pub mod nxm_handler;
 pub mod paths;

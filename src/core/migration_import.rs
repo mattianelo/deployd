@@ -710,7 +710,7 @@ mod tests {
         let snap_common = fixture._temp.path().join("snap-common");
         let _env = EnvVarGuard::set("SNAP_USER_COMMON", &snap_common);
         let export_url = format!("sqlite://{}?mode=rwc", fixture.export_db.display());
-        let export_tracker = Tracker::open(&export_url).await?;
+        let export_tracker = Tracker::open(&export_url).await?.tracker;
         export_tracker
             .set_setting("last_deployed_profile_skyrim-se", "missing-profile")
             .await?;
@@ -1011,7 +1011,7 @@ mod tests {
 
             let snap_db = temp.path().join("snap.db");
             let snap_url = format!("sqlite://{}?mode=rwc", snap_db.display());
-            let snap_tracker = Tracker::open(&snap_url).await?;
+            let snap_tracker = Tracker::open(&snap_url).await?.tracker;
 
             Ok(Self {
                 bundle_path: temp.path().join("preview.deployd-export.zip"),
@@ -1074,7 +1074,7 @@ mod tests {
     }
 
     async fn create_export_db(url: &str) -> Result<()> {
-        let tracker = Tracker::open(url).await?;
+        let tracker = Tracker::open(url).await?.tracker;
         tracker
             .upsert_game(
                 "skyrim-se",

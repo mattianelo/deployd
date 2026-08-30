@@ -3,7 +3,6 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use adw;
 use gtk::glib;
 use gtk::prelude::*;
 use relm4::factory::FactoryVecDeque;
@@ -11,67 +10,99 @@ use relm4::prelude::*;
 
 use crate::core::game;
 use crate::core::tracker::Tracker;
+use crate::models::download::{DownloadFilter, DownloadSort};
 use crate::models::game::{Game, GameEngine};
-use crate::ui::download_row::DownloadRowOutput;
+use crate::ui::bottom_status::BottomStatus;
+use crate::ui::download_row::{DownloadRow, DownloadRowOutput};
+use crate::ui::header::{Header, HeaderInit, HeaderOutput, HeaderState};
 use crate::ui::mod_list::ModListItemOutput;
 use crate::ui::plugin_list::PluginRowOutput;
 use crate::utils::paths;
 
-use super::free_fns::{GameLoadMode, clear_drop_indicators, load_game_data, update_drop_indicator};
-use super::types::{
-    DownloadFilter, DownloadSort, InitData, ModFilter, PostLootAction, SearchScope,
+use crate::ui::drag::{clear_drop_indicators, update_drop_indicator};
+
+use super::session::{GameLoadMode, load_game_data};
+use super::state::{
+    DownloadState, ModState, PluginState, SessionState, ShellState, ToolState, UiState,
 };
+use super::types::{InitData, ModFilter, PostLootAction, SearchScope};
 use super::{App, AppCmdMsg, AppMsg};
 
 /// Builds the initial App model, wires up factory lists, constructs UI helpers
 /// (profile rename popover, search bar), and registers the global NXM sender.
-/// Returns the model, the game ID list for the async init, the game list for
-/// the async init, the profile-rename menu button, and the search bar — all
-/// needed as `#[local_ref]` values by `view_output!()`.
+/// Returns the model, game identifiers used during initialization, and the
+/// search bar needed as a `#[local_ref]` value by `view_output!()`.
 pub(super) fn build_model(
     nxm_link: Option<String>,
     sender: &ComponentSender<App>,
-) -> (App, Vec<String>, Vec<Game>, gtk::MenuButton, gtk::SearchBar) {
+) -> (App, Vec<String>, Vec<Game>, gtk::SearchBar) {
     let mods =
         FactoryVecDeque::builder()
             .launch_default()
             .forward(sender.input_sender(), |output| match output {
-                ModListItemOutput::Reinstall(index) => AppMsg::ReinstallMod(index),
-                ModListItemOutput::OpenProperties(index) => AppMsg::OpenModProperties(index),
-                ModListItemOutput::ToggleGroupCollapse(index) => AppMsg::ToggleGroupCollapse(index),
-                ModListItemOutput::DeleteGroup(index) => AppMsg::DeleteGroup(index),
-                ModListItemOutput::RenameGroup(index, name) => AppMsg::RenameGroup(index, name),
+                ModListItemOutput::Reinstall(index) => {
+                    AppMsg::Mods(crate::app::messages::ModsMsg::ReinstallMod(index))
+                }
+                ModListItemOutput::OpenProperties(index) => {
+                    AppMsg::Mods(crate::app::messages::ModsMsg::OpenModProperties(index))
+                }
+                ModListItemOutput::ToggleGroupCollapse(index) => {
+                    AppMsg::Mods(crate::app::messages::ModsMsg::ToggleGroupCollapse(index))
+                }
+                ModListItemOutput::DeleteGroup(index) => {
+                    AppMsg::Mods(crate::app::messages::ModsMsg::DeleteGroup(index))
+                }
+                ModListItemOutput::RenameGroup(index, name) => {
+                    AppMsg::Mods(crate::app::messages::ModsMsg::RenameGroup(index, name))
+                }
                 ModListItemOutput::SetGroupColor(index, color) => {
-                    AppMsg::SetGroupColor(index, color)
+                    AppMsg::Mods(crate::app::messages::ModsMsg::SetGroupColor(index, color))
                 }
-                ModListItemOutput::SetSelected(index, selected) => {
-                    AppMsg::SetModRowSelected(index, selected)
-                }
+                ModListItemOutput::SetSelected(index, selected) => AppMsg::Mods(
+                    crate::app::messages::ModsMsg::SetModRowSelected(index, selected),
+                ),
             });
 
     let plugins =
         FactoryVecDeque::builder()
             .launch_default()
             .forward(sender.input_sender(), |output| match output {
-                PluginRowOutput::SetSelected(index, selected) => {
-                    AppMsg::SetPluginRowSelected(index, selected)
-                }
+                PluginRowOutput::SetSelected(index, selected) => AppMsg::Plugins(
+                    crate::app::messages::PluginsMsg::SetPluginRowSelected(index, selected),
+                ),
             });
 
-    let downloads =
-        FactoryVecDeque::builder()
-            .launch_default()
-            .forward(sender.input_sender(), |output| match output {
-                DownloadRowOutput::Install(index) => AppMsg::InstallDownload(index),
-                DownloadRowOutput::Reinstall(index) => AppMsg::ReinstallDownload(index),
-                DownloadRowOutput::FetchMetadata(index) => AppMsg::FetchDownloadMetadata(index),
-                DownloadRowOutput::ClearMetadata(index) => AppMsg::ClearDownloadMetadata(index),
-                DownloadRowOutput::Rename(index) => AppMsg::RenameDownload(index),
-                DownloadRowOutput::Pause(index) => AppMsg::PauseDownload(index),
-                DownloadRowOutput::Resume(index) => AppMsg::ResumeDownload(index),
-                DownloadRowOutput::Delete(index) => AppMsg::DeleteDownload(index),
-                DownloadRowOutput::HideDownload(index) => AppMsg::HideDownload(index),
-            });
+    let downloads: FactoryVecDeque<DownloadRow> = FactoryVecDeque::builder()
+        .launch_default()
+        .forward(sender.input_sender(), |output| match output {
+            DownloadRowOutput::Install(index) => {
+                AppMsg::Downloads(crate::app::messages::DownloadsMsg::InstallDownload(index))
+            }
+            DownloadRowOutput::Reinstall(index) => {
+                AppMsg::Downloads(crate::app::messages::DownloadsMsg::ReinstallDownload(index))
+            }
+            DownloadRowOutput::FetchMetadata(index) => AppMsg::Downloads(
+                crate::app::messages::DownloadsMsg::FetchDownloadMetadata(index),
+            ),
+            DownloadRowOutput::ClearMetadata(index) => AppMsg::Downloads(
+                crate::app::messages::DownloadsMsg::ClearDownloadMetadata(index),
+            ),
+            DownloadRowOutput::Rename(index) => {
+                AppMsg::Downloads(crate::app::messages::DownloadsMsg::RenameDownload(index))
+            }
+            DownloadRowOutput::Pause(index) => {
+                AppMsg::Downloads(crate::app::messages::DownloadsMsg::PauseDownload(index))
+            }
+            DownloadRowOutput::Resume(index) => {
+                AppMsg::Downloads(crate::app::messages::DownloadsMsg::ResumeDownload(index))
+            }
+            DownloadRowOutput::Delete(index) => {
+                AppMsg::Downloads(crate::app::messages::DownloadsMsg::DeleteDownload(index))
+            }
+            DownloadRowOutput::HideDownload(index) => {
+                AppMsg::Downloads(crate::app::messages::DownloadsMsg::HideDownload(index))
+            }
+        });
 
     // Games start empty; they are populated from the DB (persisted games) or via
     // the welcome wizard / Manage Games dialog.
@@ -137,121 +168,8 @@ pub(super) fn build_model(
     let mod_scroll = gtk::ScrolledWindow::new();
     let plugin_scroll = gtk::ScrolledWindow::new();
     let downloads_scroll = gtk::ScrolledWindow::new();
+    let download_list: gtk::ListBox = downloads.widget().clone();
 
-    let model = App {
-        initializing: true,
-        tracker: None,
-        games,
-        selected_game_idx: 0,
-        mods,
-        plugins,
-        installing: false,
-        deploying: false,
-        needs_deploy: false,
-        last_deployed_profile_id: None,
-        status_msg: None,
-        work_status: None,
-        toast_overlay: adw::ToastOverlay::new(),
-        notification_sender: sender.input_sender().clone(),
-        notification_list: gtk::ListBox::new(),
-        notification_count: 0,
-        profiles: vec![],
-        active_profile_idx: 0,
-        profile_model,
-        profile_dropdown,
-        game_model,
-        game_dropdown,
-        updating_profiles: false,
-        pending_install: None,
-        pre_install_dialog: None,
-        fomod_dialog: None,
-        tools: vec![],
-        tool_buttons_box,
-        tool_manager_dialog: None,
-        tool_launch_dialog: None,
-        tool_launch_cancel: None,
-        tool_launch_session: None,
-        game_setup_dialog: None,
-        welcome_wizard: None,
-        settings_dialog: None,
-        pending_migration_import: None,
-        mod_properties_dialog: None,
-        absorb_dialog: None,
-        profile_rename_entry: profile_rename_entry.clone(),
-        pending_nxm: nxm_link,
-        pending_nexus_ids: None,
-        downloads,
-        all_downloads: Vec::new(),
-        downloads_visible: false,
-        active_install_download_id: None,
-        metadata_fetch_previous_status: HashMap::new(),
-        active_download_count: 0,
-        global_active_downloads: 0,
-        downloads_dir: paths::default_downloads_dir(),
-        game_cache_dirs: HashMap::new(),
-        initial_scan_done: false,
-        search_active: false,
-        search_text: String::new(),
-        pending_search_text: None,
-        search_debounce: None,
-        search_scope: SearchScope::All,
-        rate_limit_info: None,
-        collapsed_groups: HashSet::new(),
-        mod_selection_active: false,
-        mod_selection_dirty: false,
-        selected_mods: HashSet::new(),
-        plugin_selection_active: false,
-        plugin_selection_dirty: false,
-        selected_plugins: HashSet::new(),
-        download_sort: DownloadSort::Default,
-        mod_filter: ModFilter::All,
-        download_filter: DownloadFilter::All,
-        show_hidden_downloads: false,
-        pending_external_files: Vec::new(),
-        external_changes_count: 0,
-        pending_replace_mod_id: None,
-        reinstall_mode: false,
-        pending_scroll_restore: None,
-        mod_scroll,
-        plugin_scroll,
-        downloads_scroll,
-        #[cfg(feature = "loot")]
-        dirty_plugins: HashMap::new(),
-        pending_post_loot_action: PostLootAction::None,
-        deploy_options_btn: gtk::MenuButton::new(),
-        notifications_menu_btn: gtk::MenuButton::new(),
-        overflow_menu_btn: gtk::MenuButton::new(),
-        profile_menu_btn: gtk::MenuButton::new(),
-        save_mode_btn: gtk::Button::new(),
-        sync_saves_btn: gtk::Button::new(),
-        show_vanilla_plugins: false,
-        managed_plugins_count: 0,
-        vanilla_plugin_names: Vec::new(),
-        vanilla_derived_plugins: HashSet::new(),
-        plugin_masters: HashMap::new(),
-        nexus_username: None,
-        nexus_avatar_url: None,
-        nexus_is_premium: false,
-        nexus_user_btn: gtk::MenuButton::new(),
-        nexus_avatar_widget: adw::Avatar::new(24, None, true),
-        app_update_version: None,
-        app_update_url: None,
-        running_as_appimage: std::env::var("APPIMAGE").is_ok(),
-        pending_new_game_ids: vec![],
-        mod_order_snapshots: Vec::new(),
-        plugin_order_snapshots: Vec::new(),
-        mod_snapshot_save_entry: gtk::Entry::new(),
-        plugin_snapshot_save_entry: gtk::Entry::new(),
-        mod_snapshots_list: gtk::ListBox::new(),
-        plugin_snapshots_list: gtk::ListBox::new(),
-        proton_setup: false,
-        color_scheme_idx: 0,
-        pending_fetched_name: None,
-        pending_file_id_needed: None,
-        pending_fomod_selections: None,
-    };
-
-    // Profile rename popover
     let rename_apply = gtk::Button::builder()
         .label("Rename")
         .css_classes(["suggested-action"])
@@ -269,11 +187,262 @@ pub(super) fn build_model(
     let rename_popover = gtk::Popover::builder().child(&rename_box).build();
     let profile_rename_btn = gtk::MenuButton::builder().popover(&rename_popover).build();
 
+    let notification_list = gtk::ListBox::new();
+    let deploy_options_btn = gtk::MenuButton::new();
+    let notifications_menu_btn = gtk::MenuButton::new();
+    let overflow_menu_btn = gtk::MenuButton::new();
+    let profile_menu_btn = gtk::MenuButton::new();
+    let save_mode_btn = gtk::Button::new();
+    let sync_saves_btn = gtk::Button::new();
+    let nexus_user_btn = gtk::MenuButton::new();
+    let nexus_avatar_widget = adw::Avatar::new(24, None, true);
+
+    let header = Header::builder()
+        .launch(HeaderInit {
+            state: HeaderState {
+                nexus_username: None,
+                nexus_is_premium: false,
+                has_games: !games.is_empty(),
+                initializing: true,
+                profile_count: 0,
+                save_mode_label: "Saves: Global".to_string(),
+                game_has_save_management: false,
+                can_sync_saves: false,
+                is_busy: false,
+                busy_message: "Working...".to_string(),
+                deploying: false,
+                needs_deploy: false,
+                notification_count: 0,
+                notification_badge: String::new(),
+                external_changes_count: 0,
+                app_update_version: None,
+                running_as_appimage: std::env::var("APPIMAGE").is_ok(),
+                global_active_count: 0,
+                downloads_visible: false,
+                search_active: false,
+            },
+            nexus_user_btn: nexus_user_btn.clone(),
+            nexus_avatar_widget: nexus_avatar_widget.clone(),
+            game_dropdown: game_dropdown.clone(),
+            profile_dropdown: profile_dropdown.clone(),
+            profile_menu_btn: profile_menu_btn.clone(),
+            profile_rename_btn: profile_rename_btn.clone(),
+            save_mode_btn,
+            sync_saves_btn,
+            deploy_options_btn: deploy_options_btn.clone(),
+            overflow_menu_btn: overflow_menu_btn.clone(),
+            notifications_menu_btn: notifications_menu_btn.clone(),
+            notification_list: notification_list.clone(),
+            tool_buttons_box: tool_buttons_box.clone(),
+        })
+        .forward(sender.input_sender(), |output| match output {
+            HeaderOutput::NexusLogoutClicked => {
+                AppMsg::Shell(crate::app::messages::ShellMsg::NexusLogoutClicked)
+            }
+            HeaderOutput::NexusLoginClicked => {
+                AppMsg::Shell(crate::app::messages::ShellMsg::NexusLoginClicked)
+            }
+            HeaderOutput::GameSelected(index) => {
+                AppMsg::Games(crate::app::messages::GamesMsg::GameSelected(index))
+            }
+            HeaderOutput::RemoveCurrentGame => {
+                AppMsg::Games(crate::app::messages::GamesMsg::RemoveCurrentGame)
+            }
+            HeaderOutput::ProfileSelected(index) => {
+                AppMsg::Games(crate::app::messages::GamesMsg::ProfileSelected(index))
+            }
+            HeaderOutput::NewProfileClicked => {
+                AppMsg::Games(crate::app::messages::GamesMsg::NewProfileClicked)
+            }
+            HeaderOutput::CloneProfileClicked => {
+                AppMsg::Games(crate::app::messages::GamesMsg::CloneProfileClicked)
+            }
+            HeaderOutput::DeleteProfileClicked => {
+                AppMsg::Games(crate::app::messages::GamesMsg::DeleteProfileClicked)
+            }
+            HeaderOutput::ToggleProfileSaveMode => {
+                AppMsg::Games(crate::app::messages::GamesMsg::ToggleProfileSaveMode)
+            }
+            HeaderOutput::SyncSaves => AppMsg::Games(crate::app::messages::GamesMsg::SyncSaves),
+            HeaderOutput::DeployClicked => {
+                AppMsg::Shell(crate::app::messages::ShellMsg::DeployClicked)
+            }
+            HeaderOutput::OpenDeploymentFolder => {
+                AppMsg::Shell(crate::app::messages::ShellMsg::OpenDeploymentFolder)
+            }
+            HeaderOutput::PurgeClicked => {
+                AppMsg::Shell(crate::app::messages::ShellMsg::PurgeClicked)
+            }
+            HeaderOutput::CreateEmptyMod => {
+                AppMsg::Mods(crate::app::messages::ModsMsg::CreateEmptyMod)
+            }
+            HeaderOutput::ResetVanillaBaseline => {
+                AppMsg::Plugins(crate::app::messages::PluginsMsg::ResetVanillaBaseline)
+            }
+            HeaderOutput::ManageToolsClicked => {
+                AppMsg::Tools(crate::app::messages::ToolsMsg::ManageToolsClicked)
+            }
+            HeaderOutput::SettingsClicked => {
+                AppMsg::Games(crate::app::messages::GamesMsg::SettingsClicked)
+            }
+            HeaderOutput::AbsorbExternalFiles => {
+                AppMsg::Mods(crate::app::messages::ModsMsg::AbsorbExternalFiles)
+            }
+            HeaderOutput::SelfUpdateDownload => {
+                AppMsg::Shell(crate::app::messages::ShellMsg::SelfUpdateDownload)
+            }
+            HeaderOutput::ClearNotifications => {
+                AppMsg::Shell(crate::app::messages::ShellMsg::ClearNotifications)
+            }
+            HeaderOutput::SetDownloadsVisible(visible) => AppMsg::Downloads(
+                crate::app::messages::DownloadsMsg::SetDownloadsVisible(visible),
+            ),
+            HeaderOutput::SearchToggled(active) => {
+                AppMsg::Shell(crate::app::messages::ShellMsg::SearchToggled(active))
+            }
+        });
+    let downloads_pane =
+        super::downloads::pane::launch(downloads_scroll.clone(), download_list, sender);
+    let bottom_status = BottomStatus::builder()
+        .launch(crate::ui::bottom_status::BottomStatusState {
+            initializing: true,
+            mod_status: "0 of 0 mods".to_string(),
+            plugin_status: "0 of 0 plugins".to_string(),
+            conflict_status: "0 conflicts".to_string(),
+            has_conflicts: false,
+            rate_limit_status: String::new(),
+            rate_limit_visible: false,
+            rate_limit_warning: false,
+            needs_deploy: false,
+            has_games: !games.is_empty(),
+        })
+        .detach();
+
+    let model = App {
+        shell: ShellState {
+            deploying: false,
+            needs_deploy: false,
+            status_msg: None,
+            work_status: None,
+            search_active: false,
+            search_text: String::new(),
+            pending_search_text: None,
+            search_debounce: None,
+            search_scope: SearchScope::All,
+            nexus_username: None,
+            nexus_avatar_url: None,
+            nexus_is_premium: false,
+            app_update_version: None,
+            app_update_url: None,
+            running_as_appimage: std::env::var("APPIMAGE").is_ok(),
+            color_scheme_idx: 0,
+        },
+        session: SessionState {
+            initializing: true,
+            tracker: None,
+            games,
+            selected_game_idx: 0,
+            profiles: vec![],
+            active_profile_idx: 0,
+            updating_profiles: false,
+            game_cache_dirs: HashMap::new(),
+            pending_new_game_ids: vec![],
+            last_deployed_profile_id: None,
+        },
+        mods: ModState {
+            rows: mods,
+            collapsed_groups: HashSet::new(),
+            selection_active: false,
+            selection_dirty: false,
+            selected: HashSet::new(),
+            filter: ModFilter::All,
+            pending_external_files: Vec::new(),
+            external_changes_count: 0,
+            pending_scroll_restore: None,
+            scroll: mod_scroll,
+            snapshots: Vec::new(),
+            snapshot_save_entry: gtk::Entry::new(),
+            snapshots_list: gtk::ListBox::new(),
+        },
+        plugins: PluginState {
+            rows: plugins,
+            selection_active: false,
+            selection_dirty: false,
+            selected: HashSet::new(),
+            scroll: plugin_scroll,
+            #[cfg(feature = "loot")]
+            dirty: HashMap::new(),
+            pending_post_loot_action: PostLootAction::None,
+            show_vanilla: false,
+            managed_count: 0,
+            vanilla_names: Vec::new(),
+            vanilla_derived: HashSet::new(),
+            masters: HashMap::new(),
+            snapshots: Vec::new(),
+            snapshot_save_entry: gtk::Entry::new(),
+            snapshots_list: gtk::ListBox::new(),
+        },
+        install: Default::default(),
+        tools: ToolState {
+            entries: vec![],
+            launch_cancel: None,
+            launch_session: None,
+            proton_setup: false,
+        },
+        ui: UiState {
+            header,
+            bottom_status,
+            toast_overlay: adw::ToastOverlay::new(),
+            notification_sender: sender.input_sender().clone(),
+            notification_list,
+            notification_count: 0,
+            profile_model,
+            profile_dropdown,
+            game_model,
+            game_dropdown,
+            pre_install_dialog: None,
+            fomod_dialog: None,
+            downloads_pane,
+            tool_buttons_box,
+            tool_manager_dialog: None,
+            tool_launch_dialog: None,
+            game_setup_dialog: None,
+            welcome_wizard: None,
+            settings_dialog: None,
+            pending_migration_import: None,
+            mod_properties_dialog: None,
+            absorb_dialog: None,
+            profile_rename_entry: profile_rename_entry.clone(),
+            deploy_options_btn,
+            notifications_menu_btn,
+            overflow_menu_btn,
+            profile_menu_btn,
+            nexus_user_btn,
+            nexus_avatar_widget,
+        },
+        download: DownloadState {
+            rows: downloads,
+            all: Vec::new(),
+            visible: false,
+            metadata_previous_status: HashMap::new(),
+            active_count: 0,
+            global_active_count: 0,
+            directory: paths::default_downloads_dir(),
+            initial_scan_done: false,
+            sort: DownloadSort::Default,
+            filter: DownloadFilter::All,
+            show_hidden: false,
+            scroll: downloads_scroll,
+            rate_limit: None,
+            pending_nxm: nxm_link,
+        },
+    };
+
     {
-        let entry_ref = model.profile_rename_entry.clone();
+        let entry_ref = model.ui.profile_rename_entry.clone();
         let sender = sender.input_sender().clone();
         let popover = rename_popover.clone();
-        let profile_menu_btn = model.profile_menu_btn.clone();
+        let profile_menu_btn = model.ui.profile_menu_btn.clone();
         {
             let entry_ref = entry_ref.clone();
             let sender = sender.clone();
@@ -282,7 +451,9 @@ pub(super) fn build_model(
             rename_apply.connect_clicked(move |_| {
                 let new_name = entry_ref.text().to_string();
                 if !new_name.is_empty() {
-                    let _ = sender.send(AppMsg::RenameProfile(new_name));
+                    let _ = sender.send(AppMsg::Games(
+                        crate::app::messages::GamesMsg::RenameProfile(new_name),
+                    ));
                 }
                 popover.popdown();
                 profile_menu_btn.popdown();
@@ -291,7 +462,9 @@ pub(super) fn build_model(
         entry_ref.connect_activate(move |e| {
             let new_name = e.text().to_string();
             if !new_name.is_empty() {
-                let _ = sender.send(AppMsg::RenameProfile(new_name));
+                let _ = sender.send(AppMsg::Games(
+                    crate::app::messages::GamesMsg::RenameProfile(new_name),
+                ));
             }
             popover.popdown();
             profile_menu_btn.popdown();
@@ -328,23 +501,21 @@ pub(super) fn build_model(
     {
         let sender = sender.input_sender().clone();
         search_entry.connect_search_changed(move |entry| {
-            let _ = sender.send(AppMsg::SearchChanged(entry.text().to_string()));
+            let _ = sender.send(AppMsg::Shell(
+                crate::app::messages::ShellMsg::SearchChanged(entry.text().to_string()),
+            ));
         });
     }
     {
         let sender = sender.input_sender().clone();
         scope_dropdown.connect_selected_notify(move |dd| {
-            let _ = sender.send(AppMsg::SearchScopeChanged(dd.selected()));
+            let _ = sender.send(AppMsg::Shell(
+                crate::app::messages::ShellMsg::SearchScopeChanged(dd.selected()),
+            ));
         });
     }
 
-    (
-        model,
-        game_ids,
-        games_for_init,
-        profile_rename_btn,
-        search_bar,
-    )
+    (model, game_ids, games_for_init, search_bar)
 }
 
 /// Returns the insertion index for a drag-drop using half-row precision: cursor in the
@@ -402,7 +573,9 @@ pub(super) fn wire_drag_drop(
             if let Some(row) = row_at_y {
                 let to = half_row_index(&row, y, len);
                 if from != to {
-                    let _ = mod_sender.send(AppMsg::MoveGroupTo(from, to));
+                    let _ = mod_sender.send(AppMsg::Mods(
+                        crate::app::messages::ModsMsg::MoveGroupTo(from, to),
+                    ));
                 }
             }
             return true;
@@ -423,9 +596,13 @@ pub(super) fn wire_drag_drop(
             list_box.unselect_all();
             if selected.contains(&from) && selected.len() > 1 {
                 selected.sort_unstable();
-                let _ = mod_sender.send(AppMsg::MoveSelectedModsTo { selected, from, to });
+                let _ = mod_sender.send(AppMsg::Mods(
+                    crate::app::messages::ModsMsg::MoveSelectedModsTo { selected, from, to },
+                ));
             } else if from != to {
-                let _ = mod_sender.send(AppMsg::MoveModTo(from, to));
+                let _ = mod_sender.send(AppMsg::Mods(crate::app::messages::ModsMsg::MoveModTo(
+                    from, to,
+                )));
             }
         }
         true
@@ -513,7 +690,9 @@ pub(super) fn wire_drag_drop(
             let to = half_row_index(&row, y, len);
             list_box.unselect_all();
             if from != to {
-                let _ = plugin_sender.send(AppMsg::MovePluginTo(from, to));
+                let _ = plugin_sender.send(AppMsg::Plugins(
+                    crate::app::messages::PluginsMsg::MovePluginTo(from, to),
+                ));
             }
         }
         true
@@ -540,12 +719,16 @@ pub(super) fn wire_drag_drop(
 
     let sel_sender = sender.input_sender().clone();
     mod_list.connect_row_activated(move |_, row| {
-        let _ = sel_sender.send(AppMsg::ToggleModRowSelected(row.index() as usize));
+        let _ = sel_sender.send(AppMsg::Mods(
+            crate::app::messages::ModsMsg::ToggleModRowSelected(row.index() as usize),
+        ));
     });
 
     let sel_sender = sender.input_sender().clone();
     plugin_list.connect_row_activated(move |_, row| {
-        let _ = sel_sender.send(AppMsg::TogglePluginRowSelected(row.index() as usize));
+        let _ = sel_sender.send(AppMsg::Plugins(
+            crate::app::messages::PluginsMsg::TogglePluginRowSelected(row.index() as usize),
+        ));
     });
 }
 
@@ -573,7 +756,7 @@ fn wire_deselect(list_box: &gtk::ListBox) {
 }
 
 /// Asynchronously opens the database, loads game data, and fetches initial
-/// settings.  Returns an `AppCmdMsg::Initialized` variant ready to dispatch.
+/// settings.  Returns an `AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::Initialized)` variant ready to dispatch.
 pub(super) async fn load_init_data() -> AppCmdMsg {
     let init = async {
         let db_path = paths::db_path().map_err(|e| e.to_string())?;
@@ -592,7 +775,9 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
         }
 
         let db_url = format!("sqlite://{}?mode=rwc", db_path.display());
-        let tracker = Tracker::open(&db_url).await.map_err(|e| e.to_string())?;
+        let open_report = Tracker::open(&db_url).await.map_err(|e| e.to_string())?;
+        let tracker = open_report.tracker;
+        let mut startup_warnings = open_report.warnings;
 
         // Determine which game to select: prefer last_game_id from settings.
         // detect_games() returns empty, so load persisted games from DB to find
@@ -763,6 +948,8 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             })
             .unwrap_or(false);
 
+        startup_warnings.extend(access_warnings);
+
         Ok::<_, String>(InitData {
             tracker,
             mods,
@@ -790,9 +977,11 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             nexus_is_premium,
             color_scheme_idx,
             restored_from_backup,
-            access_warnings,
+            access_warnings: startup_warnings,
             plugin_scan_complete,
         })
     };
-    AppCmdMsg::Initialized(init.await)
+    AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::Initialized(Box::new(
+        init.await,
+    )))
 }

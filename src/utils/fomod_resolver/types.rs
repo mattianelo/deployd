@@ -113,6 +113,4 @@ pub struct FomodUiPlugin {
 #[derive(Debug, Clone)]
 pub struct FomodSelections {
     pub selections: Vec<Vec<HashSet<usize>>>,
-    /// Accumulated condition flags from all selected plugins.
-    pub flags: HashMap<String, String>,
 }

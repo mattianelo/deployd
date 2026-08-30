@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use walkdir::WalkDir;
 
+use crate::core::archive;
 use crate::dlog;
-use crate::utils::archive;
 
 /// Find every `.dazip` file under `dir` and expand it in-place.
 ///

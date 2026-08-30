@@ -5,9 +5,20 @@ use crate::models::download::{DownloadEntry, DownloadStatus, NexusIds};
 use super::super::App;
 
 impl App {
+    pub(crate) fn downloads_pane_state(&self) -> crate::ui::downloads_pane::DownloadsPaneState {
+        crate::ui::downloads_pane::DownloadsPaneState {
+            filter: self.download.filter,
+            sort: self.download.sort,
+            show_hidden: self.download.show_hidden,
+            active_count: self.active_downloads_count(),
+            completed_count: self.completed_downloads_count(),
+            is_empty: self.download.rows.is_empty(),
+        }
+    }
+
     pub(crate) fn refresh_download_counts(&mut self) {
         // Sidebar counts (game-filtered)
-        let guard = self.downloads.guard();
+        let guard = self.download.rows.guard();
         let mut active = 0;
         for i in 0..guard.len() {
             if let Some(row) = guard.get(i)
@@ -17,10 +28,11 @@ impl App {
             }
         }
         drop(guard);
-        self.active_download_count = active;
+        self.download.active_count = active;
 
         // Global count (all games)
-        self.global_active_downloads = self.all_downloads.iter().filter(|e| e.is_active()).count();
+        self.download.global_active_count =
+            self.download.all.iter().filter(|e| e.is_active()).count();
     }
 
     /// Rebuild the downloads factory to show only entries for the current game.
@@ -28,16 +40,17 @@ impl App {
         // If a download is in progress, defer the sort until it completes.
         // Clearing and rebuilding the factory during an active download can crash
         // due to widget destruction racing with in-flight progress updates.
-        if self.all_downloads.iter().any(|e| e.is_active()) {
+        if self.download.all.iter().any(|e| e.is_active()) {
             return;
         }
         let current_domain = self
             .selected_game()
             .and_then(crate::core::game::nexus_domain)
             .map(String::from);
-        let show_hidden = self.show_hidden_downloads;
+        let show_hidden = self.download.show_hidden;
         let mut entries: Vec<&DownloadEntry> = self
-            .all_downloads
+            .download
+            .all
             .iter()
             .filter(|entry| {
                 if entry.hidden && !show_hidden {
@@ -50,23 +63,23 @@ impl App {
                 }
             })
             .collect();
-        match self.download_sort {
-            crate::app::types::DownloadSort::Name => {
+        match self.download.sort {
+            crate::models::download::DownloadSort::Name => {
                 entries.sort_by_key(|a| a.mod_name.to_lowercase())
             }
-            crate::app::types::DownloadSort::Status => {
+            crate::models::download::DownloadSort::Status => {
                 entries.sort_by_key(|e| crate::app::types::download_status_sort_key(&e.status))
             }
-            crate::app::types::DownloadSort::Default => {}
+            crate::models::download::DownloadSort::Default => {}
         }
         // Save scroll position before rebuilding; restore it on the next GLib iteration
         // so the layout has already been applied when we set the value.
-        let vadj = self.downloads_scroll.vadjustment();
+        let vadj = self.download.scroll.vadjustment();
         let saved_pos = vadj.value();
 
         // Single guard acquisition: populate then filter in one locked scope.
-        let query = self.search_text.to_lowercase();
-        let mut guard = self.downloads.guard();
+        let query = self.shell.search_text.to_lowercase();
+        let mut guard = self.download.rows.guard();
         guard.clear();
         for entry in entries {
             guard.push_back(entry.clone());
@@ -104,7 +117,7 @@ impl App {
         let fid_zero_ambiguous = if let Some((mid, 0)) = nexus_ids {
             mod_archive_hash.is_none()
                 && self
-                    .all_downloads
+                    .download.all
                     .iter()
                     .filter(|e| {
                         e.status == DownloadStatus::Installed
@@ -118,7 +131,7 @@ impl App {
         };
 
         let mut changed_entries = Vec::new();
-        for entry in &mut self.all_downloads {
+        for entry in &mut self.download.all {
             if entry.status != DownloadStatus::Installed {
                 continue;
             }
@@ -175,7 +188,7 @@ impl App {
 
     /// Find a download entry in the backing store by ID.
     pub(crate) fn find_download_mut(&mut self, id: &str) -> Option<&mut DownloadEntry> {
-        self.all_downloads.iter_mut().find(|e| e.id == id)
+        self.download.all.iter_mut().find(|e| e.id == id)
     }
 
     pub(crate) fn update_download_status(
@@ -185,7 +198,8 @@ impl App {
         msg: &str,
     ) {
         let prev_was_active = self
-            .all_downloads
+            .download
+            .all
             .iter()
             .find(|e| e.id == download_id)
             .map(|e| e.is_active())
@@ -206,7 +220,7 @@ impl App {
             entry.status_msg = msg.to_string();
         }
         // Update factory
-        let mut guard = self.downloads.guard();
+        let mut guard = self.download.rows.guard();
         for i in 0..guard.len() {
             if let Some(row) = guard.get_mut(i)
                 && row.entry.id == download_id
@@ -225,7 +239,7 @@ impl App {
 
         // When an active download finishes and none others are running,
         // apply any sort order that was deferred during the download.
-        if prev_was_active && !new_is_active && !self.all_downloads.iter().any(|e| e.is_active()) {
+        if prev_was_active && !new_is_active && !self.download.all.iter().any(|e| e.is_active()) {
             self.rebuild_downloads_view();
         } else {
             self.refresh_download_counts();
@@ -233,10 +247,11 @@ impl App {
     }
 
     pub(crate) fn begin_download_metadata_fetch(&mut self, download_id: &str) {
-        if let Some(entry) = self.all_downloads.iter().find(|e| e.id == download_id)
+        if let Some(entry) = self.download.all.iter().find(|e| e.id == download_id)
             && !entry.is_active()
         {
-            self.metadata_fetch_previous_status
+            self.download
+                .metadata_previous_status
                 .entry(download_id.to_string())
                 .or_insert_with(|| entry.status.clone());
         }
@@ -248,7 +263,7 @@ impl App {
     }
 
     pub(crate) fn finish_download_metadata_fetch(&mut self, download_id: &str) {
-        let Some(status) = self.metadata_fetch_previous_status.remove(download_id) else {
+        let Some(status) = self.download.metadata_previous_status.remove(download_id) else {
             return;
         };
         let status = DownloadStatus::restored_after_metadata_fetch(&status);

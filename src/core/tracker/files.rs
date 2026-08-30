@@ -380,7 +380,8 @@ mod tests {
     async fn make_tracker() -> Tracker {
         let tracker = Tracker::open("sqlite::memory:")
             .await
-            .expect("in-memory DB");
+            .expect("in-memory DB")
+            .tracker;
         sqlx::query("INSERT INTO games (id, title, path, data_subdir) VALUES ('g', 'Test', '/tmp/g', 'Data')")
             .execute(&tracker.pool)
             .await

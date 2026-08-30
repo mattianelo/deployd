@@ -61,19 +61,19 @@ variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/app/profiles/tool_handlers.rs"
+path = "src/app/tools/handlers.rs"
 name = "normal_tool_exit_scans_and_sorts_every_loot_game"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/app/profiles/tool_handlers.rs"
+path = "src/app/tools/handlers.rs"
 name = "cancelled_tool_exit_does_not_scan_or_sort"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/app/profiles/tool_handlers.rs"
+path = "src/app/tools/handlers.rs"
 name = "unsupported_game_scans_without_loot_sort"
 variant = "both"
 interface_state = "not_applicable"

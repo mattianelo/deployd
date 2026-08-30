@@ -3,8 +3,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use tempfile::TempDir;
 
+use crate::core::archive;
 use crate::dlog;
-use crate::utils::{archive, fomod_resolver};
+use crate::utils::fomod_resolver;
 
 use super::{dazip, file_list};
 

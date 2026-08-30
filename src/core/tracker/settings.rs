@@ -204,17 +204,6 @@ impl Tracker {
         Ok(())
     }
 
-    /// Set the latest known version for a mod (from Nexus update check).
-    pub async fn set_latest_version(&self, mod_id: &str, latest_version: &str) -> Result<()> {
-        sqlx::query("UPDATE mods SET latest_version = ? WHERE id = ?")
-            .bind(latest_version)
-            .bind(mod_id)
-            .execute(&self.pool)
-            .await
-            .context("Failed to set latest version")?;
-        Ok(())
-    }
-
     /// Insert a new tool configuration.
     pub async fn insert_tool(&self, tool: &crate::models::tool::Tool) -> Result<()> {
         sqlx::query(

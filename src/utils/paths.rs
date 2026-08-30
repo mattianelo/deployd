@@ -2,9 +2,6 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, anyhow};
 
-use crate::core::game;
-use crate::models::game::Game;
-
 /// Lowercase all path components and normalize backslashes to forward slashes.
 /// "Data/Textures/Foo.DDS" → "data/textures/foo.dds"
 pub fn lowercase_path(rel: &Path) -> PathBuf {
@@ -67,14 +64,6 @@ pub fn saves_root() -> Result<PathBuf> {
 /// Database path: <data>/deployd/deployd.db
 pub fn db_path() -> Result<PathBuf> {
     Ok(deployd_data_dir()?.join("deployd.db"))
-}
-
-/// The target deployment directory for a game.
-///
-/// For Eclipse engine games this resolves to the Wine prefix user directory
-/// rather than the game installation folder. See `game::deploy_dir`.
-pub fn game_data_dir(game: &Game) -> PathBuf {
-    game::deploy_dir(game)
 }
 
 /// Vanilla file backup storage: `<data>/deployd/<game_id>/vanilla-backup/`

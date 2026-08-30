@@ -4,27 +4,29 @@ use relm4::prelude::*;
 
 use super::super::App;
 use super::super::messages::AppMsg;
-use super::super::types::{DownloadFilter, ModFilter};
+use crate::models::download::DownloadFilter;
+
+use super::super::types::ModFilter;
 
 impl App {
     pub(crate) fn handle_set_mod_filter(&mut self, filter: ModFilter) {
-        if self.mod_filter == filter {
+        if self.mods.filter == filter {
             return;
         }
-        self.mod_filter = filter;
+        self.mods.filter = filter;
         self.apply_search_filter();
     }
 
     pub(crate) fn handle_set_download_filter(&mut self, filter: DownloadFilter) {
-        if self.download_filter == filter {
+        if self.download.filter == filter {
             return;
         }
-        self.download_filter = filter;
+        self.download.filter = filter;
         self.apply_search_filter();
     }
 
     pub(crate) fn handle_open_deployment_folder(&mut self) {
-        self.deploy_options_btn.popdown();
+        self.ui.deploy_options_btn.popdown();
         if let Some(game) = self.selected_game() {
             let uri = gtk::gio::File::for_path(&game.path).uri();
             if let Err(error) = gtk::gio::AppInfo::launch_default_for_uri(
@@ -40,8 +42,8 @@ impl App {
         &mut self,
         info: crate::core::nexus_api::RateLimitInfo,
     ) {
-        self.rate_limit_info = Some(info.clone());
-        if let Some(tracker) = self.tracker.clone() {
+        self.download.rate_limit = Some(info.clone());
+        if let Some(tracker) = self.session.tracker.clone() {
             tokio::spawn(async move {
                 let _ = tracker.save_rate_limits(&info).await;
             });
@@ -53,10 +55,10 @@ impl App {
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
-        if self.global_active_downloads > 0 {
+        if self.download.global_active_count > 0 {
             let body = format!(
                 "{} download(s) are still in progress. Close anyway?",
-                self.global_active_downloads
+                self.download.global_active_count
             );
             let dialog = adw::AlertDialog::builder()
                 .heading("Downloads in Progress")
@@ -70,7 +72,8 @@ impl App {
             let sender = sender.input_sender().clone();
             dialog.connect_response(None, move |_, response| {
                 if response == "close" {
-                    let _ = sender.send(AppMsg::ConfirmClose);
+                    let _ =
+                        sender.send(AppMsg::Shell(crate::app::messages::ShellMsg::ConfirmClose));
                 }
             });
             dialog.present(Some(root));
@@ -84,42 +87,42 @@ impl App {
     }
 
     pub(crate) fn handle_search_toggled(&mut self, active: bool) {
-        self.search_active = active;
+        self.shell.search_active = active;
         if !active {
-            if let Some(source) = self.search_debounce.take() {
+            if let Some(source) = self.shell.search_debounce.take() {
                 source.remove();
             }
-            self.pending_search_text = None;
-            self.search_text.clear();
+            self.shell.pending_search_text = None;
+            self.shell.search_text.clear();
             self.apply_search_filter();
         }
     }
 
     pub(crate) fn handle_search_changed(&mut self, text: String) {
-        if self.search_text == text && self.pending_search_text.is_none() {
+        if self.shell.search_text == text && self.shell.pending_search_text.is_none() {
             return;
         }
-        if let Some(source) = self.search_debounce.take() {
+        if let Some(source) = self.shell.search_debounce.take() {
             source.remove();
         }
-        self.pending_search_text = Some(text);
-        let sender = self.notification_sender.clone();
+        self.shell.pending_search_text = Some(text);
+        let sender = self.ui.notification_sender.clone();
         let source =
             glib::timeout_add_local_once(std::time::Duration::from_millis(120), move || {
-                let _ = sender.send(AppMsg::ApplySearch);
+                let _ = sender.send(AppMsg::Shell(crate::app::messages::ShellMsg::ApplySearch));
             });
-        self.search_debounce = Some(source);
+        self.shell.search_debounce = Some(source);
     }
 
     pub(crate) fn handle_apply_search(&mut self) {
-        self.search_debounce = None;
-        let Some(text) = self.pending_search_text.take() else {
+        self.shell.search_debounce = None;
+        let Some(text) = self.shell.pending_search_text.take() else {
             return;
         };
-        if self.search_text == text {
+        if self.shell.search_text == text {
             return;
         }
-        self.search_text = text;
+        self.shell.search_text = text;
         self.apply_search_filter();
     }
 
@@ -130,10 +133,10 @@ impl App {
             3 => super::super::types::SearchScope::Downloads,
             _ => super::super::types::SearchScope::All,
         };
-        if self.search_scope == next_scope {
+        if self.shell.search_scope == next_scope {
             return;
         }
-        self.search_scope = next_scope;
+        self.shell.search_scope = next_scope;
         self.apply_search_filter();
     }
 }

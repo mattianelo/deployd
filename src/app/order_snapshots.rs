@@ -5,8 +5,8 @@ use crate::models::order_snapshot::{OrderSnapshot, SnapshotKind};
 use crate::ui::mod_list::ModListItemKind;
 
 use super::App;
-use super::free_fns::load_game_data;
 use super::messages::{AppCmdMsg, AppMsg};
+use super::session::load_game_data;
 use super::types::LoadedData;
 
 pub(super) enum SnapshotAction {
@@ -35,7 +35,7 @@ impl App {
     }
 
     pub(crate) fn reload_order_snapshots(&self, sender: &ComponentSender<Self>) {
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
@@ -50,28 +50,31 @@ impl App {
                 .list_order_snapshots(&game.id, SnapshotKind::Plugin)
                 .await
                 .unwrap_or_default();
-            AppCmdMsg::OrderSnapshotsLoaded(mod_snaps, plugin_snaps)
+            AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::OrderSnapshotsLoaded(
+                mod_snaps,
+                plugin_snaps,
+            ))
         });
     }
 
     /// Rebuild the Load popover listboxes from the current snapshot lists.
     pub(crate) fn rebuild_snapshot_lists(&self, sender: &ComponentSender<Self>) {
         rebuild_list(
-            &self.mod_snapshots_list,
-            &self.mod_order_snapshots,
+            &self.mods.snapshots_list,
+            &self.mods.snapshots,
             true,
             sender,
         );
         rebuild_list(
-            &self.plugin_snapshots_list,
-            &self.plugin_order_snapshots,
+            &self.plugins.snapshots_list,
+            &self.plugins.snapshots,
             false,
             sender,
         );
     }
 
     fn handle_save_mod_order_snapshot(&mut self, name: String, sender: &ComponentSender<Self>) {
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
@@ -79,7 +82,7 @@ impl App {
         };
 
         let entries: Vec<(String, i32)> = {
-            let guard = self.mods.guard();
+            let guard = self.mods.rows.guard();
             let mut priority = 0i32;
             (0..guard.len())
                 .filter_map(|i| {
@@ -97,17 +100,17 @@ impl App {
         };
 
         sender.oneshot_command(async move {
-            AppCmdMsg::ModOrderSnapshotSaved(
+            AppCmdMsg::Mods(crate::app::messages::ModsCmdMsg::ModOrderSnapshotSaved(
                 tracker
                     .save_order_snapshot(&game.id, &name, SnapshotKind::Mod, &entries)
                     .await
                     .map_err(|e| e.to_string()),
-            )
+            ))
         });
     }
 
     fn handle_save_plugin_order_snapshot(&mut self, name: String, sender: &ComponentSender<Self>) {
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
@@ -115,7 +118,7 @@ impl App {
         };
 
         let entries: Vec<(String, i32)> = {
-            let guard = self.plugins.guard();
+            let guard = self.plugins.rows.guard();
             (0..guard.len())
                 .filter_map(|i| {
                     guard.get(i).and_then(|row| {
@@ -130,11 +133,13 @@ impl App {
         };
 
         sender.oneshot_command(async move {
-            AppCmdMsg::PluginOrderSnapshotSaved(
-                tracker
-                    .save_order_snapshot(&game.id, &name, SnapshotKind::Plugin, &entries)
-                    .await
-                    .map_err(|e| e.to_string()),
+            AppCmdMsg::Plugins(
+                crate::app::messages::PluginsCmdMsg::PluginOrderSnapshotSaved(
+                    tracker
+                        .save_order_snapshot(&game.id, &name, SnapshotKind::Plugin, &entries)
+                        .await
+                        .map_err(|e| e.to_string()),
+                ),
             )
         });
     }
@@ -144,7 +149,7 @@ impl App {
         snapshot_id: String,
         sender: &ComponentSender<Self>,
     ) {
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
@@ -157,12 +162,14 @@ impl App {
                     .restore_mod_order_snapshot(&snapshot_id, &game.id)
                     .await
                     .map_err(|e| e.to_string())?;
-                load_game_data(&tracker, &game, crate::app::free_fns::GameLoadMode::Refresh)
+                load_game_data(&tracker, &game, crate::app::session::GameLoadMode::Refresh)
                     .await
                     .map_err(|e| e.to_string())
             }
             .await;
-            AppCmdMsg::ModOrderSnapshotRestored(result)
+            AppCmdMsg::Mods(crate::app::messages::ModsCmdMsg::ModOrderSnapshotRestored(
+                Box::new(result),
+            ))
         });
     }
 
@@ -171,7 +178,7 @@ impl App {
         snapshot_id: String,
         sender: &ComponentSender<Self>,
     ) {
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
@@ -184,12 +191,14 @@ impl App {
                     .restore_plugin_order_snapshot(&snapshot_id, &game.id)
                     .await
                     .map_err(|e| e.to_string())?;
-                load_game_data(&tracker, &game, crate::app::free_fns::GameLoadMode::Refresh)
+                load_game_data(&tracker, &game, crate::app::session::GameLoadMode::Refresh)
                     .await
                     .map_err(|e| e.to_string())
             }
             .await;
-            AppCmdMsg::PluginOrderSnapshotRestored(result)
+            AppCmdMsg::Plugins(
+                crate::app::messages::PluginsCmdMsg::PluginOrderSnapshotRestored(Box::new(result)),
+            )
         });
     }
 
@@ -198,17 +207,17 @@ impl App {
         snapshot_id: String,
         sender: &ComponentSender<Self>,
     ) {
-        let Some(tracker) = self.tracker.clone() else {
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
 
         sender.oneshot_command(async move {
-            AppCmdMsg::OrderSnapshotDeleted(
+            AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::OrderSnapshotDeleted(
                 tracker
                     .delete_order_snapshot(&snapshot_id)
                     .await
                     .map_err(|e| e.to_string()),
-            )
+            ))
         });
     }
 
@@ -218,8 +227,8 @@ impl App {
         plugin_snapshots: Vec<OrderSnapshot>,
         sender: &ComponentSender<Self>,
     ) {
-        self.mod_order_snapshots = mod_snapshots;
-        self.plugin_order_snapshots = plugin_snapshots;
+        self.mods.snapshots = mod_snapshots;
+        self.plugins.snapshots = plugin_snapshots;
         self.rebuild_snapshot_lists(sender);
     }
 
@@ -358,9 +367,13 @@ fn rebuild_list(
         let s = sender.input_sender().clone();
         restore_btn.connect_clicked(move |btn| {
             if is_mod {
-                let _ = s.send(AppMsg::LoadModOrderSnapshot(snap_id.clone()));
+                let _ = s.send(AppMsg::Mods(
+                    crate::app::messages::ModsMsg::LoadModOrderSnapshot(snap_id.clone()),
+                ));
             } else {
-                let _ = s.send(AppMsg::LoadPluginOrderSnapshot(snap_id.clone()));
+                let _ = s.send(AppMsg::Plugins(
+                    crate::app::messages::PluginsMsg::LoadPluginOrderSnapshot(snap_id.clone()),
+                ));
             }
             if let Some(popover) = btn
                 .ancestor(gtk::Popover::static_type())
@@ -374,9 +387,13 @@ fn rebuild_list(
         let s = sender.input_sender().clone();
         delete_btn.connect_clicked(move |btn| {
             if is_mod {
-                let _ = s.send(AppMsg::DeleteModOrderSnapshot(snap_id.clone()));
+                let _ = s.send(AppMsg::Mods(
+                    crate::app::messages::ModsMsg::DeleteModOrderSnapshot(snap_id.clone()),
+                ));
             } else {
-                let _ = s.send(AppMsg::DeletePluginOrderSnapshot(snap_id.clone()));
+                let _ = s.send(AppMsg::Plugins(
+                    crate::app::messages::PluginsMsg::DeletePluginOrderSnapshot(snap_id.clone()),
+                ));
             }
             if let Some(popover) = btn
                 .ancestor(gtk::Popover::static_type())

@@ -7,7 +7,7 @@ use tempfile::TempDir;
 use crate::core::detector::ExternalFile;
 use crate::core::installer::AddResult;
 use crate::core::save_manager;
-use crate::models::game::Game;
+use crate::models::game::GameConfig;
 use crate::models::manifest::ModFile;
 use crate::models::mod_entry::InstallTarget;
 #[cfg(feature = "loot")]
@@ -15,52 +15,27 @@ use crate::models::plugin::PluginDirtyInfo;
 use crate::models::tool::Tool;
 use crate::utils::fomod_resolver;
 
+use super::state::InstallIdentity;
 use super::types::{
-    DeployCompletion, DownloadFilter, DownloadScanResult, InitData, LoadedData, ModFilter,
-    NxmDownloadResult, PostLootAction,
+    DeployCompletion, DownloadScanResult, InitData, LoadedData, ModFilter, NxmDownloadResult,
+    PostLootAction,
 };
+use crate::models::download::DownloadFilter;
 
-/// A game entry produced by the game setup dialog or welcome wizard, carrying the user-confirmed configuration.
-#[derive(Debug, Clone)]
-pub struct GameConfig {
-    pub game: Game,
-    /// `true` if manually added by the user.
-    pub custom: bool,
+#[derive(Debug)]
+pub(crate) enum AppMsg {
+    Shell(ShellMsg),
+    Games(GamesMsg),
+    Mods(ModsMsg),
+    Plugins(PluginsMsg),
+    Downloads(DownloadsMsg),
+    Install(InstallMsg),
+    Tools(ToolsMsg),
+    Migration(MigrationMsg),
 }
 
 #[derive(Debug)]
-pub enum AppMsg {
-    Noop,
-    GameSelected(u32),
-    InstallClicked,
-    FileChosen(PathBuf),
-    PreInstallConfirmed(
-        String,
-        HashMap<String, InstallTarget>,
-        std::collections::HashSet<String>,
-    ),
-    PreInstallCancelled,
-    FomodConfirmed(fomod_resolver::FomodSelections),
-    FomodCancelled,
-    ReinstallMod(DynamicIndex),
-    MoveModTo(usize, usize),
-    MoveGroupTo(usize, usize),
-    MoveSelectedModsTo {
-        selected: Vec<usize>,
-        from: usize,
-        to: usize,
-    },
-    MovePluginTo(usize, usize),
-    MoveSelectedPluginsTo {
-        selected: Vec<usize>,
-        from: usize,
-        to: usize,
-    },
-    ProfileSelected(u32),
-    NewProfileClicked,
-    CloneProfileClicked,
-    RenameProfile(String),
-    DeleteProfileClicked,
+pub(crate) enum ShellMsg {
     DeployClicked,
     /// User confirmed deploy after the cross-profile mismatch warning dialog.
     DeployConfirmed,
@@ -72,35 +47,42 @@ pub enum AppMsg {
     /// The user confirmed a game folder path; update the in-memory path and
     /// persist it as a hint for future sessions.
     GameFolderGranted(PathBuf),
-    LaunchTool(String),
-    CancelToolLaunch,
-    /// Fired from the background wait-thread when a launched tool's Wine process exits.
-    /// The second field carries the stderr output if the process exited with a non-zero status.
-    ToolExited(String, Option<String>),
-    ToolSessionStarted(crate::core::tool_launcher::ToolProcessHandle),
-    /// Show a first-run Proton GE setup confirmation dialog for `tool_id`.
-    ConfirmProtonSetup(String),
-    /// User confirmed the first-run Proton GE setup; launch through UMU.
-    ProtonSetupConfirmed(String),
-    /// Show a Snap Wine interface connection dialog.
-    ConfirmSnapWineSetup(String, crate::core::game::MissingSnapWineContent),
-    /// AppImage UMU has finished preparing Proton GE.
-    ProtonSetupReady,
-    /// Show a one-time Mono install info dialog for Eclipse/Snap tool launches.
-    /// Carries `tool_id` and the wine prefix path (used to write the sentinel on confirm).
-    ConfirmMonoPrompt(String, std::path::PathBuf),
-    ManageToolsClicked,
-    ToolAdded(Tool),
-    ToolRemoved(String),
-    ToolWorkingDirChanged(String, String),
-    /// User confirmed merging pending files into an existing mod.
-    PreInstallMerge(String),
-    /// User chose to replace an existing mod (name-conflict dialog).
-    PreInstallReplace(String, i32),
-    /// User chose to create a new mod despite the name conflict.
-    PreInstallCreateNew,
-    InstallProgress(f64, String),
-    ToolManagerClosed,
+    SearchToggled(bool),
+    SearchChanged(String),
+    ApplySearch,
+    SearchScopeChanged(u32),
+    CloseRequested,
+    ConfirmClose,
+    /// Push a notification message to the notification panel.
+    /// Used by async tasks that cannot call self.push_notification directly.
+    ShowToast(String),
+    /// Decrement the notification badge count when the user dismisses an item.
+    NotificationDismissed,
+    /// Remove all notification items and reset the badge count.
+    ClearNotifications,
+    /// A newer app version is available; reveal the update banner.
+    AppUpdateAvailable(String, String),
+    /// User clicked the update banner button — open the update page.
+    /// User clicked "Download Update" — download and replace the current AppImage.
+    SelfUpdateDownload,
+    /// Open the current game's installation folder in the system file manager.
+    OpenDeploymentFolder,
+    /// Set and persist the color scheme (0=System, 1=Light, 2=Dark).
+    SetColorScheme(u32),
+    /// User clicked "Login with Nexus" in the headerbar avatar popover.
+    NexusLoginClicked,
+    /// User clicked "Log Out" in the headerbar avatar popover.
+    NexusLogoutClicked,
+}
+
+#[derive(Debug)]
+pub(crate) enum GamesMsg {
+    GameSelected(u32),
+    ProfileSelected(u32),
+    NewProfileClicked,
+    CloneProfileClicked,
+    RenameProfile(String),
+    DeleteProfileClicked,
     SettingsClicked,
     SettingsClosed,
     /// Open the "Manage Games" setup dialog.
@@ -112,7 +94,6 @@ pub enum AppMsg {
     /// Second argument is the list of game IDs the user unchecked (to be hidden).
     GamesConfigured(Vec<GameConfig>, Vec<String>),
     /// User removed a game from management (headerbar "×" button or Manage Games dialog).
-    RemoveGame(String),
     /// Remove the currently selected game (fired from the headerbar "×" button).
     RemoveCurrentGame,
     /// Confirmed removal after the dialog; delete_mods=true also wipes the mod cache.
@@ -129,83 +110,30 @@ pub enum AppMsg {
     CacheDirResetRequested {
         game_id: String,
     },
-    /// User requested an AppImage-to-Snap export for a managed game.
-    ExportGameForSnap(String),
-    /// User chose the destination for the AppImage-to-Snap export bundle.
-    ExportGameForSnapChosen {
-        game_id: String,
-        output_path: std::path::PathBuf,
-    },
-    /// User wants to preview an AppImage export bundle from the Snap.
-    PreviewAppImageExport,
-    /// User selected an AppImage export bundle to preview.
-    PreviewAppImageExportChosen(std::path::PathBuf),
-    /// User chose to import a previewed AppImage export bundle.
-    ImportAppImageExport(std::path::PathBuf),
-    /// User confirmed the game folder for an AppImage export import.
-    ImportGameFolderChosen(std::path::PathBuf),
-    /// User confirmed the Wine prefix for an AppImage export import.
-    ImportWinePrefixChosen(std::path::PathBuf),
     /// Emitted by SettingsDialog whenever the Nexus API key is set or cleared.
     NexusApiKeyUpdated,
-    NxmLinkReceived(String),
-    CheckUpdatesClicked,
-    ToggleDownloads,
-    SetDownloadsVisible(bool),
-    InstallDownload(DynamicIndex),
-    /// Reinstall an already-installed download, replacing the existing mod.
-    ReinstallDownload(DynamicIndex),
-    ClearDownloadMetadata(DynamicIndex),
-    RenameDownload(DynamicIndex),
-    DeleteDownload(DynamicIndex),
-    /// download_id confirmed from the delete confirmation dialog
-    ConfirmDeleteDownload(String),
-    HideDownload(DynamicIndex),
-    SetShowHiddenDownloads(bool),
-    /// (download_id, new_name) — confirmed from the rename dialog
-    ConfirmDownloadRename(String, String),
-    /// (download_id, nexus_mod_id, domain) — confirmed from the "enter Nexus URL" dialog
-    ConfirmNexusIdEntry(String, i64, String),
-    /// User provided a Nexus file ID from the "file not found" dialog shown during install.
-    FileIdDialogConfirmed {
-        download_id: String,
-        file_id: i64,
-        mod_id: i64,
-        domain: String,
+    /// Show the first-launch welcome wizard.
+    ShowWelcomeWizard,
+    /// The welcome wizard was confirmed — apply game configuration.
+    WelcomeWizardConfirmed(Vec<GameConfig>, Vec<String>),
+    /// The welcome wizard was closed without confirming.
+    WelcomeWizardSkipped,
+    /// Toggle save management mode for the active profile.
+    ToggleProfileSaveMode,
+    /// Manually sync the active profile's saves from the game save directory.
+    SyncSaves,
+}
+
+#[derive(Debug)]
+pub(crate) enum ModsMsg {
+    ReinstallMod(DynamicIndex),
+    MoveModTo(usize, usize),
+    MoveGroupTo(usize, usize),
+    MoveSelectedModsTo {
+        selected: Vec<usize>,
+        from: usize,
+        to: usize,
     },
-    /// File entry couldn't be matched by filename during a standalone metadata fetch.
-    /// Triggers the file ID entry dialog outside of the install flow.
-    ShowFileIdDialog {
-        download_id: String,
-        mod_id: i64,
-        domain: String,
-        partial_name: Option<String>,
-    },
-    DownloadProgress(String, f64, String),
-    /// (download_id, mod_name, game_domain, nexus_file_name, nexus_is_primary, resolved_file_id, version, author)
-    DownloadNameResolved(
-        String,
-        String,
-        Option<String>,
-        Option<String>,
-        bool,
-        Option<i64>,
-        Option<String>,
-        Option<String>,
-    ),
-    /// Notifies that the MD5 of an archive was computed (lazily, during metadata fetch).
-    /// Persisted so subsequent fetches skip recomputation.
-    ArchiveMd5Computed(String, String),
-    FetchDownloadMetadata(DynamicIndex),
-    ScanDownloadsFolder,
-    DownloadSortChanged(u32),
-    SearchToggled(bool),
-    SearchChanged(String),
-    ApplySearch,
-    SearchScopeChanged(u32),
-    RateLimitUpdated(crate::core::nexus_api::RateLimitInfo),
-    CloseRequested,
-    ConfirmClose,
     /// Toggle collapse state of a group separator (identified by factory index).
     ToggleGroupCollapse(DynamicIndex),
     /// Delete a group separator (identified by factory index).
@@ -242,6 +170,35 @@ pub enum AppMsg {
     DiscardExternalFiles(Vec<PathBuf>),
     /// User cancelled (or closed) the "Create Mod from External Files" dialog.
     CreateModFromExternalCancelled,
+    /// Create an empty mod with a cache folder, then open the file manager there.
+    CreateEmptyMod,
+    /// Re-register all files in a mod's cache folder as its mod_files records.
+    ScanModFromCache(String),
+    /// Enable all mods for the current game.
+    EnableAllMods,
+    /// Disable all mods for the current game.
+    DisableAllMods,
+    /// Save the current mod order as a named snapshot.
+    SaveModOrderSnapshot(String),
+    /// Restore mod order from a saved snapshot (snapshot_id).
+    LoadModOrderSnapshot(String),
+    /// Delete a saved mod order snapshot (snapshot_id).
+    DeleteModOrderSnapshot(String),
+    /// Set the active filter chip for the mod order pane.
+    SetModFilter(ModFilter),
+    EnterModSelectionMode,
+    ExitModSelectionMode,
+    ToggleModRowSelected(usize),
+    SetModRowSelected(DynamicIndex, bool),
+    EnableSelectedMods,
+    DisableSelectedMods,
+    RemoveSelectedMods,
+    ConfirmRemoveSelectedMods,
+}
+
+#[derive(Debug)]
+pub(crate) enum PluginsMsg {
+    MovePluginTo(usize, usize),
     /// User chose to adopt externally-cleaned managed plugins: copy cleaned content into the
     /// deployd cache and re-hardlink so the mod stays managed with the cleaned plugin version.
     AdoptManagedPluginChanges(Vec<ExternalFile>),
@@ -253,91 +210,158 @@ pub enum AppMsg {
     ResetVanillaBaselineConfirmed,
     /// Mark selected external files as vanilla (update their baseline entry in DB).
     MarkExternalFilesAsVanilla(Vec<ExternalFile>),
-    /// Create an empty mod with a cache folder, then open the file manager there.
-    CreateEmptyMod,
-    /// Re-register all files in a mod's cache folder as its mod_files records.
-    ScanModFromCache(String),
-    /// Open the pre-install dialog without replacing any existing mod.
-    OpenPreInstallDialog,
-    /// Open the pre-install dialog and replace the given mod (id, old_priority) after successful install.
-    OpenPreInstallDialogReplacing(String, i32),
-    /// Show the first-launch welcome wizard.
-    ShowWelcomeWizard,
-    /// The welcome wizard was confirmed — apply game configuration.
-    WelcomeWizardConfirmed(Vec<GameConfig>, Vec<String>),
-    /// The welcome wizard was closed without confirming.
-    WelcomeWizardSkipped,
     /// Sort the Plugin Order panel using LOOT's masterlist algorithm.
     SortWithLoot,
-    /// Enable all mods for the current game.
-    EnableAllMods,
-    /// Disable all mods for the current game.
-    DisableAllMods,
     /// Enable all plugins for the current game.
     EnableAllPlugins,
     /// Disable all plugins for the current game.
     DisableAllPlugins,
     /// Toggle visibility of vanilla/DLC plugins in the plugin panel.
     ToggleShowVanillaPlugins,
-    /// Push a notification message to the notification panel.
-    /// Used by async tasks that cannot call self.push_notification directly.
-    ShowToast(String),
-    /// Decrement the notification badge count when the user dismisses an item.
-    NotificationDismissed,
-    /// Remove all notification items and reset the badge count.
-    ClearNotifications,
-    /// Toggle save management mode for the active profile.
-    ToggleProfileSaveMode,
-    /// Manually sync the active profile's saves from the game save directory.
-    SyncSaves,
-    /// Save the current mod order as a named snapshot.
-    SaveModOrderSnapshot(String),
     /// Save the current plugin order as a named snapshot.
     SavePluginOrderSnapshot(String),
-    /// Restore mod order from a saved snapshot (snapshot_id).
-    LoadModOrderSnapshot(String),
     /// Restore plugin order from a saved snapshot (snapshot_id).
     LoadPluginOrderSnapshot(String),
-    /// Delete a saved mod order snapshot (snapshot_id).
-    DeleteModOrderSnapshot(String),
     /// Delete a saved plugin order snapshot (snapshot_id).
     DeletePluginOrderSnapshot(String),
-    /// A newer app version is available; reveal the update banner.
-    AppUpdateAvailable(String, String),
-    /// User clicked the update banner button — open the update page.
-    OpenUpdatePage,
-    /// User clicked "Download Update" — download and replace the current AppImage.
-    SelfUpdateDownload,
-    /// Set the active filter chip for the mod order pane.
-    SetModFilter(ModFilter),
-    /// Set the active filter chip for the downloads sidebar.
-    SetDownloadFilter(DownloadFilter),
-    /// Open the current game's installation folder in the system file manager.
-    OpenDeploymentFolder,
-    /// Pause an in-progress download (download_id).
-    PauseDownload(DynamicIndex),
-    /// Resume a paused download (download_id).
-    ResumeDownload(DynamicIndex),
-    /// Set and persist the color scheme (0=System, 1=Light, 2=Dark).
-    SetColorScheme(u32),
-    /// User clicked "Login with Nexus" in the headerbar avatar popover.
-    NexusLoginClicked,
-    /// User clicked "Log Out" in the headerbar avatar popover.
-    NexusLogoutClicked,
-    EnterModSelectionMode,
-    ExitModSelectionMode,
-    ToggleModRowSelected(usize),
-    SetModRowSelected(DynamicIndex, bool),
-    EnableSelectedMods,
-    DisableSelectedMods,
-    RemoveSelectedMods,
-    ConfirmRemoveSelectedMods,
     EnterPluginSelectionMode,
     ExitPluginSelectionMode,
     TogglePluginRowSelected(usize),
     SetPluginRowSelected(DynamicIndex, bool),
     EnableSelectedPlugins,
     DisableSelectedPlugins,
+}
+
+#[derive(Debug)]
+pub(crate) enum DownloadsMsg {
+    NxmLinkReceived(String),
+    SetDownloadsVisible(bool),
+    InstallDownload(DynamicIndex),
+    /// Reinstall an already-installed download, replacing the existing mod.
+    ReinstallDownload(DynamicIndex),
+    ClearDownloadMetadata(DynamicIndex),
+    RenameDownload(DynamicIndex),
+    DeleteDownload(DynamicIndex),
+    /// download_id confirmed from the delete confirmation dialog
+    ConfirmDeleteDownload(String),
+    HideDownload(DynamicIndex),
+    SetShowHiddenDownloads(bool),
+    /// (download_id, new_name) — confirmed from the rename dialog
+    ConfirmDownloadRename(String, String),
+    /// (download_id, nexus_mod_id, domain) — confirmed from the "enter Nexus URL" dialog
+    ConfirmNexusIdEntry(String, i64, String),
+    /// File entry couldn't be matched by filename during a standalone metadata fetch.
+    /// Triggers the file ID entry dialog outside of the install flow.
+    ShowFileIdDialog {
+        download_id: String,
+        mod_id: i64,
+        domain: String,
+        partial_name: Option<String>,
+    },
+    DownloadProgress(String, f64, String),
+    /// (download_id, mod_name, game_domain, nexus_file_name, nexus_is_primary, resolved_file_id, version, author)
+    DownloadNameResolved(
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        bool,
+        Option<i64>,
+        Option<String>,
+        Option<String>,
+    ),
+    /// Notifies that the MD5 of an archive was computed (lazily, during metadata fetch).
+    /// Persisted so subsequent fetches skip recomputation.
+    ArchiveMd5Computed(String, String),
+    FetchDownloadMetadata(DynamicIndex),
+    ScanDownloadsFolder,
+    DownloadSortChanged(u32),
+    RateLimitUpdated(crate::core::nexus_api::RateLimitInfo),
+    /// Set the active filter chip for the downloads sidebar.
+    SetDownloadFilter(DownloadFilter),
+    /// Pause an in-progress download (download_id).
+    PauseDownload(DynamicIndex),
+    /// Resume a paused download (download_id).
+    ResumeDownload(DynamicIndex),
+}
+
+#[derive(Debug)]
+pub(crate) enum InstallMsg {
+    InstallClicked,
+    FileChosen(PathBuf),
+    PreInstallConfirmed(
+        String,
+        HashMap<String, InstallTarget>,
+        std::collections::HashSet<String>,
+    ),
+    PreInstallCancelled,
+    FomodConfirmed(fomod_resolver::FomodSelections),
+    FomodCancelled,
+    /// User confirmed merging pending files into an existing mod.
+    PreInstallMerge(String),
+    /// User chose to replace an existing mod (name-conflict dialog).
+    PreInstallReplace(String, i32),
+    /// User chose to create a new mod despite the name conflict.
+    PreInstallCreateNew,
+    InstallProgress(InstallIdentity, f64, String),
+    /// User provided a Nexus file ID from the "file not found" dialog shown during install.
+    FileIdDialogConfirmed {
+        download_id: String,
+        file_id: i64,
+        mod_id: i64,
+        domain: String,
+    },
+    /// Open the pre-install dialog without replacing any existing mod.
+    OpenPreInstallDialog,
+    /// Open the pre-install dialog and replace the given mod (id, old_priority) after successful install.
+    OpenPreInstallDialogReplacing(String, i32),
+}
+
+#[derive(Debug)]
+pub(crate) enum ToolsMsg {
+    LaunchTool(String),
+    CancelToolLaunch,
+    /// Fired from the background wait-thread when a launched tool's Wine process exits.
+    /// The second field carries the stderr output if the process exited with a non-zero status.
+    ToolExited(String, Option<String>),
+    ToolSessionStarted(crate::core::tool_launcher::ToolProcessHandle),
+    /// Show a first-run Proton GE setup confirmation dialog for `tool_id`.
+    ConfirmProtonSetup(String),
+    /// User confirmed the first-run Proton GE setup; launch through UMU.
+    ProtonSetupConfirmed(String),
+    /// Show a Snap Wine interface connection dialog.
+    ConfirmSnapWineSetup(String, crate::core::game::MissingSnapWineContent),
+    /// AppImage UMU has finished preparing Proton GE.
+    ProtonSetupReady,
+    /// Show a one-time Mono install info dialog for Eclipse/Snap tool launches.
+    /// Carries `tool_id` and the wine prefix path (used to write the sentinel on confirm).
+    ConfirmMonoPrompt(String, std::path::PathBuf),
+    ManageToolsClicked,
+    ToolAdded(Tool),
+    ToolRemoved(String),
+    ToolWorkingDirChanged(String, String),
+    ToolManagerClosed,
+}
+
+#[derive(Debug)]
+pub(crate) enum MigrationMsg {
+    /// User requested an AppImage-to-Snap export for a managed game.
+    ExportGameForSnap(String),
+    /// User chose the destination for the AppImage-to-Snap export bundle.
+    ExportGameForSnapChosen {
+        game_id: String,
+        output_path: std::path::PathBuf,
+    },
+    /// User wants to preview an AppImage export bundle from the Snap.
+    PreviewAppImageExport,
+    /// User selected an AppImage export bundle to preview.
+    PreviewAppImageExportChosen(std::path::PathBuf),
+    /// User chose to import a previewed AppImage export bundle.
+    ImportAppImageExport(std::path::PathBuf),
+    /// User confirmed the game folder for an AppImage export import.
+    ImportGameFolderChosen(std::path::PathBuf),
+    /// User confirmed the Wine prefix for an AppImage export import.
+    ImportWinePrefixChosen(std::path::PathBuf),
 }
 
 pub(crate) enum PrepareResultMsg {
@@ -374,35 +398,35 @@ impl std::fmt::Debug for PrepareResultMsg {
     }
 }
 
-// AppCmdMsg variants carry one-shot result types (InitData, LoadedData, etc.) that are large
-// by design — they transfer all loaded state in a single dispatch. Boxing would add a heap
-// allocation per message for no meaningful benefit given the infrequent dispatch rate.
-#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-pub enum AppCmdMsg {
-    Initialized(Result<InitData, String>),
-    ModsLoaded(Result<LoadedData, String>, bool),
-    /// Nexus mod name fetched in background during archive extraction.
-    PendingMetadataFetched(String),
-    /// Mod name fetched but no matching Nexus file entry found (neither by file_id nor filename).
-    /// Carries the partial mod name so the pre-install dialog has something to show, plus the
-    /// context needed to let the user supply a file ID.
-    PendingFileNameUnresolved {
-        partial_name: String,
-        download_id: String,
-        mod_id: i64,
-        domain: String,
-    },
-    ModAdded(Result<AddResult, String>, bool),
-    ModPrepared(Result<PrepareResultMsg, String>),
-    ModRemoved(
-        Result<String, String>,
-        Option<(i64, i64)>,
-        String,
-        Option<String>,
-    ),
+pub(crate) enum AppCmdMsg {
+    Shell(ShellCmdMsg),
+    Games(GamesCmdMsg),
+    Mods(ModsCmdMsg),
+    Plugins(PluginsCmdMsg),
+    Downloads(DownloadsCmdMsg),
+    Install(InstallCmdMsg),
+    Tools(ToolsCmdMsg),
+    Migration(MigrationCmdMsg),
+}
+
+#[derive(Debug)]
+pub(crate) enum ShellCmdMsg {
+    Initialized(Box<Result<InitData, String>>),
     DeployDone(Result<DeployCompletion, String>),
     PurgeDone(Result<usize, String>),
+    PrioritySaved(Result<(), String>),
+    /// Result of the self-update AppImage download + replace.
+    AppUpdateResult(Result<(), String>),
+    /// Avatar image bytes fetched from Nexus (None = fetch failed, use initials).
+    NexusAvatarLoaded(Option<Vec<u8>>),
+    /// Nexus user data refreshed after key validation (username, avatar_url, is_premium).
+    NexusUserRefreshed(Option<String>, Option<String>, bool),
+}
+
+#[derive(Debug)]
+pub(crate) enum GamesCmdMsg {
+    ModsLoaded(Result<LoadedData, String>, bool),
     CacheDirMoved {
         game_id: String,
         new_dir: std::path::PathBuf,
@@ -412,38 +436,116 @@ pub enum AppCmdMsg {
         game_id: String,
         result: Result<(), String>,
     },
-    /// Result of writing an AppImage-to-Snap export bundle.
-    GameExportedForSnap(Result<crate::core::migration_export::ExportGameResult, String>),
-    /// Result of reading an AppImage-to-Snap export bundle without importing it.
-    AppImageExportPreviewed(Result<crate::core::migration_import::PreviewImportResult, String>),
-    /// Result of importing an AppImage-to-Snap export bundle into Snap state.
-    AppImageExportImported(Result<crate::core::migration_import::ImportBundleResult, String>),
-    /// The download archive was moved to Trash and the entry can be removed.
-    DownloadArchiveTrashed {
-        download_id: String,
-        result: Result<(), String>,
-    },
-    PrioritySaved(Result<(), String>),
-    OverridesRefreshed(
-        Result<std::collections::HashMap<String, crate::core::tracker::OverrideInfo>, String>,
-    ),
-    PluginOrderSaved(Result<(), String>),
-    ModNexusMetadataRefreshed {
-        mod_id: String,
-        result: Result<(String, String, String), String>,
-    },
     ProfileSwitched(Result<(LoadedData, Option<save_manager::SaveSyncResult>), String>),
     ProfileCreated(Result<LoadedData, String>),
     ProfileCloned(Result<LoadedData, String>),
     ProfileRenamed(Result<(), String>),
     ProfileDeleted(Result<LoadedData, String>),
-    ToolSaved(Result<(), String>),
-    ToolDeleted(Result<String, String>),
-    ToolWorkingDirSaved(Result<(), String>),
-    ToolLaunched(Result<String, String>),
-    ToolLaunchCancelled(String),
+    /// Last-deployed profile ID loaded from DB settings after a game switch.
+    LastDeployedProfileLoaded(Option<String>),
+    /// Result of toggling profile save mode (+ optional save backup/restore op).
+    SaveModeToggled(Result<(), String>),
+    /// Result of a manual save sync triggered by the user.
+    SavesSynced(Result<save_manager::SaveSyncResult, String>),
+    /// Snapshot lists loaded for the current game.
+    OrderSnapshotsLoaded(
+        Vec<crate::models::order_snapshot::OrderSnapshot>,
+        Vec<crate::models::order_snapshot::OrderSnapshot>,
+    ),
+    /// Mod or plugin order snapshot deleted; carries updated snapshot list (game_id, kind).
+    OrderSnapshotDeleted(Result<(), String>),
+    /// All games have been persisted to DB after Manage Games; safe to select the first game now.
+    GamesPersisted,
+}
+
+#[derive(Debug)]
+pub(crate) enum ModsCmdMsg {
+    ModRemoved(
+        Result<String, String>,
+        Option<(i64, i64)>,
+        String,
+        Option<String>,
+    ),
+    OverridesRefreshed(
+        Result<std::collections::HashMap<String, crate::core::tracker::OverrideInfo>, String>,
+    ),
+    ModNexusMetadataRefreshed {
+        mod_id: String,
+        result: Result<(String, String, String), String>,
+    },
+    ExternalScanDone(Result<Vec<ExternalFile>, String>),
+    /// Empty mod created (mod_id, cache_dir_path).
+    EmptyModCreated(Result<(String, std::path::PathBuf), String>),
+    /// Mod cache rescanned — payload is a user-readable summary or error.
+    ModFilesRescanned(Result<String, String>),
+    /// Per-file list loaded for the open mod properties dialog.
+    ModFilesLoaded(Vec<ModFile>),
+    /// Mod order snapshot saved.
+    ModOrderSnapshotSaved(Result<(), String>),
+    /// Mod order snapshot restored.
+    ModOrderSnapshotRestored(Box<Result<crate::app::types::LoadedData, String>>),
+}
+
+#[derive(Debug)]
+pub(crate) enum PluginsCmdMsg {
+    PluginOrderSaved(Result<(), String>),
+    /// Result of adopting externally-cleaned managed plugins into the deployd cache.
+    ManagedPluginsAdopted(Result<usize, String>),
+    /// Result of restoring managed plugins from their xEdit backup.
+    BackupRestored(Result<usize, String>),
+    /// Result of resetting the vanilla snapshot for the selected game.
+    VanillaBaselineReset(Result<(), String>),
+    /// Result of upserting vanilla entries for individually marked files.
+    VanillaEntriesUpdated(Result<usize, String>),
+    /// Result of the async LOOT sort; payload is (sorted filenames, dirty-info map) on success.
+    #[cfg(feature = "loot")]
+    LootSortDone(
+        String,
+        Result<(Vec<String>, HashMap<String, PluginDirtyInfo>), String>,
+    ),
+    #[cfg(feature = "loot")]
+    LootOrderApplied(Box<Result<LoadedData, String>>, PostLootAction),
+    /// Plugin order snapshot saved.
+    PluginOrderSnapshotSaved(Result<(), String>),
+    /// Plugin order snapshot restored.
+    PluginOrderSnapshotRestored(Box<Result<crate::app::types::LoadedData, String>>),
+}
+
+#[derive(Debug)]
+pub(crate) enum DownloadsCmdMsg {
+    /// The download archive was moved to Trash and the entry can be removed.
+    DownloadArchiveTrashed {
+        download_id: String,
+        result: Result<(), String>,
+    },
+    NxmDownloadComplete(String, Result<NxmDownloadResult, String>),
+    /// (dl_id, Result<(mod_id, version, author, mod_name, nexus_file_name), err>)
+    NexusMetadataFetched(
+        Option<String>,
+        Result<(String, String, String, String, Option<String>), String>,
+    ),
+    DownloadsDirUpdated(Option<PathBuf>),
+    DownloadsScanned(Result<DownloadScanResult, String>),
+}
+
+#[derive(Debug)]
+pub(crate) enum InstallCmdMsg {
+    /// Nexus mod name fetched in background during archive extraction.
+    PendingMetadataFetched(InstallIdentity, String),
+    /// Mod name fetched but no matching Nexus file entry found (neither by file_id nor filename).
+    /// Carries the partial mod name so the pre-install dialog has something to show, plus the
+    /// context needed to let the user supply a file ID.
+    PendingFileNameUnresolved {
+        identity: InstallIdentity,
+        partial_name: String,
+        download_id: String,
+        mod_id: i64,
+        domain: String,
+    },
+    ModAdded(InstallIdentity, Box<Result<AddResult, String>>, bool),
+    ModPrepared(InstallIdentity, Box<Result<PrepareResultMsg, String>>),
     /// Files were merged into an existing mod. Carries `(mod_name, files_merged)`.
-    ModMerged(Result<(String, usize), String>),
+    ModMerged(InstallIdentity, Result<(String, usize), String>),
     /// Combined mod+file name fetched after the user supplied a file ID.
     /// `combined_name` is None if the fetch failed.
     /// `download_id` is Some only for the standalone (right-click) path; None during install.
@@ -454,68 +556,26 @@ pub enum AppCmdMsg {
         version: Option<String>,
         file_id: Option<i64>,
     },
-    NxmDownloadComplete(String, Result<NxmDownloadResult, String>),
-    /// (dl_id, Result<(mod_id, version, author, mod_name, nexus_file_name), err>)
-    NexusMetadataFetched(
-        Option<String>,
-        Result<(String, String, String, String, Option<String>), String>,
-    ),
-    UpdatesChecked(Result<Vec<(String, String, String)>, String>),
-    DownloadsDirUpdated(Option<PathBuf>),
-    DownloadsScanned(Result<DownloadScanResult, String>),
-    ExternalScanDone(Result<Vec<ExternalFile>, String>),
-    /// Result of adopting externally-cleaned managed plugins into the deployd cache.
-    ManagedPluginsAdopted(Result<usize, String>),
-    /// Result of restoring managed plugins from their xEdit backup.
-    BackupRestored(Result<usize, String>),
-    /// Result of resetting the vanilla snapshot for the selected game.
-    VanillaBaselineReset(Result<(), String>),
-    /// Result of upserting vanilla entries for individually marked files.
-    VanillaEntriesUpdated(Result<usize, String>),
-    /// Last-deployed profile ID loaded from DB settings after a game switch.
-    LastDeployedProfileLoaded(Option<String>),
-    /// Empty mod created (mod_id, cache_dir_path).
-    EmptyModCreated(Result<(String, std::path::PathBuf), String>),
-    /// Mod cache rescanned — payload is a user-readable summary or error.
-    ModFilesRescanned(Result<String, String>),
-    /// Result of the async LOOT sort; payload is (sorted filenames, dirty-info map) on success.
-    #[cfg(feature = "loot")]
-    LootSortDone(
-        String,
-        Result<(Vec<String>, HashMap<String, PluginDirtyInfo>), String>,
-    ),
-    #[cfg(feature = "loot")]
-    LootOrderApplied(Result<LoadedData, String>, PostLootAction),
-    /// Per-file list loaded for the open mod properties dialog.
-    ModFilesLoaded(Vec<ModFile>),
-    /// Result of toggling profile save mode (+ optional save backup/restore op).
-    SaveModeToggled(Result<(), String>),
-    /// Result of a manual save sync triggered by the user.
-    SavesSynced(Result<save_manager::SaveSyncResult, String>),
-    /// Snapshot lists loaded for the current game.
-    OrderSnapshotsLoaded(
-        Vec<crate::models::order_snapshot::OrderSnapshot>,
-        Vec<crate::models::order_snapshot::OrderSnapshot>,
-    ),
-    /// Mod order snapshot saved.
-    ModOrderSnapshotSaved(Result<(), String>),
-    /// Plugin order snapshot saved.
-    PluginOrderSnapshotSaved(Result<(), String>),
-    /// Mod order snapshot restored.
-    ModOrderSnapshotRestored(Result<crate::app::types::LoadedData, String>),
-    /// Plugin order snapshot restored.
-    PluginOrderSnapshotRestored(Result<crate::app::types::LoadedData, String>),
-    /// Mod or plugin order snapshot deleted; carries updated snapshot list (game_id, kind).
-    OrderSnapshotDeleted(Result<(), String>),
-    /// Result of the self-update AppImage download + replace.
-    AppUpdateResult(Result<(), String>),
     /// Previous FOMOD selections loaded from DB for the reinstall/replace flow.
     /// None = no prior selections stored. Triggers opening the pre-install dialog.
     FomodSelectionsLoaded(Option<Vec<Vec<std::collections::HashSet<usize>>>>),
-    /// All games have been persisted to DB after Manage Games; safe to select the first game now.
-    GamesPersisted,
-    /// Avatar image bytes fetched from Nexus (None = fetch failed, use initials).
-    NexusAvatarLoaded(Option<Vec<u8>>),
-    /// Nexus user data refreshed after key validation (username, avatar_url, is_premium).
-    NexusUserRefreshed(Option<String>, Option<String>, bool),
+}
+
+#[derive(Debug)]
+pub(crate) enum ToolsCmdMsg {
+    Saved(Result<(), String>),
+    Deleted(Result<String, String>),
+    WorkingDirSaved(Result<(), String>),
+    Launched(Result<String, String>),
+    LaunchCancelled(String),
+}
+
+#[derive(Debug)]
+pub(crate) enum MigrationCmdMsg {
+    /// Result of writing an AppImage-to-Snap export bundle.
+    GameExportedForSnap(Result<crate::core::migration_export::ExportGameResult, String>),
+    /// Result of reading an AppImage-to-Snap export bundle without importing it.
+    AppImageExportPreviewed(Result<crate::core::migration_import::PreviewImportResult, String>),
+    /// Result of importing an AppImage-to-Snap export bundle into Snap state.
+    AppImageExportImported(Result<crate::core::migration_import::ImportBundleResult, String>),
 }
