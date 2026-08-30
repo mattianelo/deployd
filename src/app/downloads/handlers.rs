@@ -91,8 +91,11 @@ impl App {
         {
             let entry = entry.clone();
             sender.oneshot_command(async move {
-                let _ = tracker.save_download_entry(&entry).await;
-                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(())))
+                let result = tracker
+                    .save_download_entry(&entry)
+                    .await
+                    .map_err(|error| error.to_string());
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
             });
         }
     }
@@ -178,8 +181,11 @@ impl App {
         {
             let entry = entry.clone();
             sender.oneshot_command(async move {
-                let _ = tracker.save_download_entry(&entry).await;
-                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(())))
+                let result = tracker
+                    .save_download_entry(&entry)
+                    .await
+                    .map_err(|error| error.to_string());
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
             });
         }
     }
@@ -583,8 +589,11 @@ impl App {
         {
             let entry = entry.clone();
             sender.oneshot_command(async move {
-                let _ = tracker.save_download_entry(&entry).await;
-                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(())))
+                let result = tracker
+                    .save_download_entry(&entry)
+                    .await
+                    .map_err(|error| error.to_string());
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
             });
         }
         // Update factory
@@ -645,7 +654,7 @@ impl App {
             let author_ui = author.clone();
             let game_id = game.id.clone();
             sender.oneshot_command(async move {
-                if let Some(ref a) = author_db {
+                let result = if let Some(ref a) = author_db {
                     tracker
                         .update_mod_version_author_by_nexus_ids(
                             &game_id,
@@ -655,7 +664,7 @@ impl App {
                             a,
                         )
                         .await
-                        .ok();
+                        .map(|_| ())
                 } else {
                     tracker
                         .update_mod_version_by_nexus_ids(
@@ -665,9 +674,10 @@ impl App {
                             &version_db,
                         )
                         .await
-                        .ok();
+                        .map(|_| ())
                 }
-                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(())))
+                .map_err(|error| error.to_string());
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
             });
             // Surgically update the matching factory row so the subtitle appears without a reload.
             let mut guard = self.mods.rows.guard();
@@ -700,7 +710,7 @@ impl App {
             let source_is_primary = entry.nexus_is_primary;
             let source_md5 = entry.archive_md5.clone();
             sender.oneshot_command(async move {
-                tracker
+                let result = tracker
                     .update_mod_source_metadata_by_nexus_ids(
                         &game_id,
                         nxs_mod_id,
@@ -710,8 +720,9 @@ impl App {
                         source_md5.as_deref(),
                     )
                     .await
-                    .ok();
-                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(())))
+                    .map(|_| ())
+                    .map_err(|error| error.to_string());
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
             });
         }
         // Rebuild views only if game_domain actually changed (affects filtering)
@@ -861,8 +872,11 @@ impl App {
         if let Some(tracker) = self.session.tracker.clone() {
             let id = download_id.clone();
             sender.oneshot_command(async move {
-                let _ = tracker.delete_download_entries(&[id]).await;
-                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(())))
+                let result = tracker
+                    .delete_download_entries(&[id])
+                    .await
+                    .map_err(|error| error.to_string());
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
             });
         }
         self.refresh_download_counts();
@@ -890,8 +904,11 @@ impl App {
         {
             let entry = entry.clone();
             sender.oneshot_command(async move {
-                let _ = tracker.save_download_entry(&entry).await;
-                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(())))
+                let result = tracker
+                    .save_download_entry(&entry)
+                    .await
+                    .map_err(|error| error.to_string());
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
             });
         }
         self.rebuild_downloads_view();

@@ -38,37 +38,16 @@ pub async fn move_game_cache(
         .await
         .context("Failed to list mods for cache move")?;
 
-    let mut move_errors: Vec<String> = Vec::new();
-    for m in &mods {
-        let src = paths::mod_cache_dir_in(old_cache_root, &m.id);
-        let dst = paths::mod_cache_dir_in(new_cache_root, &m.id);
-        if !src.exists() {
-            continue;
-        }
-        if let Err(e) = move_dir(&src, &dst) {
-            move_errors.push(format!("  {}: {e}", m.name));
-        }
-    }
-
-    if !move_errors.is_empty() {
-        bail!(
-            "Cache move failed for {} mod(s):\n{}",
-            move_errors.len(),
-            move_errors.join("\n")
-        );
-    }
+    let moved = move_cache_directories(&mods, old_cache_root, new_cache_root)?;
 
     let old_prefix = old_cache_root.to_string_lossy();
     let new_prefix = new_cache_root.to_string_lossy();
-    tracker
-        .update_game_cache_paths(game_id, &old_prefix, &new_prefix)
+    if let Err(error) = tracker
+        .commit_game_cache_move(game_id, &old_prefix, &new_prefix, Some(new_cache_root))
         .await
-        .context("Failed to update cache paths in database")?;
-
-    tracker
-        .set_game_cache_dir(game_id, new_cache_root)
-        .await
-        .context("Failed to save new cache dir setting")?;
+    {
+        return Err(cache_move_failure(error, rollback_cache_moves(&moved)));
+    }
 
     Ok(())
 }
@@ -92,37 +71,16 @@ pub async fn reset_game_cache(
         .await
         .context("Failed to list mods for cache reset")?;
 
-    let mut move_errors: Vec<String> = Vec::new();
-    for m in &mods {
-        let src = paths::mod_cache_dir_in(current_cache_root, &m.id);
-        let dst = paths::mod_cache_dir_in(default_cache_root, &m.id);
-        if !src.exists() {
-            continue;
-        }
-        if let Err(e) = move_dir(&src, &dst) {
-            move_errors.push(format!("  {}: {e}", m.name));
-        }
-    }
-
-    if !move_errors.is_empty() {
-        bail!(
-            "Cache reset failed for {} mod(s):\n{}",
-            move_errors.len(),
-            move_errors.join("\n")
-        );
-    }
+    let moved = move_cache_directories(&mods, current_cache_root, default_cache_root)?;
 
     let old_prefix = current_cache_root.to_string_lossy();
     let new_prefix = default_cache_root.to_string_lossy();
-    tracker
-        .update_game_cache_paths(game_id, &old_prefix, &new_prefix)
+    if let Err(error) = tracker
+        .commit_game_cache_move(game_id, &old_prefix, &new_prefix, None)
         .await
-        .context("Failed to update cache paths in database")?;
-
-    tracker
-        .clear_game_cache_dir(game_id)
-        .await
-        .context("Failed to clear custom cache dir setting")?;
+    {
+        return Err(cache_move_failure(error, rollback_cache_moves(&moved)));
+    }
 
     Ok(())
 }
@@ -185,6 +143,56 @@ fn move_dir(src: &Path, dst: &Path) -> Result<()> {
     Ok(())
 }
 
+fn move_cache_directories(
+    mods: &[crate::models::mod_entry::ModEntry],
+    old_cache_root: &Path,
+    new_cache_root: &Path,
+) -> Result<Vec<(std::path::PathBuf, std::path::PathBuf)>> {
+    let mut moved = Vec::new();
+    for entry in mods {
+        let source = paths::mod_cache_dir_in(old_cache_root, &entry.id);
+        let destination = paths::mod_cache_dir_in(new_cache_root, &entry.id);
+        if !source.exists() {
+            continue;
+        }
+        if let Err(error) = move_dir(&source, &destination) {
+            let rollback_errors = rollback_cache_moves(&moved);
+            return Err(cache_move_failure(
+                anyhow::anyhow!("Cache move failed for '{}': {error:#}", entry.name),
+                rollback_errors,
+            ));
+        }
+        moved.push((source, destination));
+    }
+    Ok(moved)
+}
+
+fn rollback_cache_moves(moved: &[(std::path::PathBuf, std::path::PathBuf)]) -> Vec<String> {
+    moved
+        .iter()
+        .rev()
+        .filter_map(|(source, destination)| {
+            move_dir(destination, source).err().map(|error| {
+                format!(
+                    "failed to restore '{}' from '{}': {error:#}",
+                    source.display(),
+                    destination.display()
+                )
+            })
+        })
+        .collect()
+}
+
+fn cache_move_failure(error: anyhow::Error, rollback_errors: Vec<String>) -> anyhow::Error {
+    if rollback_errors.is_empty() {
+        return error;
+    }
+    anyhow::anyhow!(
+        "{error:#}. Cache rollback also failed: {}",
+        rollback_errors.join("; ")
+    )
+}
+
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)? {
@@ -198,4 +206,65 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use anyhow::Result;
+    use tempfile::tempdir;
+
+    use crate::models::mod_entry::{InstallTarget, ModEntry};
+
+    use super::move_cache_directories;
+
+    fn mod_entry(id: &str, name: &str, priority: i32) -> ModEntry {
+        ModEntry {
+            id: id.to_string(),
+            game_id: "game".to_string(),
+            name: name.to_string(),
+            archive_hash: None,
+            archive_path: None,
+            installed_at: None,
+            enabled: true,
+            priority,
+            nexus_mod_id: None,
+            nexus_file_id: None,
+            nexus_domain: None,
+            version: None,
+            author: None,
+            nexus_description: None,
+            latest_version: None,
+            nexus_file_name: None,
+            nexus_is_primary: false,
+            archive_md5: None,
+            install_target: InstallTarget::Data,
+            notes: None,
+        }
+    }
+
+    #[test]
+    fn rolls_back_partial_cache_move() -> Result<()> {
+        let temp = tempdir()?;
+        let old_root = temp.path().join("old");
+        let new_root = temp.path().join("new");
+        std::fs::create_dir_all(old_root.join("first"))?;
+        std::fs::create_dir_all(old_root.join("second"))?;
+        std::fs::write(old_root.join("first/file"), b"first")?;
+        std::fs::write(old_root.join("second/file"), b"second")?;
+        std::fs::create_dir_all(new_root.join("second"))?;
+        std::fs::write(new_root.join("second/existing"), b"occupied")?;
+        let mods = [
+            mod_entry("first", "First", 0),
+            mod_entry("second", "Second", 1),
+        ];
+
+        let error = move_cache_directories(&mods, &old_root, &new_root)
+            .expect_err("the occupied second destination must fail the cache move");
+
+        assert!(error.to_string().contains("Second"));
+        assert_eq!(std::fs::read(old_root.join("first/file"))?, b"first");
+        assert_eq!(std::fs::read(old_root.join("second/file"))?, b"second");
+        assert!(!new_root.join("first").exists());
+        Ok(())
+    }
 }

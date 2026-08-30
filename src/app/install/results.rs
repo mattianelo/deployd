@@ -264,10 +264,13 @@ impl App {
                     {
                         let entry = entry.clone();
                         sender.oneshot_command(async move {
-                            let _ = tracker.save_download_entry(&entry).await;
-                            AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(
-                                (),
-                            )))
+                            let result = tracker
+                                .save_download_entry(&entry)
+                                .await
+                                .map_err(|error| error.to_string());
+                            AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(
+                                result,
+                            ))
                         });
                     }
                 }
@@ -323,8 +326,11 @@ impl App {
             {
                 let entry = entry.clone();
                 sender.oneshot_command(async move {
-                    let _ = tracker.save_download_entry(&entry).await;
-                    AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(())))
+                    let result = tracker
+                        .save_download_entry(&entry)
+                        .await
+                        .map_err(|error| error.to_string());
+                    AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
                 });
             }
         }
@@ -333,6 +339,9 @@ impl App {
             Ok(add_result) => {
                 let count = add_result.files_cached;
                 let plugins = add_result.plugins_found.len();
+                for warning in &add_result.warnings {
+                    self.push_notification(warning);
+                }
                 self.shell.needs_deploy = true;
                 self.auto_save_profile(sender);
 
@@ -359,20 +368,29 @@ impl App {
                 {
                     let mod_id = add_result.mod_entry.id.clone();
                     sender.oneshot_command(async move {
-                        if let Some(ref version) = version_from_dl {
-                            let _ = tracker.set_mod_installed_version(&mod_id, version).await;
-                        }
-                        if let Some(ref author) = author_from_dl {
-                            let _ = tracker.set_mod_author(&mod_id, author).await;
-                        }
-                        AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::ModsLoaded(
+                        let result = async {
+                            if let Some(ref version) = version_from_dl {
+                                tracker
+                                    .set_mod_installed_version(&mod_id, version)
+                                    .await
+                                    .map_err(|error| error.to_string())?;
+                            }
+                            if let Some(ref author) = author_from_dl {
+                                tracker
+                                    .set_mod_author(&mod_id, author)
+                                    .await
+                                    .map_err(|error| error.to_string())?;
+                            }
                             load_game_data(
                                 &tracker,
                                 &game,
                                 crate::app::session::GameLoadMode::Refresh,
                             )
-                            .await,
-                            true,
+                            .await
+                        }
+                        .await;
+                        AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::ModsLoaded(
+                            result, true,
                         ))
                     });
                 } else {
@@ -512,8 +530,11 @@ impl App {
             {
                 let entry = entry.clone();
                 sender.oneshot_command(async move {
-                    let _ = tracker.save_download_entry(&entry).await;
-                    AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(())))
+                    let result = tracker
+                        .save_download_entry(&entry)
+                        .await
+                        .map_err(|error| error.to_string());
+                    AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
                 });
             }
         }

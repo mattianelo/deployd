@@ -31,8 +31,11 @@ impl App {
         ) {
             let game_id = game.id.clone();
             sender.oneshot_command(async move {
-                let _ = tracker.set_setting("last_game_id", &game_id).await;
-                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(())))
+                let result = tracker
+                    .set_setting("last_game_id", &game_id)
+                    .await
+                    .map_err(|error| error.to_string());
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
             });
         }
         self.reload_mods_full(sender);
@@ -79,7 +82,7 @@ impl App {
             self.mods.selection_dirty = true;
         }
         self.refresh_priority_labels();
-        self.save_group_positions();
+        self.save_group_positions(sender);
         self.save_mod_priorities(sender);
     }
 
@@ -151,7 +154,7 @@ impl App {
             self.mods.selection_dirty = true;
         }
         self.refresh_priority_labels();
-        self.save_group_positions();
+        self.save_group_positions(sender);
         self.save_mod_priorities(sender);
     }
 
@@ -226,7 +229,7 @@ impl App {
             self.mods.selection_dirty = true;
         }
         self.refresh_priority_labels();
-        self.save_group_positions();
+        self.save_group_positions(sender);
         self.save_mod_priorities(sender);
     }
 
@@ -358,7 +361,11 @@ impl App {
         });
     }
 
-    pub(crate) fn handle_toggle_group_collapse(&mut self, index: DynamicIndex) {
+    pub(crate) fn handle_toggle_group_collapse(
+        &mut self,
+        index: DynamicIndex,
+        sender: &ComponentSender<Self>,
+    ) {
         let idx = index.current_index();
         let (group_id, new_collapsed) = {
             let guard = self.mods.rows.guard();
@@ -410,8 +417,12 @@ impl App {
 
         if let Some(tracker) = self.session.tracker.clone() {
             let gid = group_id.clone();
-            tokio::spawn(async move {
-                let _ = tracker.set_group_collapsed(&gid, new_collapsed).await;
+            sender.oneshot_command(async move {
+                let result = tracker
+                    .set_group_collapsed(&gid, new_collapsed)
+                    .await
+                    .map_err(|error| error.to_string());
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
             });
         }
     }
@@ -439,7 +450,10 @@ impl App {
         {
             sender.oneshot_command(async move {
                 if let Err(e) = tracker.delete_group(&group_id).await {
-                    eprintln!("Failed to delete group: {e}");
+                    return AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::ModsLoaded(
+                        Err(e.to_string()),
+                        true,
+                    ));
                 }
                 AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::ModsLoaded(
                     load_game_data(&tracker, &game, crate::app::session::GameLoadMode::Refresh)
@@ -460,7 +474,10 @@ impl App {
             };
             sender.oneshot_command(async move {
                 if let Err(e) = tracker.create_group(&game.id, &name, position).await {
-                    eprintln!("Failed to create group: {e}");
+                    return AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::ModsLoaded(
+                        Err(e.to_string()),
+                        true,
+                    ));
                 }
                 AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::ModsLoaded(
                     load_game_data(&tracker, &game, crate::app::session::GameLoadMode::Refresh)
@@ -471,7 +488,12 @@ impl App {
         }
     }
 
-    pub(crate) fn handle_rename_group(&mut self, index: DynamicIndex, new_name: String) {
+    pub(crate) fn handle_rename_group(
+        &mut self,
+        index: DynamicIndex,
+        new_name: String,
+        sender: &ComponentSender<Self>,
+    ) {
         let idx = index.current_index();
         let group_id = {
             let guard = self.mods.rows.guard();
@@ -494,8 +516,12 @@ impl App {
         }
 
         if let Some(tracker) = self.session.tracker.clone() {
-            tokio::spawn(async move {
-                let _ = tracker.rename_group(&group_id, &new_name).await;
+            sender.oneshot_command(async move {
+                let result = tracker
+                    .rename_group(&group_id, &new_name)
+                    .await
+                    .map_err(|error| error.to_string());
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
             });
         }
     }
@@ -531,11 +557,12 @@ impl App {
         if let Some(tracker) = self.session.tracker.clone() {
             let color_ref = color.as_deref().map(String::from);
             sender.oneshot_command(async move {
-                let _ = tracker
+                let result = tracker
                     .set_group_color(&group_id, color_ref.as_deref())
-                    .await;
+                    .await
+                    .map_err(|error| error.to_string());
                 crate::app::messages::AppCmdMsg::Shell(
-                    crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(())),
+                    crate::app::messages::ShellCmdMsg::PrioritySaved(result),
                 )
             });
         }
@@ -550,9 +577,13 @@ impl App {
             return;
         };
         let game_id = game.id.clone();
-        let cache_root = self
-            .cache_root_for(&game.id)
-            .unwrap_or_else(|_| paths::cache_root().unwrap_or_default());
+        let cache_root = match self.cache_root_for(&game.id) {
+            Ok(path) => path,
+            Err(error) => {
+                self.push_notification(&format!("Cannot resolve the mod cache: {error}"));
+                return;
+            }
+        };
         sender.oneshot_command(async move {
             let result: Result<(String, std::path::PathBuf), String> = async {
                 let mod_id = uuid::Uuid::new_v4().to_string();
@@ -870,10 +901,17 @@ impl App {
         let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
-        let cache_root = self
-            .selected_game()
-            .and_then(|g| self.cache_root_for(&g.id).ok())
-            .unwrap_or_else(|| paths::cache_root().unwrap_or_default());
+        let Some(game) = self.selected_game() else {
+            self.push_notification("No game selected");
+            return;
+        };
+        let cache_root = match self.cache_root_for(&game.id) {
+            Ok(path) => path,
+            Err(error) => {
+                self.push_notification(&format!("Cannot resolve the mod cache: {error}"));
+                return;
+            }
+        };
 
         let vadj = self.mods.scroll.vadjustment();
         self.mods.pending_scroll_restore = Some(vadj.value());
@@ -910,7 +948,7 @@ impl App {
             let tracker_clone = tracker.clone();
             let cache_root_clone = cache_root.clone();
             sender.oneshot_command(async move {
-                let result: Result<String, String> = async {
+                let result: Result<(String, Vec<String>), String> = async {
                     tracker_clone
                         .delete_plugins_for_mod(&mod_id)
                         .await
@@ -923,11 +961,12 @@ impl App {
                         .delete_mod(&mod_id)
                         .await
                         .map_err(|e| e.to_string())?;
+                    let mut warnings = Vec::new();
                     let cache = paths::mod_cache_dir_in(&cache_root_clone, &mod_id);
-                    if cache.exists() {
-                        let _ = std::fs::remove_dir_all(&cache);
+                    if let Some(warning) = crate::app::install::cleanup::remove_mod_cache(&cache) {
+                        warnings.push(warning);
                     }
-                    Ok(mod_id)
+                    Ok((mod_id, warnings))
                 }
                 .await;
                 AppCmdMsg::Mods(crate::app::messages::ModsCmdMsg::ModRemoved(
@@ -941,7 +980,7 @@ impl App {
 
         self.shell.needs_deploy = true;
         self.mods.selection_dirty = true;
-        self.save_group_positions();
+        self.save_group_positions(sender);
         self.handle_exit_mod_selection_mode();
     }
 }

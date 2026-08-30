@@ -35,7 +35,7 @@ pub(in crate::core::tracker) async fn migrate_aurora_file_paths(pool: &SqlitePoo
         sqlx::query_scalar("SELECT value FROM settings WHERE key = 'aurora_path_migration_v2'")
             .fetch_optional(pool)
             .await
-            .unwrap_or(None);
+            .context("Failed to read Aurora path migration state")?;
 
     if done.is_some() {
         return Ok(());
@@ -124,22 +124,21 @@ pub(in crate::core::tracker) async fn migrate_aurora_file_paths(pool: &SqlitePoo
         if !old.exists() {
             continue;
         }
-        if let Some(parent) = new.parent()
-            && let Err(e) = std::fs::create_dir_all(parent)
-        {
-            dlog!(
-                "[deployd] aurora migration: failed to create dir {}: {e}",
-                parent.display()
-            );
-            continue;
+        if let Some(parent) = new.parent() {
+            std::fs::create_dir_all(parent).with_context(|| {
+                format!(
+                    "Failed to create Aurora cache directory '{}'",
+                    parent.display()
+                )
+            })?;
         }
-        if let Err(e) = std::fs::rename(old, new) {
-            dlog!(
-                "[deployd] aurora migration: failed to move {} → {}: {e}",
+        std::fs::rename(old, new).with_context(|| {
+            format!(
+                "Failed to move Aurora cache file '{}' to '{}'",
                 old.display(),
                 new.display()
-            );
-        }
+            )
+        })?;
     }
 
     // Update DB records and write guard in a single transaction.
@@ -199,7 +198,7 @@ pub(in crate::core::tracker) async fn migrate_aurora_root_paths(pool: &SqlitePoo
         sqlx::query_scalar("SELECT value FROM settings WHERE key = 'aurora_root_migration_v3'")
             .fetch_optional(pool)
             .await
-            .unwrap_or(None);
+            .context("Failed to read Aurora root migration state")?;
 
     if done.is_some() {
         return Ok(());
@@ -278,7 +277,7 @@ pub(in crate::core::tracker) async fn migrate_aurora_data_system_paths(
         sqlx::query_scalar("SELECT value FROM settings WHERE key = 'aurora_root_migration_v4'")
             .fetch_optional(pool)
             .await
-            .unwrap_or(None);
+            .context("Failed to read Aurora data-system migration state")?;
 
     if done.is_some() {
         return Ok(());
@@ -363,7 +362,7 @@ pub(in crate::core::tracker) async fn migrate_aurora_external_file_paths(
         sqlx::query_scalar("SELECT value FROM settings WHERE key = 'aurora_root_migration_v5'")
             .fetch_optional(pool)
             .await
-            .unwrap_or(None);
+            .context("Failed to read Aurora external-file migration state")?;
 
     if done.is_some() {
         return Ok(());
@@ -457,7 +456,7 @@ pub(in crate::core::tracker) async fn migrate_aurora_vanilla_root_paths(
     )
     .fetch_optional(pool)
     .await
-    .unwrap_or(None);
+    .context("Failed to read Aurora vanilla-path migration state")?;
 
     if done.is_some() {
         return Ok(());

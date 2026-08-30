@@ -4,7 +4,7 @@ use relm4::prelude::*;
 use crate::ui::welcome_wizard::{WelcomeWizard, WelcomeWizardOutput};
 
 use super::super::App;
-use super::super::messages::AppMsg;
+use super::super::messages::{AppCmdMsg, AppMsg, ShellCmdMsg};
 
 impl App {
     pub(crate) fn handle_welcome_wizard_skipped(&mut self) {
@@ -43,11 +43,14 @@ impl App {
         if let Some(w) = self.ui.welcome_wizard.take() {
             w.widget().close();
         }
-        // Persist the wizard-shown marker so we don't show it again.
         if let Some(ref tracker) = self.session.tracker {
             let t = tracker.clone();
-            relm4::spawn(async move {
-                let _ = t.set_setting("welcome_wizard_shown", "1").await;
+            sender.oneshot_command(async move {
+                AppCmdMsg::Shell(ShellCmdMsg::PrioritySaved(
+                    t.set_setting("welcome_wizard_shown", "1")
+                        .await
+                        .map_err(|error| error.to_string()),
+                ))
             });
         }
         // Reuse the existing game-configure flow.

@@ -509,9 +509,13 @@ impl App {
         let exit_sender = sender.input_sender().clone();
         let exit_tool_name = tool_name.clone();
         let setup_sender = sender.input_sender().clone();
-        let cache_root = self
-            .cache_root_for(&game.id)
-            .unwrap_or_else(|_| crate::utils::paths::cache_root().unwrap_or_default());
+        let cache_root = match self.cache_root_for(&game.id) {
+            Ok(path) => path,
+            Err(error) => {
+                self.push_notification(&format!("Cannot resolve the mod cache: {error}"));
+                return;
+            }
+        };
 
         self.begin_work(
             WorkKind::LaunchingTool,

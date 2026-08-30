@@ -69,7 +69,11 @@ impl App {
 
                 // Read configured downloads dir (fallback to default), with per-game subfolder
                 let download_dir = {
-                    let base = match tracker.get_setting("downloads_dir").await.ok().flatten() {
+                    let base = match tracker
+                        .get_setting("downloads_dir")
+                        .await
+                        .map_err(|error| error.to_string())?
+                    {
                         Some(dir) => PathBuf::from(dir),
                         None => paths::default_downloads_dir(),
                     };

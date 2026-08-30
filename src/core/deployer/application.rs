@@ -10,7 +10,7 @@ use super::filesystem::{
     remove_deployed_file, resolve_deploy_path, split_deploy_target,
 };
 use super::planning::compute_winners;
-use super::report::DeployResult;
+use super::report::DeployOutcome;
 use crate::core::game;
 use crate::core::mod_folders;
 use crate::core::tracker::Tracker;
@@ -18,10 +18,11 @@ use crate::dlog;
 use crate::models::game::Game;
 use crate::models::manifest::ModFile;
 
-pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result<DeployResult> {
+pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result<DeployOutcome> {
     let game_data = game::deploy_dir(game);
+    let mut warnings = Vec::new();
 
-    bake_modified_plugins(game, tracker, &game_data).await;
+    bake_modified_plugins(game, tracker, &game_data).await?;
 
     let deployed = tracker.get_deployed_files(&game.id).await?;
     let deployed_map: HashMap<&str, &ModFile> = deployed
@@ -84,12 +85,17 @@ pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result
     // Distinguish stale case-variant paths from vanilla game files during removal.
     let deployed_lower: HashSet<String> = deployed
         .iter()
-        .filter_map(|d| {
-            resolve_deploy_path(&d.game_rel_original, &game.path, &game_data)
-                .ok()
-                .map(|p| p.to_string_lossy().to_lowercase())
+        .map(|deployed| {
+            resolve_deploy_path(&deployed.game_rel_original, &game.path, &game_data)
+                .map(|path| path.to_string_lossy().to_lowercase())
+                .with_context(|| {
+                    format!(
+                        "Invalid tracked deploy path '{}'",
+                        deployed.game_rel_original
+                    )
+                })
         })
-        .collect();
+        .collect::<Result<_>>()?;
 
     // Needed to restore vanilla backups after the removal loop.
     let removed_rels: Vec<String> = to_remove
@@ -98,10 +104,10 @@ pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result
         .collect();
 
     for f in &to_remove {
-        remove_deployed_file(f, game, &game_data);
+        warnings.extend(remove_deployed_file(f, game, &game_data)?);
     }
 
-    restore_vanilla_for_paths(game, tracker, &game_data, &removed_rels).await;
+    warnings.extend(restore_vanilla_for_paths(game, tracker, &game_data, &removed_rels).await?);
 
     let canonical_dirs = build_dir_canonical_map(&winners);
 
@@ -115,18 +121,9 @@ pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result
                 split_deploy_target(&f.game_rel_original, &game.path, &game_data)?;
             let rel = rel.trim_end_matches('/');
             let dir_comps: Vec<&str> = rel.split('/').filter(|s| !s.is_empty()).collect();
-            let dir_path = match create_dirs_case_insensitive(
-                &base,
-                &dir_comps,
-                &canonical_dirs,
-                &mut dir_cache,
-            ) {
-                Ok(p) => p,
-                Err(e) => {
-                    eprintln!("[deployd] WARNING: cannot create sentinel dir '{rel}': {e}");
-                    continue;
-                }
-            };
+            let dir_path =
+                create_dirs_case_insensitive(&base, &dir_comps, &canonical_dirs, &mut dir_cache)
+                    .with_context(|| format!("Cannot create deployed directory '{rel}'"))?;
             dlog!("[deployd] sentinel dir: {}", dir_path.display());
             let actual_rel = dir_path
                 .strip_prefix(&base)
@@ -155,7 +152,7 @@ pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result
             let is_ours = deployed_lower.contains(&deploy_target_lower);
             let is_vanilla = vanilla_snapshot.contains_key(&f.game_rel_lowercase);
             if !is_ours && is_vanilla {
-                backup_vanilla_file(game, tracker, &f.game_rel_original, &deploy_target).await;
+                backup_vanilla_file(game, tracker, &f.game_rel_original, &deploy_target).await?;
             }
             fs::remove_file(&deploy_target)?;
         } else if let (Some(parent), Some(fname)) =
@@ -163,20 +160,39 @@ pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result
         {
             // Remove stale case-variant files that were previously deployed by us
             // but survived because the purge step only removed exact-path entries.
-            if let Ok(entries) = fs::read_dir(parent) {
-                for entry in entries.flatten() {
-                    let entry_path = entry.path();
-                    if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false)
-                        && entry.file_name().eq_ignore_ascii_case(fname)
-                        && entry_path != deploy_target
-                    {
-                        let was_ours =
-                            deployed_lower.contains(&entry_path.to_string_lossy().to_lowercase());
-                        if was_ours {
-                            let _ = fs::remove_file(&entry_path);
+            match fs::read_dir(parent) {
+                Ok(entries) => {
+                    for entry in entries {
+                        let entry = match entry {
+                            Ok(entry) => entry,
+                            Err(error) => {
+                                warnings.push(format!(
+                                    "Could not inspect an entry in '{}' for stale deployed files: {error}",
+                                    parent.display()
+                                ));
+                                continue;
+                            }
+                        };
+                        let entry_path = entry.path();
+                        if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false)
+                            && entry.file_name().eq_ignore_ascii_case(fname)
+                            && entry_path != deploy_target
+                        {
+                            let was_ours = deployed_lower
+                                .contains(&entry_path.to_string_lossy().to_lowercase());
+                            if was_ours && let Err(error) = fs::remove_file(&entry_path) {
+                                warnings.push(format!(
+                                    "Could not remove stale deployed file '{}': {error}",
+                                    entry_path.display()
+                                ));
+                            }
                         }
                     }
                 }
+                Err(error) => warnings.push(format!(
+                    "Could not inspect '{}' for stale deployed files: {error}",
+                    parent.display()
+                )),
             }
         }
 
@@ -234,13 +250,14 @@ pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result
         .await?;
 
     if let Err(e) = mod_folders::refresh_named_mod_folders(tracker, &game.id, cache_root).await {
-        eprintln!("[deployd] named_mods refresh failed: {e}");
+        warnings.push(format!("Named mod-folder refresh failed: {e}"));
     }
 
-    Ok(DeployResult {
+    Ok(DeployOutcome {
         files_total: winners.len(),
         files_added: newly_linked.len(),
         files_removed: to_remove.len(),
         conflicts_resolved,
+        warnings,
     })
 }

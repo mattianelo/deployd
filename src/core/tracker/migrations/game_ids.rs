@@ -15,7 +15,7 @@ pub(in crate::core::tracker) async fn migrate_game_ids(pool: &SqlitePool) -> Res
         sqlx::query_scalar("SELECT value FROM settings WHERE key = 'game_id_migration_v1'")
             .fetch_optional(pool)
             .await
-            .unwrap_or(None);
+            .context("Failed to read game ID migration state")?;
 
     if done.is_some() {
         return Ok(());

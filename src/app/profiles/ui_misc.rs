@@ -3,7 +3,7 @@ use gtk::prelude::*;
 use relm4::prelude::*;
 
 use super::super::App;
-use super::super::messages::AppMsg;
+use super::super::messages::{AppCmdMsg, AppMsg};
 use crate::models::download::DownloadFilter;
 
 use super::super::types::ModFilter;
@@ -41,11 +41,16 @@ impl App {
     pub(crate) fn handle_rate_limit_updated(
         &mut self,
         info: crate::core::nexus_api::RateLimitInfo,
+        sender: &ComponentSender<Self>,
     ) {
         self.download.rate_limit = Some(info.clone());
         if let Some(tracker) = self.session.tracker.clone() {
-            tokio::spawn(async move {
-                let _ = tracker.save_rate_limits(&info).await;
+            sender.oneshot_command(async move {
+                let result = tracker
+                    .save_rate_limits(&info)
+                    .await
+                    .map_err(|error| error.to_string());
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
             });
         }
     }

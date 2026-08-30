@@ -115,6 +115,11 @@ Deployd treats required database upgrades as startup-critical and reports an act
 one cannot be applied. Non-critical metadata repairs appear as warnings and are retried on a later
 launch, so a temporary repair failure does not make the database unusable.
 
+Deployment and purge report success only after required filesystem and tracking updates complete.
+Problems cleaning empty directories or restoring optional backups appear as warnings without
+hiding completed work. If moving a game cache fails partway through, Deployd attempts to move the
+already-relocated files back and reports any rollback problem that still needs attention.
+
 **Hardlink filesystem constraint**
 
 Hardlinks require both the cache directory and the game directory to reside on the **same filesystem** — that is, they must share the same `st_dev` value as reported by the OS. Concretely:

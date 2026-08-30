@@ -322,13 +322,16 @@ pub(in crate::core::tracker) async fn backfill_plugin_masters(pool: &SqlitePool)
         match crate::utils::plugin_header::read_masters(Path::new(cache_path)) {
             Ok(masters) => {
                 for master in &masters {
-                    let _ = sqlx::query(
+                    sqlx::query(
                         "INSERT OR IGNORE INTO plugin_masters (plugin_id, master) VALUES (?, ?)",
                     )
                     .bind(plugin_id)
                     .bind(master)
                     .execute(pool)
-                    .await;
+                    .await
+                    .with_context(|| {
+                        format!("Failed to backfill master '{master}' for plugin '{plugin_id}'")
+                    })?;
                 }
             }
             Err(e) => {
@@ -345,7 +348,7 @@ pub(in crate::core::tracker) async fn backfill_download_statuses(pool: &SqlitePo
         sqlx::query_scalar("SELECT value FROM settings WHERE key = 'dl_status_backfill_v1'")
             .fetch_optional(pool)
             .await
-            .unwrap_or(None);
+            .context("Failed to read download status backfill state")?;
 
     if done.is_some() {
         return Ok(());
@@ -390,7 +393,7 @@ pub(in crate::core::tracker) async fn backfill_archive_hashes(pool: &SqlitePool)
         sqlx::query_scalar("SELECT value FROM settings WHERE key = 'archive_hash_backfill_v1'")
             .fetch_optional(pool)
             .await
-            .unwrap_or(None);
+            .context("Failed to read archive hash backfill state")?;
 
     if done.is_some() {
         return Ok(());
@@ -409,7 +412,7 @@ pub(in crate::core::tracker) async fn backfill_archive_hashes(pool: &SqlitePool)
     )
     .fetch_all(pool)
     .await
-    .unwrap_or_default();
+    .context("Failed to query archives for hash backfill")?;
 
     for (mod_id, archive_path) in rows {
         let path = std::path::PathBuf::from(&archive_path);
@@ -417,19 +420,18 @@ pub(in crate::core::tracker) async fn backfill_archive_hashes(pool: &SqlitePool)
             continue;
         }
         // Hash on a blocking thread — archive files can be several GB.
-        let hash = tokio::task::spawn_blocking(move || {
-            crate::core::archive::hash_archive_file(&path).ok()
-        })
-        .await
-        .unwrap_or(None);
+        let hash =
+            tokio::task::spawn_blocking(move || crate::core::archive::hash_archive_file(&path))
+                .await
+                .context("Archive hash backfill worker failed")?
+                .with_context(|| format!("Failed to hash archive for mod '{mod_id}'"))?;
 
-        if let Some(hash) = hash {
-            let _ = sqlx::query("UPDATE mods SET archive_hash = ? WHERE id = ?")
-                .bind(&hash)
-                .bind(&mod_id)
-                .execute(pool)
-                .await;
-        }
+        sqlx::query("UPDATE mods SET archive_hash = ? WHERE id = ?")
+            .bind(&hash)
+            .bind(&mod_id)
+            .execute(pool)
+            .await
+            .with_context(|| format!("Failed to save archive hash for mod '{mod_id}'"))?;
     }
 
     sqlx::query(
@@ -525,6 +527,12 @@ pub(in crate::core::tracker) async fn migrate_profile_save_mode_column(
     )
     .await?;
     Ok(())
+}
+
+pub(in crate::core::tracker) async fn migrate_tools_working_dir_column(
+    pool: &SqlitePool,
+) -> Result<()> {
+    add_column_if_missing(pool, "tools", "working_dir", "TEXT DEFAULT ''").await
 }
 
 async fn add_column_if_missing(
@@ -743,6 +751,18 @@ mod tests {
             !replacement_exists,
             "failed migration must roll back its table"
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn reports_required_schema_ddl_failure() -> Result<()> {
+        let pool = isolated_pool().await?;
+
+        let error = add_column_if_missing(&pool, "sqlite_schema", "required", "TEXT")
+            .await
+            .expect_err("required schema DDL must not be discarded");
+
+        assert!(error.to_string().contains("sqlite_schema.required"));
         Ok(())
     }
 }

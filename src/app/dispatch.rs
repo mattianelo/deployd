@@ -52,7 +52,7 @@ impl App {
             }
             ShellMsg::SelfUpdateDownload => self.handle_self_update_clicked(&sender),
             ShellMsg::OpenDeploymentFolder => self.handle_open_deployment_folder(),
-            ShellMsg::SetColorScheme(idx) => self.handle_set_color_scheme(idx),
+            ShellMsg::SetColorScheme(idx) => self.handle_set_color_scheme(idx, &sender),
             ShellMsg::NexusLoginClicked => self.handle_nexus_login_clicked(&sender),
             ShellMsg::NexusLogoutClicked => self.handle_nexus_logout_clicked(&sender),
         }
@@ -119,10 +119,10 @@ impl App {
             ModsMsg::MoveSelectedModsTo { selected, from, to } => {
                 self.handle_move_selected_mods_to(selected, from, to, &sender)
             }
-            ModsMsg::ToggleGroupCollapse(idx) => self.handle_toggle_group_collapse(idx),
+            ModsMsg::ToggleGroupCollapse(idx) => self.handle_toggle_group_collapse(idx, &sender),
             ModsMsg::DeleteGroup(idx) => self.handle_delete_group(idx, &sender),
             ModsMsg::CreateGroup(name) => self.handle_create_group(name, &sender),
-            ModsMsg::RenameGroup(idx, name) => self.handle_rename_group(idx, name),
+            ModsMsg::RenameGroup(idx, name) => self.handle_rename_group(idx, name, &sender),
             ModsMsg::SetGroupColor(idx, color) => self.handle_set_group_color(idx, color, &sender),
             ModsMsg::OpenModProperties(idx) => self.handle_open_mod_properties(idx, root, &sender),
             ModsMsg::ModPropertiesApplied {
@@ -304,7 +304,7 @@ impl App {
             }
             DownloadsMsg::ScanDownloadsFolder => self.handle_scan_downloads_folder(&sender),
             DownloadsMsg::DownloadSortChanged(idx) => self.handle_download_sort_changed(idx),
-            DownloadsMsg::RateLimitUpdated(info) => self.handle_rate_limit_updated(info),
+            DownloadsMsg::RateLimitUpdated(info) => self.handle_rate_limit_updated(info, &sender),
             DownloadsMsg::SetDownloadFilter(filter) => self.handle_set_download_filter(filter),
             DownloadsMsg::PauseDownload(idx) => self.handle_pause_download(idx),
             DownloadsMsg::ResumeDownload(idx) => self.handle_resume_download(idx, &sender),
@@ -453,12 +453,29 @@ impl App {
             ShellCmdMsg::Initialized(result) => self.handle_cmd_initialized(*result, &sender),
             ShellCmdMsg::DeployDone(result) => self.handle_cmd_deploy_done(result, &sender),
             ShellCmdMsg::PurgeDone(result) => self.handle_cmd_purge_done(result),
+            ShellCmdMsg::GamePathSaved {
+                game_id,
+                path,
+                result,
+            } => self.handle_cmd_game_path_saved(game_id, path, result),
             ShellCmdMsg::PrioritySaved(result) => self.handle_cmd_priority_saved(result, &sender),
             ShellCmdMsg::AppUpdateResult(result) => self.handle_cmd_app_update_result(result),
             ShellCmdMsg::NexusAvatarLoaded(bytes) => self.handle_cmd_nexus_avatar_loaded(bytes),
             ShellCmdMsg::NexusUserRefreshed(username, avatar_url, is_premium) => {
                 self.handle_cmd_nexus_user_refreshed(username, avatar_url, is_premium, &sender)
             }
+            ShellCmdMsg::NexusUserRefreshFailed(error) => {
+                self.push_notification(&format!("Failed to update Nexus account: {error}"));
+            }
+            ShellCmdMsg::NexusLogoutDone(result) => match result {
+                Ok(()) => {
+                    self.handle_cmd_nexus_user_refreshed(None, None, false, &sender);
+                    self.show_toast("Logged out of Nexus Mods");
+                }
+                Err(error) => {
+                    self.push_notification(&format!("Failed to log out of Nexus Mods: {error}"));
+                }
+            },
         }
     }
 
@@ -496,7 +513,10 @@ impl App {
             GamesCmdMsg::LastDeployedProfileLoaded(id) => {
                 self.handle_cmd_last_deployed_profile_loaded(id)
             }
-            GamesCmdMsg::GamesPersisted => self.handle_cmd_games_persisted(&sender),
+            GamesCmdMsg::GamesPersisted(result) => self.handle_cmd_games_persisted(result, &sender),
+            GamesCmdMsg::GameRemoved { game_id, result } => {
+                self.handle_cmd_game_removed(game_id, result, &sender)
+            }
             GamesCmdMsg::OrderSnapshotsLoaded(mod_snapshots, plugin_snapshots) => {
                 self.handle_cmd_order_snapshots_loaded(mod_snapshots, plugin_snapshots, &sender)
             }

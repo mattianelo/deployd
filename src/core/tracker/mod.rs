@@ -192,10 +192,6 @@ impl Tracker {
         .execute(&pool)
         .await?;
 
-        let _ = sqlx::query("ALTER TABLE tools ADD COLUMN working_dir TEXT DEFAULT ''")
-            .execute(&pool)
-            .await;
-
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
@@ -294,6 +290,7 @@ impl Tracker {
         migrations::migrate_archive_path_column(&pool).await?;
         migrations::migrate_group_color_column(&pool).await?;
         migrations::migrate_profile_save_mode_column(&pool).await?;
+        migrations::migrate_tools_working_dir_column(&pool).await?;
 
         for statement in &[
             "CREATE INDEX IF NOT EXISTS idx_mods_game_id      ON mods(game_id)",
@@ -350,5 +347,65 @@ impl Tracker {
             tracker: Self { pool },
             warnings,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use anyhow::Result;
+    use tempfile::tempdir;
+
+    use super::Tracker;
+
+    #[tokio::test]
+    async fn returns_retryable_backfill_warning() -> Result<()> {
+        let temp = tempdir()?;
+        let database = temp.path().join("tracker.db");
+        let archive = temp.path().join("archive.zip");
+        std::fs::write(&archive, b"archive")?;
+        let url = format!("sqlite://{}?mode=rwc", database.display());
+        let initial = Tracker::open(&url).await?.tracker;
+        sqlx::query(
+            "INSERT INTO mods (id, game_id, name, nexus_mod_id, nexus_file_id)
+             VALUES ('mod', 'game', 'Mod', 1, 2)",
+        )
+        .execute(&initial.pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO download_entries
+             (id, mod_name, archive_path, nexus_mod_id, nexus_file_id, metadata_fetched)
+             VALUES ('download', 'Mod', ?, 1, 2, 1)",
+        )
+        .bind(archive.to_string_lossy().as_ref())
+        .execute(&initial.pool)
+        .await?;
+        sqlx::query("DELETE FROM settings WHERE key = 'archive_hash_backfill_v1'")
+            .execute(&initial.pool)
+            .await?;
+        sqlx::query(
+            "CREATE TRIGGER reject_archive_hash
+             BEFORE UPDATE OF archive_hash ON mods
+             BEGIN SELECT RAISE(FAIL, 'blocked archive hash'); END",
+        )
+        .execute(&initial.pool)
+        .await?;
+        initial.pool.close().await;
+
+        let report = Tracker::open(&url).await?;
+
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("Archive hash backfill will be retried"))
+        );
+        assert!(
+            report
+                .tracker
+                .get_setting("archive_hash_backfill_v1")
+                .await?
+                .is_none()
+        );
+        Ok(())
     }
 }

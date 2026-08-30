@@ -275,21 +275,62 @@ impl Tracker {
         Ok(())
     }
 
-    /// Set a custom cache directory for a specific game.
-    pub async fn set_game_cache_dir(&self, game_id: &str, dir: &Path) -> Result<()> {
-        let key = format!("cache_dir_{game_id}");
-        self.set_setting(&key, &dir.to_string_lossy()).await
-    }
-
-    /// Remove the custom cache directory for a specific game (revert to default).
-    pub async fn clear_game_cache_dir(&self, game_id: &str) -> Result<()> {
-        let key = format!("cache_dir_{game_id}");
-        sqlx::query("DELETE FROM settings WHERE key = ?")
-            .bind(&key)
-            .execute(&self.pool)
+    pub async fn commit_game_cache_move(
+        &self,
+        game_id: &str,
+        old_prefix: &str,
+        new_prefix: &str,
+        custom_dir: Option<&Path>,
+    ) -> Result<()> {
+        let mut transaction = self
+            .pool
+            .begin()
             .await
-            .context("Failed to clear game cache dir")?;
-        Ok(())
+            .context("Failed to begin cache-path update")?;
+        sqlx::query(
+            "UPDATE mod_files SET cache_path = REPLACE(cache_path, ?, ?)
+             WHERE mod_id IN (SELECT id FROM mods WHERE game_id = ?)",
+        )
+        .bind(old_prefix)
+        .bind(new_prefix)
+        .bind(game_id)
+        .execute(&mut *transaction)
+        .await
+        .context("Failed to update mod_files cache paths")?;
+        sqlx::query(
+            "UPDATE deployed_files SET cache_path = REPLACE(cache_path, ?, ?)
+             WHERE game_id = ?",
+        )
+        .bind(old_prefix)
+        .bind(new_prefix)
+        .bind(game_id)
+        .execute(&mut *transaction)
+        .await
+        .context("Failed to update deployed_files cache paths")?;
+
+        let key = format!("cache_dir_{game_id}");
+        if let Some(directory) = custom_dir {
+            sqlx::query(
+                "INSERT INTO settings (key, value) VALUES (?, ?)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            )
+            .bind(&key)
+            .bind(directory.to_string_lossy().as_ref())
+            .execute(&mut *transaction)
+            .await
+            .context("Failed to save custom cache directory")?;
+        } else {
+            sqlx::query("DELETE FROM settings WHERE key = ?")
+                .bind(&key)
+                .execute(&mut *transaction)
+                .await
+                .context("Failed to clear custom cache directory")?;
+        }
+
+        transaction
+            .commit()
+            .await
+            .context("Failed to commit cache-path update")
     }
 
     /// Load all per-game custom cache dirs as a map of game_id → PathBuf.
@@ -308,40 +349,6 @@ impl Tracker {
                 Some((game_id, PathBuf::from(value)))
             })
             .collect())
-    }
-
-    /// Rewrite all cache_path entries for a game's mods after a cache directory move.
-    ///
-    /// Uses SQL REPLACE() so only paths that actually start with old_prefix are touched.
-    pub async fn update_game_cache_paths(
-        &self,
-        game_id: &str,
-        old_prefix: &str,
-        new_prefix: &str,
-    ) -> Result<()> {
-        sqlx::query(
-            "UPDATE mod_files SET cache_path = REPLACE(cache_path, ?, ?)
-             WHERE mod_id IN (SELECT id FROM mods WHERE game_id = ?)",
-        )
-        .bind(old_prefix)
-        .bind(new_prefix)
-        .bind(game_id)
-        .execute(&self.pool)
-        .await
-        .context("Failed to update mod_files cache paths")?;
-
-        sqlx::query(
-            "UPDATE deployed_files SET cache_path = REPLACE(cache_path, ?, ?)
-             WHERE game_id = ?",
-        )
-        .bind(old_prefix)
-        .bind(new_prefix)
-        .bind(game_id)
-        .execute(&self.pool)
-        .await
-        .context("Failed to update deployed_files cache paths")?;
-
-        Ok(())
     }
 
     /// Update only the `mods.install_target` column — no path rewriting.

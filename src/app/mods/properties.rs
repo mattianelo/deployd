@@ -56,18 +56,19 @@ impl App {
         };
         let mod_id = mod_entry.id.clone();
         let mod_id_for_output = mod_id.clone();
-        let is_bethesda = self
-            .selected_game()
-            .map(|g| g.engine == GameEngine::Bethesda)
-            .unwrap_or(false);
-        let is_aurora = self
-            .selected_game()
-            .map(|g| g.engine == GameEngine::Aurora)
-            .unwrap_or(false);
-        let cache_root = self
-            .selected_game()
-            .and_then(|g| self.cache_root_for(&g.id).ok())
-            .unwrap_or_else(|| crate::utils::paths::cache_root().unwrap_or_default());
+        let Some(game) = self.selected_game() else {
+            self.push_notification("No game selected");
+            return;
+        };
+        let is_bethesda = game.engine == GameEngine::Bethesda;
+        let is_aurora = game.engine == GameEngine::Aurora;
+        let cache_root = match self.cache_root_for(&game.id) {
+            Ok(path) => path,
+            Err(error) => {
+                self.push_notification(&format!("Cannot resolve the mod cache: {error}"));
+                return;
+            }
+        };
         self.ui.mod_properties_dialog = Some(
             ModPropertiesDialog::builder()
                 .transient_for(root)
@@ -328,14 +329,19 @@ impl App {
             return;
         };
         let mod_name = self.mod_name_for_id(&mod_id);
-        let (data_subdir, engine) = self
-            .selected_game()
-            .map(|g| (g.data_subdir.clone(), g.engine.clone()))
-            .unwrap_or_else(|| (String::new(), GameEngine::Bethesda));
-        let cache_root = self
-            .selected_game()
-            .and_then(|g| self.cache_root_for(&g.id).ok())
-            .unwrap_or_else(|| crate::utils::paths::cache_root().unwrap_or_default());
+        let Some(game) = self.selected_game() else {
+            self.push_notification("No game selected");
+            return;
+        };
+        let data_subdir = game.data_subdir.clone();
+        let engine = game.engine.clone();
+        let cache_root = match self.cache_root_for(&game.id) {
+            Ok(path) => path,
+            Err(error) => {
+                self.push_notification(&format!("Cannot resolve the mod cache: {error}"));
+                return;
+            }
+        };
 
         sender.oneshot_command(async move {
             let result: Result<String, String> = async {

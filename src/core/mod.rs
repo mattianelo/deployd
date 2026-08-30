@@ -13,6 +13,7 @@ pub mod mod_folders;
 pub mod nexus_api;
 pub(crate) mod nexus_identity;
 pub mod nxm;
+pub(crate) mod restore;
 pub mod rules;
 pub mod save_manager;
 pub mod tool_launcher;

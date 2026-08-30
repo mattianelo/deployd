@@ -37,8 +37,8 @@ pub enum SettingsMsg {
 pub enum SettingsCmdMsg {
     KeyValidated(Result<String, String>),
     KeySaved(Result<(), String>),
-    KeyLoaded(Option<String>),
-    DownloadsDirLoaded(Option<String>),
+    KeyLoaded(Result<Option<String>, String>),
+    DownloadsDirLoaded(Result<Option<String>, String>),
     DownloadsDirSaved(Result<(), String>),
 }
 
@@ -256,21 +256,33 @@ impl Component for SettingsDialog {
         // Load existing API key (manual keys only; SSO keys are not shown here)
         let t = model.tracker.clone();
         sender.oneshot_command(async move {
-            let key = t.get_setting("nexus_api_key").await.ok().flatten();
-            let source = t.get_setting("nexus_login_source").await.ok().flatten();
-            // Don't populate the entry for SSO keys — they were obtained via the headerbar flow
-            if source.as_deref() == Some("sso") {
-                SettingsCmdMsg::KeyLoaded(None)
-            } else {
-                SettingsCmdMsg::KeyLoaded(key)
+            let result = async {
+                let key = t
+                    .get_setting("nexus_api_key")
+                    .await
+                    .map_err(|error| error.to_string())?;
+                let source = t
+                    .get_setting("nexus_login_source")
+                    .await
+                    .map_err(|error| error.to_string())?;
+                Ok(if source.as_deref() == Some("sso") {
+                    None
+                } else {
+                    key
+                })
             }
+            .await;
+            SettingsCmdMsg::KeyLoaded(result)
         });
 
         // Load existing downloads dir
         let t2 = model.tracker.clone();
         sender.oneshot_command(async move {
-            let dir = t2.get_setting("downloads_dir").await.ok().flatten();
-            SettingsCmdMsg::DownloadsDirLoaded(dir)
+            SettingsCmdMsg::DownloadsDirLoaded(
+                t2.get_setting("downloads_dir")
+                    .await
+                    .map_err(|error| error.to_string()),
+            )
         });
 
         // Initialise appearance controls with persisted values.
@@ -330,24 +342,32 @@ impl Component for SettingsDialog {
                     if let Err(e) = tracker.set_setting("nexus_api_key", &key).await {
                         return SettingsCmdMsg::KeySaved(Err(e.to_string()));
                     }
-                    let _ = tracker
+                    if let Err(error) = tracker
                         .set_setting(
                             "nexus_login_source",
                             if key.is_empty() { "" } else { "manual" },
                         )
-                        .await;
+                        .await
+                    {
+                        return SettingsCmdMsg::KeySaved(Err(error.to_string()));
+                    }
 
                     // Validate and cache premium status + user info
                     if !key.is_empty() {
                         let client = NexusClient::new(key);
                         if let Ok((user, _)) = client.validate_key().await {
-                            let _ = tracker
+                            if let Err(error) = tracker
                                 .set_setting(
                                     "nexus_is_premium",
                                     if user.is_premium { "true" } else { "false" },
                                 )
-                                .await;
-                            let _ = tracker.save_nexus_user(&user).await;
+                                .await
+                            {
+                                return SettingsCmdMsg::KeySaved(Err(error.to_string()));
+                            }
+                            if let Err(error) = tracker.save_nexus_user(&user).await {
+                                return SettingsCmdMsg::KeySaved(Err(error.to_string()));
+                            }
                         }
                     }
 
@@ -449,18 +469,26 @@ impl Component for SettingsDialog {
                 }
                 self.status_label.set_visible(true);
             }
-            SettingsCmdMsg::KeyLoaded(key) => {
-                if let Some(ref key) = key
-                    && !key.is_empty()
-                {
-                    self.api_key_row.set_text(key);
+            SettingsCmdMsg::KeyLoaded(result) => match result {
+                Ok(Some(key)) if !key.is_empty() => self.api_key_row.set_text(&key),
+                Ok(_) => {}
+                Err(error) => {
+                    self.status_label
+                        .set_label(&format!("Failed to load Nexus settings: {error}"));
+                    self.status_label.add_css_class("error");
+                    self.status_label.set_visible(true);
                 }
-            }
-            SettingsCmdMsg::DownloadsDirLoaded(dir) => {
-                if let Some(dir) = dir {
-                    self.downloads_dir = dir;
+            },
+            SettingsCmdMsg::DownloadsDirLoaded(result) => match result {
+                Ok(Some(dir)) => self.downloads_dir = dir,
+                Ok(None) => {}
+                Err(error) => {
+                    self.status_label
+                        .set_label(&format!("Failed to load downloads settings: {error}"));
+                    self.status_label.add_css_class("error");
+                    self.status_label.set_visible(true);
                 }
-            }
+            },
             SettingsCmdMsg::DownloadsDirSaved(result) => {
                 if let Err(e) = result {
                     eprintln!("deployd: failed to save downloads dir: {e}");

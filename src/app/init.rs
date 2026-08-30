@@ -19,7 +19,7 @@ use crate::ui::mod_list::ModListItemOutput;
 use crate::ui::plugin_list::PluginRowOutput;
 use crate::utils::paths;
 
-use crate::ui::drag::{clear_drop_indicators, update_drop_indicator};
+use crate::ui::drag::{clear_drop_indicators, update_drop_indicator, wire_deselect};
 
 use super::session::{GameLoadMode, load_game_data};
 use super::state::{
@@ -732,29 +732,6 @@ pub(super) fn wire_drag_drop(
     });
 }
 
-fn wire_deselect(list_box: &gtk::ListBox) {
-    let key_ctrl = gtk::EventControllerKey::new();
-    key_ctrl.set_propagation_phase(gtk::PropagationPhase::Capture);
-    let lb = list_box.clone();
-    key_ctrl.connect_key_pressed(move |_, key, _, _| {
-        if key == gtk::gdk::Key::Escape {
-            lb.unselect_all();
-        }
-        glib::Propagation::Proceed
-    });
-    list_box.add_controller(key_ctrl);
-
-    let click_ctrl = gtk::GestureClick::new();
-    let lb = list_box.clone();
-    click_ctrl.connect_pressed(move |gesture, _, _x, y| {
-        if lb.row_at_y(y as i32).is_none() {
-            lb.unselect_all();
-            gesture.set_state(gtk::EventSequenceState::Claimed);
-        }
-    });
-    list_box.add_controller(click_ctrl);
-}
-
 /// Asynchronously opens the database, loads game data, and fetches initial
 /// settings.  Returns an `AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::Initialized)` variant ready to dispatch.
 pub(super) async fn load_init_data() -> AppCmdMsg {
@@ -764,15 +741,10 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
 
-        // Apply a staged full-backup restore if one was queued on the previous run.
         let pending = paths::pending_restore_path().map_err(|e| e.to_string())?;
-        if pending.exists() {
-            std::fs::rename(&pending, &db_path)
-                .map_err(|e| format!("Failed to apply pending restore: {e}"))?;
-            // Write a marker so load_init_data can show the post-restore banner.
-            let marker = paths::post_restore_marker_path().map_err(|e| e.to_string())?;
-            let _ = std::fs::File::create(&marker);
-        }
+        let marker = paths::post_restore_marker_path().map_err(|e| e.to_string())?;
+        crate::core::restore::apply_staged_database_restore(&db_path, &pending, &marker)
+            .map_err(|e| e.to_string())?;
 
         let db_url = format!("sqlite://{}?mode=rwc", db_path.display());
         let open_report = Tracker::open(&db_url).await.map_err(|e| e.to_string())?;
@@ -782,8 +754,16 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
         // Determine which game to select: prefer last_game_id from settings.
         // detect_games() returns empty, so load persisted games from DB to find
         // the game to initialise with.
-        let last_game_id = tracker.get_setting("last_game_id").await.ok().flatten();
-        let persisted_games = tracker.load_persisted_games().await.unwrap_or_default();
+        let last_game_id = super::startup::optional(
+            tracker.get_setting("last_game_id").await,
+            "Could not load the last selected game",
+            &mut startup_warnings,
+        )
+        .flatten();
+        let persisted_games = tracker
+            .load_persisted_games()
+            .await
+            .map_err(|e| format!("Failed to load configured games: {e}"))?;
 
         let selected_persisted = last_game_id
             .as_deref()
@@ -863,11 +843,13 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
         let downloads_dir = tracker
             .get_setting("downloads_dir")
             .await
-            .ok()
-            .flatten()
+            .map_err(|e| format!("Failed to load the downloads directory: {e}"))?
             .map(PathBuf::from);
 
-        let game_cache_dirs = tracker.load_game_cache_dirs().await.unwrap_or_default();
+        let game_cache_dirs = tracker
+            .load_game_cache_dirs()
+            .await
+            .map_err(|e| format!("Failed to load game cache directories: {e}"))?;
 
         let download_entries = tracker
             .load_download_entries()
@@ -879,44 +861,61 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             if let Some(api_key) = tracker
                 .get_setting("nexus_api_key")
                 .await
-                .ok()
-                .flatten()
+                .map_err(|e| format!("Failed to load the Nexus API key: {e}"))?
                 .filter(|k| !k.is_empty())
             {
                 let client = crate::core::nexus_api::NexusClient::new(api_key);
                 match client.validate_key().await {
                     Ok((user, rl)) => {
-                        let _ = tracker.save_nexus_user(&user).await;
+                        if let Err(error) = tracker.save_nexus_user(&user).await {
+                            startup_warnings
+                                .push(format!("Could not cache Nexus user details: {error}"));
+                        }
                         let premium = user.is_premium;
                         let avatar = user.profile_url.clone();
                         (rl, Some(user.name), avatar, premium)
                     }
                     _ => {
-                        let rl = tracker.load_rate_limits().await.unwrap_or(None);
-                        let (name, avatar) =
-                            tracker.load_nexus_user().await.unwrap_or((None, None));
+                        let rl = super::startup::optional(
+                            tracker.load_rate_limits().await,
+                            "Could not load cached Nexus rate limits",
+                            &mut startup_warnings,
+                        )
+                        .flatten();
+                        let (name, avatar) = super::startup::optional(
+                            tracker.load_nexus_user().await,
+                            "Could not load cached Nexus user details",
+                            &mut startup_warnings,
+                        )
+                        .unwrap_or((None, None));
                         let premium = tracker
                             .get_setting("nexus_is_premium")
                             .await
-                            .ok()
-                            .flatten()
+                            .map_err(|e| format!("Failed to load Nexus account status: {e}"))?
                             .map(|v| v == "true")
                             .unwrap_or(false);
                         (rl, name, avatar, premium)
                     }
                 }
             } else {
-                let rl = tracker.load_rate_limits().await.unwrap_or(None);
+                let rl = super::startup::optional(
+                    tracker.load_rate_limits().await,
+                    "Could not load cached Nexus rate limits",
+                    &mut startup_warnings,
+                )
+                .flatten();
                 (rl, None, None, false)
             };
 
-        let hidden_game_ids = tracker.load_hidden_game_ids().await.unwrap_or_default();
+        let hidden_game_ids = tracker
+            .load_hidden_game_ids()
+            .await
+            .map_err(|e| format!("Failed to load hidden games: {e}"))?;
 
         let wizard_shown = tracker
             .get_setting("welcome_wizard_shown")
             .await
-            .ok()
-            .flatten()
+            .map_err(|e| format!("Failed to load welcome state: {e}"))?
             .is_some();
         let first_launch = !wizard_shown && persisted_games.is_empty();
 
@@ -924,8 +923,7 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             tracker
                 .get_setting(&format!("last_deployed_profile_{}", game.id))
                 .await
-                .ok()
-                .flatten()
+                .map_err(|e| format!("Failed to load deployed profile state: {e}"))?
         } else {
             None
         };
@@ -933,20 +931,17 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
         let color_scheme_idx = tracker
             .get_setting("color_scheme")
             .await
-            .ok()
-            .flatten()
+            .map_err(|e| format!("Failed to load the color scheme: {e}"))?
             .and_then(|v| v.parse::<u32>().ok())
             .unwrap_or(0);
 
         // Consume the post-restore marker if present.
-        let restored_from_backup = paths::post_restore_marker_path()
-            .ok()
-            .filter(|p| p.exists())
-            .map(|p| {
-                let _ = std::fs::remove_file(&p);
-                true
-            })
-            .unwrap_or(false);
+        let restore_marker = paths::post_restore_marker_path().map_err(|e| e.to_string())?;
+        let (restored_from_backup, marker_warning) =
+            crate::core::restore::consume_restore_marker(&restore_marker);
+        if let Some(warning) = marker_warning {
+            startup_warnings.push(warning);
+        }
 
         startup_warnings.extend(access_warnings);
 

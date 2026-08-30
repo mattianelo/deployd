@@ -56,14 +56,13 @@ impl App {
         }
         if let Some(tracker) = self.session.tracker.clone() {
             sender.oneshot_command(async move {
-                let dir = tracker
+                let result = tracker
                     .get_setting("downloads_dir")
                     .await
-                    .ok()
-                    .flatten()
-                    .map(PathBuf::from);
+                    .map(|dir| dir.map(PathBuf::from))
+                    .map_err(|error| error.to_string());
                 AppCmdMsg::Downloads(crate::app::messages::DownloadsCmdMsg::DownloadsDirUpdated(
-                    dir,
+                    result,
                 ))
             });
         }
@@ -74,18 +73,28 @@ impl App {
         // Re-validate to refresh username and avatar displayed in the headerbar.
         if let Some(tracker) = self.session.tracker.clone() {
             sender.oneshot_command(async move {
-                let api_key = tracker
-                    .get_setting("nexus_api_key")
-                    .await
-                    .ok()
-                    .flatten()
-                    .filter(|k| !k.is_empty());
+                let api_key = match tracker.get_setting("nexus_api_key").await {
+                    Ok(key) => key.filter(|key| !key.is_empty()),
+                    Err(error) => {
+                        return AppCmdMsg::Shell(
+                            crate::app::messages::ShellCmdMsg::NexusUserRefreshFailed(
+                                error.to_string(),
+                            ),
+                        );
+                    }
+                };
                 match api_key {
                     Some(key) => {
                         let client = crate::core::nexus_api::NexusClient::new(key);
                         match client.validate_key().await {
                             Ok((user, _)) => {
-                                let _ = tracker.save_nexus_user(&user).await;
+                                if let Err(error) = tracker.save_nexus_user(&user).await {
+                                    return AppCmdMsg::Shell(
+                                        crate::app::messages::ShellCmdMsg::NexusUserRefreshFailed(
+                                            error.to_string(),
+                                        ),
+                                    );
+                                }
                                 AppCmdMsg::Shell(
                                     crate::app::messages::ShellCmdMsg::NexusUserRefreshed(
                                         Some(user.name),
@@ -150,11 +159,12 @@ impl App {
             return;
         };
         sender.oneshot_command(async move {
-            let _ = tracker.clear_nexus_user().await;
-            AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::NexusUserRefreshed(
-                None, None, false,
+            AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::NexusLogoutDone(
+                tracker
+                    .clear_nexus_user()
+                    .await
+                    .map_err(|error| error.to_string()),
             ))
         });
-        self.show_toast("Logged out of Nexus Mods");
     }
 }

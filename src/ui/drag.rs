@@ -1,4 +1,5 @@
-use gtk::prelude::{ListModelExt, WidgetExt};
+use gtk::glib;
+use gtk::prelude::*;
 
 pub(crate) fn clear_drop_indicators(list_box: &gtk::ListBox) {
     let mut index = 0;
@@ -29,4 +30,27 @@ pub(crate) fn update_drop_indicator(list_box: &gtk::ListBox, y: f64) {
             row.add_css_class("drop-below");
         }
     }
+}
+
+pub(crate) fn wire_deselect(list_box: &gtk::ListBox) {
+    let key_controller = gtk::EventControllerKey::new();
+    key_controller.set_propagation_phase(gtk::PropagationPhase::Capture);
+    let list = list_box.clone();
+    key_controller.connect_key_pressed(move |_, key, _, _| {
+        if key == gtk::gdk::Key::Escape {
+            list.unselect_all();
+        }
+        glib::Propagation::Proceed
+    });
+    list_box.add_controller(key_controller);
+
+    let click_controller = gtk::GestureClick::new();
+    let list = list_box.clone();
+    click_controller.connect_pressed(move |gesture, _, _, y| {
+        if list.row_at_y(y as i32).is_none() {
+            list.unselect_all();
+            gesture.set_state(gtk::EventSequenceState::Claimed);
+        }
+    });
+    list_box.add_controller(click_controller);
 }

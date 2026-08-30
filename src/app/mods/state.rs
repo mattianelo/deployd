@@ -415,7 +415,7 @@ impl App {
         }
     }
 
-    pub(crate) fn save_group_positions(&mut self) {
+    pub(crate) fn save_group_positions(&mut self, sender: &ComponentSender<Self>) {
         let guard = self.mods.rows.guard();
         let mut updates: Vec<(String, f64)> = Vec::new();
         let mut mod_count = 0usize;
@@ -434,10 +434,16 @@ impl App {
             return;
         }
         if let Some(tracker) = self.session.tracker.clone() {
-            tokio::spawn(async move {
-                for (group_id, position) in updates {
-                    let _ = tracker.move_group(&group_id, position).await;
+            sender.oneshot_command(async move {
+                let result = async {
+                    for (group_id, position) in updates {
+                        tracker.move_group(&group_id, position).await?;
+                    }
+                    anyhow::Ok(())
                 }
+                .await
+                .map_err(|error| error.to_string());
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
             });
         }
     }
@@ -464,9 +470,13 @@ impl App {
         if let (Some(tracker), Some(game)) = (self.session.tracker.clone(), self.selected_game()) {
             let game_id = game.id.clone();
             let engine = game.engine.clone();
-            let cache_root = self
-                .cache_root_for(&game_id)
-                .unwrap_or_else(|_| crate::utils::paths::cache_root().unwrap_or_default());
+            let cache_root = match self.cache_root_for(&game_id) {
+                Ok(path) => path,
+                Err(error) => {
+                    self.push_notification(&format!("Cannot resolve the mod cache: {error}"));
+                    return;
+                }
+            };
             sender.oneshot_command(async move {
                 if let Err(e) = tracker.update_priorities(&updates).await {
                     return AppCmdMsg::Mods(crate::app::messages::ModsCmdMsg::OverridesRefreshed(
@@ -514,8 +524,11 @@ impl App {
             let profile_id = profile.id.clone();
             let game_id = game.id.clone();
             sender.oneshot_command(async move {
-                let _ = tracker.save_to_profile(&profile_id, &game_id).await;
-                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(())))
+                let result = tracker
+                    .save_to_profile(&profile_id, &game_id)
+                    .await
+                    .map_err(|error| error.to_string());
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
             });
         }
     }

@@ -34,8 +34,11 @@ impl App {
         {
             let removed_ids = scan.removed_ids.clone();
             sender.oneshot_command(async move {
-                let _ = tracker.delete_download_entries(&removed_ids).await;
-                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(())))
+                let result = tracker
+                    .delete_download_entries(&removed_ids)
+                    .await
+                    .map_err(|error| error.to_string());
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
             });
         }
 
@@ -44,10 +47,15 @@ impl App {
         {
             let to_persist = scan.to_persist.clone();
             sender.oneshot_command(async move {
-                for entry in &to_persist {
-                    let _ = tracker.save_download_entry(entry).await;
+                let result = async {
+                    for entry in &to_persist {
+                        tracker.save_download_entry(entry).await?;
+                    }
+                    anyhow::Ok(())
                 }
-                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(())))
+                .await
+                .map_err(|error| error.to_string());
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
             });
         }
 
@@ -80,8 +88,11 @@ impl App {
                 .cloned()
         {
             sender.oneshot_command(async move {
-                let _ = tracker.save_download_entry(&entry).await;
-                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(())))
+                let result = tracker
+                    .save_download_entry(&entry)
+                    .await
+                    .map_err(|error| error.to_string());
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
             });
         }
     }
@@ -138,9 +149,12 @@ impl App {
                                 self.download.all.iter().find(|e| &e.id == id).cloned()
                         {
                             sender.oneshot_command(async move {
-                                let _ = tracker.save_download_entry(&entry).await;
+                                let result = tracker
+                                    .save_download_entry(&entry)
+                                    .await
+                                    .map_err(|error| error.to_string());
                                 AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(
-                                    Ok(()),
+                                    result,
                                 ))
                             });
                         }
@@ -256,8 +270,11 @@ impl App {
                 {
                     let entry = entry.clone();
                     sender.oneshot_command(async move {
-                        let _ = tracker.save_download_entry(&entry).await;
-                        AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(())))
+                        let result = tracker
+                            .save_download_entry(&entry)
+                            .await
+                            .map_err(|error| error.to_string());
+                        AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
                     });
                 }
 
@@ -277,11 +294,16 @@ impl App {
         }
     }
 
-    pub(crate) fn handle_cmd_downloads_dir_updated(&mut self, dir: Option<PathBuf>) {
-        if let Some(dir) = dir {
-            self.download.directory = dir;
-        } else {
-            self.download.directory = paths::default_downloads_dir();
+    pub(crate) fn handle_cmd_downloads_dir_updated(
+        &mut self,
+        result: Result<Option<PathBuf>, String>,
+    ) {
+        match result {
+            Ok(Some(dir)) => self.download.directory = dir,
+            Ok(None) => self.download.directory = paths::default_downloads_dir(),
+            Err(error) => self.push_notification(&format!(
+                "Failed to refresh the downloads directory: {error}"
+            )),
         }
     }
 }

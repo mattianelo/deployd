@@ -1,8 +1,77 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use super::{PersistedGame, Tracker};
 
 impl Tracker {
+    pub async fn persist_game_configs(
+        &self,
+        configs: &[crate::models::game::GameConfig],
+        hidden_ids: &[String],
+    ) -> Result<()> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("Failed to begin game settings update")?;
+        for config in configs {
+            let engine = match config.game.engine {
+                crate::models::game::GameEngine::REDEngine => "redengine",
+                crate::models::game::GameEngine::Eclipse => "eclipse",
+                crate::models::game::GameEngine::Aurora => "aurora",
+                crate::models::game::GameEngine::Bethesda => "bethesda",
+            };
+            sqlx::query(
+                "INSERT INTO games
+                 (id, title, path, data_subdir, engine, wine_prefix, custom, hidden)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+                 ON CONFLICT(id) DO UPDATE SET
+                   title = excluded.title, path = excluded.path,
+                   data_subdir = excluded.data_subdir, engine = excluded.engine,
+                   wine_prefix = excluded.wine_prefix, custom = excluded.custom, hidden = 0",
+            )
+            .bind(&config.game.id)
+            .bind(&config.game.title)
+            .bind(config.game.path.to_string_lossy().as_ref())
+            .bind(&config.game.data_subdir)
+            .bind(engine)
+            .bind(
+                config
+                    .game
+                    .wine_prefix
+                    .as_ref()
+                    .map(|path| path.to_string_lossy().to_string()),
+            )
+            .bind(config.custom)
+            .execute(&mut *transaction)
+            .await
+            .with_context(|| format!("Failed to save game '{}'", config.game.title))?;
+        }
+        for game_id in hidden_ids {
+            sqlx::query(
+                "INSERT INTO games (id, hidden) VALUES (?, 1)
+                 ON CONFLICT(id) DO UPDATE SET hidden = 1",
+            )
+            .bind(game_id)
+            .execute(&mut *transaction)
+            .await
+            .with_context(|| format!("Failed to hide game '{game_id}'"))?;
+        }
+        if let Some(first) = configs.first() {
+            sqlx::query(
+                "INSERT INTO settings (key, value) VALUES ('last_game_id', ?)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            )
+            .bind(&first.game.id)
+            .execute(&mut *transaction)
+            .await
+            .context("Failed to save the selected game")?;
+        }
+        transaction
+            .commit()
+            .await
+            .context("Failed to commit game settings")
+    }
+
     /// Persist full game configuration (path, wine prefix, engine, custom flag).
     #[allow(clippy::too_many_arguments)] // All fields map directly to DB columns; a struct would require its own validation layer.
     pub async fn upsert_game(
@@ -96,6 +165,57 @@ impl Tracker {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    pub async fn remove_managed_game(
+        &self,
+        game_id: &str,
+        delete_mods: bool,
+    ) -> Result<Vec<String>> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("Failed to begin game removal")?;
+        let mod_ids: Vec<String> = if delete_mods {
+            sqlx::query_scalar("SELECT id FROM mods WHERE game_id = ?")
+                .bind(game_id)
+                .fetch_all(&mut *transaction)
+                .await
+                .context("Failed to list mods for game removal")?
+        } else {
+            Vec::new()
+        };
+        for mod_id in &mod_ids {
+            sqlx::query("DELETE FROM plugins WHERE mod_id = ?")
+                .bind(mod_id)
+                .execute(&mut *transaction)
+                .await
+                .with_context(|| format!("Failed to delete plugins for mod '{mod_id}'"))?;
+            sqlx::query("DELETE FROM mod_files WHERE mod_id = ?")
+                .bind(mod_id)
+                .execute(&mut *transaction)
+                .await
+                .with_context(|| format!("Failed to delete files for mod '{mod_id}'"))?;
+            sqlx::query("DELETE FROM mods WHERE id = ?")
+                .bind(mod_id)
+                .execute(&mut *transaction)
+                .await
+                .with_context(|| format!("Failed to delete mod '{mod_id}'"))?;
+        }
+        sqlx::query(
+            "INSERT INTO games (id, hidden) VALUES (?, 1)
+             ON CONFLICT(id) DO UPDATE SET hidden = 1",
+        )
+        .bind(game_id)
+        .execute(&mut *transaction)
+        .await
+        .context("Failed to hide removed game")?;
+        transaction
+            .commit()
+            .await
+            .context("Failed to commit game removal")?;
+        Ok(mod_ids)
     }
 
     /// Return the IDs of all games the user has explicitly hidden.

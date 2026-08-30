@@ -82,7 +82,7 @@ pub(in crate::core::tracker) async fn migrate_eclipse_file_paths(pool: &SqlitePo
         sqlx::query_scalar("SELECT value FROM settings WHERE key = 'eclipse_path_migration_v1'")
             .fetch_optional(pool)
             .await
-            .unwrap_or(None);
+            .context("Failed to read Eclipse path migration state")?;
 
     if done.is_some() {
         return Ok(());
@@ -161,22 +161,21 @@ pub(in crate::core::tracker) async fn migrate_eclipse_file_paths(pool: &SqlitePo
         if !old.exists() {
             continue;
         }
-        if let Some(parent) = new.parent()
-            && let Err(e) = std::fs::create_dir_all(parent)
-        {
-            dlog!(
-                "[deployd] eclipse migration: failed to create dir {}: {e}",
-                parent.display()
-            );
-            continue;
+        if let Some(parent) = new.parent() {
+            std::fs::create_dir_all(parent).with_context(|| {
+                format!(
+                    "Failed to create Eclipse cache directory '{}'",
+                    parent.display()
+                )
+            })?;
         }
-        if let Err(e) = std::fs::rename(old, new) {
-            dlog!(
-                "[deployd] eclipse migration: failed to move {} → {}: {e}",
+        std::fs::rename(old, new).with_context(|| {
+            format!(
+                "Failed to move Eclipse cache file '{}' to '{}'",
                 old.display(),
                 new.display()
-            );
-        }
+            )
+        })?;
     }
 
     let mut tx = pool

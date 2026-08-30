@@ -2,16 +2,19 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use crate::core::game::eclipse::DOCS_PREFIX;
 use crate::models::game::Game;
 use crate::models::manifest::ModFile;
 
-pub(super) fn remove_deployed_file(f: &ModFile, game: &Game, game_data: &PathBuf) {
-    let Ok(deploy_path) = resolve_deploy_path(&f.game_rel_original, &game.path, game_data) else {
-        return;
-    };
+pub(super) fn remove_deployed_file(
+    f: &ModFile,
+    game: &Game,
+    game_data: &PathBuf,
+) -> Result<Vec<String>> {
+    let deploy_path = resolve_deploy_path(&f.game_rel_original, &game.path, game_data)
+        .with_context(|| format!("Invalid deployed path '{}'", f.game_rel_original))?;
     let docs = docs_base(game_data);
     let stop_at: &PathBuf = if f.game_rel_original.starts_with("../") {
         &game.path
@@ -21,19 +24,33 @@ pub(super) fn remove_deployed_file(f: &ModFile, game: &Game, game_data: &PathBuf
         game_data
     };
 
+    let mut warnings = Vec::new();
     if f.game_rel_original.ends_with('/') {
-        let _ = fs::remove_dir(&deploy_path);
+        if let Err(error) = fs::remove_dir(&deploy_path)
+            && error.kind() != std::io::ErrorKind::NotFound
+            && error.kind() != std::io::ErrorKind::DirectoryNotEmpty
+        {
+            warnings.push(format!(
+                "Could not remove empty deployed directory '{}': {error}",
+                deploy_path.display()
+            ));
+        }
         if let Some(parent) = deploy_path.parent() {
-            remove_empty_parents(parent, stop_at);
+            remove_empty_parents(parent, stop_at, &mut warnings);
         }
     } else {
-        if deploy_path.exists() {
-            let _ = fs::remove_file(&deploy_path);
+        if let Err(error) = fs::remove_file(&deploy_path)
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            return Err(error).with_context(|| {
+                format!("Failed to remove deployed file '{}'", deploy_path.display())
+            });
         }
         if let Some(parent) = deploy_path.parent() {
-            remove_empty_parents(parent, stop_at);
+            remove_empty_parents(parent, stop_at, &mut warnings);
         }
     }
+    Ok(warnings)
 }
 
 /// Returns `true` if the relative portion of a deploy path contains traversal components.
@@ -150,14 +167,35 @@ pub(super) fn create_dirs_case_insensitive(
         let component_lower = component.to_lowercase();
 
         if !dir_cache.contains_key(&current) {
-            let listing = fs::read_dir(&current)
-                .map(|rd| {
-                    rd.filter_map(|e| e.ok())
-                        .filter(|e| e.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
-                        .map(|e| (e.file_name().to_string_lossy().to_lowercase(), e.path()))
-                        .collect::<HashMap<String, PathBuf>>()
-                })
-                .unwrap_or_default();
+            let listing = match fs::read_dir(&current) {
+                Ok(entries) => {
+                    let mut listing = HashMap::new();
+                    for entry in entries {
+                        let entry = entry.with_context(|| {
+                            format!("Failed to inspect an entry in '{}'", current.display())
+                        })?;
+                        if entry
+                            .file_type()
+                            .with_context(|| {
+                                format!("Failed to inspect '{}'", entry.path().display())
+                            })?
+                            .is_dir()
+                        {
+                            listing.insert(
+                                entry.file_name().to_string_lossy().to_lowercase(),
+                                entry.path(),
+                            );
+                        }
+                    }
+                    listing
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => HashMap::new(),
+                Err(error) => {
+                    return Err(error).with_context(|| {
+                        format!("Failed to inspect deploy directory '{}'", current.display())
+                    });
+                }
+            };
             dir_cache.insert(current.clone(), listing);
         }
 
@@ -197,13 +235,16 @@ pub(super) fn ensure_dirs_case_insensitive(
         // "Scripts/Mod.lua" correctly finds and reuses the existing
         // "Scripts/mod.lua" path rather than creating a second file alongside it.
         let fname_lower = filename.to_lowercase();
-        if let Ok(rd) = fs::read_dir(&parent) {
-            for entry in rd.flatten() {
-                if entry.file_type().map(|t| t.is_file()).unwrap_or(false)
-                    && entry.file_name().to_string_lossy().to_lowercase() == fname_lower
-                {
-                    return Ok(entry.path());
-                }
+        let entries = fs::read_dir(&parent).with_context(|| {
+            format!("Failed to inspect deploy directory '{}'", parent.display())
+        })?;
+        for entry in entries {
+            let entry = entry
+                .with_context(|| format!("Failed to inspect an entry in '{}'", parent.display()))?;
+            if entry.file_type().map(|t| t.is_file()).unwrap_or(false)
+                && entry.file_name().to_string_lossy().to_lowercase() == fname_lower
+            {
+                return Ok(entry.path());
             }
         }
         Ok(parent.join(filename))
@@ -212,14 +253,22 @@ pub(super) fn ensure_dirs_case_insensitive(
     }
 }
 
-fn remove_empty_parents(dir: &std::path::Path, stop_at: &PathBuf) {
+fn remove_empty_parents(dir: &Path, stop_at: &PathBuf, warnings: &mut Vec<String>) {
     let mut current = dir.to_path_buf();
     while current != *stop_at {
         if fs::read_dir(&current)
             .map(|mut d| d.next().is_none())
             .unwrap_or(false)
         {
-            let _ = fs::remove_dir(&current);
+            if let Err(error) = fs::remove_dir(&current)
+                && error.kind() != std::io::ErrorKind::NotFound
+            {
+                warnings.push(format!(
+                    "Could not remove empty deploy directory '{}': {error}",
+                    current.display()
+                ));
+                break;
+            }
         } else {
             break;
         }
@@ -234,7 +283,15 @@ fn remove_empty_parents(dir: &std::path::Path, stop_at: &PathBuf) {
 mod tests {
     use std::path::Path;
 
-    use super::{DOCS_PREFIX, DeployAnchor, resolve_deploy_path, split_deploy_target};
+    use anyhow::Result;
+    use tempfile::tempdir;
+
+    use crate::models::game::{Game, GameEngine};
+    use crate::models::manifest::ModFile;
+
+    use super::{
+        DOCS_PREFIX, DeployAnchor, remove_deployed_file, resolve_deploy_path, split_deploy_target,
+    };
 
     #[test]
     fn resolve_deploy_path_rejects_traversal_in_every_anchor() {
@@ -282,6 +339,33 @@ mod tests {
             format!("{DOCS_PREFIX}BioWare/Settings.xml")
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn reports_failed_deployed_file_removal() -> Result<()> {
+        let temp = tempdir()?;
+        let game_data = temp.path().join("Data");
+        std::fs::create_dir_all(game_data.join("blocked.esp"))?;
+        let game = Game {
+            id: "game".to_string(),
+            title: "Game".to_string(),
+            path: temp.path().to_path_buf(),
+            data_subdir: "Data".to_string(),
+            engine: GameEngine::Bethesda,
+            wine_prefix: None,
+        };
+        let deployed = ModFile {
+            mod_id: "mod".to_string(),
+            game_rel_lowercase: "blocked.esp".to_string(),
+            game_rel_original: "blocked.esp".to_string(),
+            cache_path: String::new(),
+        };
+
+        let error = remove_deployed_file(&deployed, &game, &game_data)
+            .expect_err("a required deployed-file removal must fail");
+
+        assert!(error.to_string().contains("Failed to remove deployed file"));
         Ok(())
     }
 }

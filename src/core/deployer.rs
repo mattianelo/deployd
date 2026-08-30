@@ -7,4 +7,4 @@ mod report;
 
 pub use application::deploy;
 pub use purge::purge;
-pub use report::DeployResult;
+pub use report::{DeployOutcome, PurgeOutcome};

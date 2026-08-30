@@ -6,7 +6,6 @@ use gtk::prelude::*;
 use relm4::prelude::*;
 
 use crate::core::deployer;
-use crate::utils::paths;
 use crate::utils::snap::{self, SelectedFolderKind};
 
 use super::App;
@@ -116,9 +115,13 @@ impl App {
             ));
             return;
         }
-        let cache_root = self
-            .cache_root_for(&game.id)
-            .unwrap_or_else(|_| paths::cache_root().unwrap_or_default());
+        let cache_root = match self.cache_root_for(&game.id) {
+            Ok(path) => path,
+            Err(error) => {
+                self.push_notification(&format!("Cannot resolve the mod cache: {error}"));
+                return;
+            }
+        };
 
         self.shell.deploying = true;
         self.begin_work(WorkKind::Deploying, "Deploying...");
@@ -134,16 +137,15 @@ impl App {
             let result = match deployer::deploy(&game, &tracker, &cache_root).await {
                 Ok(result) => {
                     crate::app::timing::log_phase("deploy.apply", &game_id, timing_start, None);
-                    let record_error = tracker
-                        .record_deployed_profile(&game_id, &profile_id)
-                        .await
-                        .err()
-                        .map(|error| error.to_string());
-                    Ok(DeployCompletion {
-                        result,
-                        profile_id,
-                        record_error,
-                    })
+                    match tracker.record_deployed_profile(&game_id, &profile_id).await {
+                        Ok(()) => Ok(DeployCompletion {
+                            outcome: result,
+                            profile_id,
+                        }),
+                        Err(error) => {
+                            Err(format!("Failed to record the deployed profile: {error}"))
+                        }
+                    }
                 }
                 Err(error) => Err(error.to_string()),
             };
@@ -229,9 +231,13 @@ impl App {
             ));
             return;
         }
-        let cache_root = self
-            .cache_root_for(&game.id)
-            .unwrap_or_else(|_| paths::cache_root().unwrap_or_default());
+        let cache_root = match self.cache_root_for(&game.id) {
+            Ok(path) => path,
+            Err(error) => {
+                self.push_notification(&format!("Cannot resolve the mod cache: {error}"));
+                return;
+            }
+        };
 
         self.shell.deploying = true;
         self.begin_work(WorkKind::Purging, "Purging...");
@@ -282,19 +288,47 @@ impl App {
             self.push_notification(&message);
             return;
         }
-        let idx = self.session.selected_game_idx;
-        let Some(game) = self.session.games.get_mut(idx) else {
+        let Some(game_id) = self.selected_game().map(|game| game.id.clone()) else {
             return;
         };
-        game.path = path.clone();
-        if let Some(tracker) = self.session.tracker.clone() {
-            let game_id = game.id.clone();
-            sender.oneshot_command(async move {
-                tracker.upsert_game_path(&game_id, &path).await.ok();
-                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(())))
-            });
+        let Some(tracker) = self.session.tracker.clone() else {
+            self.push_notification("Database not ready yet");
+            return;
+        };
+        let saved_path = path.clone();
+        sender.oneshot_command(async move {
+            let result = tracker
+                .upsert_game_path(&game_id, &saved_path)
+                .await
+                .map_err(|error| error.to_string());
+            AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::GamePathSaved {
+                game_id,
+                path: saved_path,
+                result,
+            })
+        });
+    }
+
+    pub(crate) fn handle_cmd_game_path_saved(
+        &mut self,
+        game_id: String,
+        path: PathBuf,
+        result: Result<(), String>,
+    ) {
+        match result {
+            Ok(()) => {
+                if let Some(game) = self
+                    .session
+                    .games
+                    .iter_mut()
+                    .find(|game| game.id == game_id)
+                {
+                    game.path = path;
+                }
+                self.show_toast("Game folder confirmed — you can now deploy");
+            }
+            Err(error) => self.push_notification(&format!("Could not save game folder: {error}")),
         }
-        self.show_toast("Game folder confirmed — you can now deploy");
     }
 }
 
@@ -312,17 +346,12 @@ impl App {
             Ok(completion) => {
                 self.shell.needs_deploy = false;
                 self.session.last_deployed_profile_id = Some(completion.profile_id);
-                if let Some(error) = completion.record_error {
-                    self.push_notification(&format!(
-                        "Deployment succeeded, but its profile could not be remembered: {error}"
-                    ));
-                }
                 self.rebuild_tool_buttons(sender);
-                let deploy_result = completion.result;
-                let added = deploy_result.files_added;
-                let removed = deploy_result.files_removed;
-                let total = deploy_result.files_total;
-                let conflicts = deploy_result.conflicts_resolved;
+                let outcome = completion.outcome;
+                let added = outcome.files_added;
+                let removed = outcome.files_removed;
+                let total = outcome.files_total;
+                let conflicts = outcome.conflicts_resolved;
                 let mut msg = if added == 0 && removed == 0 {
                     format!("Nothing changed ({total} files deployed)")
                 } else {
@@ -339,6 +368,9 @@ impl App {
                     msg.push_str(&format!(", {conflicts} conflict(s) resolved"));
                 }
                 self.show_toast(&msg);
+                for warning in outcome.warnings {
+                    self.push_notification(&format!("Deployment cleanup warning: {warning}"));
+                }
                 sender.input(AppMsg::Mods(
                     crate::app::messages::ModsMsg::ScanExternalFiles,
                 ));
@@ -349,18 +381,24 @@ impl App {
         }
     }
 
-    pub(crate) fn handle_cmd_purge_done(&mut self, result: Result<usize, String>) {
+    pub(crate) fn handle_cmd_purge_done(
+        &mut self,
+        result: Result<crate::core::deployer::PurgeOutcome, String>,
+    ) {
         self.shell.deploying = false;
         self.finish_work(WorkKind::Purging);
         match result {
-            Ok(count) => {
+            Ok(outcome) => {
                 self.shell.needs_deploy = true;
-                if count == 0 {
+                if outcome.files_removed == 0 {
                     self.push_notification(
                         "No deployed files tracked — the game folder may already be clean, or try redeploying first",
                     );
                 } else {
-                    self.show_toast(&format!("Purged {count} deployed files"));
+                    self.show_toast(&format!("Purged {} deployed files", outcome.files_removed));
+                }
+                for warning in outcome.warnings {
+                    self.push_notification(&format!("Purge cleanup warning: {warning}"));
                 }
             }
             Err(e) => {

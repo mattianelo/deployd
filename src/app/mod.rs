@@ -17,6 +17,7 @@ mod profiles;
 mod progress;
 mod search;
 mod session;
+mod startup;
 mod timing;
 mod tools;
 mod types;

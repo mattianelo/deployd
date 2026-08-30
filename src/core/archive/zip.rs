@@ -86,7 +86,9 @@ pub fn extract_zip_to(archive_path: &Path, dest: &Path) -> Result<()> {
         }
         let out_path = dest.join(&entry_path);
         if entry.is_dir() {
-            let _ = fs::create_dir_all(&out_path);
+            fs::create_dir_all(&out_path).with_context(|| {
+                format!("Failed to create ZIP directory '{}'", out_path.display())
+            })?;
         } else {
             if matches!(entry.compression(), zip::CompressionMethod::Lzma) {
                 return Err(anyhow::anyhow!(

@@ -28,9 +28,13 @@ impl App {
             self.push_notification("Game not found");
             return;
         };
-        let old_cache_root = self
-            .cache_root_for(&game_id)
-            .unwrap_or_else(|_| paths::cache_root().unwrap_or_default());
+        let old_cache_root = match self.cache_root_for(&game_id) {
+            Ok(path) => path,
+            Err(error) => {
+                self.push_notification(&format!("Cannot resolve the current cache: {error}"));
+                return;
+            }
+        };
         let new_dir_clone = new_dir.clone();
 
         self.show_toast("Moving cache…");
@@ -61,10 +65,20 @@ impl App {
         let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
-        let current_cache_root = self
-            .cache_root_for(&game_id)
-            .unwrap_or_else(|_| paths::cache_root().unwrap_or_default());
-        let default_cache_root = paths::cache_root().unwrap_or_default();
+        let current_cache_root = match self.cache_root_for(&game_id) {
+            Ok(path) => path,
+            Err(error) => {
+                self.push_notification(&format!("Cannot resolve the current cache: {error}"));
+                return;
+            }
+        };
+        let default_cache_root = match paths::cache_root() {
+            Ok(path) => path,
+            Err(error) => {
+                self.push_notification(&format!("Cannot resolve the default cache: {error}"));
+                return;
+            }
+        };
 
         if current_cache_root == default_cache_root {
             return;

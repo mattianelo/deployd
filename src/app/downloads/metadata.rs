@@ -136,8 +136,11 @@ impl App {
                 .cloned(),
         ) {
             sender.oneshot_command(async move {
-                let _ = tracker.save_download_entry(&entry).await;
-                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(())))
+                let result = tracker
+                    .save_download_entry(&entry)
+                    .await
+                    .map_err(|error| error.to_string());
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
             });
         }
 

@@ -44,7 +44,10 @@ impl App {
                     sender.oneshot_command(async move {
                         AppCmdMsg::Games(
                             crate::app::messages::GamesCmdMsg::LastDeployedProfileLoaded(
-                                tracker.get_setting(&key).await.ok().flatten(),
+                                tracker
+                                    .get_setting(&key)
+                                    .await
+                                    .map_err(|error| error.to_string()),
                             ),
                         )
                     });
@@ -58,14 +61,17 @@ impl App {
 
     pub(crate) fn handle_cmd_mod_removed(
         &mut self,
-        result: Result<String, String>,
+        result: Result<(String, Vec<String>), String>,
         nexus_ids: Option<(i64, i64)>,
         mod_name: String,
         archive_hash: Option<String>,
         sender: &ComponentSender<Self>,
     ) {
         match result {
-            Ok(_) => {
+            Ok((_, warnings)) => {
+                for warning in warnings {
+                    self.push_notification(&warning);
+                }
                 self.mods.pending_scroll_restore = None;
                 self.show_toast("Mod removed. Deploy to update game files");
                 let changed = self.reset_installed_download_for_mod(
@@ -76,10 +82,16 @@ impl App {
                 if !changed.is_empty()
                     && let Some(tracker) = self.session.tracker.clone()
                 {
-                    tokio::spawn(async move {
-                        for entry in &changed {
-                            let _ = tracker.save_download_entry(entry).await;
+                    sender.oneshot_command(async move {
+                        let result = async {
+                            for entry in &changed {
+                                tracker.save_download_entry(entry).await?;
+                            }
+                            anyhow::Ok(())
                         }
+                        .await
+                        .map_err(|error| error.to_string());
+                        AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
                     });
                 }
                 self.auto_save_profile(sender);

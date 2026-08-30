@@ -60,6 +60,7 @@ pub struct AddResult {
     pub mod_entry: ModEntry,
     pub files_cached: usize,
     pub plugins_found: Vec<String>,
+    pub warnings: Vec<String>,
 }
 
 pub(crate) struct AddModRequest<'a> {
@@ -183,6 +184,7 @@ pub(crate) async fn add_mod_with_file_list(request: AddModRequest<'_>) -> Result
         mod_entry,
         files_cached: mod_files.len(),
         plugins_found,
+        warnings: Vec::new(),
     })
 }
 

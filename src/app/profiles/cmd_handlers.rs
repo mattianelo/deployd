@@ -7,8 +7,16 @@ use super::super::session::{GameLoadMode, fetch_avatar_bytes, load_game_data};
 use super::super::types::{InitData, LoadedData, WorkKind};
 
 impl App {
-    pub(crate) fn handle_cmd_last_deployed_profile_loaded(&mut self, id: Option<String>) {
-        self.session.last_deployed_profile_id = id;
+    pub(crate) fn handle_cmd_last_deployed_profile_loaded(
+        &mut self,
+        result: Result<Option<String>, String>,
+    ) {
+        match result {
+            Ok(id) => self.session.last_deployed_profile_id = id,
+            Err(error) => self.push_notification(&format!(
+                "Failed to load the last deployed profile: {error}"
+            )),
+        }
     }
 
     pub(crate) fn handle_cmd_nexus_avatar_loaded(&mut self, bytes: Option<Vec<u8>>) {
@@ -131,26 +139,36 @@ impl App {
                         })
                         .collect();
                     if !migrations.is_empty() {
-                        relm4::spawn(async move {
-                            for (id, title, path, data_subdir, engine, wine_prefix) in migrations {
-                                let engine_str = match engine {
-                                    crate::models::game::GameEngine::REDEngine => "redengine",
-                                    crate::models::game::GameEngine::Eclipse => "eclipse",
-                                    crate::models::game::GameEngine::Aurora => "aurora",
-                                    _ => "bethesda",
-                                };
-                                let _ = tracker
-                                    .upsert_game(
-                                        &id,
-                                        &title,
-                                        &path,
-                                        &data_subdir,
-                                        engine_str,
-                                        wine_prefix.as_deref(),
-                                        true,
-                                    )
-                                    .await;
+                        sender.oneshot_command(async move {
+                            let result = async {
+                                for (id, title, path, data_subdir, engine, wine_prefix) in
+                                    migrations
+                                {
+                                    let engine_str = match engine {
+                                        crate::models::game::GameEngine::REDEngine => "redengine",
+                                        crate::models::game::GameEngine::Eclipse => "eclipse",
+                                        crate::models::game::GameEngine::Aurora => "aurora",
+                                        _ => "bethesda",
+                                    };
+                                    tracker
+                                        .upsert_game(
+                                            &id,
+                                            &title,
+                                            &path,
+                                            &data_subdir,
+                                            engine_str,
+                                            wine_prefix.as_deref(),
+                                            true,
+                                        )
+                                        .await?;
+                                }
+                                anyhow::Ok(())
                             }
+                            .await
+                            .map_err(|error| error.to_string());
+                            AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(
+                                result,
+                            ))
                         });
                     }
                 }
@@ -245,7 +263,7 @@ impl App {
 
                 self.download.rate_limit = data.rate_limit_info;
 
-                self.handle_set_color_scheme(data.color_scheme_idx);
+                self.apply_color_scheme(data.color_scheme_idx);
 
                 if let Some(nxm) = self.download.pending_nxm.take() {
                     sender.input(AppMsg::Downloads(
@@ -273,7 +291,17 @@ impl App {
                 let tracker_for_update = self.session.tracker.clone();
                 relm4::spawn(async move {
                     let api_key = if let Some(ref t) = tracker_for_update {
-                        t.get_setting("nexus_api_key").await.ok().flatten()
+                        match t.get_setting("nexus_api_key").await {
+                            Ok(key) => key,
+                            Err(error) => {
+                                let _ = input.send(AppMsg::Shell(
+                                    crate::app::messages::ShellMsg::ShowToast(format!(
+                                        "Could not read update settings: {error}"
+                                    )),
+                                ));
+                                None
+                            }
+                        }
                     } else {
                         None
                     };

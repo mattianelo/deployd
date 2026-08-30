@@ -414,7 +414,12 @@ pub(crate) enum AppCmdMsg {
 pub(crate) enum ShellCmdMsg {
     Initialized(Box<Result<InitData, String>>),
     DeployDone(Result<DeployCompletion, String>),
-    PurgeDone(Result<usize, String>),
+    PurgeDone(Result<crate::core::deployer::PurgeOutcome, String>),
+    GamePathSaved {
+        game_id: String,
+        path: PathBuf,
+        result: Result<(), String>,
+    },
     PrioritySaved(Result<(), String>),
     /// Result of the self-update AppImage download + replace.
     AppUpdateResult(Result<(), String>),
@@ -422,6 +427,8 @@ pub(crate) enum ShellCmdMsg {
     NexusAvatarLoaded(Option<Vec<u8>>),
     /// Nexus user data refreshed after key validation (username, avatar_url, is_premium).
     NexusUserRefreshed(Option<String>, Option<String>, bool),
+    NexusUserRefreshFailed(String),
+    NexusLogoutDone(Result<(), String>),
 }
 
 #[derive(Debug)]
@@ -442,7 +449,7 @@ pub(crate) enum GamesCmdMsg {
     ProfileRenamed(Result<(), String>),
     ProfileDeleted(Result<LoadedData, String>),
     /// Last-deployed profile ID loaded from DB settings after a game switch.
-    LastDeployedProfileLoaded(Option<String>),
+    LastDeployedProfileLoaded(Result<Option<String>, String>),
     /// Result of toggling profile save mode (+ optional save backup/restore op).
     SaveModeToggled(Result<(), String>),
     /// Result of a manual save sync triggered by the user.
@@ -455,13 +462,17 @@ pub(crate) enum GamesCmdMsg {
     /// Mod or plugin order snapshot deleted; carries updated snapshot list (game_id, kind).
     OrderSnapshotDeleted(Result<(), String>),
     /// All games have been persisted to DB after Manage Games; safe to select the first game now.
-    GamesPersisted,
+    GamesPersisted(Result<Vec<crate::models::game::GameConfig>, String>),
+    GameRemoved {
+        game_id: String,
+        result: Result<Vec<String>, String>,
+    },
 }
 
 #[derive(Debug)]
 pub(crate) enum ModsCmdMsg {
     ModRemoved(
-        Result<String, String>,
+        Result<(String, Vec<String>), String>,
         Option<(i64, i64)>,
         String,
         Option<String>,
@@ -524,7 +535,7 @@ pub(crate) enum DownloadsCmdMsg {
         Option<String>,
         Result<(String, String, String, String, Option<String>), String>,
     ),
-    DownloadsDirUpdated(Option<PathBuf>),
+    DownloadsDirUpdated(Result<Option<PathBuf>, String>),
     DownloadsScanned(Result<DownloadScanResult, String>),
 }
 

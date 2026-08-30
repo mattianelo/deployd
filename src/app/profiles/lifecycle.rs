@@ -353,8 +353,11 @@ impl App {
             let key = format!("last_profile_{}", game.id);
             let id = profile.id.clone();
             sender.oneshot_command(async move {
-                let _ = tracker.set_setting(&key, &id).await;
-                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(())))
+                let result = tracker
+                    .set_setting(&key, &id)
+                    .await
+                    .map_err(|error| error.to_string());
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
             });
         }
     }

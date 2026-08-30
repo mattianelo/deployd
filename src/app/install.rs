@@ -20,6 +20,7 @@ use super::progress::throttled_install_progress;
 use super::state::InstallStage;
 use super::types::{FileIdNeeded, WorkKind};
 
+pub(super) mod cleanup;
 mod dialogs;
 mod results;
 
@@ -515,7 +516,7 @@ impl App {
                     throttled_install_progress(progress_sender, identity.clone(), "Caching"),
                 );
                 let timing_start = std::time::Instant::now();
-                let result = installer::add_mod_with_file_list(installer::AddModRequest {
+                let mut result = installer::add_mod_with_file_list(installer::AddModRequest {
                     file_list,
                     game: &pending.game,
                     mod_name: &pending.mod_name,
@@ -539,29 +540,39 @@ impl App {
                 );
                 drop(pending.tmp_dir);
                 if let Some((old_id, old_priority)) = replace_info {
-                    let _ = tracker
+                    tracker
                         .update_priorities(&[(result.mod_entry.id.clone(), old_priority)])
-                        .await;
+                        .await
+                        .map_err(|error| error.to_string())?;
                     let old_plugins = tracker
                         .get_plugins_for_mod(&old_id)
                         .await
-                        .unwrap_or_default();
+                        .map_err(|error| error.to_string())?;
                     let old_state: std::collections::HashMap<String, (i32, bool)> = old_plugins
                         .into_iter()
                         .map(|(_, filename, lo, en)| (filename.to_lowercase(), (lo, en)))
                         .collect();
-                    let _ = tracker.delete_plugins_for_mod(&old_id).await;
-                    let _ = tracker.delete_mod_files(&old_id).await;
-                    let _ = tracker.delete_mod(&old_id).await;
+                    tracker
+                        .delete_plugins_for_mod(&old_id)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    tracker
+                        .delete_mod_files(&old_id)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    tracker
+                        .delete_mod(&old_id)
+                        .await
+                        .map_err(|error| error.to_string())?;
                     let old_cache = paths::mod_cache_dir_in(&cache_root, &old_id);
-                    if old_cache.exists() {
-                        let _ = std::fs::remove_dir_all(&old_cache);
+                    if let Some(warning) = cleanup::remove_mod_cache(&old_cache) {
+                        result.warnings.push(warning);
                     }
                     if !old_state.is_empty() {
                         let new_plugins = tracker
                             .get_plugins_for_mod(&result.mod_entry.id)
                             .await
-                            .unwrap_or_default();
+                            .map_err(|error| error.to_string())?;
                         let updates: Vec<(String, i32, bool)> = new_plugins
                             .into_iter()
                             .filter_map(|(pid, filename, _, _)| {
@@ -571,7 +582,10 @@ impl App {
                             })
                             .collect();
                         if !updates.is_empty() {
-                            let _ = tracker.update_plugin_states(&updates).await;
+                            tracker
+                                .update_plugin_states(&updates)
+                                .await
+                                .map_err(|error| error.to_string())?;
                         }
                     }
                 }
@@ -744,7 +758,7 @@ impl App {
                     throttled_install_progress(progress_sender, identity.clone(), "Caching"),
                 );
                 let timing_start = std::time::Instant::now();
-                let result = installer::add_mod_with_file_list(installer::AddModRequest {
+                let mut result = installer::add_mod_with_file_list(installer::AddModRequest {
                     file_list,
                     game: &pending.game,
                     mod_name: &pending.mod_name,
@@ -770,36 +784,47 @@ impl App {
                     timing_start,
                     Some(result.files_cached),
                 );
-                if let Ok(json) = serde_json::to_string(&serialized_selections) {
-                    let _ = tracker
-                        .save_fomod_selections(&result.mod_entry.id, &json)
-                        .await;
-                }
+                let json = serde_json::to_string(&serialized_selections)
+                    .map_err(|error| error.to_string())?;
+                tracker
+                    .save_fomod_selections(&result.mod_entry.id, &json)
+                    .await
+                    .map_err(|error| error.to_string())?;
                 drop(pending.tmp_dir);
                 if let Some((old_id, old_priority)) = replace_info {
-                    let _ = tracker
+                    tracker
                         .update_priorities(&[(result.mod_entry.id.clone(), old_priority)])
-                        .await;
+                        .await
+                        .map_err(|error| error.to_string())?;
                     let old_plugins = tracker
                         .get_plugins_for_mod(&old_id)
                         .await
-                        .unwrap_or_default();
+                        .map_err(|error| error.to_string())?;
                     let old_state: std::collections::HashMap<String, (i32, bool)> = old_plugins
                         .into_iter()
                         .map(|(_, filename, lo, en)| (filename.to_lowercase(), (lo, en)))
                         .collect();
-                    let _ = tracker.delete_plugins_for_mod(&old_id).await;
-                    let _ = tracker.delete_mod_files(&old_id).await;
-                    let _ = tracker.delete_mod(&old_id).await;
+                    tracker
+                        .delete_plugins_for_mod(&old_id)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    tracker
+                        .delete_mod_files(&old_id)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    tracker
+                        .delete_mod(&old_id)
+                        .await
+                        .map_err(|error| error.to_string())?;
                     let old_cache = paths::mod_cache_dir_in(&cache_root, &old_id);
-                    if old_cache.exists() {
-                        let _ = std::fs::remove_dir_all(&old_cache);
+                    if let Some(warning) = cleanup::remove_mod_cache(&old_cache) {
+                        result.warnings.push(warning);
                     }
                     if !old_state.is_empty() {
                         let new_plugins = tracker
                             .get_plugins_for_mod(&result.mod_entry.id)
                             .await
-                            .unwrap_or_default();
+                            .map_err(|error| error.to_string())?;
                         let updates: Vec<(String, i32, bool)> = new_plugins
                             .into_iter()
                             .filter_map(|(pid, filename, _, _)| {
@@ -809,7 +834,10 @@ impl App {
                             })
                             .collect();
                         if !updates.is_empty() {
-                            let _ = tracker.update_plugin_states(&updates).await;
+                            tracker
+                                .update_plugin_states(&updates)
+                                .await
+                                .map_err(|error| error.to_string())?;
                         }
                     }
                 }

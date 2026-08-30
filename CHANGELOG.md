@@ -21,6 +21,9 @@
   affected action instead of terminating Deployd.
 - Database startup now stops with actionable context when a required schema upgrade cannot be
   applied, while retryable metadata backfills surface warnings and are retried on a later launch.
+- Deployment and purge now stop on required filesystem or tracking failures instead of reporting
+  a successful synchronization. Recoverable cleanup and backup-restoration problems are surfaced
+  as warnings, and partial cache relocations are rolled back when possible.
 - Stable version tags now validate all release metadata before GitLab publishes the AppImage to
   Nexus Mods and the GitHub mirror independently builds and publishes the Snap to the stable
   Snap Store channel; manual GitHub runs build an auditable Snap artifact without store access.
