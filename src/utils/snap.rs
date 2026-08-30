@@ -38,7 +38,7 @@ pub(crate) const REMOVABLE_MEDIA_CONNECT_COMMAND: &str = "snap connect deployd:r
 pub(crate) fn removable_media_connection_message() -> String {
     format!(
         "Deployd needs permission to use this external drive as the downloads folder.\n\n\
-         Run this command on your system, then select the folder again:\n\n\
+         Run this command on your system, restart Deployd, then select the folder again:\n\n\
          {REMOVABLE_MEDIA_CONNECT_COMMAND}"
     )
 }
@@ -220,7 +220,7 @@ fn first_component_is_hidden(path: &Path) -> bool {
     })
 }
 
-fn is_removable_media_path(path: &Path) -> bool {
+pub(crate) fn is_removable_media_path(path: &Path) -> bool {
     path.starts_with("/media") || path.starts_with("/mnt") || path.starts_with("/run/media")
 }
 
@@ -416,6 +416,7 @@ mod tests {
         let message = removable_media_connection_message();
 
         assert!(message.contains(REMOVABLE_MEDIA_CONNECT_COMMAND));
+        assert!(message.contains("restart Deployd"));
         assert!(message.contains("select the folder again"));
     }
 

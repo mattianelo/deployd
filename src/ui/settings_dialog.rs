@@ -28,7 +28,7 @@ pub enum SettingsMsg {
     Save,
     Close,
     BrowseDownloadsDir,
-    DownloadsDirChosen(PathBuf),
+    DownloadsDirChosen(DownloadsFolderSelection),
     PreviewAppImageExport,
     ManageGames,
     SetColorScheme(u32),
@@ -39,14 +39,32 @@ pub enum SettingsCmdMsg {
     KeyValidated(Result<String, String>),
     KeySaved(Result<(), String>),
     KeyLoaded(Result<Option<String>, String>),
-    DownloadsDirSelected(Result<Option<PathBuf>, String>),
+    DownloadsDirSelected(Result<Option<DownloadsFolderSelection>, String>),
     DownloadsDirLoaded(Result<Option<String>, String>),
     DownloadsDirSaved(Result<(), String>),
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct DownloadsFolderSelection {
+    path: PathBuf,
+    portal_host_path: Option<PathBuf>,
+}
+
+async fn select_downloads_folder() -> anyhow::Result<Option<DownloadsFolderSelection>> {
+    let Some(path) = crate::utils::portal::select_folder("Select Downloads Folder").await? else {
+        return Ok(None);
+    };
+    let portal_host_path = crate::utils::portal::document_portal_host_path(&path).await;
+
+    Ok(Some(DownloadsFolderSelection {
+        path,
+        portal_host_path,
+    }))
+}
+
 fn downloads_dir_selection(
-    result: anyhow::Result<Option<PathBuf>>,
-) -> Result<Option<PathBuf>, String> {
+    result: anyhow::Result<Option<DownloadsFolderSelection>>,
+) -> Result<Option<DownloadsFolderSelection>, String> {
     match result {
         Ok(path) => Ok(path),
         Err(error)
@@ -63,6 +81,17 @@ fn downloads_dir_selection(
             "Failed to open the downloads folder picker: {error}"
         )),
     }
+}
+
+fn needs_removable_media_connection(
+    selection: &DownloadsFolderSelection,
+    recovery: Option<SelectedFolderRecovery>,
+) -> bool {
+    recovery == Some(SelectedFolderRecovery::ConnectRemovableMedia)
+        || selection
+            .portal_host_path
+            .as_deref()
+            .is_some_and(snap::is_removable_media_path)
 }
 
 #[derive(Debug)]
@@ -413,7 +442,7 @@ impl Component for SettingsDialog {
             SettingsMsg::BrowseDownloadsDir => {
                 sender.oneshot_command(async {
                     SettingsCmdMsg::DownloadsDirSelected(downloads_dir_selection(
-                        crate::utils::portal::select_folder("Select Downloads Folder").await,
+                        select_downloads_folder().await,
                     ))
                 });
             }
@@ -428,21 +457,24 @@ impl Component for SettingsDialog {
             SettingsMsg::SetColorScheme(idx) => {
                 let _ = sender.output(SettingsDialogOutput::ColorSchemeChanged(idx));
             }
-            SettingsMsg::DownloadsDirChosen(path) => {
-                if let Err(error) =
-                    snap::validate_selected_folder(&path, SelectedFolderKind::DownloadsFolder)
-                {
-                    self.downloads_status_label.set_label(&error.to_string());
-                    self.downloads_status_label.remove_css_class("success");
-                    self.downloads_status_label.add_css_class("error");
-                    self.downloads_status_label.set_visible(true);
-                    if error.recovery() == Some(SelectedFolderRecovery::ConnectRemovableMedia) {
+            SettingsMsg::DownloadsDirChosen(selection) => {
+                if let Err(error) = snap::validate_selected_folder(
+                    &selection.path,
+                    SelectedFolderKind::DownloadsFolder,
+                ) {
+                    if needs_removable_media_connection(&selection, error.recovery()) {
+                        self.downloads_status_label.set_visible(false);
                         present_removable_media_dialog(root);
+                    } else {
+                        self.downloads_status_label.set_label(&error.to_string());
+                        self.downloads_status_label.remove_css_class("success");
+                        self.downloads_status_label.add_css_class("error");
+                        self.downloads_status_label.set_visible(true);
                     }
                     return;
                 }
                 self.downloads_status_label.set_visible(false);
-                let dir_str = path.to_string_lossy().to_string();
+                let dir_str = selection.path.to_string_lossy().to_string();
                 self.downloads_dir = dir_str.clone();
 
                 let tracker = self.tracker.clone();
@@ -582,16 +614,23 @@ mod tests {
 
     use anyhow::anyhow;
 
-    use super::downloads_dir_selection;
+    use super::{
+        DownloadsFolderSelection, downloads_dir_selection, needs_removable_media_connection,
+    };
+    use crate::utils::snap::SelectedFolderRecovery;
 
     #[test]
     fn returns_folder_selected_through_portal() {
         let path = PathBuf::from("/run/user/1000/doc/abcd/Downloads");
+        let selection = DownloadsFolderSelection {
+            path: path.clone(),
+            portal_host_path: Some(PathBuf::from("/media/alex/External/Downloads")),
+        };
 
-        let selected = downloads_dir_selection(Ok(Some(path.clone())))
-            .expect("portal selection should succeed");
+        let selected =
+            downloads_dir_selection(Ok(Some(selection))).expect("portal selection should succeed");
 
-        assert_eq!(selected.as_deref(), Some(path.as_path()));
+        assert_eq!(selected.map(|selection| selection.path), Some(path));
     }
 
     #[test]
@@ -613,5 +652,38 @@ mod tests {
             error,
             "Failed to open the downloads folder picker: portal unavailable"
         );
+    }
+
+    #[test]
+    fn prompts_when_broken_portal_route_targets_external_drive() {
+        let selection = DownloadsFolderSelection {
+            path: PathBuf::from("/run/user/1000/doc/abcd/Downloads"),
+            portal_host_path: Some(PathBuf::from("/media/alex/External/Downloads")),
+        };
+
+        assert!(needs_removable_media_connection(&selection, None));
+    }
+
+    #[test]
+    fn keeps_non_external_portal_failures_inline() {
+        let selection = DownloadsFolderSelection {
+            path: PathBuf::from("/run/user/1000/doc/abcd/Downloads"),
+            portal_host_path: Some(PathBuf::from("/home/alex/Downloads")),
+        };
+
+        assert!(!needs_removable_media_connection(&selection, None));
+    }
+
+    #[test]
+    fn prompts_for_direct_removable_media_recovery() {
+        let selection = DownloadsFolderSelection {
+            path: PathBuf::from("/media/alex/External/Downloads"),
+            portal_host_path: None,
+        };
+
+        assert!(needs_removable_media_connection(
+            &selection,
+            Some(SelectedFolderRecovery::ConnectRemovableMedia)
+        ));
     }
 }

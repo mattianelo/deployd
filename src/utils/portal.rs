@@ -34,7 +34,7 @@ pub async fn trash_file(path: PathBuf) -> Result<()> {
     match trash_file_by_path(&path).await {
         Ok(()) => Ok(()),
         Err(original_error) => {
-            if let Some(host_path) = resolve_document_portal_host_path(&path).await {
+            if let Some(host_path) = document_portal_host_path(&path).await {
                 return trash_file_by_path(&host_path).await.map_err(|host_error| {
                     anyhow::anyhow!(
                         "document-portal trash failed: {original_error}; host-path trash failed: {host_error}"
@@ -77,7 +77,8 @@ async fn trash_file_by_path(path: &Path) -> Result<()> {
     }
 }
 
-async fn resolve_document_portal_host_path(path: &Path) -> Option<PathBuf> {
+/// Resolve a document-portal route to the corresponding host path when the portal exposes it.
+pub(crate) async fn document_portal_host_path(path: &Path) -> Option<PathBuf> {
     let (doc_id, relative_path) = split_document_portal_path(path)?;
     let documents = Documents::new().await.ok()?;
     let host_paths = documents
