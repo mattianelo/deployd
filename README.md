@@ -108,6 +108,10 @@ external drives. The downloads folder picker always requests this portal access 
 on direct removable-media access. When download records point at a document-portal mount, Deployd
 resolves the original host path before moving the archive to Trash.
 
+If the desktop portal returns an external drive's direct mount path, Deployd prompts for the Snap's
+manual removable-media connection. Run `snap connect deployd:removable-media`, then select the
+downloads folder again.
+
 AppImage-to-Snap game migration preserves installed-mod source metadata, download metadata, and
 the profile associated with currently deployed files. AppImage archive paths are cleared because
 they are not valid inside the Snap; rescanning the Snap downloads folder reattaches those archives.

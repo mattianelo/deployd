@@ -597,7 +597,7 @@ impl Component for GameSetupDialog {
                 if let Err(message) =
                     snap::validate_selected_folder(&path, SelectedFolderKind::GameFolder)
                 {
-                    Self::show_path_error(root, &message);
+                    Self::show_path_error(root, &message.to_string());
                     return;
                 }
                 if let Some(entry) = self.entries.get_mut(idx) {
@@ -621,7 +621,7 @@ impl Component for GameSetupDialog {
                 if let Err(message) =
                     snap::validate_selected_folder(&path, SelectedFolderKind::WinePrefix)
                 {
-                    Self::show_path_error(root, &message);
+                    Self::show_path_error(root, &message.to_string());
                     return;
                 }
                 if let Some(entry) = self.entries.get_mut(idx) {
@@ -645,7 +645,7 @@ impl Component for GameSetupDialog {
                 if let Err(message) =
                     snap::validate_selected_folder(&path, SelectedFolderKind::CacheFolder)
                 {
-                    Self::show_path_error(root, &message);
+                    Self::show_path_error(root, &message.to_string());
                     return;
                 }
                 let Some(entry) = self.entries.get(idx) else {
@@ -720,7 +720,7 @@ impl Component for GameSetupDialog {
                 if let Err(message) =
                     snap::validate_selected_folder(&path, SelectedFolderKind::GameFolder)
                 {
-                    Self::show_path_error(root, &message);
+                    Self::show_path_error(root, &message.to_string());
                     return;
                 }
                 self.new_path_entry.set_text(&path.to_string_lossy());
@@ -743,7 +743,7 @@ impl Component for GameSetupDialog {
                 if let Err(message) =
                     snap::validate_selected_folder(&path, SelectedFolderKind::WinePrefix)
                 {
-                    Self::show_path_error(root, &message);
+                    Self::show_path_error(root, &message.to_string());
                     return;
                 }
                 self.new_prefix_entry.set_text(&path.to_string_lossy());

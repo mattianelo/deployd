@@ -254,7 +254,7 @@ impl App {
     ) {
         if let Err(message) = snap::validate_selected_folder(&path, SelectedFolderKind::GameFolder)
         {
-            self.push_notification(&message);
+            self.push_notification(&message.to_string());
             return;
         }
         let Some(pending) = self.ui.pending_migration_import.as_mut() else {
@@ -271,7 +271,7 @@ impl App {
     ) {
         if let Err(message) = snap::validate_selected_folder(&path, SelectedFolderKind::WinePrefix)
         {
-            self.push_notification(&message);
+            self.push_notification(&message.to_string());
             return;
         }
         let Some(pending) = self.ui.pending_migration_import.as_mut() else {

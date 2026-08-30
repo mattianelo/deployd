@@ -10,6 +10,39 @@ pub(crate) enum SelectedFolderKind {
     DownloadsFolder,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SelectedFolderRecovery {
+    ConnectRemovableMedia,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct SelectedFolderError {
+    message: String,
+    recovery: Option<SelectedFolderRecovery>,
+}
+
+impl SelectedFolderError {
+    pub(crate) fn recovery(&self) -> Option<SelectedFolderRecovery> {
+        self.recovery
+    }
+}
+
+impl std::fmt::Display for SelectedFolderError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+pub(crate) const REMOVABLE_MEDIA_CONNECT_COMMAND: &str = "snap connect deployd:removable-media";
+
+pub(crate) fn removable_media_connection_message() -> String {
+    format!(
+        "Deployd needs permission to use this external drive as the downloads folder.\n\n\
+         Run this command on your system, then select the folder again:\n\n\
+         {REMOVABLE_MEDIA_CONNECT_COMMAND}"
+    )
+}
+
 impl SelectedFolderKind {
     fn label(self) -> &'static str {
         match self {
@@ -39,7 +72,7 @@ pub(crate) fn user_common_dir() -> Option<PathBuf> {
 pub(crate) fn validate_selected_folder(
     path: &Path,
     kind: SelectedFolderKind,
-) -> Result<(), String> {
+) -> Result<(), SelectedFolderError> {
     let environment = SnapEnvironment::from_process();
     validate_selected_folder_with(path, kind, environment.as_ref(), inspect_selected_folder)
 }
@@ -73,7 +106,7 @@ fn validate_selected_folder_with(
     kind: SelectedFolderKind,
     environment: Option<&SnapEnvironment>,
     inspect: impl FnOnce(&Path) -> Result<(), FolderAccessError>,
-) -> Result<(), String> {
+) -> Result<(), SelectedFolderError> {
     let Some(environment) = environment else {
         return Ok(());
     };
@@ -84,34 +117,58 @@ fn validate_selected_folder_with(
         environment.user_common.as_deref(),
         environment.user_data.as_deref(),
     ) {
-        return Err(message);
+        return Err(SelectedFolderError {
+            message,
+            recovery: None,
+        });
     }
 
-    inspect(path).map_err(|error| match error {
-        FolderAccessError::Metadata(error) => format!(
-            "Cannot access selected {} '{}': {e}",
-            kind.label(),
-            path.display(),
-            e = error
-        ),
-        FolderAccessError::NotDirectory => format!(
-            "Selected {} is not a folder: {}",
-            kind.label(),
-            path.display()
-        ),
-        FolderAccessError::Read(error) => format!(
-            "Cannot read selected {} '{}': {e}",
-            kind.label(),
-            path.display(),
-            e = error
-        ),
-        FolderAccessError::Write(error) => format!(
-            "Cannot write to selected {} '{}': {e}",
-            kind.label(),
-            path.display(),
-            e = error
-        ),
+    inspect(path).map_err(|error| SelectedFolderError {
+        recovery: removable_media_recovery(path, &error),
+        message: match error {
+            FolderAccessError::Metadata(error) => format!(
+                "Cannot access selected {} '{}': {e}",
+                kind.label(),
+                path.display(),
+                e = error
+            ),
+            FolderAccessError::NotDirectory => format!(
+                "Selected {} is not a folder: {}",
+                kind.label(),
+                path.display()
+            ),
+            FolderAccessError::Read(error) => format!(
+                "Cannot read selected {} '{}': {e}",
+                kind.label(),
+                path.display(),
+                e = error
+            ),
+            FolderAccessError::Write(error) => format!(
+                "Cannot write to selected {} '{}': {e}",
+                kind.label(),
+                path.display(),
+                e = error
+            ),
+        },
     })
+}
+
+fn removable_media_recovery(
+    path: &Path,
+    error: &FolderAccessError,
+) -> Option<SelectedFolderRecovery> {
+    if !is_removable_media_path(path) {
+        return None;
+    }
+
+    let permission_denied = match error {
+        FolderAccessError::Metadata(error) | FolderAccessError::Read(error) => {
+            error.kind() == std::io::ErrorKind::PermissionDenied
+        }
+        FolderAccessError::NotDirectory | FolderAccessError::Write(_) => false,
+    };
+
+    permission_denied.then_some(SelectedFolderRecovery::ConnectRemovableMedia)
 }
 
 fn inspect_selected_folder(path: &Path) -> Result<(), FolderAccessError> {
@@ -137,13 +194,6 @@ fn classify_snap_path(
         || is_document_portal_path(path)
     {
         return None;
-    }
-
-    if is_removable_media_path(path) {
-        return Some(
-            "The selected folder is under /media, /mnt, or /run/media. Deployd's Snap does not currently declare removable-media, so strict confinement blocks that location."
-                .to_string(),
-        );
     }
 
     if let Some(home) = home
@@ -244,16 +294,22 @@ mod tests {
 
     // @variants: snap
     #[test]
-    fn rejects_removable_media_without_interface() {
+    fn accepts_removable_media_when_access_probe_succeeds() {
+        let environment = SnapEnvironment {
+            home: Some(PathBuf::from("/home/alex")),
+            user_common: None,
+            user_data: None,
+        };
         let path = Path::new("/mnt/games/Skyrim");
 
-        let message = classify_snap_path(path, Some(Path::new("/home/alex")), None, None)
-            .expect("removable-media path should be rejected");
-
-        assert!(
-            message.contains("removable-media"),
-            "message should name the missing interface: {message}"
+        let result = validate_selected_folder_with(
+            path,
+            SelectedFolderKind::GameFolder,
+            Some(&environment),
+            |_| Ok(()),
         );
+
+        assert_eq!(result, Ok(()));
     }
 
     // Regression: portal-selected folders remain accessible across sessions and must not be
@@ -303,11 +359,64 @@ mod tests {
             path,
             SelectedFolderKind::DownloadsFolder,
             Some(&environment),
-            |_| panic!("raw removable-media paths must be rejected before probing"),
+            |_| {
+                Err(FolderAccessError::Metadata(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "confined",
+                )))
+            },
         )
         .expect_err("ungranted removable-media path should be rejected");
 
-        assert!(error.contains("removable-media"));
+        assert_eq!(
+            error.recovery(),
+            Some(SelectedFolderRecovery::ConnectRemovableMedia)
+        );
+        assert!(
+            error
+                .to_string()
+                .contains("Cannot access selected downloads folder")
+        );
+    }
+
+    // @variants: snap
+    #[test]
+    fn does_not_suggest_connection_for_read_only_removable_media() {
+        let environment = SnapEnvironment {
+            home: Some(PathBuf::from("/home/alex")),
+            user_common: None,
+            user_data: None,
+        };
+        let path = Path::new("/media/alex/ReadOnly/Downloads");
+
+        let error = validate_selected_folder_with(
+            path,
+            SelectedFolderKind::DownloadsFolder,
+            Some(&environment),
+            |_| {
+                Err(FolderAccessError::Write(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "read-only filesystem",
+                )))
+            },
+        )
+        .expect_err("read-only removable media should be rejected");
+
+        assert_eq!(error.recovery(), None);
+        assert!(
+            error
+                .to_string()
+                .contains("Cannot write to selected downloads folder")
+        );
+    }
+
+    // @variants: snap
+    #[test]
+    fn removable_media_message_includes_manual_connection_command() {
+        let message = removable_media_connection_message();
+
+        assert!(message.contains(REMOVABLE_MEDIA_CONNECT_COMMAND));
+        assert!(message.contains("select the folder again"));
     }
 
     // @variants: appimage
@@ -346,8 +455,12 @@ mod tests {
         )
         .expect_err("failed write probe must reject the selected folder");
 
-        assert!(error.contains("Cannot write to selected game folder"));
-        assert!(error.contains("confined"));
+        assert!(
+            error
+                .to_string()
+                .contains("Cannot write to selected game folder")
+        );
+        assert!(error.to_string().contains("confined"));
     }
 
     // @variants: snap

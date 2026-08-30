@@ -432,7 +432,7 @@ impl Component for WelcomeWizard {
                 if let Err(message) =
                     snap::validate_selected_folder(&path, SelectedFolderKind::GameFolder)
                 {
-                    Self::show_path_error(root, &message);
+                    Self::show_path_error(root, &message.to_string());
                     return;
                 }
                 if let Some(slot) = self.install_paths.get_mut(idx) {
@@ -456,7 +456,7 @@ impl Component for WelcomeWizard {
                 if let Err(message) =
                     snap::validate_selected_folder(&path, SelectedFolderKind::WinePrefix)
                 {
-                    Self::show_path_error(root, &message);
+                    Self::show_path_error(root, &message.to_string());
                     return;
                 }
                 if let Some(slot) = self.wine_prefixes.get_mut(idx) {

@@ -51,6 +51,7 @@ apps:
     plugs:
       - home
       - network
+      - removable-media
       - wine-runtime
       - wine-stable
     slots: [dbus-deployd]

@@ -8,13 +8,14 @@ use relm4::prelude::*;
 use crate::core::nexus_api::NexusClient;
 use crate::core::tracker::Tracker;
 use crate::utils::paths;
-use crate::utils::snap::{self, SelectedFolderKind};
+use crate::utils::snap::{self, SelectedFolderKind, SelectedFolderRecovery};
 
 pub struct SettingsDialog {
     tracker: Tracker,
     is_logged_in: bool,
     api_key_row: adw::PasswordEntryRow,
     status_label: gtk::Label,
+    downloads_status_label: gtk::Label,
     test_button: gtk::Button,
     save_button: gtk::Button,
     downloads_dir: String,
@@ -154,6 +155,13 @@ impl Component for SettingsDialog {
                             connect_clicked => SettingsMsg::BrowseDownloadsDir,
                         },
                     },
+
+                    #[local_ref]
+                    add = downloads_status_label -> gtk::Label {
+                        set_halign: gtk::Align::Start,
+                        set_wrap: true,
+                        set_visible: false,
+                    },
                 },
 
                 // Games section
@@ -236,6 +244,7 @@ impl Component for SettingsDialog {
     ) -> ComponentParts<Self> {
         let api_key_row = adw::PasswordEntryRow::new();
         let status_label = gtk::Label::new(None);
+        let downloads_status_label = gtk::Label::new(None);
         let test_button = gtk::Button::new();
         let save_button = gtk::Button::new();
 
@@ -246,6 +255,7 @@ impl Component for SettingsDialog {
             is_logged_in,
             api_key_row,
             status_label,
+            downloads_status_label,
             test_button,
             save_button,
             downloads_dir: default_dir,
@@ -254,6 +264,7 @@ impl Component for SettingsDialog {
 
         let api_key_row = &model.api_key_row;
         let status_label = &model.status_label;
+        let downloads_status_label = &model.downloads_status_label;
         let test_button = &model.test_button;
         let save_button = &model.save_button;
         let widgets = view_output!();
@@ -418,15 +429,19 @@ impl Component for SettingsDialog {
                 let _ = sender.output(SettingsDialogOutput::ColorSchemeChanged(idx));
             }
             SettingsMsg::DownloadsDirChosen(path) => {
-                if let Err(message) =
+                if let Err(error) =
                     snap::validate_selected_folder(&path, SelectedFolderKind::DownloadsFolder)
                 {
-                    self.status_label.set_label(&message);
-                    self.status_label.remove_css_class("success");
-                    self.status_label.add_css_class("error");
-                    self.status_label.set_visible(true);
+                    self.downloads_status_label.set_label(&error.to_string());
+                    self.downloads_status_label.remove_css_class("success");
+                    self.downloads_status_label.add_css_class("error");
+                    self.downloads_status_label.set_visible(true);
+                    if error.recovery() == Some(SelectedFolderRecovery::ConnectRemovableMedia) {
+                        present_removable_media_dialog(root);
+                    }
                     return;
                 }
+                self.downloads_status_label.set_visible(false);
                 let dir_str = path.to_string_lossy().to_string();
                 self.downloads_dir = dir_str.clone();
 
@@ -497,10 +512,10 @@ impl Component for SettingsDialog {
                 Ok(Some(path)) => sender.input(SettingsMsg::DownloadsDirChosen(path)),
                 Ok(None) => {}
                 Err(error) => {
-                    self.status_label.set_label(&error);
-                    self.status_label.remove_css_class("success");
-                    self.status_label.add_css_class("error");
-                    self.status_label.set_visible(true);
+                    self.downloads_status_label.set_label(&error);
+                    self.downloads_status_label.remove_css_class("success");
+                    self.downloads_status_label.add_css_class("error");
+                    self.downloads_status_label.set_visible(true);
                 }
             },
             SettingsCmdMsg::DownloadsDirLoaded(result) => match result {
@@ -514,12 +529,51 @@ impl Component for SettingsDialog {
                 }
             },
             SettingsCmdMsg::DownloadsDirSaved(result) => {
-                if let Err(e) = result {
-                    eprintln!("deployd: failed to save downloads dir: {e}");
+                if let Err(error) = result {
+                    self.downloads_status_label
+                        .set_label(&format!("Failed to save downloads settings: {error}"));
+                    self.downloads_status_label.remove_css_class("success");
+                    self.downloads_status_label.add_css_class("error");
+                    self.downloads_status_label.set_visible(true);
                 }
             }
         }
     }
+}
+
+fn present_removable_media_dialog(root: &adw::PreferencesWindow) {
+    let dialog = adw::AlertDialog::builder()
+        .heading("Connect External Drive Access")
+        .body(snap::removable_media_connection_message())
+        .build();
+    dialog.add_response("close", "Close");
+    dialog.set_default_response(Some("close"));
+    dialog.set_close_response("close");
+
+    let command_entry = gtk::Entry::builder()
+        .text(snap::REMOVABLE_MEDIA_CONNECT_COMMAND)
+        .editable(false)
+        .hexpand(true)
+        .build();
+    command_entry.add_css_class("monospace");
+
+    let copy_button = gtk::Button::builder()
+        .icon_name("edit-copy-symbolic")
+        .tooltip_text("Copy command")
+        .build();
+    copy_button.connect_clicked(move |_| {
+        if let Some(display) = gtk::gdk::Display::default() {
+            display
+                .clipboard()
+                .set_text(snap::REMOVABLE_MEDIA_CONNECT_COMMAND);
+        }
+    });
+
+    let command_box = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    command_box.append(&command_entry);
+    command_box.append(&copy_button);
+    dialog.set_extra_child(Some(&command_box));
+    dialog.present(Some(root));
 }
 
 #[cfg(test)]
