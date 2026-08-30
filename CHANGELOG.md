@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Fixed new Snap installations being unable to select an external drive as the downloads folder by
+  requesting persistent access through the desktop portal and reporting picker failures.
 - Development analysis now runs compiler-backed semantic and structural checks through the
   project's isolated, reproducible environment.
 - Pinned the Rust development toolchain and isolated local AppImage checks and builds under an

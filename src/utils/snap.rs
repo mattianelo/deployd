@@ -269,6 +269,47 @@ mod tests {
         );
     }
 
+    // @variants: snap
+    #[test]
+    fn accepts_portal_granted_downloads_folder() {
+        let environment = SnapEnvironment {
+            home: Some(PathBuf::from("/home/alex")),
+            user_common: None,
+            user_data: None,
+        };
+        let path = Path::new("/run/user/1000/doc/abcd/Downloads");
+
+        let result = validate_selected_folder_with(
+            path,
+            SelectedFolderKind::DownloadsFolder,
+            Some(&environment),
+            |_| Ok(()),
+        );
+
+        assert_eq!(result, Ok(()));
+    }
+
+    // @variants: snap
+    #[test]
+    fn rejects_ungranted_removable_downloads_folder() {
+        let environment = SnapEnvironment {
+            home: Some(PathBuf::from("/home/alex")),
+            user_common: None,
+            user_data: None,
+        };
+        let path = Path::new("/media/alex/External/Downloads");
+
+        let error = validate_selected_folder_with(
+            path,
+            SelectedFolderKind::DownloadsFolder,
+            Some(&environment),
+            |_| panic!("raw removable-media paths must be rejected before probing"),
+        )
+        .expect_err("ungranted removable-media path should be rejected");
+
+        assert!(error.contains("removable-media"));
+    }
+
     // @variants: appimage
     #[test]
     fn appimage_validation_does_not_probe_the_filesystem() {

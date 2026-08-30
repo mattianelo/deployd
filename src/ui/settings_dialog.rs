@@ -38,8 +38,30 @@ pub enum SettingsCmdMsg {
     KeyValidated(Result<String, String>),
     KeySaved(Result<(), String>),
     KeyLoaded(Result<Option<String>, String>),
+    DownloadsDirSelected(Result<Option<PathBuf>, String>),
     DownloadsDirLoaded(Result<Option<String>, String>),
     DownloadsDirSaved(Result<(), String>),
+}
+
+fn downloads_dir_selection(
+    result: anyhow::Result<Option<PathBuf>>,
+) -> Result<Option<PathBuf>, String> {
+    match result {
+        Ok(path) => Ok(path),
+        Err(error)
+            if matches!(
+                error.downcast_ref::<ashpd::Error>(),
+                Some(ashpd::Error::Response(
+                    ashpd::desktop::ResponseError::Cancelled
+                ))
+            ) =>
+        {
+            Ok(None)
+        }
+        Err(error) => Err(format!(
+            "Failed to open the downloads folder picker: {error}"
+        )),
+    }
 }
 
 #[derive(Debug)]
@@ -378,18 +400,10 @@ impl Component for SettingsDialog {
                 let _ = sender.output(SettingsDialogOutput::Closed);
             }
             SettingsMsg::BrowseDownloadsDir => {
-                let dialog = gtk::FileDialog::builder()
-                    .title("Select Downloads Folder")
-                    .modal(true)
-                    .build();
-
-                let input_sender = sender.input_sender().clone();
-                dialog.select_folder(Some(root), None::<&gtk::gio::Cancellable>, move |result| {
-                    if let Ok(file) = result
-                        && let Some(path) = file.path()
-                    {
-                        let _ = input_sender.send(SettingsMsg::DownloadsDirChosen(path));
-                    }
+                sender.oneshot_command(async {
+                    SettingsCmdMsg::DownloadsDirSelected(downloads_dir_selection(
+                        crate::utils::portal::select_folder("Select Downloads Folder").await,
+                    ))
                 });
             }
             SettingsMsg::ManageGames => {
@@ -479,6 +493,16 @@ impl Component for SettingsDialog {
                     self.status_label.set_visible(true);
                 }
             },
+            SettingsCmdMsg::DownloadsDirSelected(result) => match result {
+                Ok(Some(path)) => sender.input(SettingsMsg::DownloadsDirChosen(path)),
+                Ok(None) => {}
+                Err(error) => {
+                    self.status_label.set_label(&error);
+                    self.status_label.remove_css_class("success");
+                    self.status_label.add_css_class("error");
+                    self.status_label.set_visible(true);
+                }
+            },
             SettingsCmdMsg::DownloadsDirLoaded(result) => match result {
                 Ok(Some(dir)) => self.downloads_dir = dir,
                 Ok(None) => {}
@@ -495,5 +519,45 @@ impl Component for SettingsDialog {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use anyhow::anyhow;
+
+    use super::downloads_dir_selection;
+
+    #[test]
+    fn returns_folder_selected_through_portal() {
+        let path = PathBuf::from("/run/user/1000/doc/abcd/Downloads");
+
+        let selected = downloads_dir_selection(Ok(Some(path.clone())))
+            .expect("portal selection should succeed");
+
+        assert_eq!(selected.as_deref(), Some(path.as_path()));
+    }
+
+    #[test]
+    fn preserves_cancelled_portal_selection() {
+        let error = ashpd::Error::from(ashpd::desktop::ResponseError::Cancelled);
+
+        let selected =
+            downloads_dir_selection(Err(error.into())).expect("cancellation should not fail");
+
+        assert_eq!(selected, None);
+    }
+
+    #[test]
+    fn reports_portal_failure() {
+        let error = downloads_dir_selection(Err(anyhow!("portal unavailable")))
+            .expect_err("portal failure should be reported");
+
+        assert_eq!(
+            error,
+            "Failed to open the downloads folder picker: portal unavailable"
+        );
     }
 }

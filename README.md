@@ -104,8 +104,9 @@ Strict Snap confinement still controls which folders the app can see. Deployd va
 game, Wine prefix, downloads, cache, and migration-import folders before saving them, and explains
 blocked hidden-home paths, ungranted removable media, or read/write access failures immediately.
 Folders selected through the desktop portal remain available across restarts, including folders on
-external drives. When download records point at a document-portal mount, Deployd resolves the
-original host path before moving the archive to Trash.
+external drives. The downloads folder picker always requests this portal access instead of relying
+on direct removable-media access. When download records point at a document-portal mount, Deployd
+resolves the original host path before moving the archive to Trash.
 
 AppImage-to-Snap game migration preserves installed-mod source metadata, download metadata, and
 the profile associated with currently deployed files. AppImage archive paths are cleared because
