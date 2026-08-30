@@ -83,15 +83,24 @@ fn downloads_dir_selection(
     }
 }
 
-fn needs_removable_media_connection(
+fn resolve_downloads_folder_with<E>(
     selection: &DownloadsFolderSelection,
-    recovery: Option<SelectedFolderRecovery>,
-) -> bool {
-    recovery == Some(SelectedFolderRecovery::ConnectRemovableMedia)
-        || selection
-            .portal_host_path
-            .as_deref()
-            .is_some_and(snap::is_removable_media_path)
+    mut validate: impl FnMut(&std::path::Path) -> Result<(), E>,
+) -> Result<PathBuf, E> {
+    match validate(&selection.path) {
+        Ok(()) => Ok(selection.path.clone()),
+        Err(portal_error) => {
+            let Some(host_path) = selection
+                .portal_host_path
+                .as_deref()
+                .filter(|path| snap::is_removable_media_path(path))
+            else {
+                return Err(portal_error);
+            };
+
+            validate(host_path).map(|()| host_path.to_path_buf())
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -458,23 +467,25 @@ impl Component for SettingsDialog {
                 let _ = sender.output(SettingsDialogOutput::ColorSchemeChanged(idx));
             }
             SettingsMsg::DownloadsDirChosen(selection) => {
-                if let Err(error) = snap::validate_selected_folder(
-                    &selection.path,
-                    SelectedFolderKind::DownloadsFolder,
-                ) {
-                    if needs_removable_media_connection(&selection, error.recovery()) {
-                        self.downloads_status_label.set_visible(false);
-                        present_removable_media_dialog(root);
-                    } else {
-                        self.downloads_status_label.set_label(&error.to_string());
-                        self.downloads_status_label.remove_css_class("success");
-                        self.downloads_status_label.add_css_class("error");
-                        self.downloads_status_label.set_visible(true);
+                let path = match resolve_downloads_folder_with(&selection, |path| {
+                    snap::validate_selected_folder(path, SelectedFolderKind::DownloadsFolder)
+                }) {
+                    Ok(path) => path,
+                    Err(error) => {
+                        if error.recovery() == Some(SelectedFolderRecovery::ConnectRemovableMedia) {
+                            self.downloads_status_label.set_visible(false);
+                            present_removable_media_dialog(root);
+                        } else {
+                            self.downloads_status_label.set_label(&error.to_string());
+                            self.downloads_status_label.remove_css_class("success");
+                            self.downloads_status_label.add_css_class("error");
+                            self.downloads_status_label.set_visible(true);
+                        }
+                        return;
                     }
-                    return;
-                }
+                };
                 self.downloads_status_label.set_visible(false);
-                let dir_str = selection.path.to_string_lossy().to_string();
+                let dir_str = path.to_string_lossy().to_string();
                 self.downloads_dir = dir_str.clone();
 
                 let tracker = self.tracker.clone();
@@ -614,10 +625,7 @@ mod tests {
 
     use anyhow::anyhow;
 
-    use super::{
-        DownloadsFolderSelection, downloads_dir_selection, needs_removable_media_connection,
-    };
-    use crate::utils::snap::SelectedFolderRecovery;
+    use super::{DownloadsFolderSelection, downloads_dir_selection, resolve_downloads_folder_with};
 
     #[test]
     fn returns_folder_selected_through_portal() {
@@ -655,35 +663,53 @@ mod tests {
     }
 
     #[test]
-    fn prompts_when_broken_portal_route_targets_external_drive() {
+    fn uses_external_host_path_when_interface_grants_access() {
         let selection = DownloadsFolderSelection {
             path: PathBuf::from("/run/user/1000/doc/abcd/Downloads"),
             portal_host_path: Some(PathBuf::from("/media/alex/External/Downloads")),
         };
 
-        assert!(needs_removable_media_connection(&selection, None));
+        let resolved = resolve_downloads_folder_with(&selection, |path| {
+            if path == selection.path {
+                Err("stale portal route")
+            } else {
+                Ok(())
+            }
+        })
+        .expect("connected removable-media path should be accepted");
+
+        assert_eq!(resolved, PathBuf::from("/media/alex/External/Downloads"));
     }
 
     #[test]
-    fn keeps_non_external_portal_failures_inline() {
+    fn returns_external_host_error_when_interface_is_disconnected() {
+        let selection = DownloadsFolderSelection {
+            path: PathBuf::from("/run/user/1000/doc/abcd/Downloads"),
+            portal_host_path: Some(PathBuf::from("/media/alex/External/Downloads")),
+        };
+
+        let error = resolve_downloads_folder_with(&selection, |path| {
+            if path == selection.path {
+                Err("stale portal route")
+            } else {
+                Err("external drive denied")
+            }
+        })
+        .expect_err("disconnected removable-media path should fail");
+
+        assert_eq!(error, "external drive denied");
+    }
+
+    #[test]
+    fn keeps_non_external_portal_error() {
         let selection = DownloadsFolderSelection {
             path: PathBuf::from("/run/user/1000/doc/abcd/Downloads"),
             portal_host_path: Some(PathBuf::from("/home/alex/Downloads")),
         };
 
-        assert!(!needs_removable_media_connection(&selection, None));
-    }
+        let error = resolve_downloads_folder_with(&selection, |_| Err("stale portal route"))
+            .expect_err("non-external portal failure should remain unchanged");
 
-    #[test]
-    fn prompts_for_direct_removable_media_recovery() {
-        let selection = DownloadsFolderSelection {
-            path: PathBuf::from("/media/alex/External/Downloads"),
-            portal_host_path: None,
-        };
-
-        assert!(needs_removable_media_connection(
-            &selection,
-            Some(SelectedFolderRecovery::ConnectRemovableMedia)
-        ));
+        assert_eq!(error, "stale portal route");
     }
 }
