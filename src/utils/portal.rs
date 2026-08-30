@@ -108,12 +108,23 @@ fn split_document_portal_path(path: &Path) -> Option<(DocumentID, PathBuf)> {
         _ => return None,
     }
 
-    let doc_id = match components.next()? {
-        Component::Normal(doc_id) => doc_id.to_string_lossy().into_owned(),
-        _ => return None,
+    let first = normal_component(components.next()?)?;
+    let doc_id = if first == "by-app" {
+        normal_component(components.next()?)?;
+        normal_component(components.next()?)?
+    } else {
+        first
     };
+    normal_component(components.next()?)?;
     let relative_path = components.as_path().to_path_buf();
     Some((DocumentID::from(doc_id), relative_path))
+}
+
+fn normal_component(component: Component<'_>) -> Option<String> {
+    match component {
+        Component::Normal(value) => Some(value.to_string_lossy().into_owned()),
+        _ => None,
+    }
 }
 
 fn trash_file_with_gio(path: &Path) -> std::result::Result<(), glib::Error> {
@@ -127,8 +138,7 @@ mod tests {
 
     use super::*;
 
-    // Regression: Snap document-portal download archives can arrive as
-    // `/run/user/<uid>/doc/<id>/...`, which the Trash portal cannot trash directly.
+    // Regression: the document portal inserts the exported entry's basename after its ID.
     // @variants: snap
     #[test]
     fn splits_document_portal_path() {
@@ -138,10 +148,37 @@ mod tests {
             split_document_portal_path(path).expect("document portal path should split");
 
         assert_eq!(doc_id.as_ref(), "f29584af");
+        assert_eq!(relative_path, PathBuf::from("fallout4").join("Hydra.7z"));
+    }
+
+    // Regression: sandboxed Snap grants use the document portal's application-scoped domain.
+    // @variants: snap
+    #[test]
+    fn splits_application_scoped_document_portal_path() {
+        let path = Path::new(
+            "/run/user/1000/doc/by-app/snap.deployd_dev_deployd/56f1c1aa/bcc08294/Gaming/Downloads",
+        );
+
+        let (doc_id, relative_path) =
+            split_document_portal_path(path).expect("application-scoped portal path should split");
+
+        assert_eq!(doc_id.as_ref(), "56f1c1aa");
         assert_eq!(
             relative_path,
-            PathBuf::from("Mods").join("fallout4").join("Hydra.7z")
+            PathBuf::from("Gaming").join("Downloads")
         );
+    }
+
+    // @variants: snap
+    #[test]
+    fn maps_exported_folder_itself_to_document_host_path() {
+        let path = Path::new("/run/user/1000/doc/56f1c1aa/ExternalDrive");
+
+        let (doc_id, relative_path) =
+            split_document_portal_path(path).expect("exported folder should split");
+
+        assert_eq!(doc_id.as_ref(), "56f1c1aa");
+        assert!(relative_path.as_os_str().is_empty());
     }
 
     // @variants: both

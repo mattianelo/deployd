@@ -585,6 +585,7 @@ impl Component for SettingsDialog {
 }
 
 fn present_removable_media_dialog(root: &adw::PreferencesWindow) {
+    let command = snap::removable_media_connect_command();
     let dialog = adw::AlertDialog::builder()
         .heading("Connect External Drive Access")
         .body(snap::removable_media_connection_message())
@@ -594,7 +595,7 @@ fn present_removable_media_dialog(root: &adw::PreferencesWindow) {
     dialog.set_close_response("close");
 
     let command_entry = gtk::Entry::builder()
-        .text(snap::REMOVABLE_MEDIA_CONNECT_COMMAND)
+        .text(&command)
         .editable(false)
         .hexpand(true)
         .build();
@@ -606,9 +607,7 @@ fn present_removable_media_dialog(root: &adw::PreferencesWindow) {
         .build();
     copy_button.connect_clicked(move |_| {
         if let Some(display) = gtk::gdk::Display::default() {
-            display
-                .clipboard()
-                .set_text(snap::REMOVABLE_MEDIA_CONNECT_COMMAND);
+            display.clipboard().set_text(&command);
         }
     });
 

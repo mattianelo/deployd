@@ -5,7 +5,9 @@
 - Fixed new Snap installations being unable to select an external drive as the downloads folder by
   requesting persistent access through the desktop portal, showing validation feedback in the
   Downloads section, and showing a copyable manual removable-media connection prompt for direct
-  external paths or inaccessible external-drive portal routes.
+  external paths or inaccessible external-drive portal routes. The prompt now targets the active
+  parallel Snap instance, and application-scoped document-portal paths resolve without duplicating
+  the portal's synthetic document basename.
 - Development analysis now runs compiler-backed semantic and structural checks through the
   project's isolated, reproducible environment.
 - Pinned the Rust development toolchain and isolated local AppImage checks and builds under an

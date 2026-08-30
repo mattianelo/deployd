@@ -33,13 +33,26 @@ impl std::fmt::Display for SelectedFolderError {
     }
 }
 
-pub(crate) const REMOVABLE_MEDIA_CONNECT_COMMAND: &str = "snap connect deployd:removable-media";
+const DEFAULT_SNAP_INSTANCE_NAME: &str = "deployd";
+
+pub(crate) fn removable_media_connect_command() -> String {
+    removable_media_connect_command_for(std::env::var_os("SNAP_INSTANCE_NAME").as_deref())
+}
+
+fn removable_media_connect_command_for(instance_name: Option<&std::ffi::OsStr>) -> String {
+    let instance_name = instance_name
+        .and_then(std::ffi::OsStr::to_str)
+        .filter(|name| !name.is_empty())
+        .unwrap_or(DEFAULT_SNAP_INSTANCE_NAME);
+    format!("snap connect {instance_name}:removable-media")
+}
 
 pub(crate) fn removable_media_connection_message() -> String {
+    let command = removable_media_connect_command();
     format!(
         "Deployd needs permission to use this external drive as the downloads folder.\n\n\
-         Run this command on your system, restart Deployd, then select the folder again:\n\n\
-         {REMOVABLE_MEDIA_CONNECT_COMMAND}"
+         Run this command on your system, then select the folder again:\n\n\
+         {command}"
     )
 }
 
@@ -412,12 +425,19 @@ mod tests {
 
     // @variants: snap
     #[test]
-    fn removable_media_message_includes_manual_connection_command() {
-        let message = removable_media_connection_message();
+    fn connection_command_uses_parallel_snap_instance_name() {
+        let command =
+            removable_media_connect_command_for(Some(std::ffi::OsStr::new("deployd_dev")));
 
-        assert!(message.contains(REMOVABLE_MEDIA_CONNECT_COMMAND));
-        assert!(message.contains("restart Deployd"));
-        assert!(message.contains("select the folder again"));
+        assert_eq!(command, "snap connect deployd_dev:removable-media");
+    }
+
+    // @variants: snap
+    #[test]
+    fn connection_command_defaults_to_published_snap_name() {
+        let command = removable_media_connect_command_for(None);
+
+        assert_eq!(command, "snap connect deployd:removable-media");
     }
 
     // @variants: appimage
