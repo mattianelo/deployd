@@ -68,21 +68,6 @@ impl App {
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
-        // If the install-time fetch found the mod name but could not match a Nexus file
-        // entry, ask the user to supply a file ID before opening the pre-install dialog.
-        if self.install.file_id_needed.is_some() {
-            self.install.set_stage(InstallStage::AwaitingFileId);
-            self.finish_current_work();
-            self.show_file_id_dialog(root, sender);
-            return;
-        }
-        // If a background Nexus fetch completed during extraction, apply it before
-        // reading pending.mod_name so the dialog proposes the real mod name.
-        if let Some(fetched) = self.install.fetched_name.take()
-            && let Some(pending) = &mut self.install.pending
-        {
-            pending.mod_name = fetched;
-        }
         let Some(pending) = &self.install.pending else {
             self.install.set_stage(InstallStage::Failed);
             self.finish_current_work();

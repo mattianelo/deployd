@@ -7,3 +7,5 @@ pub(super) mod pane;
 pub mod scan;
 pub mod state;
 pub mod updates;
+
+pub(crate) use metadata::nexus_download_metadata;

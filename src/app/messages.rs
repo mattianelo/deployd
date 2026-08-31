@@ -271,17 +271,6 @@ pub(crate) enum DownloadsMsg {
         partial_name: Option<String>,
     },
     DownloadProgress(String, f64, String),
-    /// (download_id, mod_name, game_domain, nexus_file_name, nexus_is_primary, resolved_file_id, version, author)
-    DownloadNameResolved(
-        String,
-        String,
-        Option<String>,
-        Option<String>,
-        bool,
-        Option<i64>,
-        Option<String>,
-        Option<String>,
-    ),
     /// Notifies that the MD5 of an archive was computed (lazily, during metadata fetch).
     /// Persisted so subsequent fetches skip recomputation.
     ArchiveMd5Computed(String, String),
@@ -322,6 +311,7 @@ pub(crate) enum InstallMsg {
         file_id: i64,
         mod_id: i64,
         domain: String,
+        partial_name: Option<String>,
     },
     /// Open the pre-install dialog without replacing any existing mod.
     OpenPreInstallDialog,
@@ -393,6 +383,28 @@ pub(crate) enum PrepareResultMsg {
         archive_hash: Option<String>,
         archive_path: Option<String>,
     },
+}
+
+#[derive(Debug)]
+pub(crate) struct PrepareFailure {
+    pub(crate) message: String,
+    pub(crate) dialog_heading: Option<&'static str>,
+}
+
+impl PrepareFailure {
+    pub(crate) fn notification(message: String) -> Self {
+        Self {
+            message,
+            dialog_heading: None,
+        }
+    }
+
+    pub(crate) fn dialog(heading: &'static str, message: String) -> Self {
+        Self {
+            message,
+            dialog_heading: Some(heading),
+        }
+    }
 }
 
 // PrepareResultMsg contains TempDir which is not Debug
@@ -545,10 +557,9 @@ pub(crate) enum DownloadsCmdMsg {
         result: Result<(), String>,
     },
     NxmDownloadComplete(String, Result<NxmDownloadResult, String>),
-    /// (dl_id, Result<(mod_id, version, author, mod_name, nexus_file_name), err>)
     NexusMetadataFetched(
-        Option<String>,
-        Result<(String, String, String, String, Option<String>), String>,
+        String,
+        Result<crate::app::types::ManualMetadataResult, String>,
     ),
     DownloadsDirUpdated(Result<Option<PathBuf>, String>),
     DownloadsScanned(Result<DownloadScanResult, String>),
@@ -556,32 +567,13 @@ pub(crate) enum DownloadsCmdMsg {
 
 #[derive(Debug)]
 pub(crate) enum InstallCmdMsg {
-    /// Nexus mod name fetched in background during archive extraction.
-    PendingMetadataFetched(InstallIdentity, String),
-    /// Mod name fetched but no matching Nexus file entry found (neither by file_id nor filename).
-    /// Carries the partial mod name so the pre-install dialog has something to show, plus the
-    /// context needed to let the user supply a file ID.
-    PendingFileNameUnresolved {
-        identity: InstallIdentity,
-        partial_name: String,
-        download_id: String,
-        mod_id: i64,
-        domain: String,
-    },
     ModAdded(InstallIdentity, Box<Result<AddResult, String>>, bool),
-    ModPrepared(InstallIdentity, Box<Result<PrepareResultMsg, String>>),
+    ModPrepared(
+        InstallIdentity,
+        Box<Result<PrepareResultMsg, PrepareFailure>>,
+    ),
     /// Files were merged into an existing mod. Carries `(mod_name, files_merged)`.
     ModMerged(InstallIdentity, Result<(String, usize), String>),
-    /// Combined mod+file name fetched after the user supplied a file ID.
-    /// `combined_name` is None if the fetch failed.
-    /// `download_id` is Some only for the standalone (right-click) path; None during install.
-    /// `file_id` carries the resolved Nexus file ID so the factory row can be updated immediately.
-    FileIdFetched {
-        combined_name: Option<String>,
-        download_id: Option<String>,
-        version: Option<String>,
-        file_id: Option<i64>,
-    },
     /// Previous FOMOD selections loaded from DB for the reinstall/replace flow.
     /// None = no prior selections stored. Triggers opening the pre-install dialog.
     FomodSelectionsLoaded(Option<Vec<Vec<std::collections::HashSet<usize>>>>),

@@ -7,9 +7,86 @@ use crate::utils::paths;
 
 use super::super::App;
 use super::super::messages::{AppCmdMsg, AppMsg};
-use super::super::types::{DownloadScanResult, NxmDownloadResult, WorkKind};
+use super::super::types::{
+    DownloadScanResult, ManualMetadataResult, NexusDownloadMetadata, NxmDownloadResult, WorkKind,
+};
 
 impl App {
+    pub(crate) fn apply_nexus_download_metadata(
+        &mut self,
+        download_id: String,
+        metadata: NexusDownloadMetadata,
+        sender: &ComponentSender<Self>,
+    ) {
+        let page_version = metadata.page_version.clone();
+        let summary = metadata.summary.clone();
+        self.handle_download_name_resolved(
+            download_id.clone(),
+            metadata.mod_name,
+            Some(metadata.domain),
+            metadata.nexus_file_name,
+            metadata.nexus_is_primary,
+            metadata.file_id,
+            metadata.version,
+            metadata.author,
+            sender,
+        );
+
+        let installed_mod_id = self
+            .download
+            .all
+            .iter()
+            .find(|entry| entry.id == download_id)
+            .and_then(|download| {
+                let ids = download.nexus_ids.as_ref()?;
+                let guard = self.mods.rows.guard();
+                guard
+                    .iter()
+                    .filter_map(|row| row.mod_row())
+                    .find(|row| {
+                        row.mod_entry.nexus_mod_id == Some(ids.mod_id)
+                            && row.mod_entry.nexus_file_id == Some(ids.file_id)
+                    })
+                    .map(|row| row.mod_entry.id.clone())
+            });
+        if let (Some(tracker), Some(installed_mod_id), Some(page_version)) =
+            (self.session.tracker.clone(), installed_mod_id, page_version)
+        {
+            let author = self
+                .download
+                .all
+                .iter()
+                .find(|entry| entry.id == download_id)
+                .and_then(|entry| entry.author.clone())
+                .unwrap_or_default();
+            {
+                let mut guard = self.mods.rows.guard();
+                if let Some(row) = guard
+                    .iter_mut()
+                    .filter_map(|row| row.mod_row_mut())
+                    .find(|row| row.mod_entry.id == installed_mod_id)
+                {
+                    row.mod_entry.latest_version = Some(page_version.clone());
+                    if !author.is_empty() {
+                        row.mod_entry.author = Some(author.clone());
+                    }
+                }
+            }
+            sender.oneshot_command(async move {
+                let result = tracker
+                    .update_mod_nexus_metadata(
+                        &installed_mod_id,
+                        &page_version,
+                        &author,
+                        summary.as_deref().unwrap_or(""),
+                    )
+                    .await
+                    .map_err(|error| error.to_string());
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
+            });
+        }
+    }
+
     pub(crate) fn handle_cmd_downloads_scanned(
         &mut self,
         result: Result<DownloadScanResult, String>,
@@ -99,106 +176,44 @@ impl App {
 
     pub(crate) fn handle_cmd_nexus_metadata_fetched(
         &mut self,
-        dl_id: Option<String>,
-        result: Result<(String, String, String, String, Option<String>), String>,
+        download_id: String,
+        result: Result<ManualMetadataResult, String>,
         sender: &ComponentSender<Self>,
     ) {
         match result {
-            Ok((mod_id, version, author, nexus_name, nexus_file_name)) => {
-                // Propagate the fetched name back to the download entry if it was
-                // not already resolved by an earlier mechanism (e.g. NXM auto-fetch).
-                if let Some(ref id) = dl_id {
-                    self.finish_download_metadata_fetch(id);
-                    let needs_update = self
-                        .download
-                        .all
-                        .iter()
-                        .find(|e| &e.id == id)
-                        .is_some_and(|e| !e.metadata_fetched);
-                    if needs_update {
-                        if let Some(entry) = self.download.all.iter_mut().find(|e| &e.id == id) {
-                            entry.mod_name = nexus_name.clone();
-                            if entry.nexus_file_name.is_none() {
-                                entry.nexus_file_name = nexus_file_name.clone();
-                            }
-                            entry.metadata_fetched = true;
-                            if !author.is_empty() {
-                                entry.author = Some(author.clone());
-                            }
-                        }
-                        {
-                            let mut guard = self.download.rows.guard();
-                            for i in 0..guard.len() {
-                                if let Some(row) = guard.get_mut(i)
-                                    && row.entry.id == *id
-                                {
-                                    row.entry.mod_name = nexus_name.clone();
-                                    if row.entry.nexus_file_name.is_none() {
-                                        row.entry.nexus_file_name = nexus_file_name.clone();
-                                    }
-                                    row.entry.metadata_fetched = true;
-                                    if !author.is_empty() {
-                                        row.entry.author = Some(author.clone());
-                                    }
-                                    break;
-                                }
-                            }
-                        }
-                        if let Some(tracker) = self.session.tracker.clone()
-                            && let Some(entry) =
-                                self.download.all.iter().find(|e| &e.id == id).cloned()
-                        {
-                            sender.oneshot_command(async move {
-                                let result = tracker
-                                    .save_download_entry(&entry)
-                                    .await
-                                    .map_err(|error| error.to_string());
-                                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(
-                                    result,
-                                ))
-                            });
-                        }
-                    }
-                }
-                let mut guard = self.mods.rows.guard();
-                for i in 0..guard.len() {
-                    if let Some(row) = guard.get_mut(i)
-                        && let Some(init) = row.mod_row_mut()
-                        && init.mod_entry.id == mod_id
-                    {
-                        init.mod_entry.version = Some(version);
-                        if !author.is_empty() {
-                            init.mod_entry.author = Some(author);
-                        }
-                        break;
-                    }
+            Ok(ManualMetadataResult::Resolved(metadata)) => {
+                let toast = metadata.mod_name.clone();
+                self.finish_download_metadata_fetch(&download_id);
+                self.apply_nexus_download_metadata(download_id.clone(), metadata, sender);
+                self.show_toast(&format!("Metadata updated: {toast}"));
+            }
+            Ok(ManualMetadataResult::NeedsFileId(metadata)) => {
+                let mod_id = self
+                    .download
+                    .all
+                    .iter()
+                    .find(|entry| entry.id == download_id)
+                    .and_then(|entry| entry.nexus_ids.as_ref())
+                    .map(|ids| ids.mod_id);
+                let domain = metadata.domain.clone();
+                let partial_name = metadata.mod_name.clone();
+                self.finish_download_metadata_fetch(&download_id);
+                self.apply_nexus_download_metadata(download_id.clone(), metadata, sender);
+                if let Some(mod_id) = mod_id {
+                    let _ = sender.input_sender().send(AppMsg::Downloads(
+                        crate::app::messages::DownloadsMsg::ShowFileIdDialog {
+                            download_id,
+                            mod_id,
+                            domain,
+                            partial_name: Some(partial_name),
+                        },
+                    ));
                 }
             }
             Err(e) => {
                 eprintln!("deployd: failed to fetch Nexus metadata: {e}");
                 self.push_notification(&format!("Metadata fetch failed: {e}"));
-                if let Some(ref id) = dl_id {
-                    self.finish_download_metadata_fetch(id);
-                }
-                // For disk-scanned entries with a known mod_id but unresolved file_id,
-                // offer the dialog so the user can at least store the file_id for the next retry.
-                if let Some(ref id) = dl_id
-                    && let Some(entry) = self.download.all.iter().find(|e| &e.id == id)
-                    && let Some(NexusIds {
-                        mod_id,
-                        file_id: 0,
-                        ref domain,
-                    }) = entry.nexus_ids
-                {
-                    let _ = sender.input_sender().send(AppMsg::Downloads(
-                        crate::app::messages::DownloadsMsg::ShowFileIdDialog {
-                            download_id: id.clone(),
-                            mod_id,
-                            domain: domain.clone(),
-                            partial_name: None,
-                        },
-                    ));
-                }
+                self.finish_download_metadata_fetch(&download_id);
             }
         }
     }
@@ -228,10 +243,6 @@ impl App {
                     entry.status_msg = "Download complete".to_string();
                     entry.archive_path = Some(nxm_result.archive_path.clone());
                     entry.nexus_ids = new_nexus_ids.clone();
-                    entry.nexus_file_name = nxm_result.nexus_file_name.clone();
-                    entry.nexus_is_primary = nxm_result.nexus_is_primary;
-                    entry.version = nxm_result.version.clone();
-                    entry.metadata_fetched = true;
                 }
                 // Update factory
                 let mut guard = self.download.rows.guard();
@@ -244,38 +255,21 @@ impl App {
                         row.entry.status_msg = "Download complete".to_string();
                         row.entry.archive_path = Some(nxm_result.archive_path.clone());
                         row.entry.nexus_ids = new_nexus_ids;
-                        row.entry.nexus_file_name = nxm_result.nexus_file_name.clone();
-                        row.entry.nexus_is_primary = nxm_result.nexus_is_primary;
-                        row.entry.version = nxm_result.version.clone();
-                        row.entry.metadata_fetched = true;
                         break;
                     }
                 }
                 drop(guard);
+                self.apply_nexus_download_metadata(
+                    nxm_result.download_id.clone(),
+                    nxm_result.metadata,
+                    sender,
+                );
                 // When this was the last active download, rebuild the view so the
                 // sort order and filter chips (Active/Completed) reflect the new status.
                 if !self.download.all.iter().any(|e| e.is_active()) {
                     self.rebuild_downloads_view();
                 } else {
                     self.refresh_download_counts();
-                }
-
-                // Persist completed download entry
-                if let Some(tracker) = self.session.tracker.clone()
-                    && let Some(entry) = self
-                        .download
-                        .all
-                        .iter()
-                        .find(|e| e.id == nxm_result.download_id)
-                {
-                    let entry = entry.clone();
-                    sender.oneshot_command(async move {
-                        let result = tracker
-                            .save_download_entry(&entry)
-                            .await
-                            .map_err(|error| error.to_string());
-                        AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
-                    });
                 }
 
                 self.show_toast(&format!("Download complete: {}", nxm_result.file_name));

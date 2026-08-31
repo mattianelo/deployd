@@ -5,7 +5,7 @@ use gtk::prelude::*;
 use relm4::prelude::*;
 
 use super::App;
-use crate::app::messages::{AppCmdMsg, AppMsg, PrepareResultMsg};
+use crate::app::messages::{AppCmdMsg, AppMsg, PrepareFailure, PrepareResultMsg};
 use crate::app::session::load_game_data;
 use crate::app::state::{InstallIdentity, InstallStage};
 use crate::app::types::PendingInstall;
@@ -15,7 +15,7 @@ impl App {
     pub(crate) fn handle_cmd_mod_prepared(
         &mut self,
         identity: &InstallIdentity,
-        result: Result<PrepareResultMsg, String>,
+        result: Result<PrepareResultMsg, PrepareFailure>,
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
@@ -174,8 +174,6 @@ impl App {
                             pending.mod_name = old_name;
                         }
                         self.install.replacement = Some((old_mod_id.clone(), old_priority));
-                        self.install.fetched_name = None;
-                        self.install.file_id_needed = None;
                         let tracker = self.session.tracker.clone();
                         sender.oneshot_command(async move {
                             let selections = if let Some(t) = tracker {
@@ -248,7 +246,7 @@ impl App {
                     self.open_pre_install_dialog(root, sender);
                 }
             }
-            Err(e) => {
+            Err(failure) => {
                 self.install.set_stage(InstallStage::Failed);
                 self.finish_current_work();
                 self.install.reinstalling = false;
@@ -257,7 +255,7 @@ impl App {
                     self.update_download_status(
                         &dl_id,
                         crate::models::download::DownloadStatus::Failed,
-                        &format!("Extraction failed: {e}"),
+                        &format!("Extraction failed: {}", failure.message),
                     );
                     if let Some(tracker) = self.session.tracker.clone()
                         && let Some(entry) = self.download.all.iter().find(|e| e.id == dl_id)
@@ -274,7 +272,17 @@ impl App {
                         });
                     }
                 }
-                self.push_notification(&format!("Add failed: {e}"));
+                if let Some(heading) = failure.dialog_heading {
+                    let dialog = adw::AlertDialog::builder()
+                        .heading(heading)
+                        .body(&failure.message)
+                        .build();
+                    dialog.add_response("close", "Close");
+                    dialog.set_close_response("close");
+                    dialog.present(Some(root));
+                } else {
+                    self.push_notification(&format!("Add failed: {}", failure.message));
+                }
             }
         }
     }
@@ -345,10 +353,6 @@ impl App {
                 self.shell.needs_deploy = true;
                 self.auto_save_profile(sender);
 
-                // If the download entry already has resolved metadata, write the version to
-                // the mods table and reload in a single chained command so the read cannot
-                // race ahead of the write. Otherwise a plain reload is sufficient — the
-                // metadata-fetch path will update version/author and trigger its own reload.
                 let (version_from_dl, author_from_dl): (Option<String>, Option<String>) =
                     metadata_dl_id
                         .as_ref()
@@ -356,12 +360,6 @@ impl App {
                         .filter(|e| e.metadata_fetched)
                         .map(|e| (e.version.clone(), e.author.clone()))
                         .unwrap_or((None, None));
-
-                let already_fetched = version_from_dl.is_some()
-                    || metadata_dl_id
-                        .as_ref()
-                        .and_then(|id| self.download.all.iter().find(|e| &e.id == id))
-                        .is_some_and(|e| e.metadata_fetched);
 
                 if let (Some(tracker), Some(game)) =
                     (self.session.tracker.clone(), self.selected_game().cloned())
@@ -409,85 +407,6 @@ impl App {
                 self.show_toast(&msg);
                 if let Some(dialog) = self.ui.absorb_dialog.take() {
                     dialog.widget().destroy();
-                }
-
-                if !already_fetched
-                    && let (Some(nexus_mod_id), Some(nexus_domain)) = (
-                        add_result.mod_entry.nexus_mod_id,
-                        add_result.mod_entry.nexus_domain.as_deref(),
-                    )
-                {
-                    let Some(tracker) = self.session.tracker.clone() else {
-                        self.push_notification(
-                            "Nexus metadata was not refreshed because the database is unavailable",
-                        );
-                        return;
-                    };
-                    let mod_id = add_result.mod_entry.id.clone();
-                    let domain = nexus_domain.to_string();
-                    let nexus_file_id = add_result.mod_entry.nexus_file_id;
-                    let dl_id_for_metadata = metadata_dl_id;
-                    sender.oneshot_command(async move {
-                        let result: Result<
-                            (String, String, String, String, Option<String>),
-                            String,
-                        > = async {
-                            let api_key = tracker
-                                .get_setting("nexus_api_key")
-                                .await
-                                .map_err(|e| e.to_string())?
-                                .ok_or("No API key")?;
-                            let client = crate::core::nexus_api::NexusClient::new(api_key);
-                            let (info, _rate_limits) = client
-                                .get_mod_info(&domain, nexus_mod_id)
-                                .await
-                                .map_err(|e| e.to_string())?;
-                            tracker
-                                .update_mod_nexus_metadata(
-                                    &mod_id,
-                                    &info.version,
-                                    &info.author,
-                                    info.summary.as_deref().unwrap_or(""),
-                                )
-                                .await
-                                .map_err(|e| e.to_string())?;
-                            let (installed_version, nexus_file_name) =
-                                if let Some(fid) = nexus_file_id.filter(|&f| f != 0) {
-                                    let (files_resp, _) = client
-                                        .get_mod_files(&domain, nexus_mod_id)
-                                        .await
-                                        .map_err(|e| e.to_string())?;
-                                    let matched =
-                                        files_resp.files.into_iter().find(|f| f.file_id == fid);
-                                    let version = matched
-                                        .as_ref()
-                                        .and_then(|f| f.version.clone())
-                                        .unwrap_or_else(|| info.version.clone());
-                                    let file_name = matched.map(|f| f.name);
-                                    (version, file_name)
-                                } else {
-                                    (info.version.clone(), None)
-                                };
-                            tracker
-                                .set_mod_installed_version(&mod_id, &installed_version)
-                                .await
-                                .map_err(|e| e.to_string())?;
-                            Ok((
-                                mod_id,
-                                installed_version,
-                                info.author,
-                                info.name,
-                                nexus_file_name,
-                            ))
-                        }
-                        .await;
-                        AppCmdMsg::Downloads(
-                            crate::app::messages::DownloadsCmdMsg::NexusMetadataFetched(
-                                dl_id_for_metadata,
-                                result,
-                            ),
-                        )
-                    });
                 }
             }
             Err(e) => {

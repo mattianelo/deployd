@@ -308,18 +308,6 @@ impl App {
             DownloadsMsg::DownloadProgress(id, fraction, message) => {
                 self.handle_download_progress(id, fraction, message)
             }
-            DownloadsMsg::DownloadNameResolved(
-                id,
-                name,
-                domain,
-                file_name,
-                is_primary,
-                file_id,
-                version,
-                author,
-            ) => self.handle_download_name_resolved(
-                id, name, domain, file_name, is_primary, file_id, version, author, &sender,
-            ),
             DownloadsMsg::ArchiveMd5Computed(download_id, md5) => {
                 self.handle_archive_md5_computed(download_id, md5, &sender)
             }
@@ -367,9 +355,15 @@ impl App {
                 file_id,
                 mod_id,
                 domain,
-            } => {
-                self.handle_file_id_dialog_confirmed(download_id, file_id, mod_id, domain, &sender)
-            }
+                partial_name,
+            } => self.handle_file_id_dialog_confirmed(
+                download_id,
+                file_id,
+                mod_id,
+                domain,
+                partial_name,
+                &sender,
+            ),
             InstallMsg::OpenPreInstallDialog => self.handle_open_pre_install_dialog(root, &sender),
             InstallMsg::OpenPreInstallDialogReplacing(id, priority) => {
                 self.handle_open_pre_install_dialog_replacing_request(id, priority, root, &sender)
@@ -668,34 +662,6 @@ impl App {
         use crate::app::messages::InstallCmdMsg;
 
         match msg {
-            InstallCmdMsg::PendingMetadataFetched(identity, name) => {
-                self.handle_cmd_pending_metadata_fetched(&identity, name)
-            }
-            InstallCmdMsg::PendingFileNameUnresolved {
-                identity,
-                partial_name,
-                download_id,
-                mod_id,
-                domain,
-            } => self.handle_cmd_pending_file_name_unresolved(
-                &identity,
-                partial_name,
-                download_id,
-                mod_id,
-                domain,
-            ),
-            InstallCmdMsg::FileIdFetched {
-                combined_name,
-                download_id,
-                version,
-                file_id,
-            } => self.handle_cmd_file_id_fetched(
-                combined_name,
-                download_id,
-                version,
-                file_id,
-                &sender,
-            ),
             InstallCmdMsg::ModAdded(identity, result, was_replace) => {
                 self.handle_cmd_mod_added(&identity, *result, was_replace, &sender)
             }

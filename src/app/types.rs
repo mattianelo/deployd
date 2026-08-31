@@ -37,7 +37,6 @@ pub(crate) enum WorkKind {
     ProcessingArchive,
     PreparingSetup,
     Installing,
-    FetchingMetadata,
     ScanningDownloads,
     ExportingMigration,
     PreviewingMigration,
@@ -100,6 +99,25 @@ pub(crate) struct DownloadScanResult {
     pub(crate) new_count: usize,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct NexusDownloadMetadata {
+    pub(crate) mod_name: String,
+    pub(crate) domain: String,
+    pub(crate) nexus_file_name: Option<String>,
+    pub(crate) nexus_is_primary: bool,
+    pub(crate) file_id: Option<i64>,
+    pub(crate) version: Option<String>,
+    pub(crate) author: Option<String>,
+    pub(crate) page_version: Option<String>,
+    pub(crate) summary: Option<String>,
+}
+
+#[derive(Debug)]
+pub(crate) enum ManualMetadataResult {
+    Resolved(NexusDownloadMetadata),
+    NeedsFileId(NexusDownloadMetadata),
+}
+
 pub(crate) struct PendingInstall {
     pub(crate) tmp_dir: TempDir,
     pub(crate) mod_name: String,
@@ -126,26 +144,15 @@ pub(crate) struct PendingInstall {
     pub(crate) excluded_files: HashSet<String>,
 }
 
-/// Carried when the install-time Nexus fetch resolved the mod name but
-/// could not match any file entry (neither by file_id nor by archive filename).
 #[derive(Debug)]
-pub(crate) struct FileIdNeeded {
+pub(crate) struct NxmDownloadResult {
     pub(crate) download_id: String,
+    pub(crate) archive_path: PathBuf,
     pub(crate) mod_id: i64,
+    pub(crate) file_id: i64,
     pub(crate) domain: String,
-}
-
-#[derive(Debug)]
-pub struct NxmDownloadResult {
-    pub download_id: String,
-    pub archive_path: PathBuf,
-    pub mod_id: i64,
-    pub file_id: i64,
-    pub domain: String,
-    pub file_name: String,
-    pub nexus_file_name: Option<String>,
-    pub nexus_is_primary: bool,
-    pub version: Option<String>,
+    pub(crate) file_name: String,
+    pub(crate) metadata: NexusDownloadMetadata,
 }
 
 #[derive(Debug)]

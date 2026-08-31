@@ -17,8 +17,11 @@ pub struct NexusUser {
 #[derive(Debug, Clone, Deserialize)]
 pub struct NexusModInfo {
     pub mod_id: i64,
+    #[serde(default, deserialize_with = "de_null_string")]
     pub name: String,
+    #[serde(default, deserialize_with = "de_null_string")]
     pub author: String,
+    #[serde(default, deserialize_with = "de_null_string")]
     pub version: String,
     /// Can be null for mods without a summary.
     #[serde(default)]
@@ -26,12 +29,20 @@ pub struct NexusModInfo {
     /// Can be null/absent for mods without a long description.
     #[serde(default)]
     pub description: Option<String>,
+    #[serde(default)]
     pub picture_url: Option<String>,
     /// Can be null for some mods (e.g. very old or moderation-locked mods).
-    #[serde(rename = "endorsement_count", default)]
+    #[serde(
+        rename = "endorsement_count",
+        default,
+        deserialize_with = "de_opt_number_as_i64"
+    )]
     pub endorsements: Option<i64>,
+    #[serde(default, deserialize_with = "de_null_string")]
     pub domain_name: String,
+    #[serde(default, deserialize_with = "de_null_number_as_i64")]
     pub updated_timestamp: i64,
+    #[serde(default, deserialize_with = "de_null_string")]
     pub status: String,
 }
 
@@ -46,7 +57,7 @@ pub struct NexusFilesResponse {
 pub struct NexusFileEntry {
     pub file_id: i64,
     /// Nexus occasionally returns null for this on old/archived entries.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "de_null_string")]
     pub name: String,
     /// Null for old/archived file entries.
     #[serde(default)]
@@ -55,7 +66,7 @@ pub struct NexusFileEntry {
     #[serde(skip_deserializing, default)]
     pub size_kb: Option<u64>,
     /// Nexus occasionally returns null for this on old/archived entries.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "de_null_string")]
     pub file_name: String,
     pub category_name: Option<String>,
     /// Absent for some file categories — defaults to false.
@@ -85,6 +96,30 @@ pub struct Md5SearchResult {
     /// Shadowing the keyword `mod` with a raw identifier.
     pub r#mod: NexusModInfo,
     pub file_details: NexusFileEntry,
+}
+
+impl NexusFileEntry {
+    pub(crate) fn display_name(&self) -> &str {
+        if self.name.trim().is_empty() {
+            &self.file_name
+        } else {
+            &self.name
+        }
+    }
+}
+
+fn de_null_string<'de, D>(de: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Option::<String>::deserialize(de)?.unwrap_or_default())
+}
+
+fn de_null_number_as_i64<'de, D>(de: D) -> Result<i64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    de_opt_number_as_i64(de).map(Option::unwrap_or_default)
 }
 
 /// Deserializes an optional JSON number (integer or float) into `Option<i64>`.
@@ -125,4 +160,48 @@ where
         }
     }
     de.deserialize_option(V)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{NexusFileEntry, NexusModInfo};
+
+    #[test]
+    fn parses_archived_mod_info_with_nullable_display_fields() {
+        let info: NexusModInfo = serde_json::from_value(serde_json::json!({
+            "mod_id": 42,
+            "name": "Archived Mod",
+            "author": null,
+            "version": null,
+            "summary": null,
+            "description": null,
+            "picture_url": null,
+            "endorsement_count": null,
+            "domain_name": "skyrimspecialedition",
+            "updated_timestamp": null,
+            "status": null
+        }))
+        .unwrap();
+
+        assert_eq!(info.name, "Archived Mod");
+        assert!(info.author.is_empty());
+        assert!(info.version.is_empty());
+        assert_eq!(info.updated_timestamp, 0);
+    }
+
+    #[test]
+    fn archived_file_falls_back_to_literal_filename() {
+        let entry: NexusFileEntry = serde_json::from_value(serde_json::json!({
+            "file_id": 7,
+            "name": null,
+            "version": null,
+            "file_name": "Archived-Mod-7-1700000000.7z",
+            "category_name": "OLD_VERSION",
+            "is_primary": false,
+            "uploaded_timestamp": 1700000000
+        }))
+        .unwrap();
+
+        assert_eq!(entry.display_name(), "Archived-Mod-7-1700000000.7z");
+    }
 }

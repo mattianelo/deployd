@@ -237,6 +237,42 @@ pub(crate) fn is_removable_media_path(path: &Path) -> bool {
     path.starts_with("/media") || path.starts_with("/mnt") || path.starts_with("/run/media")
 }
 
+pub(crate) fn manual_archive_recovery_message(
+    archive_path: &Path,
+    downloads_dir: &Path,
+    error: &anyhow::Error,
+) -> Option<String> {
+    let inaccessible = error.chain().any(|cause| {
+        cause.downcast_ref::<std::io::Error>().is_some_and(|error| {
+            matches!(
+                error.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::PermissionDenied
+            )
+        })
+    });
+    manual_archive_recovery_message_with(is_snap(), archive_path, downloads_dir, inaccessible)
+}
+
+fn manual_archive_recovery_message_with(
+    is_snap: bool,
+    archive_path: &Path,
+    downloads_dir: &Path,
+    inaccessible: bool,
+) -> Option<String> {
+    if !is_snap
+        || !inaccessible
+        || !is_removable_media_path(archive_path)
+        || archive_path.starts_with(downloads_dir)
+    {
+        return None;
+    }
+
+    Some(format!(
+        "The Snap cannot access this archive's folder on the external drive. Move the archive into the configured downloads folder, '{}', then scan that folder and install it from the Downloads panel.",
+        downloads_dir.display()
+    ))
+}
+
 fn is_document_portal_path(path: &Path) -> bool {
     let parts: Vec<String> = path
         .components()
@@ -438,6 +474,49 @@ mod tests {
         let command = removable_media_connect_command_for(None);
 
         assert_eq!(command, "snap connect deployd:removable-media");
+    }
+
+    // @variants: snap
+    #[test]
+    fn explains_how_to_import_an_ungranted_external_archive() {
+        let message = manual_archive_recovery_message_with(
+            true,
+            Path::new("/media/alex/Mods/archive.7z"),
+            Path::new("/media/alex/Downloads"),
+            true,
+        )
+        .expect("an inaccessible archive outside the grant needs recovery guidance");
+
+        assert!(message.contains("Move the archive into the configured downloads folder"));
+        assert!(message.contains("Downloads panel"));
+    }
+
+    // @variants: appimage
+    #[test]
+    fn leaves_appimage_archive_errors_unchanged() {
+        assert_eq!(
+            manual_archive_recovery_message_with(
+                false,
+                Path::new("/media/alex/Mods/archive.7z"),
+                Path::new("/media/alex/Downloads"),
+                true,
+            ),
+            None
+        );
+    }
+
+    // @variants: snap
+    #[test]
+    fn leaves_granted_download_archive_errors_unchanged() {
+        assert_eq!(
+            manual_archive_recovery_message_with(
+                true,
+                Path::new("/media/alex/Downloads/archive.7z"),
+                Path::new("/media/alex/Downloads"),
+                true,
+            ),
+            None
+        );
     }
 
     // @variants: appimage

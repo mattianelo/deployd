@@ -172,7 +172,6 @@ pub(crate) enum InstallStage {
     #[default]
     Idle,
     PreparingArchive,
-    AwaitingFileId,
     AwaitingPreInstall,
     AwaitingFomod,
     Committing,
@@ -191,8 +190,6 @@ pub(crate) struct InstallSession {
     pub(crate) active_download_id: Option<String>,
     pub(crate) replacement: Option<(String, i32)>,
     pub(crate) reinstalling: bool,
-    pub(crate) fetched_name: Option<String>,
-    pub(crate) file_id_needed: Option<crate::app::types::FileIdNeeded>,
     pub(crate) fomod_selections: Option<Vec<Vec<std::collections::HashSet<usize>>>>,
 }
 
@@ -259,7 +256,6 @@ mod tests {
         }
 
         for stage in [
-            InstallStage::AwaitingFileId,
             InstallStage::AwaitingPreInstall,
             InstallStage::AwaitingFomod,
             InstallStage::Cancelled,

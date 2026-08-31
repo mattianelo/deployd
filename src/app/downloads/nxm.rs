@@ -9,6 +9,7 @@ use crate::utils::paths;
 use super::super::App;
 use super::super::messages::{AppCmdMsg, AppMsg};
 use super::super::types::NxmDownloadResult;
+use super::metadata::nexus_download_metadata;
 
 impl App {
     pub(crate) fn handle_nxm_link_received(&mut self, uri: String, sender: &ComponentSender<Self>) {
@@ -38,6 +39,7 @@ impl App {
         // Create download entry and add to sidebar
         let download_id = uuid::Uuid::new_v4().to_string();
         let mod_name = format!("Mod {} (file {})", link.mod_id, link.file_id);
+        let fallback_name = mod_name.clone();
         let nexus_ids = Some(NexusIds {
             mod_id: link.mod_id,
             file_id: link.file_id,
@@ -82,31 +84,20 @@ impl App {
 
                 let client = NexusClient::new(api_key);
 
-                // Fetch mod info to get the real name
-                let mut mod_info_version: Option<String> = None;
-                if let Ok((mod_info, rate_limits)) =
-                    client.get_mod_info(&link.domain, link.mod_id).await
-                {
-                    if let Some(rl) = rate_limits {
-                        let _ = input_sender.send(AppMsg::Downloads(
-                            crate::app::messages::DownloadsMsg::RateLimitUpdated(rl),
-                        ));
+                let mod_info = match client.get_mod_info(&link.domain, link.mod_id).await {
+                    Ok((info, rate_limits)) => {
+                        if let Some(rl) = rate_limits {
+                            let _ = input_sender.send(AppMsg::Downloads(
+                                crate::app::messages::DownloadsMsg::RateLimitUpdated(rl),
+                            ));
+                        }
+                        Some(info)
                     }
-                    mod_info_version = Some(mod_info.version.clone());
-                    let mod_author = mod_info.author.clone();
-                    let _ = input_sender.send(AppMsg::Downloads(
-                        crate::app::messages::DownloadsMsg::DownloadNameResolved(
-                            download_id.clone(),
-                            mod_info.name,
-                            Some(link.domain.clone()),
-                            None,
-                            false,
-                            None,
-                            None,
-                            Some(mod_author),
-                        ),
-                    ));
-                }
+                    Err(error) => {
+                        eprintln!("deployd: Nexus mod info unavailable during download: {error:#}");
+                        None
+                    }
+                };
 
                 // Get download links
                 let (links, rate_limits) = client
@@ -142,6 +133,13 @@ impl App {
                 }
 
                 let nexus_file = files.files.iter().find(|f| f.file_id == link.file_id);
+                let metadata = nexus_download_metadata(
+                    &link.domain,
+                    &fallback_name,
+                    mod_info.as_ref(),
+                    nexus_file,
+                    Some(link.file_id),
+                );
                 let file_name = nexus_file
                     .map(|f| {
                         let raw = f.file_name.clone();
@@ -165,10 +163,6 @@ impl App {
                         }
                     })
                     .unwrap_or_else(|| format!("nexus_{}_{}.zip", link.mod_id, link.file_id));
-                let nexus_file_name = nexus_file.map(|f| f.name.clone());
-                let nexus_is_primary = nexus_file.map(|f| f.is_primary).unwrap_or(false);
-                let nexus_file_version = nexus_file.and_then(|f| f.version.clone());
-
                 // Download to configured downloads folder
                 std::fs::create_dir_all(&download_dir).map_err(|e| e.to_string())?;
                 let dest = download_dir.join(&file_name);
@@ -200,9 +194,7 @@ impl App {
                     file_id: link.file_id,
                     domain: link.domain,
                     file_name,
-                    nexus_file_name,
-                    nexus_is_primary,
-                    version: nexus_file_version.or(mod_info_version),
+                    metadata,
                 })
             }
             .await;

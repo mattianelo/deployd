@@ -3,12 +3,91 @@ use gtk::prelude::*;
 use relm4::factory::DynamicIndex;
 use relm4::prelude::*;
 
+use crate::app::types::{ManualMetadataResult, NexusDownloadMetadata};
 use crate::core::game;
 use crate::models::download::NexusIds;
-use crate::ui::mod_list::ModListItemKind;
+use crate::models::nexus::{NexusFileEntry, NexusModInfo};
 
 use super::super::App;
 use super::super::messages::{AppCmdMsg, AppMsg};
+
+pub(crate) fn nexus_download_metadata(
+    domain: &str,
+    fallback_name: &str,
+    mod_info: Option<&NexusModInfo>,
+    file: Option<&NexusFileEntry>,
+    known_file_id: Option<i64>,
+) -> NexusDownloadMetadata {
+    let nexus_file_name = file
+        .map(NexusFileEntry::display_name)
+        .filter(|name| !name.trim().is_empty())
+        .map(str::to_string);
+    let mod_name = mod_info
+        .map(|info| info.name.trim())
+        .filter(|name| !name.is_empty())
+        .or(nexus_file_name.as_deref())
+        .unwrap_or(fallback_name)
+        .to_string();
+    let page_version = mod_info
+        .map(|info| info.version.trim())
+        .filter(|version| !version.is_empty())
+        .map(str::to_string);
+    let version = file
+        .and_then(|entry| entry.version.as_deref())
+        .map(str::trim)
+        .filter(|version| !version.is_empty())
+        .map(str::to_string)
+        .or_else(|| page_version.clone());
+    let author = mod_info
+        .map(|info| info.author.trim())
+        .filter(|author| !author.is_empty())
+        .map(str::to_string);
+    let resolved_domain = mod_info
+        .map(|info| info.domain_name.trim())
+        .filter(|resolved| !resolved.is_empty())
+        .unwrap_or(domain)
+        .to_string();
+
+    NexusDownloadMetadata {
+        mod_name,
+        domain: resolved_domain,
+        nexus_file_name,
+        nexus_is_primary: file.is_some_and(|entry| entry.is_primary),
+        file_id: file.map(|entry| entry.file_id).or(known_file_id),
+        version,
+        author,
+        page_version,
+        summary: mod_info.and_then(|info| info.summary.clone()),
+    }
+}
+
+fn match_nexus_file(
+    files: Vec<NexusFileEntry>,
+    file_id: i64,
+    archive_filename: Option<&str>,
+) -> Option<NexusFileEntry> {
+    if file_id > 0 {
+        return files.into_iter().find(|file| file.file_id == file_id);
+    }
+
+    let raw = archive_filename?;
+    let normalized = crate::core::nexus_identity::normalize_nexus_filename(raw);
+    let timestamp = crate::core::nexus_identity::extract_nexus_timestamp(raw);
+    let candidates: Vec<_> = files
+        .into_iter()
+        .filter(|file| {
+            crate::core::nexus_identity::normalize_nexus_filename(&file.file_name) == normalized
+        })
+        .collect();
+    timestamp
+        .and_then(|timestamp| {
+            candidates
+                .iter()
+                .find(|file| file.uploaded_timestamp == Some(timestamp))
+                .cloned()
+        })
+        .or_else(|| candidates.into_iter().next())
+}
 
 impl App {
     pub(crate) fn handle_fetch_download_metadata(
@@ -161,13 +240,15 @@ impl App {
             nexus_file_id,
             stored_domain,
             archive_filename,
-            archive_hash,
             archive_md5,
             archive_path,
         ) = {
             let Some(entry) = self.download.all.iter().find(|e| e.id == download_id) else {
                 return;
             };
+            if entry.is_active() {
+                return;
+            }
             let Some(NexusIds {
                 mod_id: nexus_mod_id,
                 file_id: nexus_file_id,
@@ -181,17 +262,13 @@ impl App {
                 .as_ref()
                 .and_then(|p| p.file_name())
                 .map(|n| n.to_string_lossy().into_owned());
-            let archive_hash = entry.archive_hash.clone();
-            let archive_md5 = entry.archive_md5.clone();
-            let archive_path = entry.archive_path.clone();
             (
                 nexus_mod_id,
                 nexus_file_id,
                 domain.clone(),
                 archive_filename,
-                archive_hash,
-                archive_md5,
-                archive_path,
+                entry.archive_md5.clone(),
+                entry.archive_path.clone(),
             )
         };
 
@@ -209,55 +286,20 @@ impl App {
             return;
         };
 
-        // Find the installed mod that corresponds to this download entry (if any),
-        // so the manual fetch can mirror the NXM auto-path and write metadata to
-        // the mods table too (fixes disparity between manual vs. NXM metadata fetch).
-        let installed_mod_id: Option<String> = {
-            let guard = self.mods.rows.guard();
-            guard
-                .iter()
-                .filter_map(|item| match &item.kind {
-                    ModListItemKind::Mod(init) => Some(&init.mod_entry),
-                    _ => None,
-                })
-                .find(|e| {
-                    e.nexus_mod_id == Some(nexus_mod_id)
-                        && if nexus_file_id != 0 {
-                            // Known file ID: require exact match so different versions
-                            // of the same mod each map to their own entry.
-                            e.nexus_file_id == Some(nexus_file_id)
-                        } else if let (Some(dl_hash), Some(mod_hash)) =
-                            (&archive_hash, &e.archive_hash)
-                        {
-                            // Disk-scanned (file_id == 0): use archive hash to
-                            // distinguish multiple versions of the same mod.
-                            dl_hash == mod_hash
-                        } else {
-                            // No hash available: fall back to first match.
-                            true
-                        }
-                })
-                .map(|e| e.id.clone())
-        };
-
         let input_sender = sender.input_sender().clone();
         self.begin_download_metadata_fetch(&download_id);
         self.show_toast("Fetching metadata...");
         sender.oneshot_command(async move {
             let timing_start = std::time::Instant::now();
-            let result: Result<(String, String, String), String> = async {
+            let result: Result<ManualMetadataResult, String> = async {
                 let api_key = tracker
                     .get_setting("nexus_api_key")
                     .await
-                    .map_err(|e| e.to_string())?
+                    .map_err(|error| error.to_string())?
                     .filter(|k| !k.is_empty())
                     .ok_or("No API key configured. Set it in Settings.")?;
                 let client = crate::core::nexus_api::NexusClient::new(api_key);
 
-                // ── MD5 path: single API call resolves mod + file ─────────────────
-                // Lazily compute MD5 when not yet cached (archive_md5 is None).
-                // The result is persisted via ArchiveMd5Computed so subsequent
-                // fetches skip the file read.
                 let effective_md5: Option<String> = if archive_md5.is_some() {
                     archive_md5
                 } else if let Some(ref path) = archive_path {
@@ -290,203 +332,144 @@ impl App {
                             }
                             let matching_hit = results.into_iter().find(|hit| {
                                 hit.r#mod.mod_id == nexus_mod_id
-                                    && hit.r#mod.domain_name.eq_ignore_ascii_case(&domain)
+                                    && (hit.r#mod.domain_name.is_empty()
+                                        || hit.r#mod.domain_name.eq_ignore_ascii_case(&domain))
                             });
                             if let Some(hit) = matching_hit {
-                                let file_entry = hit.file_details;
-                                let mod_info = hit.r#mod;
-                                let file_version = file_entry.version.clone();
-                                let mod_version = mod_info.version.clone();
-                                let mod_author = mod_info.author.clone();
-                                let resolved_version =
-                                    file_version.or_else(|| Some(mod_version.clone()));
-                                let correct_domain = mod_info.domain_name.clone();
-                                let _ = input_sender.send(AppMsg::Downloads(
-                                    crate::app::messages::DownloadsMsg::DownloadNameResolved(
-                                        download_id.clone(),
-                                        mod_info.name.clone(),
-                                        Some(correct_domain),
-                                        Some(file_entry.name.clone()),
-                                        file_entry.is_primary,
-                                        Some(file_entry.file_id),
-                                        resolved_version.clone(),
-                                        Some(mod_author.clone()),
+                                return Ok(ManualMetadataResult::Resolved(
+                                    nexus_download_metadata(
+                                        &domain,
+                                        archive_filename.as_deref().unwrap_or("Unknown mod"),
+                                        Some(&hit.r#mod),
+                                        Some(&hit.file_details),
+                                        Some(hit.file_details.file_id),
                                     ),
                                 ));
-                                let _ = input_sender.send(AppMsg::Shell(
-                                    crate::app::messages::ShellMsg::ShowToast(format!(
-                                        "{} v{mod_version} by {mod_author}",
-                                        mod_info.name
-                                    )),
-                                ));
-                                if let Some(ref mod_id) = installed_mod_id {
-                                    tracker
-                                        .update_mod_nexus_metadata(
-                                            mod_id,
-                                            &mod_version,
-                                            &mod_author,
-                                            mod_info.summary.as_deref().unwrap_or(""),
-                                        )
-                                        .await
-                                        .map_err(|e| e.to_string())?;
-                                }
-                                return Ok((mod_info.name, mod_version, mod_author));
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("deployd: md5_search failed (non-fatal, falling back): {e}");
-                        }
-                    }
-                }
-                // ─────────────────────────────────────────────────────────────────
-
-                let (info, rate_limits) = client
-                    .get_mod_info(&domain, nexus_mod_id)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                if let Some(rl) = rate_limits {
-                    let _ = input_sender.send(AppMsg::Downloads(
-                        crate::app::messages::DownloadsMsg::RateLimitUpdated(rl),
-                    ));
-                }
-                // Fetch file list to resolve the per-file display name.
-                // • file_id != 0 (NXM download): match by exact file_id.
-                // • file_id == 0 (disk-scanned): match by archive filename so
-                //   manually downloaded files also get their proper Nexus name.
-                let file_info = if nexus_file_id != 0 || archive_filename.is_some() {
-                    match client.get_mod_files(&domain, nexus_mod_id).await {
-                        Ok((files, rate_limits)) => {
-                            if let Some(rl) = rate_limits {
-                                let _ = input_sender.send(AppMsg::Downloads(
-                                    crate::app::messages::DownloadsMsg::RateLimitUpdated(rl),
-                                ));
-                            }
-                            if nexus_file_id != 0 {
-                                // NXM path: exact match by file ID
-                                files.files.into_iter().find(|f| f.file_id == nexus_file_id)
-                            } else {
-                                // Disk-scan path: match by normalized archive filename (strips
-                                // extension and 10-digit CDN timestamp).  When multiple Nexus
-                                // files share the same base name, prefer the one whose
-                                // uploaded_timestamp matches the timestamp in the local filename.
-                                let raw = archive_filename.as_deref().unwrap_or("");
-                                let fname_norm =
-                                    crate::core::nexus_identity::normalize_nexus_filename(raw);
-                                let local_ts =
-                                    crate::core::nexus_identity::extract_nexus_timestamp(raw);
-                                let candidates: Vec<_> = files
-                                    .files
-                                    .into_iter()
-                                    .filter(|f| {
-                                        crate::core::nexus_identity::normalize_nexus_filename(
-                                            &f.file_name,
-                                        ) == fname_norm
-                                    })
-                                    .collect();
-                                local_ts
-                                    .and_then(|ts| {
-                                        candidates
-                                            .iter()
-                                            .find(|f| f.uploaded_timestamp == Some(ts))
-                                            .cloned()
-                                    })
-                                    .or_else(|| candidates.into_iter().next())
                             }
                         }
                         Err(e) => {
                             eprintln!(
-                                "deployd: get_mod_files({domain}/{nexus_mod_id}) \
-                                 failed (non-fatal): {e}"
+                                "deployd: MD5 metadata lookup failed; trying mod/file lookup: {e:#}"
                             );
-                            let _ = input_sender.send(AppMsg::Shell(
-                                crate::app::messages::ShellMsg::ShowToast(format!(
-                                    "Mod name fetched, but file list unavailable: {e}"
-                                )),
-                            ));
-                            None
                         }
                     }
-                } else {
-                    None
-                };
-                let nexus_file_name = file_info.as_ref().map(|f| f.name.clone());
-                let file_version = file_info.as_ref().and_then(|f| f.version.clone());
-                let resolved_file_id = file_info.as_ref().map(|f| f.file_id);
-                let nexus_is_primary = file_info.as_ref().map(|f| f.is_primary).unwrap_or(false);
-                // When we tried to match by filename but got nothing, ask the user for the file ID.
-                let unresolved =
-                    nexus_file_id == 0 && archive_filename.is_some() && file_info.is_none();
-                // Capture before DownloadNameResolved moves info.name
-                let mod_version = info.version.clone();
-                let mod_author = info.author.clone();
-                let resolved_version = file_version.or(Some(mod_version.clone()));
-                let _ = input_sender.send(AppMsg::Downloads(
-                    crate::app::messages::DownloadsMsg::DownloadNameResolved(
-                        download_id.clone(),
-                        info.name.clone(),
-                        Some(domain.clone()),
-                        nexus_file_name,
-                        nexus_is_primary,
-                        resolved_file_id,
-                        resolved_version.clone(),
-                        Some(mod_author.clone()),
-                    ),
-                ));
-                if unresolved {
+                }
+
+                let mod_info_result = client.get_mod_info(&domain, nexus_mod_id).await;
+                if let Ok((_, Some(rate_limits))) = &mod_info_result {
                     let _ = input_sender.send(AppMsg::Downloads(
-                        crate::app::messages::DownloadsMsg::ShowFileIdDialog {
-                            download_id: download_id.clone(),
-                            mod_id: nexus_mod_id,
-                            domain: domain.clone(),
-                            partial_name: Some(info.name.clone()),
-                        },
+                        crate::app::messages::DownloadsMsg::RateLimitUpdated(rate_limits.clone()),
                     ));
+                }
+                let files_result = client.get_mod_files(&domain, nexus_mod_id).await;
+                let (files, file_rate_limits) = files_result.map_err(|error| {
+                    format!("failed to fetch Nexus file metadata: {error:#}")
+                })?;
+                if let Some(rate_limits) = file_rate_limits {
+                    let _ = input_sender.send(AppMsg::Downloads(
+                        crate::app::messages::DownloadsMsg::RateLimitUpdated(rate_limits),
+                    ));
+                }
+                let file = match_nexus_file(
+                    files.files,
+                    nexus_file_id,
+                    archive_filename.as_deref(),
+                );
+                let mod_info = match mod_info_result {
+                    Ok((info, _)) => Some(info),
+                    Err(error) if file.is_some() => {
+                        eprintln!(
+                            "deployd: Nexus mod page metadata unavailable; using exact file metadata: {error:#}"
+                        );
+                        None
+                    }
+                    Err(error) => {
+                        return Err(format!("failed to fetch Nexus mod metadata: {error:#}"));
+                    }
+                };
+                let fallback_name = archive_filename.as_deref().unwrap_or("Unknown mod");
+                let metadata = nexus_download_metadata(
+                    &domain,
+                    fallback_name,
+                    mod_info.as_ref(),
+                    file.as_ref(),
+                    (nexus_file_id > 0).then_some(nexus_file_id),
+                );
+                if file.is_some() {
+                    Ok(ManualMetadataResult::Resolved(metadata))
+                } else if nexus_file_id > 0 {
+                    Err(format!(
+                        "Nexus file ID {nexus_file_id} was not found on this mod page"
+                    ))
                 } else {
-                    // Toast for user-triggered fetches; install-path results are silent since
-                    // the install completion toast already ran.
-                    let _ = input_sender.send(AppMsg::Shell(
-                        crate::app::messages::ShellMsg::ShowToast(format!(
-                            "{} v{mod_version} by {mod_author}",
-                            info.name
-                        )),
-                    ));
+                    Ok(ManualMetadataResult::NeedsFileId(metadata))
                 }
-                // Mirror NXM auto-path: write mod-page metadata (latest_version/author/summary)
-                // back to the installed mod row. The per-file installed version is written by
-                // handle_download_name_resolved via update_mod_version_by_nexus_ids, which is
-                // keyed on (game_id, nexus_mod_id, nexus_file_id) so an older-version fetch
-                // does not overwrite the currently installed version.
-                if let Some(ref mod_id) = installed_mod_id {
-                    tracker
-                        .update_mod_nexus_metadata(
-                            mod_id,
-                            &mod_version,
-                            &mod_author,
-                            info.summary.as_deref().unwrap_or(""),
-                        )
-                        .await
-                        .map_err(|e| e.to_string())?;
-                }
-                Ok((info.name, mod_version, mod_author))
             }
             .await;
-            match result {
-                Ok((name, version, author)) => {
-                    crate::app::timing::log_phase("metadata.fetch", &domain, timing_start, Some(1));
-                    AppCmdMsg::Downloads(
-                        crate::app::messages::DownloadsCmdMsg::NexusMetadataFetched(
-                            Some(download_id),
-                            Ok((String::new(), version, author, name, None)),
-                        ),
-                    )
-                }
-                Err(e) => AppCmdMsg::Downloads(
-                    crate::app::messages::DownloadsCmdMsg::NexusMetadataFetched(
-                        Some(download_id),
-                        Err(e),
-                    ),
-                ),
-            }
+            crate::app::timing::log_phase("metadata.fetch", &domain, timing_start, Some(1));
+            AppCmdMsg::Downloads(
+                crate::app::messages::DownloadsCmdMsg::NexusMetadataFetched(download_id, result),
+            )
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{match_nexus_file, nexus_download_metadata};
+    use crate::models::nexus::{NexusFileEntry, NexusModInfo};
+
+    fn archived_file() -> NexusFileEntry {
+        serde_json::from_value(serde_json::json!({
+            "file_id": 77,
+            "name": "Legacy textures",
+            "version": "1.2",
+            "file_name": "Legacy-Textures-77-1700000000.7z",
+            "category_name": "OLD_VERSION",
+            "is_primary": false,
+            "uploaded_timestamp": 1700000000
+        }))
+        .unwrap()
+    }
+
+    fn mod_info() -> NexusModInfo {
+        serde_json::from_value(serde_json::json!({
+            "mod_id": 12,
+            "name": "Texture Collection",
+            "author": "Mod Author",
+            "version": "2.0",
+            "summary": "Summary",
+            "domain_name": "skyrimspecialedition",
+            "status": "published"
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn resolves_archived_file_by_normalized_archive_name_and_timestamp() {
+        let file = archived_file();
+        let matched = match_nexus_file(vec![file], 0, Some("Legacy-Textures-77-1700000000.7z"))
+            .expect("the archived file should be matched");
+
+        assert_eq!(matched.file_id, 77);
+    }
+
+    #[test]
+    fn manual_and_nxm_metadata_preserve_the_exact_file_label() {
+        let file = archived_file();
+        let info = mod_info();
+        let metadata = nexus_download_metadata(
+            "skyrimspecialedition",
+            "downloaded-archive",
+            Some(&info),
+            Some(&file),
+            Some(77),
+        );
+
+        assert_eq!(metadata.mod_name, "Texture Collection");
+        assert_eq!(metadata.nexus_file_name.as_deref(), Some("Legacy textures"));
+        assert_eq!(metadata.file_id, Some(77));
+        assert_eq!(metadata.version.as_deref(), Some("1.2"));
+        assert_eq!(metadata.author.as_deref(), Some("Mod Author"));
     }
 }

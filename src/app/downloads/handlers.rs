@@ -11,6 +11,27 @@ use crate::core::installer::PrepareResult;
 use crate::core::{game, installer};
 use crate::models::download::{DownloadStatus, NexusIds};
 
+fn metadata_identifies_file(file_name: Option<&str>, file_id: Option<i64>) -> bool {
+    file_name.is_some_and(|name| !name.trim().is_empty()) || file_id.is_some_and(|id| id > 0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::metadata_identifies_file;
+
+    #[test]
+    fn partial_mod_metadata_does_not_complete_file_metadata() {
+        assert!(!metadata_identifies_file(None, None));
+        assert!(!metadata_identifies_file(Some("  "), Some(0)));
+    }
+
+    #[test]
+    fn exact_file_metadata_completes_metadata() {
+        assert!(metadata_identifies_file(Some("Archived file"), None));
+        assert!(metadata_identifies_file(None, Some(42)));
+    }
+}
+
 impl App {
     pub(crate) fn handle_set_downloads_visible(&mut self, visible: bool) {
         self.download.visible = visible;
@@ -205,7 +226,7 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         let idx = index.current_index();
-        let (archive_path, nexus_ids, download_id, suggested_name, metadata_fetched) = {
+        let (archive_path, nexus_ids, download_id, suggested_name) = {
             let guard = self.download.rows.guard();
             let Some(row) = guard.get(idx) else {
                 return;
@@ -240,7 +261,6 @@ impl App {
                 row.entry.nexus_ids.clone(),
                 row.entry.id.clone(),
                 suggested,
-                row.entry.metadata_fetched,
             )
         };
 
@@ -261,128 +281,11 @@ impl App {
         // Store nexus_ids for the PendingInstall handoff
         self.install.nexus_ids = nexus_ids.clone();
         self.install.active_download_id = Some(download_id.clone());
-        self.install.fetched_name = None;
         let game_id = self
             .selected_game()
             .map(|game| game.id.clone())
             .unwrap_or_default();
         let identity = self.install.begin(game_id, Some(download_id.clone()));
-
-        // If nexus IDs are known but metadata hasn't been fetched yet, fetch the
-        // mod name (and file name) from Nexus in parallel with archive extraction
-        // so the pre-install dialog can propose the real name.
-        if !metadata_fetched
-            && let Some(NexusIds {
-                mod_id: nexus_mod_id,
-                file_id: nexus_file_id,
-                ref domain,
-            }) = nexus_ids
-            && let Some(tracker) = self.session.tracker.clone()
-        {
-            let domain = domain.clone();
-            // Derive archive filename for disk-scan entries (file_id == 0).
-            let archive_filename: Option<String> = archive_path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned());
-            let download_id_for_cmd = download_id.clone();
-            let metadata_identity = identity.clone();
-            sender.oneshot_command(async move {
-                let Some(api_key) = tracker
-                    .get_setting("nexus_api_key")
-                    .await
-                    .ok()
-                    .flatten()
-                    .filter(|k| !k.is_empty())
-                else {
-                    return AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(
-                        (),
-                    )));
-                };
-                let client = crate::core::nexus_api::NexusClient::new(api_key);
-                let Ok((info, _)) = client.get_mod_info(&domain, nexus_mod_id).await else {
-                    return AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(Ok(
-                        (),
-                    )));
-                };
-                let mod_name = info.name;
-
-                // Fetch file list when we have a file_id (NXM path) or an archive
-                // filename (disk-scan path). Mirror start_nexus_metadata_fetch logic.
-                if nexus_file_id != 0 || archive_filename.is_some() {
-                    let file_entry = client
-                        .get_mod_files(&domain, nexus_mod_id)
-                        .await
-                        .ok()
-                        .and_then(|(resp, _)| {
-                            if nexus_file_id != 0 {
-                                resp.files.into_iter().find(|f| f.file_id == nexus_file_id)
-                            } else {
-                                let raw = archive_filename.as_deref().unwrap_or("");
-                                let fname_norm =
-                                    crate::core::nexus_identity::normalize_nexus_filename(raw);
-                                let local_ts =
-                                    crate::core::nexus_identity::extract_nexus_timestamp(raw);
-                                let candidates: Vec<_> = resp
-                                    .files
-                                    .into_iter()
-                                    .filter(|f| {
-                                        crate::core::nexus_identity::normalize_nexus_filename(
-                                            &f.file_name,
-                                        ) == fname_norm
-                                    })
-                                    .collect();
-                                local_ts
-                                    .and_then(|ts| {
-                                        candidates
-                                            .iter()
-                                            .find(|f| f.uploaded_timestamp == Some(ts))
-                                            .cloned()
-                                    })
-                                    .or_else(|| candidates.into_iter().next())
-                            }
-                        });
-                    if let Some(ref entry) = file_entry {
-                        let fname = &entry.name;
-                        let combined = if fname.to_lowercase().contains(&mod_name.to_lowercase()) {
-                            fname.clone()
-                        } else {
-                            format!("{mod_name} - {fname}")
-                        };
-                        AppCmdMsg::Install(
-                            crate::app::messages::InstallCmdMsg::PendingMetadataFetched(
-                                metadata_identity,
-                                combined,
-                            ),
-                        )
-                    } else if nexus_file_id == 0 {
-                        // Archive filename didn't match any Nexus file — ask the user
-                        // to supply a file ID so the label can be completed.
-                        AppCmdMsg::Install(
-                            crate::app::messages::InstallCmdMsg::PendingFileNameUnresolved {
-                                identity: metadata_identity,
-                                partial_name: mod_name,
-                                download_id: download_id_for_cmd,
-                                mod_id: nexus_mod_id,
-                                domain,
-                            },
-                        )
-                    } else {
-                        // Had a file_id but Nexus returned no matching entry.
-                        AppCmdMsg::Install(
-                            crate::app::messages::InstallCmdMsg::PendingMetadataFetched(
-                                metadata_identity,
-                                mod_name,
-                            ),
-                        )
-                    }
-                } else {
-                    AppCmdMsg::Install(crate::app::messages::InstallCmdMsg::PendingMetadataFetched(
-                        metadata_identity,
-                        mod_name,
-                    ))
-                }
-            });
-        }
 
         self.update_download_status(
             &download_id,
@@ -424,7 +327,7 @@ impl App {
         }));
 
         sender.oneshot_command(async move {
-            let result: Result<PrepareResultMsg, String> = async {
+            let result: Result<PrepareResultMsg, crate::app::messages::PrepareFailure> = async {
                 let timing_start = std::time::Instant::now();
                 let hash_path = archive_path.clone();
                 let archive_path_str = Some(archive_path.to_string_lossy().to_string());
@@ -445,7 +348,11 @@ impl App {
                 let prepare =
                     installer::prepare_mod(&archive_path, on_extract_progress, on_processing)
                         .await
-                        .map_err(|e| format!("{e:#}\nArchive: {archive_label}"))?;
+                        .map_err(|error| {
+                            crate::app::messages::PrepareFailure::notification(format!(
+                                "{error:#}\nArchive: {archive_label}"
+                            ))
+                        })?;
                 crate::app::timing::log_phase(
                     "install.prepare_archive",
                     "download",
@@ -531,6 +438,8 @@ impl App {
         author: Option<String>,
         sender: &ComponentSender<Self>,
     ) {
+        let metadata_fetched =
+            metadata_identifies_file(nexus_file_name.as_deref(), resolved_file_id);
         // Capture old domain before mutation to detect filtering changes
         let old_domain = self
             .download
@@ -541,7 +450,7 @@ impl App {
         // Update backing store
         if let Some(entry) = self.download.all.iter_mut().find(|e| e.id == download_id) {
             entry.mod_name = name.clone();
-            entry.metadata_fetched = true;
+            entry.metadata_fetched = metadata_fetched;
             entry.nexus_file_name = nexus_file_name.clone();
             entry.nexus_is_primary = nexus_is_primary;
             if version.is_some() {
@@ -604,7 +513,7 @@ impl App {
                     && row.entry.id == download_id
                 {
                     row.entry.mod_name = name;
-                    row.entry.metadata_fetched = true;
+                    row.entry.metadata_fetched = metadata_fetched;
                     row.entry.nexus_file_name = nexus_file_name;
                     row.entry.nexus_is_primary = nexus_is_primary;
                     if version.is_some() {

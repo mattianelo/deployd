@@ -8,42 +8,20 @@ use relm4::prelude::*;
 
 use crate::core::installer::{self, AddResult, PrepareResult};
 use crate::dlog;
-use crate::models::download::DownloadEntry;
 use crate::ui::fomod_dialog::{
     FomodDialog, FomodDialogInit, FomodDialogOutput, default_fomod_selections,
 };
 use crate::utils::{fomod_resolver, paths};
 
 use super::App;
-use super::messages::{AppCmdMsg, AppMsg, PrepareResultMsg};
+use super::messages::{AppCmdMsg, AppMsg, PrepareFailure, PrepareResultMsg};
 use super::progress::throttled_install_progress;
 use super::state::InstallStage;
-use super::types::{FileIdNeeded, WorkKind};
+use super::types::WorkKind;
 
 pub(super) mod cleanup;
 mod dialogs;
 mod results;
-
-fn next_unresolved_sibling_id(
-    downloads: &[DownloadEntry],
-    resolved_download_id: &str,
-) -> Option<String> {
-    let resolved_mod_id = downloads
-        .iter()
-        .find(|entry| entry.id == resolved_download_id)
-        .and_then(|entry| entry.nexus_ids.as_ref())
-        .map(|ids| ids.mod_id)?;
-
-    downloads
-        .iter()
-        .find(|entry| {
-            entry.id != resolved_download_id
-                && entry.nexus_ids.as_ref().map(|ids| ids.mod_id) == Some(resolved_mod_id)
-                && entry.nexus_ids.as_ref().is_some_and(|ids| ids.file_id == 0)
-                && !entry.metadata_fetched
-        })
-        .map(|entry| entry.id.clone())
-}
 
 fn parse_fomod_selections(json: &str) -> Option<Vec<Vec<HashSet<usize>>>> {
     let raw: Vec<Vec<Vec<usize>>> = serde_json::from_str(json).ok()?;
@@ -81,8 +59,6 @@ impl App {
             pending.mod_name = old_name;
         }
         self.install.replacement = Some((id.clone(), priority));
-        self.install.fetched_name = None;
-        self.install.file_id_needed = None;
         let tracker = self.session.tracker.clone();
         sender.oneshot_command(async move {
             let selections = if let Some(tracker) = tracker {
@@ -120,84 +96,7 @@ impl App {
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
-        if let Some(name) = partial_name {
-            self.install.fetched_name = Some(name);
-        }
-        self.install.file_id_needed = Some(FileIdNeeded {
-            download_id,
-            mod_id,
-            domain,
-        });
-        self.show_file_id_dialog(root, sender);
-    }
-
-    pub(crate) fn handle_cmd_pending_metadata_fetched(
-        &mut self,
-        identity: &super::state::InstallIdentity,
-        name: String,
-    ) {
-        if !self.install.accepts(identity) {
-            return;
-        }
-        self.install.fetched_name = Some(name);
-    }
-
-    pub(crate) fn handle_cmd_pending_file_name_unresolved(
-        &mut self,
-        identity: &super::state::InstallIdentity,
-        partial_name: String,
-        download_id: String,
-        mod_id: i64,
-        domain: String,
-    ) {
-        if !self.install.accepts(identity) {
-            return;
-        }
-        self.install.fetched_name = Some(partial_name);
-        self.install.file_id_needed = Some(FileIdNeeded {
-            download_id,
-            mod_id,
-            domain,
-        });
-    }
-
-    pub(crate) fn handle_cmd_file_id_fetched(
-        &mut self,
-        combined_name: Option<String>,
-        download_id: Option<String>,
-        version: Option<String>,
-        file_id: Option<i64>,
-        sender: &ComponentSender<Self>,
-    ) {
-        self.finish_work(WorkKind::FetchingMetadata);
-        self.install.file_id_needed = None;
-        if let Some(download_id) = download_id {
-            self.finish_download_metadata_fetch(&download_id);
-            if let Some(name) = combined_name {
-                self.handle_download_name_resolved(
-                    download_id.clone(),
-                    name,
-                    None,
-                    None,
-                    false,
-                    file_id,
-                    version,
-                    None,
-                    sender,
-                );
-            }
-            self.show_toast("Metadata updated");
-            if let Some(next_id) = next_unresolved_sibling_id(&self.download.all, &download_id) {
-                self.start_nexus_metadata_fetch(next_id, sender);
-            }
-        } else {
-            if let Some(name) = combined_name {
-                self.install.fetched_name = Some(name);
-            }
-            let _ = sender.input_sender().send(AppMsg::Install(
-                crate::app::messages::InstallMsg::OpenPreInstallDialog,
-            ));
-        }
+        self.show_file_id_dialog(download_id, mod_id, domain, partial_name, root, sender);
     }
 
     pub(crate) fn handle_install_clicked(
@@ -244,6 +143,7 @@ impl App {
             .map(|game| game.id.clone())
             .unwrap_or_default();
         let identity = self.install.begin(game_id, None);
+        let downloads_dir = self.download.directory.clone();
         self.install.set_stage(InstallStage::PreparingArchive);
         self.begin_work(WorkKind::PreparingArchive, format!("Hashing {mod_name}..."));
 
@@ -264,7 +164,7 @@ impl App {
         }));
 
         sender.oneshot_command(async move {
-            let result: Result<PrepareResultMsg, String> = async {
+            let result: Result<PrepareResultMsg, PrepareFailure> = async {
                 let timing_start = std::time::Instant::now();
                 let hash_path = path.clone();
                 let archive_path = Some(path.to_string_lossy().to_string());
@@ -282,9 +182,33 @@ impl App {
 
                 let timing_start = std::time::Instant::now();
                 let archive_label = path.display().to_string();
+                let (recovery_path, recovery_downloads_dir) = if crate::utils::snap::is_snap() {
+                    let recovery_path = crate::utils::portal::document_portal_host_path(&path)
+                        .await
+                        .unwrap_or_else(|| path.clone());
+                    let recovery_downloads_dir =
+                        crate::utils::portal::document_portal_host_path(&downloads_dir)
+                            .await
+                            .unwrap_or(downloads_dir);
+                    (recovery_path, recovery_downloads_dir)
+                } else {
+                    (path.clone(), downloads_dir)
+                };
                 let prepare = installer::prepare_mod(&path, on_extract_progress, on_processing)
                     .await
-                    .map_err(|e| format!("{e:#}\nArchive: {archive_label}"))?;
+                    .map_err(|error| {
+                        if let Some(message) = crate::utils::snap::manual_archive_recovery_message(
+                            &recovery_path,
+                            &recovery_downloads_dir,
+                            &error,
+                        ) {
+                            PrepareFailure::dialog("Archive Access Required", message)
+                        } else {
+                            PrepareFailure::notification(format!(
+                                "{error:#}\nArchive: {archive_label}"
+                            ))
+                        }
+                    })?;
                 crate::app::timing::log_phase(
                     "install.prepare_archive",
                     "manual",
@@ -631,8 +555,6 @@ impl App {
         }
         self.install.replacement = Some((old_mod_id, old_priority));
         // Drop any fetched name and file-ID context; replacements keep the existing mod's name.
-        self.install.fetched_name = None;
-        self.install.file_id_needed = None;
         self.open_pre_install_dialog(root, sender);
     }
 
@@ -646,8 +568,6 @@ impl App {
         self.install.pending = None;
         self.install.nexus_ids = None;
         self.install.replacement = None;
-        self.install.fetched_name = None;
-        self.install.file_id_needed = None;
         let was_reinstall = self.install.reinstalling;
         self.install.reinstalling = false;
         self.install.set_stage(InstallStage::Cancelled);
@@ -859,8 +779,6 @@ impl App {
         self.install.pending = None;
         self.install.nexus_ids = None;
         self.install.replacement = None;
-        self.install.fetched_name = None;
-        self.install.file_id_needed = None;
         let was_reinstall = self.install.reinstalling;
         self.install.reinstalling = false;
         self.install.set_stage(InstallStage::Cancelled);
@@ -994,55 +912,7 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use crate::models::download::{DownloadEntry, NexusIds};
-
-    use super::{next_unresolved_sibling_id, parse_fomod_selections};
-
-    fn download(id: &str, mod_id: i64, file_id: i64, metadata_fetched: bool) -> DownloadEntry {
-        let mut entry = DownloadEntry::new(
-            id.to_string(),
-            id.to_string(),
-            Some(NexusIds {
-                mod_id,
-                file_id,
-                domain: "skyrim".to_string(),
-            }),
-        );
-        entry.metadata_fetched = metadata_fetched;
-        entry
-    }
-
-    #[test]
-    fn selects_unresolved_sibling_for_same_mod() {
-        let downloads = vec![
-            download("resolved", 10, 123, true),
-            download("other-mod", 20, 0, false),
-            download("sibling", 10, 0, false),
-        ];
-
-        assert_eq!(
-            next_unresolved_sibling_id(&downloads, "resolved"),
-            Some("sibling".to_string())
-        );
-    }
-
-    #[test]
-    fn skips_siblings_with_resolved_metadata() {
-        let downloads = vec![
-            download("resolved", 10, 123, true),
-            download("known-file", 10, 456, false),
-            download("metadata-fetched", 10, 0, true),
-        ];
-
-        assert_eq!(next_unresolved_sibling_id(&downloads, "resolved"), None);
-    }
-
-    #[test]
-    fn returns_none_when_resolved_download_is_missing() {
-        let downloads = vec![download("sibling", 10, 0, false)];
-
-        assert_eq!(next_unresolved_sibling_id(&downloads, "missing"), None);
-    }
+    use super::parse_fomod_selections;
 
     #[test]
     fn parses_saved_fomod_selections_into_sets() {
