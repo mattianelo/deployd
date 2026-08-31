@@ -11,6 +11,43 @@ use crate::models::nexus::{NexusFileEntry, NexusFileUpdate, NexusModInfo};
 use super::super::App;
 use super::super::messages::{AppCmdMsg, AppMsg};
 
+pub(crate) async fn persist_fetched_download_metadata(
+    tracker: &crate::core::tracker::Tracker,
+    download_id: &str,
+    nexus_mod_id: i64,
+    result: ManualMetadataResult,
+) -> Result<ManualMetadataResult, String> {
+    let metadata = match &result {
+        ManualMetadataResult::Resolved(metadata) | ManualMetadataResult::NeedsFileId(metadata) => {
+            metadata
+        }
+    };
+    let nexus_file_id = metadata.file_id.unwrap_or(0);
+    let metadata_fetched = nexus_file_id > 0
+        || metadata
+            .nexus_file_name
+            .as_deref()
+            .is_some_and(|name| !name.trim().is_empty());
+    tracker
+        .update_download_nexus_metadata(
+            download_id,
+            &crate::core::tracker::downloads::DownloadNexusMetadata {
+                mod_name: metadata.mod_name.clone(),
+                nexus_mod_id,
+                nexus_file_id,
+                domain: metadata.domain.clone(),
+                metadata_fetched,
+                nexus_file_name: metadata.nexus_file_name.clone(),
+                nexus_is_primary: metadata.nexus_is_primary,
+                version: metadata.version.clone(),
+                author: metadata.author.clone(),
+            },
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(result)
+}
+
 pub(crate) fn nexus_download_metadata(
     domain: &str,
     fallback_name: &str,
@@ -471,6 +508,18 @@ impl App {
                 }
             }
             .await;
+            let result = match result {
+                Ok(result) => {
+                    persist_fetched_download_metadata(
+                        &tracker,
+                        &download_id,
+                        nexus_mod_id,
+                        result,
+                    )
+                    .await
+                }
+                Err(error) => Err(error),
+            };
             crate::app::timing::log_phase("metadata.fetch", &domain, timing_start, Some(1));
             AppCmdMsg::Downloads(
                 crate::app::messages::DownloadsCmdMsg::NexusMetadataFetched(download_id, result),

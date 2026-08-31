@@ -188,6 +188,8 @@ Open **Settings** (gear icon) and log in under **Nexus Mods**:
 - **Nexus updates** — Installed Nexus files are checked together at startup; after an installation,
   only that mod is checked. Update badges follow Nexus' file-specific replacement chain, so
   unrelated optional files do not create false alerts
+- **External changes** — Absorbed files can be merged into an existing mod; Data-relative and
+  game-root locations are retained across restarts and deployments
 
 In the Snap package, access granted to an external downloads folder does not cover other folders
 on that drive. Move a local archive into the configured downloads folder, scan it, and install it

@@ -8,4 +8,6 @@ pub mod scan;
 pub mod state;
 pub mod updates;
 
-pub(crate) use metadata::{latest_file_version, nexus_download_metadata};
+pub(crate) use metadata::{
+    latest_file_version, nexus_download_metadata, persist_fetched_download_metadata,
+};

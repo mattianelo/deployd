@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Merging detected external files into an existing mod now preserves game-root anchors, so the
+  files remain managed after restart instead of being detected again.
+- Manually fetched Nexus metadata is now committed before success is reported and remains available
+  in later sessions even when the archive was not installed.
 - Replacing a mod now returns the previous archive to an installable state while preserving the
   replacement's Mod Order position and matching plugin states.
 - Nexus update badges now follow file-specific update relationships, refresh together at startup

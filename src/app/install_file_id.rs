@@ -136,6 +136,16 @@ impl App {
                 )))
             }
             .await;
+            let result = match result {
+                Ok(result) => crate::app::downloads::persist_fetched_download_metadata(
+                    &tracker,
+                    &download_id,
+                    mod_id,
+                    result,
+                )
+                .await,
+                Err(error) => Err(error),
+            };
             AppCmdMsg::Downloads(
                 crate::app::messages::DownloadsCmdMsg::NexusMetadataFetched(download_id, result),
             )

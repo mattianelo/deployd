@@ -2,7 +2,48 @@ use anyhow::{Context, Result};
 
 use super::Tracker;
 
+pub(crate) struct DownloadNexusMetadata {
+    pub(crate) mod_name: String,
+    pub(crate) nexus_mod_id: i64,
+    pub(crate) nexus_file_id: i64,
+    pub(crate) domain: String,
+    pub(crate) metadata_fetched: bool,
+    pub(crate) nexus_file_name: Option<String>,
+    pub(crate) nexus_is_primary: bool,
+    pub(crate) version: Option<String>,
+    pub(crate) author: Option<String>,
+}
+
 impl Tracker {
+    pub(crate) async fn update_download_nexus_metadata(
+        &self,
+        download_id: &str,
+        metadata: &DownloadNexusMetadata,
+    ) -> Result<()> {
+        sqlx::query(
+            "UPDATE download_entries
+             SET mod_name = ?, nexus_mod_id = ?, nexus_file_id = ?, nexus_domain = ?,
+                 game_domain = ?, metadata_fetched = ?, nexus_file_name = ?,
+                 nexus_is_primary = ?, version = ?, author = ?
+             WHERE id = ?",
+        )
+        .bind(&metadata.mod_name)
+        .bind(metadata.nexus_mod_id)
+        .bind(metadata.nexus_file_id)
+        .bind(&metadata.domain)
+        .bind(&metadata.domain)
+        .bind(metadata.metadata_fetched)
+        .bind(metadata.nexus_file_name.as_deref())
+        .bind(metadata.nexus_is_primary)
+        .bind(metadata.version.as_deref())
+        .bind(metadata.author.as_deref())
+        .bind(download_id)
+        .execute(&self.pool)
+        .await
+        .context("Failed to persist fetched Nexus metadata")?;
+        Ok(())
+    }
+
     /// Save a download entry to the database.
     pub async fn save_download_entry(
         &self,
@@ -160,5 +201,52 @@ impl Tracker {
             .collect();
 
         Ok(entries)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DownloadNexusMetadata, Tracker};
+    use crate::models::download::{DownloadEntry, DownloadStatus};
+
+    #[tokio::test]
+    async fn fetched_metadata_survives_reload_without_install() -> anyhow::Result<()> {
+        let tracker = Tracker::open("sqlite::memory:").await?.tracker;
+        let mut entry = DownloadEntry::new("download".to_string(), "Archive".to_string(), None);
+        entry.status = DownloadStatus::Downloaded;
+        tracker.save_download_entry(&entry).await?;
+
+        tracker
+            .update_download_nexus_metadata(
+                &entry.id,
+                &DownloadNexusMetadata {
+                    mod_name: "Resolved Mod".to_string(),
+                    nexus_mod_id: 108_480,
+                    nexus_file_id: 123_456,
+                    domain: "fallout4".to_string(),
+                    metadata_fetched: true,
+                    nexus_file_name: Some("Main File".to_string()),
+                    nexus_is_primary: true,
+                    version: Some("1.3.0".to_string()),
+                    author: Some("Author".to_string()),
+                },
+            )
+            .await?;
+
+        let loaded = tracker.load_download_entries().await?;
+        let loaded = loaded.first().expect("persisted download entry");
+        assert_eq!(loaded.mod_name, "Resolved Mod");
+        assert_eq!(loaded.version.as_deref(), Some("1.3.0"));
+        assert_eq!(loaded.nexus_file_name.as_deref(), Some("Main File"));
+        assert_eq!(loaded.author.as_deref(), Some("Author"));
+        assert!(loaded.metadata_fetched);
+        assert_eq!(
+            loaded
+                .nexus_ids
+                .as_ref()
+                .map(|ids| (ids.mod_id, ids.file_id, ids.domain.as_str())),
+            Some((108_480, 123_456, "fallout4"))
+        );
+        Ok(())
     }
 }
