@@ -390,6 +390,7 @@ impl App {
                     (self.session.tracker.clone(), self.selected_game().cloned())
                 {
                     let mod_id = add_result.mod_entry.id.clone();
+                    let installed_mod = add_result.mod_entry.clone();
                     sender.oneshot_command(async move {
                         let result = async {
                             if let Some(ref version) = version_from_dl {
@@ -403,6 +404,17 @@ impl App {
                                     .set_mod_author(&mod_id, author)
                                     .await
                                     .map_err(|error| error.to_string())?;
+                            }
+                            if let Err(error) =
+                                crate::app::downloads::updates::refresh_nexus_update_for_mod(
+                                    &tracker,
+                                    &installed_mod,
+                                )
+                                .await
+                            {
+                                eprintln!(
+                                    "deployd: failed to refresh Nexus update for installed mod: {error}"
+                                );
                             }
                             load_game_data(
                                 &tracker,
@@ -433,7 +445,6 @@ impl App {
                 if let Some(dialog) = self.ui.absorb_dialog.take() {
                     dialog.widget().destroy();
                 }
-                self.refresh_installed_nexus_updates(sender);
             }
             Err(e) => {
                 self.push_notification(&format!("Add failed: {e}"));

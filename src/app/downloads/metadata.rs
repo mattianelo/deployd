@@ -77,13 +77,48 @@ pub(crate) fn latest_file_version(
     if current == installed_file_id {
         return None;
     }
-    files
+    let installed_version = files
+        .iter()
+        .find(|file| file.file_id == installed_file_id)
+        .and_then(|file| file.version.as_deref())
+        .map(str::trim)
+        .filter(|version| !version.is_empty());
+    let candidate = files
         .iter()
         .find(|file| file.file_id == current)
         .and_then(|file| file.version.as_deref())
         .map(str::trim)
         .filter(|version| !version.is_empty())
-        .map(str::to_string)
+        .map(str::to_string)?;
+    if let Some(installed) = installed_version
+        && !version_is_strictly_newer(&candidate, installed)
+    {
+        return None;
+    }
+    Some(candidate)
+}
+
+fn version_is_strictly_newer(candidate: &str, installed: &str) -> bool {
+    match (
+        numeric_version_components(candidate),
+        numeric_version_components(installed),
+    ) {
+        (Some(candidate), Some(installed)) => candidate > installed,
+        _ => true,
+    }
+}
+
+fn numeric_version_components(version: &str) -> Option<Vec<u64>> {
+    let mut components: Vec<u64> = version
+        .split(|character: char| !character.is_ascii_digit())
+        .filter(|part| !part.is_empty())
+        .map(str::parse)
+        .collect::<Result<_, _>>()
+        .ok()?;
+    while components.last() == Some(&0) {
+        components.pop();
+    }
+    (!components.is_empty()).then_some(components)
 }
 
 fn match_nexus_file(
@@ -446,7 +481,9 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::{latest_file_version, match_nexus_file, nexus_download_metadata};
+    use super::{
+        latest_file_version, match_nexus_file, nexus_download_metadata, version_is_strictly_newer,
+    };
     use crate::models::nexus::{NexusFileEntry, NexusFileUpdate, NexusModInfo};
 
     fn archived_file() -> NexusFileEntry {
@@ -542,5 +579,31 @@ mod tests {
             latest_file_version(&[archived_file(), unrelated], &[], 77),
             None
         );
+    }
+
+    #[test]
+    fn rejects_archived_downgrade_in_update_chain() {
+        let mut installed = archived_file();
+        installed.file_id = 100;
+        installed.version = Some("1.3.0".to_string());
+        let mut archived = installed.clone();
+        archived.file_id = 101;
+        archived.version = Some("1.2.0".to_string());
+        let updates = [NexusFileUpdate {
+            old_file_id: 100,
+            new_file_id: 101,
+        }];
+
+        assert_eq!(
+            latest_file_version(&[installed, archived], &updates, 100),
+            None
+        );
+    }
+
+    #[test]
+    fn compares_multi_digit_mod_versions_numerically() {
+        assert!(version_is_strictly_newer("v1.10.0", "1.9"));
+        assert!(!version_is_strictly_newer("1.2.0", "1.3.0"));
+        assert!(!version_is_strictly_newer("1.3", "1.3.0"));
     }
 }

@@ -4,8 +4,9 @@
 
 - Replacing a mod now returns the previous archive to an installable state while preserving the
   replacement's Mod Order position and matching plugin states.
-- Nexus update badges now follow file-specific update relationships, refresh at startup and after
-  installation, and no longer compare installed files with unrelated mod-page versions.
+- Nexus update badges now follow file-specific update relationships, refresh together at startup
+  and individually after installation, and no longer compare installed files with unrelated
+  mod-page versions or offer an archived lower version as an update.
 - Fixed manual Nexus metadata refreshes for archived downloads so nullable API fields no longer
   fail parsing, exact file names and versions update through the same result path as NXM downloads,
   file-ID prompts wait for filename matching to finish, and completed or failed refreshes no longer

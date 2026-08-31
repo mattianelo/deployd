@@ -274,7 +274,7 @@ impl App {
 
                 self.session.initializing = false;
 
-                self.refresh_installed_nexus_updates(sender);
+                self.refresh_all_installed_nexus_updates(sender);
 
                 if data.restored_from_backup {
                     self.push_notification(

@@ -19,7 +19,7 @@ fn self_update_target(appimage_path: Option<String>) -> SelfUpdateTarget {
 }
 
 impl App {
-    pub(crate) fn refresh_installed_nexus_updates(&self, sender: &ComponentSender<Self>) {
+    pub(crate) fn refresh_all_installed_nexus_updates(&self, sender: &ComponentSender<Self>) {
         let (Some(tracker), Some(game)) =
             (self.session.tracker.clone(), self.selected_game().cloned())
         else {
@@ -225,6 +225,41 @@ impl App {
             self.push_notification(&format!("Could not open update page: {error}"));
         }
     }
+}
+
+pub(crate) async fn refresh_nexus_update_for_mod(
+    tracker: &crate::core::tracker::Tracker,
+    entry: &crate::models::mod_entry::ModEntry,
+) -> Result<(), String> {
+    let (Some(domain), Some(nexus_mod_id), Some(nexus_file_id)) = (
+        entry.nexus_domain.as_deref(),
+        entry.nexus_mod_id,
+        entry.nexus_file_id,
+    ) else {
+        return Ok(());
+    };
+    if nexus_file_id <= 0 {
+        return Ok(());
+    }
+    let Some(api_key) = tracker
+        .get_setting("nexus_api_key")
+        .await
+        .map_err(|error| error.to_string())?
+        .filter(|key| !key.is_empty())
+    else {
+        return Ok(());
+    };
+    let client = crate::core::nexus_api::NexusClient::new(api_key);
+    let (files, _) = client
+        .get_mod_files(domain, nexus_mod_id)
+        .await
+        .map_err(|error| error.to_string())?;
+    let latest =
+        super::metadata::latest_file_version(&files.files, &files.file_updates, nexus_file_id);
+    tracker
+        .set_mod_latest_version(&entry.id, latest.as_deref())
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
