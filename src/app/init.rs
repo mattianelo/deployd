@@ -264,6 +264,9 @@ pub(super) fn build_model(
                 AppMsg::Games(crate::app::messages::GamesMsg::ToggleProfileSaveMode)
             }
             HeaderOutput::SyncSaves => AppMsg::Games(crate::app::messages::GamesMsg::SyncSaves),
+            HeaderOutput::ManageSaveBackups => {
+                AppMsg::Games(crate::app::messages::GamesMsg::ManageSaveBackups)
+            }
             HeaderOutput::DeployClicked => {
                 AppMsg::Shell(crate::app::messages::ShellMsg::DeployClicked)
             }
@@ -345,6 +348,7 @@ pub(super) fn build_model(
             profiles: vec![],
             active_profile_idx: 0,
             updating_profiles: false,
+            pending_save_profile_idx: None,
             game_cache_dirs: HashMap::new(),
             pending_new_game_ids: vec![],
             last_deployed_profile_id: None,

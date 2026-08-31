@@ -109,6 +109,7 @@ pub(crate) struct SessionState {
     pub(crate) profiles: Vec<Profile>,
     pub(crate) active_profile_idx: usize,
     pub(crate) updating_profiles: bool,
+    pub(crate) pending_save_profile_idx: Option<usize>,
     pub(crate) game_cache_dirs: HashMap<String, PathBuf>,
     pub(crate) pending_new_game_ids: Vec<String>,
     pub(crate) last_deployed_profile_id: Option<String>,

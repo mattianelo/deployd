@@ -87,13 +87,17 @@ impl Tracker {
         let id = uuid::Uuid::new_v4().to_string();
         let mut tx = self.pool.begin().await?;
 
-        sqlx::query("INSERT INTO profiles (id, game_id, name, is_active) VALUES (?, ?, ?, 0)")
-            .bind(&id)
-            .bind(game_id)
-            .bind(&final_name)
-            .execute(&mut *tx)
-            .await
-            .context("Failed to create cloned profile")?;
+        sqlx::query(
+            "INSERT INTO profiles (id, game_id, name, is_active, save_mode)
+             SELECT ?, game_id, ?, 0, save_mode FROM profiles WHERE id = ? AND game_id = ?",
+        )
+        .bind(&id)
+        .bind(&final_name)
+        .bind(source_profile_id)
+        .bind(game_id)
+        .execute(&mut *tx)
+        .await
+        .context("Failed to create cloned profile")?;
 
         sqlx::query(
             "INSERT INTO profile_mods (profile_id, mod_id, enabled, priority)
@@ -446,6 +450,28 @@ mod tests {
         assert_eq!(active_a.map(|profile| profile.id), Some(deployed_a));
         assert_eq!(active_b.map(|profile| profile.id), Some(deployed_b));
         assert!(mod_a_enabled, "the deployed profile snapshot was restored");
+        Ok(())
+    }
+
+    // @variants: both
+    #[tokio::test]
+    async fn cloned_profile_inherits_save_mode() -> Result<()> {
+        let tracker = profile_tracker().await?;
+        let source = tracker.create_profile("game", "Source").await?;
+        tracker
+            .set_profile_save_mode(&source, SaveMode::ProfileSpecific)
+            .await?;
+
+        let clone = tracker
+            .clone_profile(&source, "Source (Copy)", "game")
+            .await?;
+        let profiles = tracker.list_profiles("game").await?;
+        let cloned = profiles
+            .iter()
+            .find(|profile| profile.id == clone)
+            .expect("cloned profile should exist");
+
+        assert_eq!(cloned.save_mode, SaveMode::ProfileSpecific);
         Ok(())
     }
 

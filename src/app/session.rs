@@ -76,10 +76,20 @@ pub(crate) async fn load_game_data(
 
     // Ensure a "Default" profile exists. This is idempotent and covers both the
     // normal startup path and games added later via the wizard or Manage Games dialog.
-    tracker
+    let active_profile = tracker
         .ensure_default_profile(game_id)
         .await
         .map_err(|e| e.to_string())?;
+    if game::has_save_management(game) && wine_prefix_accessible {
+        let active_set = save_manager::SaveSetId::for_profile(
+            game_id,
+            &active_profile.id,
+            &active_profile.save_mode,
+        );
+        save_manager::recover_interrupted_transition(game, &active_set)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
 
     if matches!(mode, GameLoadMode::OpenGame) {
         let transition = tracker
@@ -90,15 +100,39 @@ pub(crate) async fn load_game_data(
             && game::has_save_management(game)
             && wine_prefix_accessible
         {
-            save_manager::swap_saves(
-                game,
-                Some(&active_profile.id),
+            let source = save_manager::SaveSetId::for_profile(
+                game_id,
+                &active_profile.id,
                 &active_profile.save_mode,
+            );
+            let target = save_manager::SaveSetId::for_profile(
+                game_id,
                 &deployed_profile.id,
                 &deployed_profile.save_mode,
+            );
+            let backup_cap = save_manager::configured_backup_cap_bytes(tracker).await;
+            match save_manager::prepare_transition(
+                game,
+                &source,
+                &target,
+                save_manager::BackupTrigger::ProfileSwitch,
+                backup_cap,
             )
             .await
-            .map_err(|e| e.to_string())?;
+            {
+                Ok(transition) => {
+                    transition.commit().await.map_err(|e| e.to_string())?;
+                }
+                Err(error) => {
+                    tracker
+                        .switch_profile(game_id, &active_profile.id)
+                        .await
+                        .map_err(|rollback| {
+                            format!("{error}; failed to restore the active profile: {rollback}")
+                        })?;
+                    return Err(error.to_string());
+                }
+            }
         }
     }
 

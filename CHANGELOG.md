@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+- Reworked profile save management around verified Global and per-profile save banks. Profile
+  switches now capture unsynced live saves, create versioned recovery points, restore through a
+  rollback-capable transaction, and recover interrupted transitions without treating a missing
+  snapshot as an empty save directory.
+- Added named save backups with restore and delete controls, SHA-256 integrity manifests, a
+  configurable 5 GiB-per-game automatic-backup cap, and confirmation dialogs for save-mode,
+  synchronization, restore, profile deletion, and backup deletion operations.
+- Cloned profiles now inherit their source save mode and current isolated saves, returning to a
+  Global profile restores the shared Global state, and strict-Snap builds revalidate Wine-prefix
+  access before every save mutation.
 - Fixed new Snap installations being unable to select an external drive as the downloads folder by
   requesting persistent access through the desktop portal, showing validation feedback in the
   Downloads section, and showing a copyable manual removable-media connection prompt for direct

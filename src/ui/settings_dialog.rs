@@ -18,6 +18,7 @@ pub struct SettingsDialog {
     downloads_status_label: gtk::Label,
     test_button: gtk::Button,
     save_button: gtk::Button,
+    backup_cap_row: adw::SpinRow,
     downloads_dir: String,
     can_preview_appimage_export: bool,
 }
@@ -32,6 +33,7 @@ pub enum SettingsMsg {
     PreviewAppImageExport,
     ManageGames,
     SetColorScheme(u32),
+    SetSaveBackupCap(f64),
 }
 
 #[derive(Debug)]
@@ -42,6 +44,8 @@ pub enum SettingsCmdMsg {
     DownloadsDirSelected(Result<Option<DownloadsFolderSelection>, String>),
     DownloadsDirLoaded(Result<Option<String>, String>),
     DownloadsDirSaved(Result<(), String>),
+    SaveBackupCapLoaded(Result<Option<String>, String>),
+    SaveBackupCapSaved(Result<(), String>),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -218,6 +222,21 @@ impl Component for SettingsDialog {
                     },
                 },
 
+                add = &adw::PreferencesGroup {
+                    set_title: "Save Backups",
+                    set_description: Some("The limit applies independently to automatic recovery points for each game. Manual backups are never pruned automatically."),
+
+                    #[local_ref]
+                    add = backup_cap_row -> adw::SpinRow {
+                        set_title: "Automatic backup cap (GiB)",
+                        set_subtitle: "Oldest automatic recovery points are removed first",
+                        set_digits: 0,
+                        connect_value_notify[sender] => move |row| {
+                            sender.input(SettingsMsg::SetSaveBackupCap(row.value()));
+                        },
+                    },
+                },
+
                 // Migration section
                 add = &adw::PreferencesGroup {
                     set_title: "Migration",
@@ -285,6 +304,11 @@ impl Component for SettingsDialog {
         let downloads_status_label = gtk::Label::new(None);
         let test_button = gtk::Button::new();
         let save_button = gtk::Button::new();
+        let backup_cap_row = adw::SpinRow::new(
+            Some(&gtk::Adjustment::new(5.0, 1.0, 100.0, 1.0, 5.0, 0.0)),
+            1.0,
+            0,
+        );
 
         let default_dir = paths::default_downloads_dir().to_string_lossy().to_string();
 
@@ -296,6 +320,7 @@ impl Component for SettingsDialog {
             downloads_status_label,
             test_button,
             save_button,
+            backup_cap_row,
             downloads_dir: default_dir,
             can_preview_appimage_export,
         };
@@ -305,6 +330,7 @@ impl Component for SettingsDialog {
         let downloads_status_label = &model.downloads_status_label;
         let test_button = &model.test_button;
         let save_button = &model.save_button;
+        let backup_cap_row = &model.backup_cap_row;
         let widgets = view_output!();
 
         // Ko-fi support row suffix
@@ -344,6 +370,16 @@ impl Component for SettingsDialog {
             }
             .await;
             SettingsCmdMsg::KeyLoaded(result)
+        });
+
+        let cap_tracker = model.tracker.clone();
+        sender.oneshot_command(async move {
+            SettingsCmdMsg::SaveBackupCapLoaded(
+                cap_tracker
+                    .get_setting("save_backup_cap_gib")
+                    .await
+                    .map_err(|error| error.to_string()),
+            )
         });
 
         // Load existing downloads dir
@@ -466,6 +502,18 @@ impl Component for SettingsDialog {
             SettingsMsg::SetColorScheme(idx) => {
                 let _ = sender.output(SettingsDialogOutput::ColorSchemeChanged(idx));
             }
+            SettingsMsg::SetSaveBackupCap(value) => {
+                let tracker = self.tracker.clone();
+                let value = value.round().clamp(1.0, 100.0) as u64;
+                sender.oneshot_command(async move {
+                    SettingsCmdMsg::SaveBackupCapSaved(
+                        tracker
+                            .set_setting("save_backup_cap_gib", &value.to_string())
+                            .await
+                            .map_err(|error| error.to_string()),
+                    )
+                });
+            }
             SettingsMsg::DownloadsDirChosen(selection) => {
                 let path = match resolve_downloads_folder_with(&selection, |path| {
                     snap::validate_selected_folder(path, SelectedFolderKind::DownloadsFolder)
@@ -578,6 +626,28 @@ impl Component for SettingsDialog {
                     self.downloads_status_label.remove_css_class("success");
                     self.downloads_status_label.add_css_class("error");
                     self.downloads_status_label.set_visible(true);
+                }
+            }
+            SettingsCmdMsg::SaveBackupCapLoaded(result) => match result {
+                Ok(Some(value)) => {
+                    if let Ok(value) = value.parse::<f64>() {
+                        self.backup_cap_row.set_value(value.clamp(1.0, 100.0));
+                    }
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    self.status_label
+                        .set_label(&format!("Failed to load save backup settings: {error}"));
+                    self.status_label.add_css_class("error");
+                    self.status_label.set_visible(true);
+                }
+            },
+            SettingsCmdMsg::SaveBackupCapSaved(result) => {
+                if let Err(error) = result {
+                    self.status_label
+                        .set_label(&format!("Failed to save backup storage cap: {error}"));
+                    self.status_label.add_css_class("error");
+                    self.status_label.set_visible(true);
                 }
             }
         }

@@ -212,7 +212,20 @@ For Bethesda games, manage plugins separately in the **Plugins** tab:
 
 ### 7. Save Management
 
-The **Saves** tab lists game saves associated with your active profile. Informational only — Deployd never modifies save files.
+Profiles can use shared **Global** saves or an isolated save set owned by that profile. Before
+Deployd replaces live game saves, it verifies the target, captures the departing state, and keeps
+an automatic recovery point. Switching back to a Global profile restores the last shared Global
+state instead of promoting another profile's saves.
+
+Use **Profile options → Manage save backups** to create named backups or inspect, restore, and
+delete recovery points. Manual backups are retained until you delete them. Automatic backups use
+a configurable per-game storage cap, set under **Settings → Save Backups**. Close the game before
+switching save sets, changing save mode, or restoring a backup.
+
+Cloning a profile also clones its save mode and current isolated save state. Operations that can
+replace or permanently delete saves show a confirmation dialog first. Snap installations validate
+Wine-prefix access before every save mutation and stop without changing files when access has
+expired.
 
 ### 8. External Tools
 

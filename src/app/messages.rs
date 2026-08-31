@@ -79,10 +79,13 @@ pub(crate) enum ShellMsg {
 pub(crate) enum GamesMsg {
     GameSelected(u32),
     ProfileSelected(u32),
+    InitializePendingSaveSet,
+    UseGlobalForPendingProfile,
     NewProfileClicked,
     CloneProfileClicked,
     RenameProfile(String),
     DeleteProfileClicked,
+    DeleteProfileConfirmed,
     SettingsClicked,
     SettingsClosed,
     /// Open the "Manage Games" setup dialog.
@@ -120,8 +123,17 @@ pub(crate) enum GamesMsg {
     WelcomeWizardSkipped,
     /// Toggle save management mode for the active profile.
     ToggleProfileSaveMode,
+    ToggleProfileSaveModeConfirmed,
+    InitializeGlobalAndDisableIsolation,
     /// Manually sync the active profile's saves from the game save directory.
     SyncSaves,
+    SyncSavesConfirmed,
+    ManageSaveBackups,
+    CreateSaveBackup(String),
+    RestoreSaveBackupRequested(String),
+    RestoreSaveBackupConfirmed(String),
+    DeleteSaveBackupRequested(String),
+    DeleteSaveBackupConfirmed(String),
 }
 
 #[derive(Debug)]
@@ -444,16 +456,19 @@ pub(crate) enum GamesCmdMsg {
         result: Result<(), String>,
     },
     ProfileSwitched(Result<(LoadedData, Option<save_manager::SaveSyncResult>), String>),
+    PendingSaveSetPrepared(Result<(usize, Option<crate::models::profile::SaveMode>), String>),
     ProfileCreated(Result<LoadedData, String>),
     ProfileCloned(Result<LoadedData, String>),
     ProfileRenamed(Result<(), String>),
-    ProfileDeleted(Result<LoadedData, String>),
+    ProfileDeleted(Result<(LoadedData, Option<String>), String>),
     /// Last-deployed profile ID loaded from DB settings after a game switch.
     LastDeployedProfileLoaded(Result<Option<String>, String>),
     /// Result of toggling profile save mode (+ optional save backup/restore op).
     SaveModeToggled(Result<(), String>),
     /// Result of a manual save sync triggered by the user.
     SavesSynced(Result<save_manager::SaveSyncResult, String>),
+    SaveBackupsLoaded(Result<Vec<save_manager::SaveBackupManifest>, String>),
+    SaveBackupMutation(Result<String, String>),
     /// Snapshot lists loaded for the current game.
     OrderSnapshotsLoaded(
         Vec<crate::models::order_snapshot::OrderSnapshot>,

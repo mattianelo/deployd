@@ -163,10 +163,7 @@ mod tests {
             split_document_portal_path(path).expect("application-scoped portal path should split");
 
         assert_eq!(doc_id.as_ref(), "56f1c1aa");
-        assert_eq!(
-            relative_path,
-            PathBuf::from("Gaming").join("Downloads")
-        );
+        assert_eq!(relative_path, PathBuf::from("Gaming").join("Downloads"));
     }
 
     // @variants: snap

@@ -91,6 +91,79 @@ variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
+path = "src/core/game/known_games.rs"
+name = "engine_save_anchors_do_not_overlap"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager.rs"
+name = "distinguishes_initialized_empty_bank_from_missing_bank"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager.rs"
+name = "hashes_content_instead_of_trusting_size"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager.rs"
+name = "rejects_symbolic_links_before_copying"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager.rs"
+name = "inaccessible_wine_prefix_blocks_save_mutation_preflight"
+variant = "snap"
+interface = "home"
+interface_state = "disconnected"
+
+[[variant_tests]]
+path = "src/core/save_manager.rs"
+name = "switching_back_preserves_unsynced_profile_saves"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager.rs"
+name = "interrupted_transition_reconciles_with_active_save_set"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager.rs"
+name = "rollback_restores_live_saves_after_failed_switch"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager.rs"
+name = "reports_added_modified_and_removed_save_files"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager.rs"
+name = "storage_cap_keeps_manual_and_newest_automatic_backup"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager.rs"
+name = "rejects_path_traversal_in_save_set_identifiers"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/profiles.rs"
+name = "cloned_profile_inherits_save_mode"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
 path = "src/core/game/wine.rs"
 name = "snap_wine_status_reports_missing_content"
 variant = "snap"

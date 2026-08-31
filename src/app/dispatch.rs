@@ -69,10 +69,15 @@ impl App {
         match msg {
             GamesMsg::GameSelected(idx) => self.handle_game_selected(idx, &sender),
             GamesMsg::ProfileSelected(idx) => self.handle_profile_selected(idx, &sender),
+            GamesMsg::InitializePendingSaveSet => self.handle_initialize_pending_save_set(&sender),
+            GamesMsg::UseGlobalForPendingProfile => {
+                self.handle_use_global_for_pending_profile(&sender)
+            }
             GamesMsg::NewProfileClicked => self.handle_new_profile_requested(&sender),
             GamesMsg::CloneProfileClicked => self.handle_clone_profile_requested(&sender),
             GamesMsg::RenameProfile(name) => self.handle_rename_profile(name, &sender),
-            GamesMsg::DeleteProfileClicked => self.handle_delete_profile_requested(&sender),
+            GamesMsg::DeleteProfileClicked => self.handle_delete_profile_requested(root, &sender),
+            GamesMsg::DeleteProfileConfirmed => self.handle_delete_profile_clicked(&sender),
             GamesMsg::SettingsClicked => self.handle_settings_clicked(root, &sender),
             GamesMsg::SettingsClosed => self.handle_settings_closed(&sender),
             GamesMsg::ManageGamesClicked => self.handle_manage_games_clicked(root, &sender),
@@ -98,9 +103,28 @@ impl App {
             }
             GamesMsg::NexusApiKeyUpdated => self.handle_nexus_api_key_updated(&sender),
             GamesMsg::ToggleProfileSaveMode => {
-                self.handle_toggle_profile_save_mode_requested(&sender)
+                self.handle_toggle_profile_save_mode_requested(root, &sender)
             }
-            GamesMsg::SyncSaves => self.handle_sync_saves_requested(&sender),
+            GamesMsg::ToggleProfileSaveModeConfirmed => {
+                self.handle_toggle_profile_save_mode(&sender)
+            }
+            GamesMsg::InitializeGlobalAndDisableIsolation => {
+                self.handle_initialize_global_and_disable_isolation(&sender)
+            }
+            GamesMsg::SyncSaves => self.handle_sync_saves_requested(root, &sender),
+            GamesMsg::SyncSavesConfirmed => self.handle_sync_saves(&sender),
+            GamesMsg::ManageSaveBackups => self.handle_manage_save_backups(&sender),
+            GamesMsg::CreateSaveBackup(label) => self.handle_create_save_backup(label, &sender),
+            GamesMsg::RestoreSaveBackupRequested(id) => {
+                self.handle_restore_save_backup_requested(id, root, &sender)
+            }
+            GamesMsg::RestoreSaveBackupConfirmed(id) => {
+                self.handle_restore_save_backup(id, &sender)
+            }
+            GamesMsg::DeleteSaveBackupRequested(id) => {
+                self.handle_delete_save_backup_requested(id, root, &sender)
+            }
+            GamesMsg::DeleteSaveBackupConfirmed(id) => self.handle_delete_save_backup(id, &sender),
         }
     }
 
@@ -483,7 +507,7 @@ impl App {
         &mut self,
         msg: crate::app::messages::GamesCmdMsg,
         sender: ComponentSender<Self>,
-        _root: &adw::ApplicationWindow,
+        root: &adw::ApplicationWindow,
     ) {
         use crate::app::messages::GamesCmdMsg;
 
@@ -500,16 +524,25 @@ impl App {
                 self.handle_cmd_cache_dir_reset(game_id, result)
             }
             GamesCmdMsg::ProfileSwitched(result) => {
-                self.handle_cmd_profile_switched(result, &sender)
+                self.handle_cmd_profile_switched(result, root, &sender)
+            }
+            GamesCmdMsg::PendingSaveSetPrepared(result) => {
+                self.handle_cmd_pending_save_set_prepared(result)
             }
             GamesCmdMsg::ProfileCreated(result) => self.handle_cmd_profile_created(result, &sender),
             GamesCmdMsg::ProfileCloned(result) => self.handle_cmd_profile_cloned(result, &sender),
             GamesCmdMsg::ProfileRenamed(result) => self.handle_cmd_profile_renamed(result),
             GamesCmdMsg::ProfileDeleted(result) => self.handle_cmd_profile_deleted(result, &sender),
             GamesCmdMsg::SaveModeToggled(result) => {
-                self.handle_cmd_save_mode_toggled(result, &sender)
+                self.handle_cmd_save_mode_toggled(result, root, &sender)
             }
             GamesCmdMsg::SavesSynced(result) => self.handle_cmd_saves_synced(result),
+            GamesCmdMsg::SaveBackupsLoaded(result) => {
+                self.handle_cmd_save_backups_loaded(result, root, &sender)
+            }
+            GamesCmdMsg::SaveBackupMutation(result) => {
+                self.handle_cmd_save_backup_mutation(result, &sender)
+            }
             GamesCmdMsg::LastDeployedProfileLoaded(id) => {
                 self.handle_cmd_last_deployed_profile_loaded(id)
             }

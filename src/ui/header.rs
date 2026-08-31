@@ -59,6 +59,7 @@ pub(crate) enum HeaderOutput {
     DeleteProfileClicked,
     ToggleProfileSaveMode,
     SyncSaves,
+    ManageSaveBackups,
     DeployClicked,
     OpenDeploymentFolder,
     PurgeClicked,
@@ -286,6 +287,16 @@ impl SimpleComponent for Header {
                             connect_clicked[sender] => move |_| {
                                     sender.output(HeaderOutput::SyncSaves).ok();
                                 },
+                        },
+
+                        gtk::Button {
+                            set_label: "Manage save backups…",
+                            #[watch]
+                            set_visible: model.state.game_has_save_management,
+                            add_css_class: "flat",
+                            connect_clicked[sender] => move |_| {
+                                sender.output(HeaderOutput::ManageSaveBackups).ok();
+                            },
                         },
                     }
                 },

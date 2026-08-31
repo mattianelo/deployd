@@ -1,3 +1,4 @@
+use adw::prelude::*;
 use gtk::prelude::*;
 use relm4::prelude::*;
 
@@ -333,10 +334,12 @@ impl App {
             ),
             String,
         >,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         match result {
             Ok((data, save_sync)) => {
+                self.session.pending_save_profile_idx = None;
                 self.shell.needs_deploy = true;
                 self.apply_loaded_data(data, sender);
                 self.save_last_profile(sender);
@@ -347,7 +350,72 @@ impl App {
                 }
             }
             Err(e) => {
-                self.push_notification(&format!("Profile switch failed: {e}"));
+                self.session.updating_profiles = true;
+                self.ui
+                    .profile_dropdown
+                    .set_selected(self.session.active_profile_idx as u32);
+                self.session.updating_profiles = false;
+                if e.contains("has no initialized save state") {
+                    let dialog = adw::AlertDialog::builder()
+                        .heading("This profile has no save state")
+                        .body(format!(
+                            "Deployd stopped before replacing any live saves. You can initialize the target from the current live saves, use the shared Global state, or cancel.\n\n{e}"
+                        ))
+                        .build();
+                    dialog.add_response("cancel", "Cancel");
+                    dialog.add_response("initialize", "Initialize from current saves");
+                    let target_is_profile = self
+                        .session
+                        .pending_save_profile_idx
+                        .and_then(|idx| self.session.profiles.get(idx))
+                        .is_some_and(|profile| {
+                            profile.save_mode == crate::models::profile::SaveMode::ProfileSpecific
+                        });
+                    if target_is_profile {
+                        dialog.add_response("global", "Use Global saves");
+                    }
+                    dialog.set_close_response("cancel");
+                    let input = sender.input_sender().clone();
+                    dialog.connect_response(None, move |_, response| match response {
+                        "initialize" => {
+                            let _ = input.send(AppMsg::Games(
+                                crate::app::messages::GamesMsg::InitializePendingSaveSet,
+                            ));
+                        }
+                        "global" => {
+                            let _ = input.send(AppMsg::Games(
+                                crate::app::messages::GamesMsg::UseGlobalForPendingProfile,
+                            ));
+                        }
+                        _ => {}
+                    });
+                    dialog.present(Some(root));
+                } else {
+                    self.session.pending_save_profile_idx = None;
+                    self.push_notification(&format!("Profile switch failed: {e}"));
+                }
+            }
+        }
+    }
+
+    pub(crate) fn handle_cmd_pending_save_set_prepared(
+        &mut self,
+        result: Result<(usize, Option<crate::models::profile::SaveMode>), String>,
+    ) {
+        match result {
+            Ok((idx, mode)) => {
+                if let Some(mode) = mode
+                    && let Some(profile) = self.session.profiles.get_mut(idx)
+                {
+                    profile.save_mode = mode;
+                }
+                self.ui.profile_dropdown.set_selected(idx as u32);
+            }
+            Err(error) => {
+                self.session.pending_save_profile_idx = None;
+                self.push_notification(&format!(
+                    "Could not initialize the target save state: {error}"
+                ));
             }
         }
     }
@@ -395,14 +463,19 @@ impl App {
 
     pub(crate) fn handle_cmd_profile_deleted(
         &mut self,
-        result: Result<LoadedData, String>,
+        result: Result<(LoadedData, Option<String>), String>,
         sender: &ComponentSender<Self>,
     ) {
         match result {
-            Ok(data) => {
+            Ok((data, cleanup_warning)) => {
                 self.shell.needs_deploy = true;
                 self.apply_loaded_data(data, sender);
                 self.show_toast("Profile deleted");
+                if let Some(error) = cleanup_warning {
+                    self.push_notification(&format!(
+                        "Profile deleted, but some save data could not be removed: {error}"
+                    ));
+                }
             }
             Err(e) => {
                 self.push_notification(&format!("Profile delete failed: {e}"));
@@ -502,6 +575,7 @@ impl App {
     pub(crate) fn handle_cmd_save_mode_toggled(
         &mut self,
         result: Result<(), String>,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         match result {
@@ -518,7 +592,28 @@ impl App {
                 }
             }
             Err(e) => {
-                self.push_notification(&format!("Failed to change save mode: {e}"));
+                if e.contains("has no initialized save state") {
+                    let dialog = adw::AlertDialog::builder()
+                        .heading("No Global save state exists yet")
+                        .body(format!(
+                            "Deployd stopped without replacing live saves. You can make the current live saves the initial shared Global state or cancel.\n\n{e}"
+                        ))
+                        .build();
+                    dialog.add_response("cancel", "Cancel");
+                    dialog.add_response("initialize", "Use current saves as Global");
+                    dialog.set_close_response("cancel");
+                    let input = sender.input_sender().clone();
+                    dialog.connect_response(None, move |_, response| {
+                        if response == "initialize" {
+                            let _ = input.send(AppMsg::Games(
+                                crate::app::messages::GamesMsg::InitializeGlobalAndDisableIsolation,
+                            ));
+                        }
+                    });
+                    dialog.present(Some(root));
+                } else {
+                    self.push_notification(&format!("Failed to change save mode: {e}"));
+                }
             }
         }
     }
@@ -541,6 +636,139 @@ impl App {
             Err(e) => {
                 self.push_notification(&format!("Save sync failed: {e}"));
             }
+        }
+    }
+
+    pub(crate) fn handle_cmd_save_backups_loaded(
+        &mut self,
+        result: Result<Vec<crate::core::save_manager::SaveBackupManifest>, String>,
+        root: &adw::ApplicationWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        let backups = match result {
+            Ok(backups) => backups,
+            Err(error) => {
+                self.push_notification(&format!("Failed to load save backups: {error}"));
+                return;
+            }
+        };
+        let dialog = adw::AlertDialog::builder()
+            .heading("Save Backups")
+            .body("Manual backups are kept until you delete them. Automatic recovery points are pruned under the per-game storage cap.")
+            .build();
+        dialog.add_response("close", "Close");
+        dialog.set_close_response("close");
+
+        let content = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        let create_box = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        let name = gtk::Entry::builder()
+            .placeholder_text("Backup name")
+            .hexpand(true)
+            .build();
+        let create = gtk::Button::with_label("Create backup");
+        create.add_css_class("suggested-action");
+        let input = sender.input_sender().clone();
+        let name_for_create = name.clone();
+        create.connect_clicked(move |_| {
+            let _ = input.send(AppMsg::Games(
+                crate::app::messages::GamesMsg::CreateSaveBackup(
+                    name_for_create.text().to_string(),
+                ),
+            ));
+        });
+        create_box.append(&name);
+        create_box.append(&create);
+        content.append(&create_box);
+
+        if backups.is_empty() {
+            let empty = gtk::Label::new(Some("No save backups yet"));
+            empty.add_css_class("dim-label");
+            empty.set_margin_top(12);
+            empty.set_margin_bottom(12);
+            content.append(&empty);
+        } else {
+            let list = gtk::ListBox::new();
+            list.add_css_class("boxed-list");
+            list.set_selection_mode(gtk::SelectionMode::None);
+            for backup in backups {
+                let owner = match backup.save_set.profile_id() {
+                    None => "Global saves".to_string(),
+                    Some(profile_id) => self
+                        .session
+                        .profiles
+                        .iter()
+                        .find(|profile| profile.id == profile_id)
+                        .map(|profile| profile.name.clone())
+                        .unwrap_or_else(|| "Deleted profile".to_string()),
+                };
+                let title = backup
+                    .label
+                    .clone()
+                    .unwrap_or_else(|| backup.trigger.label().to_string());
+                let size_mib = backup.size_bytes() as f64 / (1024.0 * 1024.0);
+                let row = adw::ActionRow::builder()
+                    .title(title)
+                    .subtitle(format!(
+                        "{} · {} · {} files · {:.1} MiB",
+                        owner,
+                        backup.created_at,
+                        backup.file_count(),
+                        size_mib
+                    ))
+                    .build();
+                let restore = gtk::Button::builder()
+                    .icon_name("document-revert-symbolic")
+                    .tooltip_text("Restore backup")
+                    .valign(gtk::Align::Center)
+                    .build();
+                let delete = gtk::Button::builder()
+                    .icon_name("user-trash-symbolic")
+                    .tooltip_text("Delete backup")
+                    .valign(gtk::Align::Center)
+                    .build();
+                delete.add_css_class("destructive-action");
+                let restore_id = backup.backup_id.clone();
+                let restore_input = sender.input_sender().clone();
+                restore.connect_clicked(move |_| {
+                    let _ = restore_input.send(AppMsg::Games(
+                        crate::app::messages::GamesMsg::RestoreSaveBackupRequested(
+                            restore_id.clone(),
+                        ),
+                    ));
+                });
+                let delete_id = backup.backup_id;
+                let delete_input = sender.input_sender().clone();
+                delete.connect_clicked(move |_| {
+                    let _ = delete_input.send(AppMsg::Games(
+                        crate::app::messages::GamesMsg::DeleteSaveBackupRequested(
+                            delete_id.clone(),
+                        ),
+                    ));
+                });
+                row.add_suffix(&restore);
+                row.add_suffix(&delete);
+                list.append(&row);
+            }
+            let scroll = gtk::ScrolledWindow::builder()
+                .hscrollbar_policy(gtk::PolicyType::Never)
+                .min_content_height(280)
+                .max_content_height(420)
+                .child(&list)
+                .build();
+            content.append(&scroll);
+        }
+        dialog.set_extra_child(Some(&content));
+        dialog.present(Some(root));
+    }
+
+    pub(crate) fn handle_cmd_save_backup_mutation(
+        &mut self,
+        result: Result<String, String>,
+        _sender: &ComponentSender<Self>,
+    ) {
+        match result {
+            Ok(message) => self.show_toast(&message),
+            Err(error) => self.push_notification(&format!("Save backup operation failed: {error}")),
         }
     }
 }

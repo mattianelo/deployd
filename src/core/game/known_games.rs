@@ -144,4 +144,29 @@ mod tests {
         assert_eq!(witcher_2_path, Some("Documents/Witcher 2/gamesaves"));
         assert_eq!(witcher_1_path, Some("Documents/The Witcher/saves"));
     }
+
+    // @variants: both
+    #[test]
+    fn engine_save_anchors_do_not_overlap() {
+        let path = |game_id| {
+            KNOWN_GAMES
+                .iter()
+                .find(|game| game.deployd_id == game_id)
+                .and_then(|game| game.save_game_subpath)
+        };
+
+        assert_eq!(
+            path("skyrim-se"),
+            Some("Documents/My Games/Skyrim Special Edition/Saves")
+        );
+        assert_eq!(
+            path("cyberpunk-2077"),
+            Some("Saved Games/CD Projekt Red/Cyberpunk 2077")
+        );
+        assert_eq!(path("witcher-1"), Some("Documents/The Witcher/saves"));
+        assert_eq!(
+            path("dragon-age"),
+            Some("Documents/BioWare/Dragon Age/Characters")
+        );
+    }
 }
