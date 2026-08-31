@@ -200,13 +200,38 @@ fn reconcile_archive(
     domain: Option<&str>,
     scanned_nexus_ids: &Option<NexusIds>,
 ) -> Option<ReconcileOutcome> {
+    let mut repaired_ids = Vec::new();
+    if let Some(scanned) = scanned_nexus_ids {
+        for entry in all_downloads
+            .iter_mut()
+            .filter(|entry| !entry.is_active() && entry.archive_path.as_deref() == Some(path))
+        {
+            let Some(stored) = entry.nexus_ids.as_ref() else {
+                continue;
+            };
+            if stored.file_id == 0 && stored.mod_id != scanned.mod_id {
+                let domain = if scanned.domain.is_empty() {
+                    stored.domain.clone()
+                } else {
+                    scanned.domain.clone()
+                };
+                entry.nexus_ids = Some(NexusIds {
+                    mod_id: scanned.mod_id,
+                    file_id: 0,
+                    domain,
+                });
+                repaired_ids.push(entry.id.clone());
+            }
+        }
+    }
     let candidates = archive_match_candidates(all_downloads, path, domain, scanned_nexus_ids)?;
-    Some(merge_candidates(
-        all_downloads,
-        candidates,
-        Some(path),
-        domain,
-    ))
+    let mut outcome = merge_candidates(all_downloads, candidates, Some(path), domain);
+    for id in repaired_ids {
+        if !outcome.changed_ids.contains(&id) {
+            outcome.changed_ids.push(id);
+        }
+    }
+    Some(outcome)
 }
 
 fn archive_match_candidates(
@@ -939,6 +964,41 @@ mod tests {
                 .any(|entry| entry.id == "installed" && entry.hidden)
         );
         assert!(scan.removed_ids.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn scan_repairs_timestamp_month_misidentified_as_mod_id() -> Result<()> {
+        let temp = TempDir::new()?;
+        let domain_dir = temp.path().join("fallout4");
+        std::fs::create_dir_all(&domain_dir)?;
+        let archive = domain_dir.join("Dynamic Grass 108480 1.3.0 2026-08-31T12-00Z Gpr9A6gVu.zip");
+        std::fs::write(&archive, b"archive")?;
+
+        let mut stale = download_entry("stale", "Dynamic Grass");
+        stale.status = DownloadStatus::Downloaded;
+        stale.archive_path = Some(archive);
+        stale.metadata_fetched = false;
+        stale.nexus_file_name = None;
+        stale.nexus_ids = Some(NexusIds {
+            mod_id: 8,
+            file_id: 0,
+            domain: "fallout4".to_string(),
+        });
+
+        let scan =
+            scan_downloads(temp.path().to_path_buf(), vec![stale]).map_err(anyhow::Error::msg)?;
+        let repaired = scan
+            .entries
+            .iter()
+            .find(|entry| entry.id == "stale")
+            .expect("the existing download should be retained");
+
+        assert_eq!(
+            repaired.nexus_ids.as_ref().map(|ids| ids.mod_id),
+            Some(108_480)
+        );
+        assert!(scan.to_persist.iter().any(|entry| entry.id == "stale"));
         Ok(())
     }
 

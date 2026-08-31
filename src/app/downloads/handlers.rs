@@ -9,15 +9,47 @@ use super::super::progress::throttled_download_install_progress;
 use super::super::types::WorkKind;
 use crate::core::installer::PrepareResult;
 use crate::core::{game, installer};
-use crate::models::download::{DownloadStatus, NexusIds};
+use crate::models::download::{DownloadEntry, DownloadStatus, NexusIds};
 
 fn metadata_identifies_file(file_name: Option<&str>, file_id: Option<i64>) -> bool {
     file_name.is_some_and(|name| !name.trim().is_empty()) || file_id.is_some_and(|id| id > 0)
 }
 
+fn reset_download_metadata(entry: &mut DownloadEntry) {
+    let previous_domain = entry
+        .game_domain
+        .clone()
+        .or_else(|| entry.nexus_ids.as_ref().map(|ids| ids.domain.clone()))
+        .unwrap_or_default();
+    entry.nexus_ids = entry.archive_path.as_ref().and_then(|path| {
+        let file_name = path.file_name()?.to_string_lossy();
+        crate::core::nexus_identity::parse_nexus_mod_id(&file_name).map(|mod_id| NexusIds {
+            mod_id,
+            file_id: 0,
+            domain: previous_domain,
+        })
+    });
+    if let Some(path) = entry.archive_path.as_ref() {
+        entry.mod_name = path
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+    }
+    entry.metadata_fetched = false;
+    entry.nexus_file_name = None;
+    entry.nexus_is_primary = false;
+    entry.version = None;
+    entry.author = None;
+}
+
 #[cfg(test)]
 mod tests {
-    use super::metadata_identifies_file;
+    use std::path::PathBuf;
+
+    use crate::models::download::{DownloadEntry, NexusIds};
+
+    use super::{metadata_identifies_file, reset_download_metadata};
 
     #[test]
     fn partial_mod_metadata_does_not_complete_file_metadata() {
@@ -29,6 +61,43 @@ mod tests {
     fn exact_file_metadata_completes_metadata() {
         assert!(metadata_identifies_file(Some("Archived file"), None));
         assert!(metadata_identifies_file(None, Some(42)));
+    }
+
+    #[test]
+    fn clear_metadata_rebuilds_identity_from_current_nexus_filename() {
+        let mut entry = DownloadEntry::new(
+            "id".to_string(),
+            "Wrong page name".to_string(),
+            Some(NexusIds {
+                mod_id: 8,
+                file_id: 0,
+                domain: "fallout4".to_string(),
+            }),
+        );
+        entry.archive_path = Some(PathBuf::from(
+            "Dynamic Grass 108480 1.3.0 2026-08-31T12-00Z Gpr9A6gVu.zip",
+        ));
+        entry.metadata_fetched = true;
+        entry.nexus_file_name = Some("Wrong file".to_string());
+        entry.version = Some("9.9".to_string());
+
+        reset_download_metadata(&mut entry);
+
+        assert_eq!(
+            entry.nexus_ids,
+            Some(NexusIds {
+                mod_id: 108_480,
+                file_id: 0,
+                domain: "fallout4".to_string(),
+            })
+        );
+        assert_eq!(
+            entry.mod_name,
+            "Dynamic Grass 108480 1.3.0 2026-08-31T12-00Z Gpr9A6gVu"
+        );
+        assert!(!entry.metadata_fetched);
+        assert_eq!(entry.nexus_file_name, None);
+        assert_eq!(entry.version, None);
     }
 }
 
@@ -68,17 +137,7 @@ impl App {
         };
         // Reset metadata in backing store
         if let Some(entry) = self.download.all.iter_mut().find(|e| e.id == download_id) {
-            // Revert name to archive filename
-            if let Some(ref path) = entry.archive_path {
-                entry.mod_name = path
-                    .file_stem()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string();
-            }
-            entry.metadata_fetched = false;
-            entry.nexus_file_name = None;
-            entry.nexus_is_primary = false;
+            reset_download_metadata(entry);
             // If the archive is still present, allow reinstall
             if entry.status == DownloadStatus::Installed && entry.archive_path.is_some() {
                 entry.status = DownloadStatus::Downloaded;
@@ -89,16 +148,7 @@ impl App {
         {
             let mut guard = self.download.rows.guard();
             if let Some(row) = guard.get_mut(idx) {
-                if let Some(ref path) = row.entry.archive_path {
-                    row.entry.mod_name = path
-                        .file_stem()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .to_string();
-                }
-                row.entry.metadata_fetched = false;
-                row.entry.nexus_file_name = None;
-                row.entry.nexus_is_primary = false;
+                reset_download_metadata(&mut row.entry);
                 if row.entry.status == DownloadStatus::Installed && row.entry.archive_path.is_some()
                 {
                     row.entry.status = DownloadStatus::Downloaded;

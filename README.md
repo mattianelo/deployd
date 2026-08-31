@@ -176,7 +176,8 @@ Open **Settings** (gear icon) and log in under **Nexus Mods**:
 - **Local archive** — Drag-and-drop a `.zip`, `.7z`, or `.rar` onto the mod list, or use the **+** button
 - **Archive metadata** — Manual metadata refresh uses the same Nexus mod and exact-file details as
   Mod Manager downloads. Installation uses the metadata already stored on the download and does
-  not contact Nexus or request an ID.
+  not contact Nexus or request an ID. Clearing metadata restores the archive name and re-detects
+  its Nexus identity when the filename contains one.
 - **From Nexus Mods** — Click **Mod Manager Download**; the file downloads into Deployd automatically
 - **FOMOD mods** — A wizard opens automatically if the archive includes a FOMOD installer
 - **File selection** — The Install Mod dialog lets you deselect archive entries before they are

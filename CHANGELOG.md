@@ -5,8 +5,9 @@
 - Fixed manual Nexus metadata refreshes for archived downloads so nullable API fields no longer
   fail parsing, exact file names and versions update through the same result path as NXM downloads,
   file-ID prompts wait for filename matching to finish, and completed or failed refreshes no longer
-  leave a download marked busy. Installing an archive now uses only stored metadata and never
-  performs an automatic Nexus refresh.
+  leave a download marked busy. Current Nexus archive filenames now yield the correct mod ID rather
+  than a number from their timestamp, and clearing metadata rebuilds that identity from the archive.
+  Installing an archive now uses only stored metadata and never performs an automatic Nexus refresh.
 - Strict-Snap manual installs from an inaccessible folder on the same external drive as the
   configured downloads folder now show recovery instructions instead of a raw OS error.
 - Reworked profile save management around verified Global and per-profile save banks. Profile
