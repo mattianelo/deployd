@@ -6,7 +6,7 @@ use relm4::prelude::*;
 use crate::app::types::{ManualMetadataResult, NexusDownloadMetadata};
 use crate::core::game;
 use crate::models::download::NexusIds;
-use crate::models::nexus::{NexusFileEntry, NexusModInfo};
+use crate::models::nexus::{NexusFileEntry, NexusFileUpdate, NexusModInfo};
 
 use super::super::App;
 use super::super::messages::{AppCmdMsg, AppMsg};
@@ -17,6 +17,7 @@ pub(crate) fn nexus_download_metadata(
     mod_info: Option<&NexusModInfo>,
     file: Option<&NexusFileEntry>,
     known_file_id: Option<i64>,
+    latest_version: Option<String>,
 ) -> NexusDownloadMetadata {
     let nexus_file_name = file
         .map(NexusFileEntry::display_name)
@@ -30,14 +31,13 @@ pub(crate) fn nexus_download_metadata(
         .to_string();
     let page_version = mod_info
         .map(|info| info.version.trim())
-        .filter(|version| !version.is_empty())
-        .map(str::to_string);
+        .filter(|version| !version.is_empty());
     let version = file
         .and_then(|entry| entry.version.as_deref())
         .map(str::trim)
         .filter(|version| !version.is_empty())
         .map(str::to_string)
-        .or_else(|| page_version.clone());
+        .or_else(|| page_version.map(str::to_string));
     let author = mod_info
         .map(|info| info.author.trim())
         .filter(|author| !author.is_empty())
@@ -55,10 +55,35 @@ pub(crate) fn nexus_download_metadata(
         nexus_is_primary: file.is_some_and(|entry| entry.is_primary),
         file_id: file.map(|entry| entry.file_id).or(known_file_id),
         version,
+        latest_version,
         author,
-        page_version,
         summary: mod_info.and_then(|info| info.summary.clone()),
     }
+}
+
+pub(crate) fn latest_file_version(
+    files: &[NexusFileEntry],
+    updates: &[NexusFileUpdate],
+    installed_file_id: i64,
+) -> Option<String> {
+    let mut current = installed_file_id;
+    let mut visited = std::collections::HashSet::new();
+    while visited.insert(current) {
+        let Some(update) = updates.iter().find(|update| update.old_file_id == current) else {
+            break;
+        };
+        current = update.new_file_id;
+    }
+    if current == installed_file_id {
+        return None;
+    }
+    files
+        .iter()
+        .find(|file| file.file_id == current)
+        .and_then(|file| file.version.as_deref())
+        .map(str::trim)
+        .filter(|version| !version.is_empty())
+        .map(str::to_string)
 }
 
 fn match_nexus_file(
@@ -343,6 +368,7 @@ impl App {
                                         Some(&hit.r#mod),
                                         Some(&hit.file_details),
                                         Some(hit.file_details.file_id),
+                                        None,
                                     ),
                                 ));
                             }
@@ -371,10 +397,13 @@ impl App {
                     ));
                 }
                 let file = match_nexus_file(
-                    files.files,
+                    files.files.clone(),
                     nexus_file_id,
                     archive_filename.as_deref(),
                 );
+                let latest_version = file.as_ref().and_then(|file| {
+                    latest_file_version(&files.files, &files.file_updates, file.file_id)
+                });
                 let mod_info = match mod_info_result {
                     Ok((info, _)) => Some(info),
                     Err(error) if file.is_some() => {
@@ -394,6 +423,7 @@ impl App {
                     mod_info.as_ref(),
                     file.as_ref(),
                     (nexus_file_id > 0).then_some(nexus_file_id),
+                    latest_version,
                 );
                 if file.is_some() {
                     Ok(ManualMetadataResult::Resolved(metadata))
@@ -416,8 +446,8 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::{match_nexus_file, nexus_download_metadata};
-    use crate::models::nexus::{NexusFileEntry, NexusModInfo};
+    use super::{latest_file_version, match_nexus_file, nexus_download_metadata};
+    use crate::models::nexus::{NexusFileEntry, NexusFileUpdate, NexusModInfo};
 
     fn archived_file() -> NexusFileEntry {
         serde_json::from_value(serde_json::json!({
@@ -464,6 +494,7 @@ mod tests {
             Some(&info),
             Some(&file),
             Some(77),
+            None,
         );
 
         assert_eq!(metadata.mod_name, "Texture Collection");
@@ -471,5 +502,45 @@ mod tests {
         assert_eq!(metadata.file_id, Some(77));
         assert_eq!(metadata.version.as_deref(), Some("1.2"));
         assert_eq!(metadata.author.as_deref(), Some("Mod Author"));
+    }
+
+    #[test]
+    fn follows_nexus_file_update_chain() {
+        let mut files = vec![archived_file()];
+        let mut second = files[0].clone();
+        second.file_id = 78;
+        second.version = Some("1.4".to_string());
+        let mut latest = second.clone();
+        latest.file_id = 79;
+        latest.version = Some("1.4.1".to_string());
+        files.extend([second, latest]);
+        let updates = vec![
+            NexusFileUpdate {
+                old_file_id: 77,
+                new_file_id: 78,
+            },
+            NexusFileUpdate {
+                old_file_id: 78,
+                new_file_id: 79,
+            },
+        ];
+
+        assert_eq!(
+            latest_file_version(&files, &updates, 77).as_deref(),
+            Some("1.4.1")
+        );
+        assert_eq!(latest_file_version(&files, &updates, 79), None);
+    }
+
+    #[test]
+    fn ignores_unrelated_newer_files() {
+        let mut unrelated = archived_file();
+        unrelated.file_id = 99;
+        unrelated.version = Some("V1".to_string());
+
+        assert_eq!(
+            latest_file_version(&[archived_file(), unrelated], &[], 77),
+            None
+        );
     }
 }

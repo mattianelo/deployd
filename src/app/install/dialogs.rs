@@ -11,6 +11,25 @@ use super::super::state::InstallStage;
 use super::super::types::WorkKind;
 
 impl App {
+    pub(crate) fn replacement_context(
+        &self,
+        mod_id: &str,
+        priority: i32,
+    ) -> crate::app::state::ReplacementContext {
+        let entry = self.mods.rows.iter().find_map(|item| {
+            item.mod_row()
+                .filter(|row| row.mod_entry.id == mod_id)
+                .map(|row| &row.mod_entry)
+        });
+        crate::app::state::ReplacementContext {
+            mod_id: mod_id.to_string(),
+            priority,
+            mod_name: entry.map(|entry| entry.name.clone()).unwrap_or_default(),
+            nexus_ids: entry.and_then(|entry| Some((entry.nexus_mod_id?, entry.nexus_file_id?))),
+            archive_hash: entry.and_then(|entry| entry.archive_hash.clone()),
+        }
+    }
+
     /// Find an installed mod that has the given Nexus mod ID.
     /// Returns `(mod_id, mod_name, priority)` if found.
     pub(crate) fn find_installed_mod_by_nexus_id(

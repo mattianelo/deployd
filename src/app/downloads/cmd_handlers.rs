@@ -18,7 +18,7 @@ impl App {
         metadata: NexusDownloadMetadata,
         sender: &ComponentSender<Self>,
     ) {
-        let page_version = metadata.page_version.clone();
+        let latest_version = metadata.latest_version.clone();
         let summary = metadata.summary.clone();
         self.handle_download_name_resolved(
             download_id.clone(),
@@ -49,8 +49,8 @@ impl App {
                     })
                     .map(|row| row.mod_entry.id.clone())
             });
-        if let (Some(tracker), Some(installed_mod_id), Some(page_version)) =
-            (self.session.tracker.clone(), installed_mod_id, page_version)
+        if let (Some(tracker), Some(installed_mod_id)) =
+            (self.session.tracker.clone(), installed_mod_id)
         {
             let author = self
                 .download
@@ -66,7 +66,7 @@ impl App {
                     .filter_map(|row| row.mod_row_mut())
                     .find(|row| row.mod_entry.id == installed_mod_id)
                 {
-                    row.mod_entry.latest_version = Some(page_version.clone());
+                    row.mod_entry.latest_version = latest_version.clone();
                     if !author.is_empty() {
                         row.mod_entry.author = Some(author.clone());
                     }
@@ -74,9 +74,9 @@ impl App {
             }
             sender.oneshot_command(async move {
                 let result = tracker
-                    .update_mod_nexus_metadata(
+                    .update_mod_nexus_metadata_exact(
                         &installed_mod_id,
-                        &page_version,
+                        latest_version.as_deref(),
                         &author,
                         summary.as_deref().unwrap_or(""),
                     )

@@ -567,7 +567,11 @@ pub(crate) enum DownloadsCmdMsg {
 
 #[derive(Debug)]
 pub(crate) enum InstallCmdMsg {
-    ModAdded(InstallIdentity, Box<Result<AddResult, String>>, bool),
+    ModAdded(
+        InstallIdentity,
+        Box<Result<AddResult, String>>,
+        Option<crate::app::state::ReplacementContext>,
+    ),
     ModPrepared(
         InstallIdentity,
         Box<Result<PrepareResultMsg, PrepareFailure>>,

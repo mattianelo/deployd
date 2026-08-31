@@ -103,6 +103,40 @@ impl Tracker {
         Ok(())
     }
 
+    pub async fn update_mod_nexus_metadata_exact(
+        &self,
+        mod_id: &str,
+        latest_version: Option<&str>,
+        author: &str,
+        description: &str,
+    ) -> Result<()> {
+        sqlx::query(
+            "UPDATE mods SET latest_version = ?, author = ?, nexus_description = ? WHERE id = ?",
+        )
+        .bind(latest_version)
+        .bind(author)
+        .bind(description)
+        .bind(mod_id)
+        .execute(&self.pool)
+        .await
+        .context("Failed to update exact Nexus metadata")?;
+        Ok(())
+    }
+
+    pub async fn set_mod_latest_version(
+        &self,
+        mod_id: &str,
+        latest_version: Option<&str>,
+    ) -> Result<()> {
+        sqlx::query("UPDATE mods SET latest_version = ? WHERE id = ?")
+            .bind(latest_version)
+            .bind(mod_id)
+            .execute(&self.pool)
+            .await
+            .context("Failed to set latest Nexus file version")?;
+        Ok(())
+    }
+
     /// Set the author for a mod by its ID.
     pub async fn set_mod_author(&self, mod_id: &str, author: &str) -> Result<()> {
         sqlx::query("UPDATE mods SET author = ? WHERE id = ?")

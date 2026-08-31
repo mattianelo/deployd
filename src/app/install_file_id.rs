@@ -115,18 +115,24 @@ impl App {
                 }
                 let file = files
                     .files
-                    .into_iter()
+                    .iter()
                     .find(|file| file.file_id == file_id)
                     .ok_or_else(|| {
                         format!("Nexus file ID {file_id} was not found on this mod page")
                     })?;
                 let fallback_name = partial_name.as_deref().unwrap_or(file.display_name());
+                let latest_version = crate::app::downloads::latest_file_version(
+                    &files.files,
+                    &files.file_updates,
+                    file_id,
+                );
                 Ok(ManualMetadataResult::Resolved(nexus_download_metadata(
                     &domain,
                     fallback_name,
                     mod_info.as_ref(),
-                    Some(&file),
+                    Some(file),
                     Some(file_id),
+                    latest_version,
                 )))
             }
             .await;

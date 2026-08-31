@@ -4,7 +4,51 @@ use crate::models::download::{DownloadEntry, DownloadStatus, NexusIds};
 
 use super::super::App;
 
+fn replaced_download_index(
+    entries: &[DownloadEntry],
+    replacement: &crate::app::state::ReplacementContext,
+    installed_download_id: Option<&str>,
+) -> Option<usize> {
+    entries.iter().position(|entry| {
+        if entry.status != DownloadStatus::Installed
+            || installed_download_id == Some(entry.id.as_str())
+            || entry
+                .archive_path
+                .as_ref()
+                .is_none_or(|path| !path.exists())
+        {
+            return false;
+        }
+        if let Some(hash) = replacement.archive_hash.as_deref() {
+            return entry.archive_hash.as_deref() == Some(hash);
+        }
+        match (replacement.nexus_ids, &entry.nexus_ids) {
+            (Some((mod_id, file_id)), Some(ids)) => ids.mod_id == mod_id && ids.file_id == file_id,
+            (None, None) => entry.mod_name.eq_ignore_ascii_case(&replacement.mod_name),
+            _ => false,
+        }
+    })
+}
+
 impl App {
+    pub(crate) fn reset_installed_download_after_replacement(
+        &mut self,
+        replacement: &crate::app::state::ReplacementContext,
+        installed_download_id: Option<&str>,
+    ) -> Vec<DownloadEntry> {
+        let candidate =
+            replaced_download_index(&self.download.all, replacement, installed_download_id);
+        let Some(index) = candidate else {
+            return Vec::new();
+        };
+        let entry = &mut self.download.all[index];
+        entry.status = DownloadStatus::Downloaded;
+        entry.status_msg = DownloadStatus::Downloaded.default_status_msg().to_string();
+        let changed = vec![entry.clone()];
+        self.rebuild_downloads_view();
+        changed
+    }
+
     pub(crate) fn downloads_pane_state(&self) -> crate::ui::downloads_pane::DownloadsPaneState {
         crate::ui::downloads_pane::DownloadsPaneState {
             filter: self.download.filter,
@@ -269,5 +313,54 @@ impl App {
         let status = DownloadStatus::restored_after_metadata_fetch(&status);
         let msg = status.default_status_msg().to_string();
         self.update_download_status(download_id, status, &msg);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::replaced_download_index;
+    use crate::app::state::ReplacementContext;
+    use crate::models::download::{DownloadEntry, DownloadStatus, NexusIds};
+
+    fn installed(id: &str, file_id: i64, hash: &str, path: std::path::PathBuf) -> DownloadEntry {
+        let mut entry = DownloadEntry::new(
+            id.to_string(),
+            "Example".to_string(),
+            Some(NexusIds {
+                mod_id: 42,
+                file_id,
+                domain: "fallout4".to_string(),
+            }),
+        );
+        entry.status = DownloadStatus::Installed;
+        entry.archive_hash = Some(hash.to_string());
+        entry.archive_path = Some(path);
+        entry
+    }
+
+    #[test]
+    fn replacement_selects_only_the_previous_archive() {
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let old_path = dir.path().join("old.zip");
+        let new_path = dir.path().join("new.zip");
+        std::fs::write(&old_path, []).expect("old archive");
+        std::fs::write(&new_path, []).expect("new archive");
+        let entries = vec![
+            installed("old", 10, "old-hash", old_path),
+            installed("new", 11, "new-hash", new_path),
+        ];
+        let replacement = ReplacementContext {
+            mod_id: "old-mod".to_string(),
+            priority: 7,
+            mod_name: "Example".to_string(),
+            nexus_ids: Some((42, 10)),
+            archive_hash: Some("old-hash".to_string()),
+        };
+
+        assert_eq!(
+            replaced_download_index(&entries, &replacement, Some("new")),
+            Some(0)
+        );
+        assert_eq!(replacement.priority, 7);
     }
 }

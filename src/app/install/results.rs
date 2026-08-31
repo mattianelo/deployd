@@ -173,7 +173,8 @@ impl App {
                         if let Some(pending) = &mut self.install.pending {
                             pending.mod_name = old_name;
                         }
-                        self.install.replacement = Some((old_mod_id.clone(), old_priority));
+                        self.install.replacement =
+                            Some(self.replacement_context(&old_mod_id, old_priority));
                         let tracker = self.session.tracker.clone();
                         sender.oneshot_command(async move {
                             let selections = if let Some(t) = tracker {
@@ -291,7 +292,7 @@ impl App {
         &mut self,
         identity: &InstallIdentity,
         result: Result<AddResult, String>,
-        was_replace: bool,
+        replacement: Option<crate::app::state::ReplacementContext>,
         sender: &ComponentSender<Self>,
     ) {
         if !self.install.accepts(identity) {
@@ -345,6 +346,30 @@ impl App {
 
         match result {
             Ok(add_result) => {
+                let replaced_downloads = replacement
+                    .as_ref()
+                    .map(|context| {
+                        self.reset_installed_download_after_replacement(
+                            context,
+                            metadata_dl_id.as_deref(),
+                        )
+                    })
+                    .unwrap_or_default();
+                if !replaced_downloads.is_empty()
+                    && let Some(tracker) = self.session.tracker.clone()
+                {
+                    sender.oneshot_command(async move {
+                        let result = async {
+                            for entry in &replaced_downloads {
+                                tracker.save_download_entry(entry).await?;
+                            }
+                            anyhow::Ok(())
+                        }
+                        .await
+                        .map_err(|error| error.to_string());
+                        AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
+                    });
+                }
                 let count = add_result.files_cached;
                 let plugins = add_result.plugins_found.len();
                 for warning in &add_result.warnings {
@@ -395,7 +420,7 @@ impl App {
                     self.reload_mods(sender);
                 }
 
-                let msg = if was_replace {
+                let msg = if replacement.is_some() {
                     "Mod replaced — deploy to update game files".to_string()
                 } else {
                     let mut m = format!("Added {count} files");
@@ -408,6 +433,7 @@ impl App {
                 if let Some(dialog) = self.ui.absorb_dialog.take() {
                     dialog.widget().destroy();
                 }
+                self.refresh_installed_nexus_updates(sender);
             }
             Err(e) => {
                 self.push_notification(&format!("Add failed: {e}"));

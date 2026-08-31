@@ -133,12 +133,18 @@ impl App {
                 }
 
                 let nexus_file = files.files.iter().find(|f| f.file_id == link.file_id);
+                let latest_version = super::metadata::latest_file_version(
+                    &files.files,
+                    &files.file_updates,
+                    link.file_id,
+                );
                 let metadata = nexus_download_metadata(
                     &link.domain,
                     &fallback_name,
                     mod_info.as_ref(),
                     nexus_file,
                     Some(link.file_id),
+                    latest_version,
                 );
                 let file_name = nexus_file
                     .map(|f| {

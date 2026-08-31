@@ -58,7 +58,7 @@ impl App {
         if let Some(pending) = &mut self.install.pending {
             pending.mod_name = old_name;
         }
-        self.install.replacement = Some((id.clone(), priority));
+        self.install.replacement = Some(self.replacement_context(&id, priority));
         let tracker = self.session.tracker.clone();
         sender.oneshot_command(async move {
             let selections = if let Some(tracker) = tracker {
@@ -401,7 +401,6 @@ impl App {
             return;
         };
         let replace_info = self.install.replacement.take();
-        let was_replace = replace_info.is_some();
         let cache_root = match self.cache_root_for(&pending.game.id) {
             Ok(r) => r,
             Err(e) => {
@@ -463,13 +462,15 @@ impl App {
                     Some(result.files_cached),
                 );
                 drop(pending.tmp_dir);
-                if let Some((old_id, old_priority)) = replace_info {
+                if let Some(replacement) = replace_info.as_ref() {
+                    let old_id = &replacement.mod_id;
+                    let old_priority = replacement.priority;
                     tracker
                         .update_priorities(&[(result.mod_entry.id.clone(), old_priority)])
                         .await
                         .map_err(|error| error.to_string())?;
                     let old_plugins = tracker
-                        .get_plugins_for_mod(&old_id)
+                        .get_plugins_for_mod(old_id)
                         .await
                         .map_err(|error| error.to_string())?;
                     let old_state: std::collections::HashMap<String, (i32, bool)> = old_plugins
@@ -477,18 +478,18 @@ impl App {
                         .map(|(_, filename, lo, en)| (filename.to_lowercase(), (lo, en)))
                         .collect();
                     tracker
-                        .delete_plugins_for_mod(&old_id)
+                        .delete_plugins_for_mod(old_id)
                         .await
                         .map_err(|error| error.to_string())?;
                     tracker
-                        .delete_mod_files(&old_id)
+                        .delete_mod_files(old_id)
                         .await
                         .map_err(|error| error.to_string())?;
                     tracker
-                        .delete_mod(&old_id)
+                        .delete_mod(old_id)
                         .await
                         .map_err(|error| error.to_string())?;
-                    let old_cache = paths::mod_cache_dir_in(&cache_root, &old_id);
+                    let old_cache = paths::mod_cache_dir_in(&cache_root, old_id);
                     if let Some(warning) = cleanup::remove_mod_cache(&old_cache) {
                         result.warnings.push(warning);
                     }
@@ -519,7 +520,7 @@ impl App {
             AppCmdMsg::Install(crate::app::messages::InstallCmdMsg::ModAdded(
                 identity,
                 Box::new(result),
-                was_replace,
+                replace_info,
             ))
         });
     }
@@ -530,7 +531,7 @@ impl App {
         existing_priority: i32,
         sender: &ComponentSender<Self>,
     ) {
-        self.install.replacement = Some((existing_id, existing_priority));
+        self.install.replacement = Some(self.replacement_context(&existing_id, existing_priority));
         self.proceed_with_install(sender);
     }
 
@@ -553,7 +554,7 @@ impl App {
         if let Some(pending) = &mut self.install.pending {
             pending.mod_name = old_name;
         }
-        self.install.replacement = Some((old_mod_id, old_priority));
+        self.install.replacement = Some(self.replacement_context(&old_mod_id, old_priority));
         // Drop any fetched name and file-ID context; replacements keep the existing mod's name.
         self.open_pre_install_dialog(root, sender);
     }
@@ -601,7 +602,6 @@ impl App {
             return;
         };
         let replace_info = self.install.replacement.take();
-        let was_replace = replace_info.is_some();
         let cache_root = match self.cache_root_for(&pending.game.id) {
             Ok(r) => r,
             Err(e) => {
@@ -711,13 +711,15 @@ impl App {
                     .await
                     .map_err(|error| error.to_string())?;
                 drop(pending.tmp_dir);
-                if let Some((old_id, old_priority)) = replace_info {
+                if let Some(replacement) = replace_info.as_ref() {
+                    let old_id = &replacement.mod_id;
+                    let old_priority = replacement.priority;
                     tracker
                         .update_priorities(&[(result.mod_entry.id.clone(), old_priority)])
                         .await
                         .map_err(|error| error.to_string())?;
                     let old_plugins = tracker
-                        .get_plugins_for_mod(&old_id)
+                        .get_plugins_for_mod(old_id)
                         .await
                         .map_err(|error| error.to_string())?;
                     let old_state: std::collections::HashMap<String, (i32, bool)> = old_plugins
@@ -725,18 +727,18 @@ impl App {
                         .map(|(_, filename, lo, en)| (filename.to_lowercase(), (lo, en)))
                         .collect();
                     tracker
-                        .delete_plugins_for_mod(&old_id)
+                        .delete_plugins_for_mod(old_id)
                         .await
                         .map_err(|error| error.to_string())?;
                     tracker
-                        .delete_mod_files(&old_id)
+                        .delete_mod_files(old_id)
                         .await
                         .map_err(|error| error.to_string())?;
                     tracker
-                        .delete_mod(&old_id)
+                        .delete_mod(old_id)
                         .await
                         .map_err(|error| error.to_string())?;
-                    let old_cache = paths::mod_cache_dir_in(&cache_root, &old_id);
+                    let old_cache = paths::mod_cache_dir_in(&cache_root, old_id);
                     if let Some(warning) = cleanup::remove_mod_cache(&old_cache) {
                         result.warnings.push(warning);
                     }
@@ -767,7 +769,7 @@ impl App {
             AppCmdMsg::Install(crate::app::messages::InstallCmdMsg::ModAdded(
                 identity,
                 Box::new(result),
-                was_replace,
+                replace_info,
             ))
         });
     }

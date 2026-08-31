@@ -662,8 +662,8 @@ impl App {
         use crate::app::messages::InstallCmdMsg;
 
         match msg {
-            InstallCmdMsg::ModAdded(identity, result, was_replace) => {
-                self.handle_cmd_mod_added(&identity, *result, was_replace, &sender)
+            InstallCmdMsg::ModAdded(identity, result, replacement) => {
+                self.handle_cmd_mod_added(&identity, *result, replacement, &sender)
             }
             InstallCmdMsg::ModPrepared(identity, result) => {
                 self.handle_cmd_mod_prepared(&identity, *result, root, &sender)

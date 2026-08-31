@@ -183,7 +183,11 @@ Open **Settings** (gear icon) and log in under **Nexus Mods**:
 - **File selection** — The Install Mod dialog lets you deselect archive entries before they are
   cached and deployed
 - **Reinstall** — Use the ↺ button on any mod row to re-extract from its original archive, or use the refresh button in the Downloads panel
-- **Replace** — When a name conflict occurs during install, choose Replace to swap the mod in-place (preserving load order position)
+- **Replace** — When a name conflict occurs during install, choose Replace to swap the mod in-place,
+  preserve its Mod Order position and plugin states, and make the previous archive installable again
+- **Nexus updates** — Installed Nexus files are checked at startup and after installation. Update
+  badges follow Nexus' file-specific replacement chain, so unrelated optional files do not create
+  false alerts
 
 In the Snap package, access granted to an external downloads folder does not cover other folders
 on that drive. Move a local archive into the configured downloads folder, scan it, and install it

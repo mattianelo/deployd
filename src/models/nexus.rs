@@ -50,6 +50,14 @@ pub struct NexusModInfo {
 #[derive(Debug, Clone, Deserialize)]
 pub struct NexusFilesResponse {
     pub files: Vec<NexusFileEntry>,
+    #[serde(default)]
+    pub file_updates: Vec<NexusFileUpdate>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct NexusFileUpdate {
+    pub old_file_id: i64,
+    pub new_file_id: i64,
 }
 
 #[allow(dead_code)] // see module-level comment above

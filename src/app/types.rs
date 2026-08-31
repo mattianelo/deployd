@@ -107,8 +107,8 @@ pub(crate) struct NexusDownloadMetadata {
     pub(crate) nexus_is_primary: bool,
     pub(crate) file_id: Option<i64>,
     pub(crate) version: Option<String>,
+    pub(crate) latest_version: Option<String>,
     pub(crate) author: Option<String>,
-    pub(crate) page_version: Option<String>,
     pub(crate) summary: Option<String>,
 }
 

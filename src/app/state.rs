@@ -188,9 +188,18 @@ pub(crate) struct InstallSession {
     pub(crate) pending: Option<PendingInstall>,
     pub(crate) nexus_ids: Option<crate::models::download::NexusIds>,
     pub(crate) active_download_id: Option<String>,
-    pub(crate) replacement: Option<(String, i32)>,
+    pub(crate) replacement: Option<ReplacementContext>,
     pub(crate) reinstalling: bool,
     pub(crate) fomod_selections: Option<Vec<Vec<std::collections::HashSet<usize>>>>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ReplacementContext {
+    pub(crate) mod_id: String,
+    pub(crate) priority: i32,
+    pub(crate) mod_name: String,
+    pub(crate) nexus_ids: Option<(i64, i64)>,
+    pub(crate) archive_hash: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
