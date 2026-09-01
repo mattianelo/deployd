@@ -20,7 +20,7 @@
       handles Nexus Mods downloads via SSO login and NXM links, and deploys mods
       as hardlinks for safe, non-destructive mod management.
     </p>
-    <p>Version 2.3.3.</p>
+    <p>Version 2.4.0.</p>
     <ul>
       <li>Supports Skyrim SE, Fallout 4, Fallout: New Vegas, Starfield, The Witcher 3, and Cyberpunk 2077</li>
       <li>Game detection from Steam and Heroic Launcher (GOG/Epic)</li>
@@ -71,6 +71,14 @@
   </screenshots>
 
   <releases>
+    <release version="2.4.0" date="2026-09-01" type="stable">
+      <description>
+        <p>Adds transactional profile save backups and recovery, improves Nexus metadata and mod
+        replacement durability, and makes deployment failures actionable across both packages.
+        Snap builds also gain confined per-game Wine tool prefixes, verified Wine Mono setup, and
+        persistent external-drive folder access.</p>
+      </description>
+    </release>
     <release version="2.3.3" date="2026-07-30" type="stable">
       <description>
         <p>Prevents stale game loads from replacing another game's active profile, repairs AppImage

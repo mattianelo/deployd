@@ -2,14 +2,10 @@
 
 ## [Unreleased]
 
-- Fixed Snap external tools failing when a Heroic or Proton prefix contains runtime links that
-  strict confinement cannot access. Snap tool launches now use a durable per-game Wine prefix,
-  bridge the configured prefix's Documents and application data, and download, verify, cache, and
-  silently install Wine Mono 10.4.1 on first use. Setup progress is visible in-app, Mono failures
-  can be retried or bypassed for native tools, and failed Wine exits no longer trigger scanning,
-  sorting, or deployment. Wine's duplicate Mono prompt is suppressed, already-installed Mono is
-  recognized correctly, and only prefix creation uses the expanded setup console; every later
-  attempt returns to the compact launch dialog while any required Mono retry continues.
+## [2.4.0]
+
+### AppImage and Snap
+
 - Merging detected external files into an existing mod now starts a valid install session, so its
   database and cache result is accepted and remains available after restart. Moving a merged file
   between Data and Root now replaces the previous database route, allowing deployment cleanup to
@@ -32,8 +28,6 @@
   than a number from their timestamp, and clearing metadata rebuilds that identity from the archive.
   Installation uses stored metadata without blocking on Nexus; update availability refreshes in the
   background after installation.
-- Strict-Snap manual installs from an inaccessible folder on the same external drive as the
-  configured downloads folder now show recovery instructions instead of a raw OS error.
 - Reworked profile save management around verified Global and per-profile save banks. Profile
   switches now capture unsynced live saves, create versioned recovery points, restore through a
   rollback-capable transaction, and recover interrupted transitions without treating a missing
@@ -42,29 +36,7 @@
   configurable 5 GiB-per-game automatic-backup cap, and confirmation dialogs for save-mode,
   synchronization, restore, profile deletion, and backup deletion operations.
 - Cloned profiles now inherit their source save mode and current isolated saves, returning to a
-  Global profile restores the shared Global state, and strict-Snap builds revalidate Wine-prefix
-  access before every save mutation.
-- Fixed new Snap installations being unable to select an external drive as the downloads folder by
-  requesting persistent access through the desktop portal, showing validation feedback in the
-  Downloads section, and showing a copyable manual removable-media connection prompt for direct
-  external paths or inaccessible external-drive portal routes. The prompt now targets the active
-  parallel Snap instance, and application-scoped document-portal paths resolve without duplicating
-  the portal's synthetic document basename.
-- Development analysis now runs compiler-backed semantic and structural checks through the
-  project's isolated, reproducible environment.
-- Pinned the Rust development toolchain and isolated local AppImage checks and builds under an
-  explicit non-root LXD user, with Cargo output kept outside the bind-mounted repository.
-- Hardened the project check wrapper with an explicit command allow list, protected feature and
-  target configuration, environment diagnostics, and shell-level policy tests.
-- Added an opt-in, single-package lockfile maintenance command so approved security updates can run
-  through the same non-root LXD boundary without enabling arbitrary Cargo commands.
-- Moved root-required Snapcraft builds into container-owned scratch storage and limited host
-  export to the completed Snap artifact.
-- Confined GitLab Pages generation to the checkout's non-symlinked `out/` directory, preventing
-  an environment override from selecting an arbitrary recursive-deletion target.
-- Updated XML, concurrency, random-number, QUIC, and TLS certificate dependencies to RustSec-patched
-  releases, restricted SQLx to the SQLite feature set used by Deployd, and made auditing reject the
-  reviewed inactive-driver exception if RSA ever becomes reachable.
+  Global profile restores the shared Global state.
 - Recoverable startup, installation, and stale-dialog failures now report or safely cancel the
   affected action instead of terminating Deployd.
 - Database startup now stops with actionable context when a required schema upgrade cannot be
@@ -72,12 +44,53 @@
 - Deployment and purge now stop on required filesystem or tracking failures instead of reporting
   a successful synchronization. Recoverable cleanup and backup-restoration problems are surfaced
   as warnings, and partial cache relocations are rolled back when possible.
+
+### Snap
+
+- External tools no longer fail when a Heroic or Proton prefix contains runtime links that strict
+  confinement cannot access. Tool launches now use a durable per-game Wine prefix, bridge the
+  configured prefix's Documents and application data, and download, verify, cache, and silently
+  install Wine Mono 10.4.1 on first use. Setup progress is visible in-app, Mono failures can be
+  retried or bypassed for native tools, and failed Wine exits no longer trigger scanning, sorting,
+  or deployment. Wine's duplicate Mono prompt is suppressed, already-installed Mono is recognized
+  correctly, and only prefix creation uses the expanded setup console; every later attempt returns
+  to the compact launch dialog while any required Mono retry continues.
+- Manual installs from an inaccessible folder on the same external drive as the configured
+  downloads folder now show recovery instructions instead of a raw OS error.
+- Wine-prefix access is revalidated before every profile save mutation.
+- Fixed new installations being unable to select an external drive as the downloads folder by
+  requesting persistent access through the desktop portal, showing validation feedback in the
+  Downloads section, and showing a copyable manual removable-media connection prompt for direct
+  external paths or inaccessible external-drive portal routes. The prompt now targets the active
+  parallel Snap instance, and application-scoped document-portal paths resolve without duplicating
+  the portal's synthetic document basename.
+- Root-required Snapcraft builds now operate in container-owned scratch storage and export only the
+  completed Snap artifact to the host.
+- Hosted core24 builds now provision the pinned Rust toolchain through Snapcraft's recognized
+  `rust-deps` part and Ubuntu's package-compatible default-toolchain flow, avoiding clean-runner
+  validation failures and the incompatible core26-based Rustup build snap.
+
+### AppImage
+
+- Local checks and builds now use a pinned Rust toolchain under an explicit non-root LXD user, with
+  Cargo output kept outside the bind-mounted repository.
+
+### Development and release
+
+- Development analysis now runs compiler-backed semantic and structural checks through the
+  project's isolated, reproducible environment.
+- Hardened the project check wrapper with an explicit command allow list, protected feature and
+  target configuration, environment diagnostics, and shell-level policy tests.
+- Added an opt-in, single-package lockfile maintenance command so approved security updates can run
+  through the same non-root LXD boundary without enabling arbitrary Cargo commands.
+- Confined GitLab Pages generation to the checkout's non-symlinked `out/` directory, preventing
+  an environment override from selecting an arbitrary recursive-deletion target.
+- Updated XML, concurrency, random-number, QUIC, and TLS certificate dependencies to RustSec-patched
+  releases, restricted SQLx to the SQLite feature set used by Deployd, and made auditing reject the
+  reviewed inactive-driver exception if RSA ever becomes reachable.
 - Stable version tags now validate all release metadata before GitLab publishes the AppImage to
   Nexus Mods and the GitHub mirror independently builds and publishes the Snap to the stable
   Snap Store channel; manual GitHub runs build an auditable Snap artifact without store access.
-- Hosted core24 Snap builds now provision the pinned Rust toolchain through Snapcraft's recognized
-  `rust-deps` part and Ubuntu's package-compatible default-toolchain flow, avoiding clean-runner
-  validation failures and the incompatible core26-based Rustup build snap.
 - GitLab now creates pipelines only for explicit manual preflights, scheduled maintenance, and
   exact stable release tags; ordinary commits and merge-request updates no longer consume runner
   minutes, and Pages publication is release-driven or manually requested.
