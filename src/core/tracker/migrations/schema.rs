@@ -381,6 +381,51 @@ pub(in crate::core::tracker) async fn backfill_download_statuses(pool: &SqlitePo
     Ok(())
 }
 
+pub(in crate::core::tracker) async fn collapse_duplicate_data_root_routes(
+    pool: &SqlitePool,
+) -> Result<()> {
+    let done: Option<String> =
+        sqlx::query_scalar("SELECT value FROM settings WHERE key = 'data_root_route_repair_v1'")
+            .fetch_optional(pool)
+            .await
+            .context("Failed to read Data/Root route repair state")?;
+    if done.is_some() {
+        return Ok(());
+    }
+
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        "DELETE FROM mod_files
+         WHERE rowid IN (
+             SELECT older.rowid
+             FROM mod_files older
+             JOIN mod_files newer
+               ON newer.mod_id = older.mod_id
+              AND newer.cache_path = older.cache_path
+              AND (
+                    newer.game_rel_lowercase = '../' || older.game_rel_lowercase
+                 OR older.game_rel_lowercase = '../' || newer.game_rel_lowercase
+              )
+              AND newer.rowid > older.rowid
+         )",
+    )
+    .execute(&mut *tx)
+    .await
+    .context("Failed to collapse duplicate Data/Root mod-file routes")?;
+    sqlx::query(
+        "INSERT INTO settings (key, value)
+         VALUES ('data_root_route_repair_v1', 'true')
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    )
+    .execute(&mut *tx)
+    .await
+    .context("Failed to record Data/Root route repair")?;
+    tx.commit()
+        .await
+        .context("Failed to commit Data/Root route repair")?;
+    Ok(())
+}
+
 /// Re-apply the canonical Aurora Override/ flattening to a stored path string.
 ///
 /// The Aurora engine (NWN-based) resolves Override resources by filename only,
@@ -619,6 +664,44 @@ mod tests {
         assert_eq!(row.0.as_deref(), Some("Main File"));
         assert!(row.1, "primary flag should be backfilled");
         assert_eq!(row.2.as_deref(), Some("md5"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn keeps_newest_duplicate_data_root_route_for_cleanup() -> Result<()> {
+        let tracker = Tracker::open("sqlite::memory:").await?.tracker;
+        sqlx::query("DELETE FROM settings WHERE key = 'data_root_route_repair_v1'")
+            .execute(&tracker.pool)
+            .await?;
+        sqlx::query(
+            "INSERT INTO mod_files
+             (mod_id, game_rel_lowercase, game_rel_original, cache_path)
+             VALUES ('mod', 'enbseries/settings.ini', 'enbseries/settings.ini', '/cache/settings.ini'),
+                    ('mod', '../enbseries/settings.ini', '../enbseries/settings.ini', '/cache/settings.ini')",
+        )
+        .execute(&tracker.pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO deployed_files
+             (game_id, game_rel_lowercase, game_rel_original, mod_id, cache_path)
+             VALUES ('game', 'enbseries/settings.ini', 'enbseries/settings.ini', 'mod', '/cache/settings.ini'),
+                    ('game', '../enbseries/settings.ini', '../enbseries/settings.ini', 'mod', '/cache/settings.ini')",
+        )
+        .execute(&tracker.pool)
+        .await?;
+
+        collapse_duplicate_data_root_routes(&tracker.pool).await?;
+
+        let mod_routes: Vec<String> =
+            sqlx::query_scalar("SELECT game_rel_lowercase FROM mod_files WHERE mod_id = 'mod'")
+                .fetch_all(&tracker.pool)
+                .await?;
+        assert_eq!(mod_routes, vec!["../enbseries/settings.ini"]);
+        let deployed_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM deployed_files WHERE mod_id = 'mod'")
+                .fetch_one(&tracker.pool)
+                .await?;
+        assert_eq!(deployed_count, 2);
         Ok(())
     }
 

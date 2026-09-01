@@ -228,7 +228,7 @@ pub(crate) async fn merge_files_into_mod(request: MergeModRequest<'_>) -> Result
     let new_plugin_cache_files = cached.plugin_cache_files;
 
     let files_merged = mod_files.len();
-    tracker.upsert_mod_files(&mod_files).await?;
+    tracker.merge_mod_files(&mod_files).await?;
 
     if !new_plugin_cache_files.is_empty() {
         let existing_plugins = tracker

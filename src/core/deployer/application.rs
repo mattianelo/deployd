@@ -261,3 +261,107 @@ pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result
         warnings,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use anyhow::Result;
+    use tempfile::tempdir;
+
+    use crate::core::tracker::Tracker;
+    use crate::models::game::{Game, GameEngine};
+    use crate::models::manifest::ModFile;
+    use crate::models::mod_entry::{InstallTarget, ModEntry};
+
+    use super::deploy;
+
+    #[tokio::test]
+    async fn deployment_removes_previous_data_route_after_root_merge() -> Result<()> {
+        let temp = tempdir()?;
+        let game_root = temp.path().join("game");
+        let game_data = game_root.join("Data");
+        let cache_root = temp.path().join("cache");
+        let cache_file = cache_root.join("mod/enbseries/settings.ini");
+        std::fs::create_dir_all(game_data.join("enbseries"))?;
+        std::fs::create_dir_all(cache_file.parent().expect("cache file parent"))?;
+        std::fs::write(game_data.join("enbseries/settings.ini"), b"old Data route")?;
+        std::fs::write(&cache_file, b"merged Root route")?;
+
+        let game = Game {
+            id: "game".to_string(),
+            title: "Game".to_string(),
+            path: game_root.clone(),
+            data_subdir: "Data".to_string(),
+            engine: GameEngine::Bethesda,
+            wine_prefix: None,
+        };
+        let tracker = Tracker::open("sqlite::memory:").await?.tracker;
+        tracker
+            .upsert_game(
+                &game.id,
+                &game.title,
+                &game.path,
+                &game.data_subdir,
+                "bethesda",
+                None,
+                false,
+            )
+            .await?;
+        tracker
+            .insert_mod(&ModEntry {
+                id: "mod".to_string(),
+                game_id: game.id.clone(),
+                name: "External Changes".to_string(),
+                archive_hash: None,
+                archive_path: None,
+                installed_at: None,
+                enabled: true,
+                priority: 0,
+                nexus_mod_id: None,
+                nexus_file_id: None,
+                nexus_domain: None,
+                version: None,
+                author: None,
+                nexus_description: None,
+                latest_version: None,
+                nexus_file_name: None,
+                nexus_is_primary: false,
+                archive_md5: None,
+                install_target: InstallTarget::Root,
+                notes: None,
+            })
+            .await?;
+        tracker
+            .record_files(&[ModFile {
+                mod_id: "mod".to_string(),
+                game_rel_lowercase: "../enbseries/settings.ini".to_string(),
+                game_rel_original: "../enbseries/settings.ini".to_string(),
+                cache_path: cache_file.to_string_lossy().to_string(),
+            }])
+            .await?;
+        tracker
+            .record_deployed_files(
+                &game.id,
+                &[ModFile {
+                    mod_id: "mod".to_string(),
+                    game_rel_lowercase: "enbseries/settings.ini".to_string(),
+                    game_rel_original: "enbseries/settings.ini".to_string(),
+                    cache_path: cache_file.to_string_lossy().to_string(),
+                }],
+            )
+            .await?;
+
+        let outcome = deploy(&game, &tracker, &cache_root).await?;
+
+        assert_eq!(outcome.files_removed, 1);
+        assert_eq!(outcome.files_added, 1);
+        assert!(!game_data.join("enbseries/settings.ini").exists());
+        assert_eq!(
+            std::fs::read(game_root.join("enbseries/settings.ini"))?,
+            b"merged Root route"
+        );
+        let deployed = tracker.get_deployed_files(&game.id).await?;
+        assert_eq!(deployed.len(), 1);
+        assert_eq!(deployed[0].game_rel_lowercase, "../enbseries/settings.ini");
+        Ok(())
+    }
+}

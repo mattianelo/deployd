@@ -3,7 +3,10 @@
 ## [Unreleased]
 
 - Merging detected external files into an existing mod now starts a valid install session, so its
-  database and cache result is accepted and remains available after restart.
+  database and cache result is accepted and remains available after restart. Moving a merged file
+  between Data and Root now replaces the previous database route, allowing deployment cleanup to
+  remove the old location instead of managing both anchors from the same cache file. Startup also
+  repairs duplicate Data/Root route pairs created by earlier versions.
 - Newly scanned archives are now committed before they appear in the Downloads panel, preventing a
   stale scan write from erasing manually fetched Nexus metadata or its relocated archive path.
   Metadata remains available in later sessions even when the archive was not installed.

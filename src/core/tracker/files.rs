@@ -29,10 +29,22 @@ impl Tracker {
         Ok(())
     }
 
-    /// Upsert file records for a mod (INSERT OR REPLACE).
-    pub async fn upsert_mod_files(&self, files: &[ModFile]) -> Result<()> {
+    /// Merge file records into a mod, replacing the same relative path at the
+    /// opposite Data/Root anchor.
+    pub(crate) async fn merge_mod_files(&self, files: &[ModFile]) -> Result<()> {
         let mut tx = self.pool.begin().await?;
         for f in files {
+            if let Some(previous_anchor) = opposite_data_root_anchor(&f.game_rel_lowercase) {
+                sqlx::query(
+                    "DELETE FROM mod_files
+                     WHERE mod_id = ? AND game_rel_lowercase = ?",
+                )
+                .bind(&f.mod_id)
+                .bind(previous_anchor)
+                .execute(&mut *tx)
+                .await
+                .context("Failed to remove the previous Data/Root mod-file route")?;
+            }
             sqlx::query(
                 "INSERT OR REPLACE INTO mod_files
                  (mod_id, game_rel_lowercase, game_rel_original, cache_path)
@@ -43,7 +55,8 @@ impl Tracker {
             .bind(&f.game_rel_original)
             .bind(&f.cache_path)
             .execute(&mut *tx)
-            .await?;
+            .await
+            .context("Failed to save a merged mod-file route")?;
         }
         tx.commit()
             .await
@@ -370,6 +383,16 @@ impl Tracker {
     }
 }
 
+fn opposite_data_root_anchor(path: &str) -> Option<String> {
+    if let Some(data_path) = path.strip_prefix("../") {
+        return Some(data_path.to_string());
+    }
+    if path.starts_with(crate::core::game::eclipse::DOCS_PREFIX) {
+        return None;
+    }
+    Some(format!("../{path}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -424,6 +447,105 @@ mod tests {
         .execute(&tracker.pool)
         .await
         .expect("insert test file");
+    }
+
+    #[tokio::test]
+    async fn merge_moves_same_mod_file_from_data_to_root() {
+        let tracker = make_tracker().await;
+        tracker
+            .insert_mod(&mod_entry("a", "ModA", 1))
+            .await
+            .expect("insert test mod");
+        insert_file(&tracker, "a", "enbseries/settings.ini").await;
+        tracker
+            .record_deployed_files(
+                "g",
+                &[ModFile {
+                    mod_id: "a".to_string(),
+                    game_rel_lowercase: "enbseries/settings.ini".to_string(),
+                    game_rel_original: "enbseries/settings.ini".to_string(),
+                    cache_path: "/cache/settings.ini".to_string(),
+                }],
+            )
+            .await
+            .expect("record deployed Data route");
+
+        tracker
+            .merge_mod_files(&[ModFile {
+                mod_id: "a".to_string(),
+                game_rel_lowercase: "../enbseries/settings.ini".to_string(),
+                game_rel_original: "../enbseries/settings.ini".to_string(),
+                cache_path: "/cache/settings.ini".to_string(),
+            }])
+            .await
+            .expect("merge Root route");
+
+        let files = tracker.get_mod_files("a").await.expect("load mod files");
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].game_rel_lowercase, "../enbseries/settings.ini");
+        let deployed = tracker
+            .get_deployed_files("g")
+            .await
+            .expect("load deployed files");
+        assert_eq!(deployed.len(), 1);
+        assert_eq!(deployed[0].game_rel_lowercase, "enbseries/settings.ini");
+    }
+
+    #[tokio::test]
+    async fn merge_moves_same_mod_file_from_root_to_data() {
+        let tracker = make_tracker().await;
+        tracker
+            .insert_mod(&mod_entry("a", "ModA", 1))
+            .await
+            .expect("insert test mod");
+        insert_file(&tracker, "a", "../enbseries/settings.ini").await;
+
+        tracker
+            .merge_mod_files(&[ModFile {
+                mod_id: "a".to_string(),
+                game_rel_lowercase: "enbseries/settings.ini".to_string(),
+                game_rel_original: "enbseries/settings.ini".to_string(),
+                cache_path: "/cache/settings.ini".to_string(),
+            }])
+            .await
+            .expect("merge Data route");
+
+        let files = tracker.get_mod_files("a").await.expect("load mod files");
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].game_rel_lowercase, "enbseries/settings.ini");
+    }
+
+    #[tokio::test]
+    async fn merge_keeps_eclipse_docs_route_distinct_from_root() {
+        let tracker = make_tracker().await;
+        tracker
+            .insert_mod(&mod_entry("a", "ModA", 1))
+            .await
+            .expect("insert test mod");
+        insert_file(&tracker, "a", "../settings/config.xml").await;
+
+        tracker
+            .merge_mod_files(&[ModFile {
+                mod_id: "a".to_string(),
+                game_rel_lowercase: "~docs~/settings/config.xml".to_string(),
+                game_rel_original: "~docs~/Settings/config.xml".to_string(),
+                cache_path: "/cache/settings/config.xml".to_string(),
+            }])
+            .await
+            .expect("merge Documents route");
+
+        let files = tracker.get_mod_files("a").await.expect("load mod files");
+        assert_eq!(files.len(), 2);
+        assert!(
+            files
+                .iter()
+                .any(|file| file.game_rel_lowercase == "../settings/config.xml")
+        );
+        assert!(
+            files
+                .iter()
+                .any(|file| file.game_rel_lowercase == "~docs~/settings/config.xml")
+        );
     }
 
     /// A single mod whose two Override/ files share a filename must not produce

@@ -186,6 +186,8 @@ Open **Settings** (gear icon) and log in under **Nexus Mods**:
 - **Reinstall** — Use the ↺ button on any mod row to re-extract from its original archive, or use the refresh button in the Downloads panel
 - **Replace** — When a name conflict occurs during install, choose Replace to swap the mod in-place,
   preserve its Mod Order position and plugin states, and make the previous archive installable again
+- **Absorb external changes** — Merging a detected external file into an existing mod persists it in
+  that mod. Changing the file between Data and Root removes the previous route on the next deployment
 - **Nexus updates** — Installed Nexus files are checked together at startup; after an installation,
   only that mod is checked. Update badges follow Nexus' file-specific replacement chain, so
   unrelated optional files do not create false alerts

@@ -322,6 +322,9 @@ impl Tracker {
         if let Err(e) = migrations::backfill_archive_hashes(&pool).await {
             warnings.push(format!("Archive hash backfill will be retried: {e}"));
         }
+        if let Err(e) = migrations::collapse_duplicate_data_root_routes(&pool).await {
+            warnings.push(format!("Data/Root merge-route repair will be retried: {e}"));
+        }
         if let Err(e) = migrations::migrate_aurora_file_paths(&pool).await {
             warnings.push(format!("Aurora path backfill will be retried: {e}"));
         }
