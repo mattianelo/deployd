@@ -67,6 +67,7 @@ pub(crate) struct ToolState {
     pub(crate) launch_cancel: Option<Arc<AtomicBool>>,
     pub(crate) launch_session: Option<ToolLaunchSession>,
     pub(crate) proton_setup: bool,
+    pub(crate) pending_mono_tool: Option<String>,
 }
 
 pub(crate) struct UiState {
@@ -86,6 +87,7 @@ pub(crate) struct UiState {
     pub(crate) tool_buttons_box: gtk::Box,
     pub(crate) tool_manager_dialog: Option<Controller<ToolManager>>,
     pub(crate) tool_launch_dialog: Option<adw::AlertDialog>,
+    pub(crate) tool_launch_log: Option<gtk::TextBuffer>,
     pub(crate) game_setup_dialog: Option<Controller<GameSetupDialog>>,
     pub(crate) welcome_wizard: Option<Controller<WelcomeWizard>>,
     pub(crate) settings_dialog: Option<Controller<SettingsDialog>>,

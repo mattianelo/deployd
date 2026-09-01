@@ -1,4 +1,6 @@
+use std::fmt;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use anyhow::{Context, Result};
@@ -15,10 +17,72 @@ mod snap;
 
 pub use runtime::{ToolLaunchHooks, ToolProcessHandle};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ToolSetupStage {
+    CreatingPrefix,
+    ConfiguringPrefix,
+    CheckingMono,
+    DownloadingMono,
+    VerifyingMono,
+    InstallingMono,
+    LaunchingTool,
+}
+
+impl ToolSetupStage {
+    pub(crate) fn message(self) -> &'static str {
+        match self {
+            Self::CreatingPrefix => "Creating the Snap Wine prefix...",
+            Self::ConfiguringPrefix => "Connecting game settings and configuring Wine...",
+            Self::CheckingMono => "Checking Wine Mono...",
+            Self::DownloadingMono => {
+                "Downloading Wine Mono 10.4.1; please wait for setup to finish..."
+            }
+            Self::VerifyingMono => "Verifying the Wine Mono download...",
+            Self::InstallingMono => "Installing Wine Mono silently...",
+            Self::LaunchingTool => "Starting the external tool...",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ToolPrepareError {
+    Mono(String),
+    Fatal(String),
+    Cancelled,
+}
+
+impl fmt::Display for ToolPrepareError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Mono(error) | Self::Fatal(error) => formatter.write_str(error),
+            Self::Cancelled => formatter.write_str("Tool launch cancelled"),
+        }
+    }
+}
+
+impl std::error::Error for ToolPrepareError {}
+
+pub(crate) async fn prepare_tool_runtime(
+    game: &Game,
+    wine_config: &WineConfig,
+    cancel: Arc<AtomicBool>,
+    skip_mono: bool,
+    on_progress: Arc<dyn Fn(ToolSetupStage) + Send + Sync>,
+) -> std::result::Result<(), ToolPrepareError> {
+    match &wine_config.launcher {
+        game::WineLauncher::Umu(_) => {
+            on_progress(ToolSetupStage::LaunchingTool);
+            Ok(())
+        }
+        game::WineLauncher::SnapWine { .. } => {
+            snap::prepare_runtime(game, wine_config, cancel, skip_mono, on_progress).await
+        }
+    }
+}
+
 /// Suppress Gecko installer popup and the Wine menu builder for all tool launches.
-/// mscoree (Mono/.NET) is intentionally NOT suppressed here — Eclipse (DAO) tools such as
-/// CharGenMorph Compiler require .NET, and wine-mono is not bundled with the Snap wine-runtime.
-/// The user is informed via a blocking dialog before launch so they can accept the install prompt.
+/// mscoree (Mono/.NET) is intentionally not suppressed because Snap prefixes install Wine Mono
+/// before the first tool launch.
 pub(in crate::core::tool_launcher) const WINE_SILENT_DLL_OVERRIDES: &str =
     "mshtml=d;winemenubuilder.exe=d";
 

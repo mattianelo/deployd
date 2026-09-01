@@ -37,11 +37,10 @@ pub(super) fn build(
     runtime::ensure_not_cancelled(cancel)?;
     ensure_named_mods_drive(wine_config, cache_root);
     runtime::ensure_not_cancelled(cancel)?;
-    ensure_no_x_drive_conflict(wine_config);
-    runtime::ensure_not_cancelled(cancel)?;
-
     let command = match &wine_config.launcher {
         game::WineLauncher::Umu(binary) => {
+            ensure_no_x_drive_conflict(wine_config);
+            runtime::ensure_not_cancelled(cancel)?;
             appimage::build_command(binary, tool, game, wine_config)?
         }
         game::WineLauncher::SnapWine {
@@ -50,11 +49,6 @@ pub(super) fn build(
             wine_runtime,
         } => {
             let wine_bin = super::resolve_wine64(wine_bin);
-            let library_path = snap::library_path(wine_platform, wine_runtime);
-            snap::ensure_bethesda_reg_key(game, wine_config, &wine_bin, &library_path, cancel)?;
-            runtime::ensure_not_cancelled(cancel)?;
-            snap::ensure_silent_setup(wine_config, &wine_bin, &library_path, cancel)?;
-            runtime::ensure_not_cancelled(cancel)?;
             dlog!(
                 "deployd: launching tool '{}' | snap-wine={}",
                 tool.name,

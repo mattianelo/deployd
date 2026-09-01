@@ -61,10 +61,9 @@ pub fn custom_ini_paths(game: &Game) -> Vec<PathBuf> {
 /// and returns a `wine reg add` command to create it if missing.
 ///
 /// Returns `Some((reg_key, wine_path))` if the key needs to be added, `None` if it already exists.
-pub fn missing_bethesda_reg_key(game: &Game) -> Option<(String, String)> {
+pub fn missing_bethesda_reg_key(game: &Game, prefix: &std::path::Path) -> Option<(String, String)> {
     let known = KNOWN_GAMES.iter().find(|k| k.deployd_id == game.id)?;
 
-    let prefix = game.wine_prefix.clone()?;
     let system_reg = prefix.join("system.reg");
     let reg_content = std::fs::read_to_string(&system_reg).ok()?;
 
@@ -76,7 +75,7 @@ pub fn missing_bethesda_reg_key(game: &Game) -> Option<(String, String)> {
 
     // Resolve the correct Wine drive letter for the game path (may be X:, S:, etc.
     // in Heroic/Proton setups) and fall back to Z: if dosdevices is unreadable.
-    let wine_path = linux_path_to_wine_path(&game.path, &prefix)
+    let wine_path = linux_path_to_wine_path(&game.path, prefix)
         .unwrap_or_else(|| format!("Z:{}\\", game.path.to_string_lossy().replace('/', "\\")));
 
     Some((format!("HKLM\\{}", known.bethesda_reg_key), wine_path))

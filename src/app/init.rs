@@ -392,6 +392,7 @@ pub(super) fn build_model(
             launch_cancel: None,
             launch_session: None,
             proton_setup: false,
+            pending_mono_tool: None,
         },
         ui: UiState {
             header,
@@ -410,6 +411,7 @@ pub(super) fn build_model(
             tool_buttons_box,
             tool_manager_dialog: None,
             tool_launch_dialog: None,
+            tool_launch_log: None,
             game_setup_dialog: None,
             welcome_wizard: None,
             settings_dialog: None,

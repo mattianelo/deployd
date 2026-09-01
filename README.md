@@ -52,7 +52,9 @@ The Nexus Mods page remains available for users who prefer that distribution cha
 - **Plugin Load Order** — Select Mode reorder workflow for `.esp`/`.esm`/`.esl` management written to `plugins.txt`
 - **Conflict Detection** — Per-file visibility into which mods override each other, with a detailed Conflicts section in each mod's Properties dialog (The Witcher 1's Override/ files are matched by filename regardless of subfolder depth)
 - **Priority-Based Deployment** — Hardlink deployment; lower in the list wins conflicts
-- **Tool Launcher** — Run xEdit, LOOT, BodySlide and more through the package-managed Windows runtime
+- **Tool Launcher** — Run xEdit, LOOT, BodySlide and more through the package-managed Windows
+  runtime; the Snap prepares an isolated per-game tool environment and silently installs its
+  verified .NET compatibility runtime on first use
 - **Save Management** — Browse and back up game saves associated with the active profile,
   including each Witcher game's distinct Documents folder
 - **Mod Notes** — Attach personal notes to any mod; preview on hover from the list
@@ -99,6 +101,12 @@ By default Deployd stores all cached mod files in `~/.local/share/deployd/cache/
 If your game lives on a secondary drive, placing the cache on the same drive eliminates the copy overhead on every install: Deployd deploys mods using **hardlinks** (zero-copy, zero extra disk space).
 
 In the Snap package, Steam-managed game folders can be exposed through a separate mount. When Linux rejects a hardlink across that boundary, Deployd falls back to copying the file while keeping it tracked as Deployd-managed.
+
+External Windows tools in the Snap use a durable, isolated Wine environment instead of modifying
+the game's Steam, Heroic, or Proton prefix. The first launch displays setup progress while Deployd
+downloads, verifies, and silently installs Wine Mono. If Mono is unavailable, native tools can be
+launched without it and Deployd retries setup on a later launch. Game settings, saves, and tool
+discovery continue to use the configured game prefix.
 
 Strict Snap confinement still controls which folders the app can see. Deployd validates selected
 game, Wine prefix, downloads, cache, and migration-import folders before saving them, and explains

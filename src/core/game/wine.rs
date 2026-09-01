@@ -14,19 +14,22 @@ pub(crate) fn find_wine_user_dir(game: &Game) -> Option<PathBuf> {
     let prefix = game.wine_prefix.clone()?;
     let users_dir = prefix.join("drive_c/users");
 
-    for user_dir in &["steamuser", "Public"] {
-        let candidate = users_dir.join(user_dir);
-        if candidate.exists() {
-            return Some(candidate);
-        }
+    let steamuser = users_dir.join("steamuser");
+    if steamuser.exists() {
+        return Some(steamuser);
     }
 
     if let Ok(entries) = std::fs::read_dir(&users_dir) {
         for entry in entries.flatten() {
-            if entry.file_type().is_ok_and(|ft| ft.is_dir()) {
+            if entry.file_name() != "Public" && entry.file_type().is_ok_and(|ft| ft.is_dir()) {
                 return Some(entry.path());
             }
         }
+    }
+
+    let public = users_dir.join("Public");
+    if public.exists() {
+        return Some(public);
     }
 
     // Fall back to "steamuser" even if it doesn't exist yet (Wine creates it on first run).
@@ -82,17 +85,37 @@ pub enum SnapWineStatus {
 /// 2. AppImage UMU: bundled `umu-run`, with Proton GE managed under Deployd's data directory.
 ///
 /// Returns `None` if no suitable launcher is found or if no wine prefix is configured.
-pub fn detect_wine_config(game: &Game) -> Option<WineConfig> {
-    let prefix = game.wine_prefix.clone()?;
+pub fn detect_wine_config(game: &Game) -> anyhow::Result<Option<WineConfig>> {
+    let Some(source_prefix) = game.wine_prefix.clone() else {
+        return Ok(None);
+    };
 
-    match snap_wine_status() {
+    let status = snap_wine_status();
+    let snap_prefix = matches!(status, SnapWineStatus::Ready { .. })
+        .then(|| paths::snap_tool_prefix(&game.id))
+        .transpose()?;
+    Ok(wine_config_for_status(
+        source_prefix,
+        status,
+        resolve_umu_binary(),
+        snap_prefix,
+    ))
+}
+
+fn wine_config_for_status(
+    source_prefix: PathBuf,
+    status: SnapWineStatus,
+    umu_binary: Option<PathBuf>,
+    snap_prefix: Option<PathBuf>,
+) -> Option<WineConfig> {
+    match status {
         SnapWineStatus::Ready {
             wine_bin,
             wine_platform,
             wine_runtime,
         } => {
             return Some(WineConfig {
-                prefix,
+                prefix: snap_prefix?,
                 launcher: WineLauncher::SnapWine {
                     wine_bin,
                     wine_platform,
@@ -104,8 +127,8 @@ pub fn detect_wine_config(game: &Game) -> Option<WineConfig> {
         SnapWineStatus::NotSnap => {}
     }
 
-    resolve_umu_binary().map(|umu| WineConfig {
-        prefix,
+    umu_binary.map(|umu| WineConfig {
+        prefix: source_prefix,
         launcher: WineLauncher::Umu(umu),
     })
 }
@@ -205,19 +228,6 @@ fn resolve_umu_binary() -> Option<PathBuf> {
     None
 }
 
-/// Find the wine binary from the snap content interface mounts.
-/// Returns `(wine_bin, wine_platform_dir, wine_runtime_dir)`.
-fn find_snap_wine() -> Option<(PathBuf, PathBuf, PathBuf)> {
-    match snap_wine_status() {
-        SnapWineStatus::Ready {
-            wine_bin,
-            wine_platform,
-            wine_runtime,
-        } => Some((wine_bin, wine_platform, wine_runtime)),
-        SnapWineStatus::NotSnap | SnapWineStatus::Missing(_) => None,
-    }
-}
-
 fn find_snap_wine_platform(wine_platform_root: &Path) -> Option<(PathBuf, PathBuf)> {
     for entry in std::fs::read_dir(wine_platform_root).ok()?.flatten() {
         let platform_dir = entry.path();
@@ -246,12 +256,6 @@ fn snap_wine_status_in(snap: &Path) -> SnapWineStatus {
             wine_platform: platform.is_none(),
         }),
     }
-}
-
-/// Returns `true` when running in a snap with Wine provided via the content interface.
-/// In this case Wine is provided via the content interface — no Proton GE download needed.
-pub fn snap_wine_available() -> bool {
-    find_snap_wine().is_some()
 }
 
 fn find_proton_runtime_in(dir: &Path) -> Option<PathBuf> {
@@ -387,6 +391,65 @@ mod tests {
             Some(deployd_runtime.path().join("GE-Proton"))
         );
 
+        Ok(())
+    }
+
+    // @variants: appimage
+    #[test]
+    fn appimage_umu_keeps_the_configured_game_prefix() {
+        let source_prefix = PathBuf::from("/games/prefix/pfx");
+        let config = wine_config_for_status(
+            source_prefix.clone(),
+            SnapWineStatus::NotSnap,
+            Some(PathBuf::from("/appdir/usr/bin/umu-run")),
+            None,
+        )
+        .expect("UMU config");
+
+        assert_eq!(config.prefix, source_prefix);
+        assert!(matches!(config.launcher, WineLauncher::Umu(_)));
+    }
+
+    // @variants: snap
+    #[test]
+    fn snap_wine_uses_the_owned_tool_prefix() {
+        let owned = PathBuf::from("/snap-common/deployd/wine-prefixes/skyrim-se");
+        let config = wine_config_for_status(
+            PathBuf::from("/games/heroic/pfx"),
+            SnapWineStatus::Ready {
+                wine_bin: PathBuf::from("/snap/wine/bin/wine"),
+                wine_platform: PathBuf::from("/snap/wine"),
+                wine_runtime: PathBuf::from("/snap/runtime"),
+            },
+            Some(PathBuf::from("/appdir/usr/bin/umu-run")),
+            Some(owned.clone()),
+        )
+        .expect("Snap config");
+
+        assert_eq!(config.prefix, owned);
+        assert!(matches!(config.launcher, WineLauncher::SnapWine { .. }));
+    }
+
+    #[test]
+    fn wine_user_resolution_prefers_a_real_user_over_public() -> anyhow::Result<()> {
+        use crate::models::game::GameEngine;
+
+        let temp = tempdir()?;
+        std::fs::create_dir_all(temp.path().join("drive_c/users/Public"))?;
+        std::fs::create_dir_all(temp.path().join("drive_c/users/alex"))?;
+        let game = Game {
+            id: "dragon-age-origins".to_string(),
+            title: "Dragon Age: Origins".to_string(),
+            path: temp.path().join("game"),
+            data_subdir: "packages/core/override".to_string(),
+            engine: GameEngine::Eclipse,
+            wine_prefix: Some(temp.path().to_path_buf()),
+        };
+
+        assert_eq!(
+            find_wine_user_dir(&game),
+            Some(temp.path().join("drive_c/users/alex"))
+        );
         Ok(())
     }
 }

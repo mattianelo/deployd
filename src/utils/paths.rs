@@ -32,6 +32,30 @@ pub(crate) fn deployd_data_dir_from_snap_common(common: &Path) -> PathBuf {
     common.join("deployd")
 }
 
+/// Durable Wine prefix used only for launching external tools from the Snap.
+pub fn snap_tool_prefix(game_id: &str) -> Result<PathBuf> {
+    snap_tool_prefix_in(&deployd_data_dir()?, game_id)
+}
+
+pub(crate) fn snap_tool_prefix_in(data_dir: &Path, game_id: &str) -> Result<PathBuf> {
+    if game_id.is_empty()
+        || game_id == "."
+        || game_id == ".."
+        || game_id
+            .chars()
+            .any(|character| !(character.is_ascii_alphanumeric() || matches!(character, '-' | '_')))
+    {
+        return Err(anyhow!("Invalid game identifier for the Snap Wine prefix"));
+    }
+
+    Ok(data_dir.join("wine-prefixes").join(game_id))
+}
+
+/// Shared immutable Wine Mono package cache for Snap tool prefixes.
+pub fn snap_wine_mono_cache_dir() -> Result<PathBuf> {
+    Ok(deployd_data_dir()?.join("wine-runtime"))
+}
+
 /// Deployd cache root: <data>/deployd/cache
 pub fn cache_root() -> Result<PathBuf> {
     Ok(deployd_data_dir()?.join("cache"))
@@ -103,7 +127,7 @@ pub fn default_downloads_dir() -> PathBuf {
 mod tests {
     use std::path::Path;
 
-    use super::deployd_data_dir_from_snap_common;
+    use super::{deployd_data_dir_from_snap_common, snap_tool_prefix_in};
 
     // @variants: snap
     #[test]
@@ -112,5 +136,22 @@ mod tests {
             deployd_data_dir_from_snap_common(Path::new("/home/alex/snap/deployd/common")),
             Path::new("/home/alex/snap/deployd/common/deployd")
         );
+    }
+
+    // @variants: snap
+    #[test]
+    fn snap_tool_prefix_is_per_game_and_durable() -> anyhow::Result<()> {
+        assert_eq!(
+            snap_tool_prefix_in(Path::new("/snap-common/deployd"), "skyrim-se")?,
+            Path::new("/snap-common/deployd/wine-prefixes/skyrim-se")
+        );
+        Ok(())
+    }
+
+    // @variants: snap
+    #[test]
+    fn snap_tool_prefix_rejects_path_traversal() {
+        assert!(snap_tool_prefix_in(Path::new("/data"), "../game").is_err());
+        assert!(snap_tool_prefix_in(Path::new("/data"), "game/name").is_err());
     }
 }

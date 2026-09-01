@@ -394,9 +394,9 @@ impl App {
                 self.handle_confirm_snap_wine_setup(tool_id, missing, root, &sender)
             }
             ToolsMsg::ProtonSetupReady => self.handle_proton_setup_ready(),
-            ToolsMsg::ConfirmMonoPrompt(tool_id, prefix) => {
-                self.handle_confirm_mono_prompt(tool_id, prefix, root, &sender)
-            }
+            ToolsMsg::ToolSetupProgress(stage) => self.handle_tool_setup_progress(stage),
+            ToolsMsg::RetryMonoSetup => self.handle_retry_mono_setup(root, &sender),
+            ToolsMsg::LaunchWithoutMono => self.handle_launch_without_mono(root, &sender),
             ToolsMsg::ManageToolsClicked => self.handle_manage_tools_clicked(root, &sender),
             ToolsMsg::ToolAdded(tool) => self.handle_tool_added(tool, &sender),
             ToolsMsg::ToolRemoved(name) => self.handle_tool_removed(name, &sender),
@@ -686,8 +686,8 @@ impl App {
     fn dispatch_tools_command(
         &mut self,
         msg: crate::app::messages::ToolsCmdMsg,
-        _sender: ComponentSender<Self>,
-        _root: &adw::ApplicationWindow,
+        sender: ComponentSender<Self>,
+        root: &adw::ApplicationWindow,
     ) {
         use crate::app::messages::ToolsCmdMsg;
 
@@ -695,7 +695,7 @@ impl App {
             ToolsCmdMsg::Saved(result) => self.handle_cmd_tool_saved(result),
             ToolsCmdMsg::Deleted(result) => self.handle_cmd_tool_deleted(result),
             ToolsCmdMsg::WorkingDirSaved(result) => self.handle_cmd_tool_working_dir_saved(result),
-            ToolsCmdMsg::Launched(result) => self.handle_cmd_tool_launched(result),
+            ToolsCmdMsg::Launched(result) => self.handle_cmd_tool_launched(result, root, &sender),
             ToolsCmdMsg::LaunchCancelled(name) => self.handle_cmd_tool_launch_cancelled(name),
         }
     }

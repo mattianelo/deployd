@@ -335,9 +335,9 @@ pub(crate) enum ToolsMsg {
     ConfirmSnapWineSetup(String, crate::core::game::MissingSnapWineContent),
     /// AppImage UMU has finished preparing Proton GE.
     ProtonSetupReady,
-    /// Show a one-time Mono install info dialog for Eclipse/Snap tool launches.
-    /// Carries `tool_id` and the wine prefix path (used to write the sentinel on confirm).
-    ConfirmMonoPrompt(String, std::path::PathBuf),
+    ToolSetupProgress(crate::core::tool_launcher::ToolSetupStage),
+    RetryMonoSetup,
+    LaunchWithoutMono,
     ManageToolsClicked,
     ToolAdded(Tool),
     ToolRemoved(String),
@@ -597,7 +597,7 @@ pub(crate) enum ToolsCmdMsg {
     Saved(Result<(), String>),
     Deleted(Result<String, String>),
     WorkingDirSaved(Result<(), String>),
-    Launched(Result<String, String>),
+    Launched(Result<String, crate::core::tool_launcher::ToolPrepareError>),
     LaunchCancelled(String),
 }
 

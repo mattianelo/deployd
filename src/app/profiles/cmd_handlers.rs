@@ -536,7 +536,12 @@ impl App {
         }
     }
 
-    pub(crate) fn handle_cmd_tool_launched(&mut self, result: Result<String, String>) {
+    pub(crate) fn handle_cmd_tool_launched(
+        &mut self,
+        result: Result<String, crate::core::tool_launcher::ToolPrepareError>,
+        root: &adw::ApplicationWindow,
+        sender: &ComponentSender<Self>,
+    ) {
         match result {
             Ok(name) => {
                 self.show_toast(&format!("Launched {name}"));
@@ -554,14 +559,27 @@ impl App {
                     self.begin_work(WorkKind::SettingUpRuntime, "Finishing Proton GE setup...");
                 }
             }
-            Err(e) => {
+            Err(crate::core::tool_launcher::ToolPrepareError::Mono(error)) => {
+                self.tools.pending_mono_tool = self
+                    .tools
+                    .launch_session
+                    .as_ref()
+                    .map(|session| session.tool_id.clone());
+                self.tools.launch_session = None;
+                self.finish_work(WorkKind::LaunchingTool);
+                self.tools.proton_setup = false;
+                self.finish_work(WorkKind::SettingUpRuntime);
+                crate::dlog!("deployd: Wine Mono setup error: {error}");
+                self.show_mono_setup_failure(&error, root, sender);
+            }
+            Err(error) => {
                 self.close_tool_launch_dialog();
                 self.tools.launch_session = None;
                 self.finish_work(WorkKind::LaunchingTool);
                 self.tools.proton_setup = false;
                 self.finish_work(WorkKind::SettingUpRuntime);
-                crate::dlog!("deployd: tool launch error: {e}");
-                self.push_notification(&format!("Launch failed: {e}"));
+                crate::dlog!("deployd: tool launch error: {error}");
+                self.push_notification(&format!("Launch failed: {error}"));
             }
         }
     }

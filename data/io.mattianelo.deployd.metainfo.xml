@@ -31,7 +31,7 @@
       <li>Profile system for switching between mod configurations</li>
       <li>Conflict detection with per-file detail</li>
       <li>Non-destructive deployment via hardlinks</li>
-      <li>External tool launcher with Wine/Proton support</li>
+      <li>External tool launcher with Wine/Proton support and verified first-use Snap runtime setup</li>
     </ul>
   </description>
 

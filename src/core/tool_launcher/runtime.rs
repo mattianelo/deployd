@@ -152,7 +152,10 @@ fn supervise_exit(
                 } else {
                     eprintln!("deployd: {tool_name} exited {status} (no stderr).");
                 }
-                Some(stderr.unwrap_or_else(|| format!("process exited with {status}")))
+                Some(match stderr {
+                    Some(stderr) => format!("process exited with {status}: {stderr}"),
+                    None => format!("process exited with {status}"),
+                })
             }
             Err(error) => {
                 eprintln!("deployd: failed to wait on process: {error}");

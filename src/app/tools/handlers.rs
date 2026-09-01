@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -9,7 +8,6 @@ use gtk::prelude::*;
 use relm4::prelude::*;
 
 use crate::core::{game, tool_launcher};
-use crate::models::game::GameEngine;
 use crate::ui::tool_manager::{ToolManager, ToolManagerOutput};
 
 use super::super::App;
@@ -31,6 +29,7 @@ struct PostToolExitActions {
 enum ToolExitKind {
     Completed,
     Cancelled,
+    Failed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,11 +38,17 @@ enum PostToolDeploy {
     Now,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct ToolLaunchOptions {
+    monitor_proton_setup: bool,
+    skip_mono: bool,
+}
+
 fn post_tool_exit_actions(
     exit_kind: ToolExitKind,
     _selected_game_id: Option<&str>,
 ) -> PostToolExitActions {
-    if exit_kind == ToolExitKind::Cancelled {
+    if exit_kind != ToolExitKind::Completed {
         return PostToolExitActions::default();
     }
 
@@ -75,13 +80,14 @@ impl App {
             self.show_toast("Wait for the current task to finish before launching tools");
             return;
         }
-        self.handle_launch_tool_inner(tool_id, false, root, sender);
+        self.handle_launch_tool_inner(tool_id, false, false, root, sender);
     }
 
     fn handle_launch_tool_inner(
         &mut self,
         tool_id: String,
         allow_umu_setup: bool,
+        skip_mono: bool,
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
@@ -113,8 +119,8 @@ impl App {
         }
 
         let wine_config = match game::detect_wine_config(&game) {
-            Some(c) => c,
-            None => {
+            Ok(Some(config)) => config,
+            Ok(None) => {
                 if game::is_snap() {
                     self.push_notification("Snap Wine runtime not available. Connect the Wine interface and try again.");
                 } else {
@@ -122,24 +128,23 @@ impl App {
                 }
                 return;
             }
-        };
-
-        // For Eclipse games under the Snap wine-runtime, wine-mono is not bundled.
-        // Show a one-time blocking dialog so the user knows to accept the Mono install prompt.
-        if game.engine == GameEngine::Eclipse && game::snap_wine_available() {
-            let sentinel = wine_config.prefix.join(".deployd_mono_prompt_v1");
-            if !sentinel.exists() {
-                sender.input(AppMsg::Tools(
-                    crate::app::messages::ToolsMsg::ConfirmMonoPrompt(
-                        tool_id,
-                        wine_config.prefix.clone(),
-                    ),
-                ));
+            Err(error) => {
+                self.push_notification(&format!("Cannot prepare the Wine runtime: {error}"));
                 return;
             }
-        }
+        };
 
-        self.do_launch_tool(tool, game, wine_config, allow_umu_setup, root, sender);
+        self.do_launch_tool(
+            tool,
+            game,
+            wine_config,
+            ToolLaunchOptions {
+                monitor_proton_setup: allow_umu_setup,
+                skip_mono,
+            },
+            root,
+            sender,
+        );
     }
 
     /// Show the first-run Proton GE download confirmation dialog.
@@ -214,45 +219,6 @@ impl App {
         dialog.present(Some(root));
     }
 
-    /// Show a one-time Mono install info dialog for Eclipse tools under the Snap wine-runtime.
-    ///
-    /// wine-mono is not bundled with the Snap's wine-platform content snap. Wine will offer to
-    /// install it when a .NET tool (e.g. CharGenMorph Compiler) is first launched. This dialog
-    /// tells the user to accept that prompt. After the user acknowledges, a sentinel file is
-    /// written to the prefix so the dialog never appears again.
-    pub(crate) fn handle_confirm_mono_prompt(
-        &mut self,
-        tool_id: String,
-        prefix: PathBuf,
-        root: &adw::ApplicationWindow,
-        sender: &ComponentSender<Self>,
-    ) {
-        let dialog = adw::AlertDialog::builder()
-            .heading("Mono Required for This Tool")
-            .body(
-                "Wine will ask to install Mono — a .NET runtime required by tools like \
-                 CharGenMorph Compiler.\n\n\
-                 Accept the installation when prompted. This message will not appear again.",
-            )
-            .build();
-        dialog.add_response("cancel", "Cancel");
-        dialog.add_response("launch", "Launch");
-        dialog.set_default_response(Some("launch"));
-        dialog.set_close_response("cancel");
-        dialog.set_response_appearance("launch", adw::ResponseAppearance::Suggested);
-
-        let s = sender.input_sender().clone();
-        dialog.connect_response(None, move |_, response| {
-            if response == "launch" {
-                let _ = std::fs::write(prefix.join(".deployd_mono_prompt_v1"), b"");
-                let _ = s.send(AppMsg::Tools(crate::app::messages::ToolsMsg::LaunchTool(
-                    tool_id.clone(),
-                )));
-            }
-        });
-        dialog.present(Some(root));
-    }
-
     /// User confirmed the AppImage Proton GE setup — launch UMU so it can perform setup.
     pub(crate) fn handle_proton_setup_confirmed(
         &mut self,
@@ -265,7 +231,7 @@ impl App {
             WorkKind::SettingUpRuntime,
             "Setting up Proton GE and launching tool...",
         );
-        self.handle_launch_tool_inner(tool_id, true, root, sender);
+        self.handle_launch_tool_inner(tool_id, true, false, root, sender);
     }
 
     pub(crate) fn handle_proton_setup_ready(&mut self) {
@@ -279,7 +245,7 @@ impl App {
     pub(crate) fn handle_tool_exited(
         &mut self,
         tool_name: String,
-        _error: Option<String>,
+        error: Option<String>,
         sender: &ComponentSender<Self>,
     ) {
         let was_cancelling = self
@@ -287,14 +253,15 @@ impl App {
             .launch_session
             .as_ref()
             .is_some_and(|session| session.state == ToolSessionState::Cancelling);
-        let actions = post_tool_exit_actions(
-            if was_cancelling {
-                ToolExitKind::Cancelled
-            } else {
-                ToolExitKind::Completed
-            },
-            self.selected_game().map(|game| game.id.as_str()),
-        );
+        let exit_kind = if was_cancelling {
+            ToolExitKind::Cancelled
+        } else if error.is_some() {
+            ToolExitKind::Failed
+        } else {
+            ToolExitKind::Completed
+        };
+        let actions =
+            post_tool_exit_actions(exit_kind, self.selected_game().map(|game| game.id.as_str()));
         if let Some(session) = self.tools.launch_session.as_ref() {
             crate::dlog!(
                 "deployd: tool session ended tool_id={} variant={} elapsed_ms={}",
@@ -311,6 +278,12 @@ impl App {
 
         if was_cancelling {
             self.show_toast(&format!("{tool_name} stopped"));
+            return;
+        }
+
+        if let Some(error) = error {
+            crate::dlog!("deployd: {tool_name} launch failed: {error}");
+            self.push_notification(&format!("{tool_name} failed: {error}"));
             return;
         }
 
@@ -347,7 +320,7 @@ impl App {
         let game_path = game.path.clone();
         let game_engine = game.engine.clone();
         let deploy_dir = game::tool_search_dir(game);
-        let wine_prefix = game::detect_wine_config(game).map(|wc| wc.prefix);
+        let wine_prefix = game.wine_prefix.clone();
         let tools = self.tools.entries.clone();
 
         self.ui.tool_manager_dialog = Some(
@@ -468,6 +441,7 @@ impl App {
             false
         };
         self.close_tool_launch_dialog();
+        self.tools.pending_mono_tool = None;
         self.tools.proton_setup = false;
         self.finish_work(WorkKind::LaunchingTool);
         self.finish_work(WorkKind::SettingUpRuntime);
@@ -492,7 +466,102 @@ impl App {
         if let Some(dialog) = self.ui.tool_launch_dialog.take() {
             dialog.close();
         }
+        self.ui.tool_launch_log = None;
         self.tools.launch_cancel = None;
+    }
+
+    pub(crate) fn handle_tool_setup_progress(
+        &mut self,
+        stage: crate::core::tool_launcher::ToolSetupStage,
+    ) {
+        if self.tools.launch_session.is_none() {
+            return;
+        }
+        let message = stage.message();
+        self.update_work(WorkKind::LaunchingTool, message, None);
+        if let Some(buffer) = self.ui.tool_launch_log.as_ref() {
+            let mut end = buffer.end_iter();
+            buffer.insert(&mut end, &format!("{message}\n"));
+        }
+    }
+
+    pub(crate) fn handle_retry_mono_setup(
+        &mut self,
+        root: &adw::ApplicationWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        let Some(tool_id) = self.tools.pending_mono_tool.take() else {
+            return;
+        };
+        self.close_tool_launch_dialog();
+        self.handle_launch_tool_inner(tool_id, false, false, root, sender);
+    }
+
+    pub(crate) fn handle_launch_without_mono(
+        &mut self,
+        root: &adw::ApplicationWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        let Some(tool_id) = self.tools.pending_mono_tool.take() else {
+            return;
+        };
+        self.close_tool_launch_dialog();
+        self.handle_launch_tool_inner(tool_id, false, true, root, sender);
+    }
+
+    pub(crate) fn show_mono_setup_failure(
+        &mut self,
+        error: &str,
+        root: &adw::ApplicationWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.close_tool_launch_dialog();
+        let dialog = adw::AlertDialog::builder()
+            .heading("Wine Mono Setup Failed")
+            .body(
+                "Retry the verified setup, continue with a native Windows tool, or cancel. \
+                 Deployd will retry Mono automatically on a later launch.",
+            )
+            .build();
+        dialog.add_response("cancel", "Cancel");
+        dialog.add_response("without-mono", "Launch Without Mono");
+        dialog.add_response("retry", "Retry");
+        dialog.set_default_response(Some("retry"));
+        dialog.set_close_response("cancel");
+        dialog.set_response_appearance("retry", adw::ResponseAppearance::Suggested);
+
+        let buffer = gtk::TextBuffer::new(None);
+        buffer.set_text(&format!("Wine Mono setup failed:\n{error}\n"));
+        let console = gtk::TextView::builder()
+            .buffer(&buffer)
+            .editable(false)
+            .cursor_visible(false)
+            .monospace(true)
+            .wrap_mode(gtk::WrapMode::WordChar)
+            .height_request(150)
+            .build();
+        let scroll = gtk::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk::PolicyType::Automatic)
+            .vscrollbar_policy(gtk::PolicyType::Automatic)
+            .child(&console)
+            .build();
+        dialog.set_extra_child(Some(&scroll));
+
+        let input_sender = sender.input_sender().clone();
+        dialog.connect_response(None, move |_, response| {
+            let message = match response {
+                "retry" => Some(crate::app::messages::ToolsMsg::RetryMonoSetup),
+                "without-mono" => Some(crate::app::messages::ToolsMsg::LaunchWithoutMono),
+                "cancel" => Some(crate::app::messages::ToolsMsg::CancelToolLaunch),
+                _ => None,
+            };
+            if let Some(message) = message {
+                let _ = input_sender.send(AppMsg::Tools(message));
+            }
+        });
+        dialog.present(Some(root));
+        self.ui.tool_launch_log = Some(buffer);
+        self.ui.tool_launch_dialog = Some(dialog);
     }
 
     /// Shared inner launch logic used by both the normal path and the UMU-confirmed path.
@@ -501,7 +570,7 @@ impl App {
         tool: crate::models::tool::Tool,
         game: crate::models::game::Game,
         wine_config: crate::core::game::WineConfig,
-        monitor_proton_setup: bool,
+        options: ToolLaunchOptions,
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
@@ -509,6 +578,7 @@ impl App {
         let exit_sender = sender.input_sender().clone();
         let exit_tool_name = tool_name.clone();
         let setup_sender = sender.input_sender().clone();
+        let progress_sender = sender.input_sender().clone();
         let cache_root = match self.cache_root_for(&game.id) {
             Ok(path) => path,
             Err(error) => {
@@ -539,9 +609,22 @@ impl App {
             let spawn_sender = setup_sender.clone();
             let timing_start = std::time::Instant::now();
             let timing_game_id = game.id.clone();
-            let result: Result<String, String> = (move || {
+            let progress = Arc::new(move |stage| {
+                let _ = progress_sender.send(AppMsg::Tools(
+                    crate::app::messages::ToolsMsg::ToolSetupProgress(stage),
+                ));
+            });
+            let result: Result<String, tool_launcher::ToolPrepareError> = async {
+                tool_launcher::prepare_tool_runtime(
+                    &game,
+                    &wine_config,
+                    launch_cancel.clone(),
+                    options.skip_mono,
+                    progress,
+                )
+                .await?;
                 if launch_cancel.load(Ordering::SeqCst) {
-                    return Ok(tool_name);
+                    return Err(tool_launcher::ToolPrepareError::Cancelled);
                 }
                 tool_launcher::launch_tool(
                     &tool,
@@ -563,12 +646,13 @@ impl App {
                         })),
                     },
                 )
-                .map_err(|e| e.to_string())?;
-                if monitor_proton_setup {
+                .map_err(|error| tool_launcher::ToolPrepareError::Fatal(error.to_string()))?;
+                if options.monitor_proton_setup {
                     monitor_deployd_proton_runtime(setup_sender);
                 }
                 Ok(tool_name)
-            })();
+            }
+            .await;
             crate::app::timing::log_phase(
                 "tools.launch_prepare",
                 &timing_game_id,
@@ -579,7 +663,7 @@ impl App {
                 Ok(name) if cancel.load(Ordering::SeqCst) => {
                     AppCmdMsg::Tools(crate::app::messages::ToolsCmdMsg::LaunchCancelled(name))
                 }
-                Err(_) if cancel.load(Ordering::SeqCst) => AppCmdMsg::Tools(
+                Err(tool_launcher::ToolPrepareError::Cancelled) => AppCmdMsg::Tools(
                     crate::app::messages::ToolsCmdMsg::LaunchCancelled(original_tool_name),
                 ),
                 other => AppCmdMsg::Tools(crate::app::messages::ToolsCmdMsg::Launched(other)),
@@ -601,7 +685,7 @@ impl App {
         dialog.set_close_response("cancel");
 
         let content = gtk::Box::builder()
-            .orientation(gtk::Orientation::Horizontal)
+            .orientation(gtk::Orientation::Vertical)
             .spacing(12)
             .margin_top(6)
             .margin_bottom(6)
@@ -615,8 +699,27 @@ impl App {
             .hexpand(true)
             .build();
         label.add_css_class("dim-label");
-        content.append(&spinner);
-        content.append(&label);
+        let status = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        status.append(&spinner);
+        status.append(&label);
+        content.append(&status);
+
+        let buffer = gtk::TextBuffer::new(None);
+        buffer.set_text("Preparing the tool environment...\n");
+        let console = gtk::TextView::builder()
+            .buffer(&buffer)
+            .editable(false)
+            .cursor_visible(false)
+            .monospace(true)
+            .wrap_mode(gtk::WrapMode::WordChar)
+            .height_request(150)
+            .build();
+        let scroll = gtk::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk::PolicyType::Automatic)
+            .vscrollbar_policy(gtk::PolicyType::Automatic)
+            .child(&console)
+            .build();
+        content.append(&scroll);
         dialog.set_extra_child(Some(&content));
 
         let input_sender = sender.input_sender().clone();
@@ -628,6 +731,7 @@ impl App {
             }
         });
         dialog.present(Some(root));
+        self.ui.tool_launch_log = Some(buffer);
         self.ui.tool_launch_dialog = Some(dialog);
     }
 }
@@ -684,6 +788,15 @@ mod tests {
     fn cancelled_tool_exit_does_not_scan_or_sort() {
         assert_eq!(
             post_tool_exit_actions(ToolExitKind::Cancelled, Some("skyrim-se")),
+            PostToolExitActions::default(),
+        );
+    }
+
+    // @variants: both
+    #[test]
+    fn failed_tool_exit_does_not_scan_sort_or_deploy() {
+        assert_eq!(
+            post_tool_exit_actions(ToolExitKind::Failed, Some("skyrim-se")),
             PostToolExitActions::default(),
         );
     }
