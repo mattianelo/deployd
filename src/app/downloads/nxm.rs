@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use relm4::prelude::*;
 
 use crate::core::game;
-use crate::models::download::{DownloadEntry, NexusIds};
+use crate::models::download::{DownloadEntry, DownloadStatus, NexusIds};
 use crate::utils::paths;
 
 use super::super::App;
@@ -192,6 +192,34 @@ impl App {
                     })
                     .await
                     .map_err(|e| e.to_string())?;
+
+                let completed_entry = DownloadEntry {
+                    id: download_id.clone(),
+                    mod_name: metadata.mod_name.clone(),
+                    status: DownloadStatus::Downloaded,
+                    progress: 1.0,
+                    status_msg: DownloadStatus::Downloaded.default_status_msg().to_string(),
+                    error_msg: None,
+                    nexus_ids: Some(NexusIds {
+                        mod_id: link.mod_id,
+                        file_id: link.file_id,
+                        domain: link.domain.clone(),
+                    }),
+                    archive_path: Some(dest.clone()),
+                    metadata_fetched: true,
+                    game_domain: Some(link.domain.clone()),
+                    nexus_file_name: metadata.nexus_file_name.clone(),
+                    nexus_is_primary: metadata.nexus_is_primary,
+                    archive_hash: None,
+                    archive_md5: None,
+                    version: metadata.version.clone(),
+                    author: metadata.author.clone(),
+                    hidden: false,
+                };
+                tracker
+                    .save_download_entry(&completed_entry)
+                    .await
+                    .map_err(|error| error.to_string())?;
 
                 Ok(NxmDownloadResult {
                     download_id: download_id.clone(),

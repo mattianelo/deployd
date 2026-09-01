@@ -11,43 +11,6 @@ use crate::models::nexus::{NexusFileEntry, NexusFileUpdate, NexusModInfo};
 use super::super::App;
 use super::super::messages::{AppCmdMsg, AppMsg};
 
-pub(crate) async fn persist_fetched_download_metadata(
-    tracker: &crate::core::tracker::Tracker,
-    download_id: &str,
-    nexus_mod_id: i64,
-    result: ManualMetadataResult,
-) -> Result<ManualMetadataResult, String> {
-    let metadata = match &result {
-        ManualMetadataResult::Resolved(metadata) | ManualMetadataResult::NeedsFileId(metadata) => {
-            metadata
-        }
-    };
-    let nexus_file_id = metadata.file_id.unwrap_or(0);
-    let metadata_fetched = nexus_file_id > 0
-        || metadata
-            .nexus_file_name
-            .as_deref()
-            .is_some_and(|name| !name.trim().is_empty());
-    tracker
-        .update_download_nexus_metadata(
-            download_id,
-            &crate::core::tracker::downloads::DownloadNexusMetadata {
-                mod_name: metadata.mod_name.clone(),
-                nexus_mod_id,
-                nexus_file_id,
-                domain: metadata.domain.clone(),
-                metadata_fetched,
-                nexus_file_name: metadata.nexus_file_name.clone(),
-                nexus_is_primary: metadata.nexus_is_primary,
-                version: metadata.version.clone(),
-                author: metadata.author.clone(),
-            },
-        )
-        .await
-        .map_err(|error| error.to_string())?;
-    Ok(result)
-}
-
 pub(crate) fn nexus_download_metadata(
     domain: &str,
     fallback_name: &str,
@@ -278,49 +241,30 @@ impl App {
         domain: String,
         sender: &ComponentSender<Self>,
     ) {
-        let new_nexus_ids = Some(NexusIds {
+        let nexus_ids = NexusIds {
             mod_id,
             file_id: 0,
             domain,
+        };
+
+        let Some(tracker) = self.session.tracker.clone() else {
+            self.push_notification("Nexus identity could not be saved: database unavailable");
+            return;
+        };
+        let persisted_download_id = download_id.clone();
+        sender.oneshot_command(async move {
+            let result = tracker
+                .update_download_nexus_identity(&persisted_download_id, &nexus_ids)
+                .await
+                .map_err(|error| error.to_string());
+            AppCmdMsg::Downloads(
+                crate::app::messages::DownloadsCmdMsg::NexusIdentityPersisted {
+                    download_id,
+                    nexus_ids,
+                    result,
+                },
+            )
         });
-
-        // Update backing store
-        if let Some(entry) = self.download.all.iter_mut().find(|e| e.id == download_id) {
-            entry.nexus_ids = new_nexus_ids.clone();
-        }
-
-        // Update factory
-        {
-            let mut guard = self.download.rows.guard();
-            for i in 0..guard.len() {
-                if let Some(row) = guard.get_mut(i)
-                    && row.entry.id == download_id
-                {
-                    row.entry.nexus_ids = new_nexus_ids;
-                    break;
-                }
-            }
-        }
-
-        // Persist the updated entry
-        if let (Some(tracker), Some(entry)) = (
-            self.session.tracker.clone(),
-            self.download
-                .all
-                .iter()
-                .find(|e| e.id == download_id)
-                .cloned(),
-        ) {
-            sender.oneshot_command(async move {
-                let result = tracker
-                    .save_download_entry(&entry)
-                    .await
-                    .map_err(|error| error.to_string());
-                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
-            });
-        }
-
-        self.start_nexus_metadata_fetch(download_id, sender);
     }
 
     /// Perform the async Nexus metadata fetch for a download entry identified by ID.
@@ -508,18 +452,6 @@ impl App {
                 }
             }
             .await;
-            let result = match result {
-                Ok(result) => {
-                    persist_fetched_download_metadata(
-                        &tracker,
-                        &download_id,
-                        nexus_mod_id,
-                        result,
-                    )
-                    .await
-                }
-                Err(error) => Err(error),
-            };
             crate::app::timing::log_phase("metadata.fetch", &domain, timing_start, Some(1));
             AppCmdMsg::Downloads(
                 crate::app::messages::DownloadsCmdMsg::NexusMetadataFetched(download_id, result),

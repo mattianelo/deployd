@@ -15,6 +15,10 @@ use super::App;
 use super::messages::{AppCmdMsg, AppMsg};
 use super::types::PendingInstall;
 
+fn begin_external_install(install: &mut super::state::InstallSession, game_id: &str) {
+    let _ = install.begin(game_id.to_string(), None);
+}
+
 impl App {
     pub(crate) fn handle_absorb_external_files_requested(
         &mut self,
@@ -375,6 +379,7 @@ impl App {
         let Some(game) = self.selected_game().cloned() else {
             return;
         };
+        begin_external_install(&mut self.install, &game.id);
         let mod_name = "External Changes".to_string();
         let rules = crate::core::rules::rules_for_game(&game.id);
         let preview = crate::ui::pre_install_dialog::file_preview_from_list(
@@ -442,6 +447,24 @@ impl App {
                     }
                 }),
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::begin_external_install;
+    use crate::app::state::InstallSession;
+
+    #[test]
+    fn external_merge_starts_an_accepted_install_session() {
+        let mut install = InstallSession::default();
+
+        begin_external_install(&mut install, "fallout4");
+
+        let identity = install.identity().expect("external install identity");
+        assert!(install.accepts(&identity));
+        assert_eq!(identity.game_id, "fallout4");
+        assert_eq!(identity.download_id, None);
     }
 }
 

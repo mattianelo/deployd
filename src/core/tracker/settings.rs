@@ -103,26 +103,6 @@ impl Tracker {
         Ok(())
     }
 
-    pub async fn update_mod_nexus_metadata_exact(
-        &self,
-        mod_id: &str,
-        latest_version: Option<&str>,
-        author: &str,
-        description: &str,
-    ) -> Result<()> {
-        sqlx::query(
-            "UPDATE mods SET latest_version = ?, author = ?, nexus_description = ? WHERE id = ?",
-        )
-        .bind(latest_version)
-        .bind(author)
-        .bind(description)
-        .bind(mod_id)
-        .execute(&self.pool)
-        .await
-        .context("Failed to update exact Nexus metadata")?;
-        Ok(())
-    }
-
     pub async fn set_mod_latest_version(
         &self,
         mod_id: &str,
@@ -156,85 +136,6 @@ impl Tracker {
             .execute(&self.pool)
             .await
             .context("Failed to set installed version")?;
-        Ok(())
-    }
-
-    /// Set version and author on a mod identified by its Nexus file coordinates.
-    /// Used to propagate resolved download metadata to the installed mod without a full reload.
-    pub async fn update_mod_version_author_by_nexus_ids(
-        &self,
-        game_id: &str,
-        nexus_mod_id: i64,
-        nexus_file_id: i64,
-        version: &str,
-        author: &str,
-    ) -> Result<()> {
-        sqlx::query(
-            "UPDATE mods SET version = ?, author = ? WHERE game_id = ? AND nexus_mod_id = ? AND nexus_file_id = ?",
-        )
-        .bind(version)
-        .bind(author)
-        .bind(game_id)
-        .bind(nexus_mod_id)
-        .bind(nexus_file_id)
-        .execute(&self.pool)
-        .await
-        .context("Failed to update mod version and author by Nexus IDs")?;
-        Ok(())
-    }
-
-    pub async fn update_mod_source_metadata_by_nexus_ids(
-        &self,
-        game_id: &str,
-        nexus_mod_id: i64,
-        nexus_file_id: i64,
-        nexus_file_name: Option<&str>,
-        nexus_is_primary: bool,
-        archive_md5: Option<&str>,
-    ) -> Result<()> {
-        sqlx::query(
-            "UPDATE mods
-             SET nexus_file_name = COALESCE(?, nexus_file_name),
-                 nexus_is_primary = CASE
-                     WHEN ? THEN 1
-                     ELSE nexus_is_primary
-                 END,
-                 archive_md5 = COALESCE(?, archive_md5)
-             WHERE game_id = ?
-               AND nexus_mod_id = ?
-               AND nexus_file_id = ?",
-        )
-        .bind(nexus_file_name)
-        .bind(nexus_is_primary)
-        .bind(archive_md5)
-        .bind(game_id)
-        .bind(nexus_mod_id)
-        .bind(nexus_file_id)
-        .execute(&self.pool)
-        .await
-        .context("Failed to update mod source metadata by Nexus IDs")?;
-        Ok(())
-    }
-
-    /// Set version on a mod row identified by its Nexus file coordinates.
-    /// Used to propagate resolved download metadata to the installed mod without a full reload.
-    pub async fn update_mod_version_by_nexus_ids(
-        &self,
-        game_id: &str,
-        nexus_mod_id: i64,
-        nexus_file_id: i64,
-        version: &str,
-    ) -> Result<()> {
-        sqlx::query(
-            "UPDATE mods SET version = ? WHERE game_id = ? AND nexus_mod_id = ? AND nexus_file_id = ?",
-        )
-        .bind(version)
-        .bind(game_id)
-        .bind(nexus_mod_id)
-        .bind(nexus_file_id)
-        .execute(&self.pool)
-        .await
-        .context("Failed to update mod version by Nexus IDs")?;
         Ok(())
     }
 

@@ -46,10 +46,6 @@ pub enum AbsorbDialogOutput {
     Cancelled,
 }
 
-fn external_install_destination(file: &ExternalFile) -> PathBuf {
-    PathBuf::from(&file.game_rel_original)
-}
-
 #[relm4::component(pub)]
 impl SimpleComponent for AbsorbDialog {
     type Init = Vec<ExternalFile>;
@@ -300,7 +296,13 @@ impl SimpleComponent for AbsorbDialog {
                     .iter()
                     .zip(self.file_checks.iter())
                     .filter(|(ef, check)| check.is_active() && !ef.is_managed_plugin)
-                    .map(|(ef, _)| (ef.abs_path.clone(), external_install_destination(ef)))
+                    .map(|(ef, _)| {
+                        let dest = ef
+                            .game_rel_original
+                            .strip_prefix("../")
+                            .unwrap_or(&ef.game_rel_original);
+                        (ef.abs_path.clone(), PathBuf::from(dest))
+                    })
                     .collect();
                 self.window.set_visible(false);
                 let _ = sender.output(AbsorbDialogOutput::Selected(file_list));
@@ -363,51 +365,5 @@ impl SimpleComponent for AbsorbDialog {
                 let _ = sender.output(AbsorbDialogOutput::Cancelled);
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::external_install_destination;
-    use crate::core::detector::ExternalFile;
-
-    fn external_file(path: &str) -> ExternalFile {
-        ExternalFile {
-            abs_path: std::path::PathBuf::from("/game/file"),
-            game_rel: path.to_lowercase(),
-            game_rel_original: path.to_string(),
-            is_managed_plugin: false,
-            xedit_backup_path: None,
-        }
-    }
-
-    #[test]
-    fn preserves_bethesda_game_root_anchor() {
-        let file = external_file("../F4SE/Plugins/example.dll");
-
-        assert_eq!(
-            external_install_destination(&file),
-            std::path::PathBuf::from("../F4SE/Plugins/example.dll")
-        );
-    }
-
-    #[test]
-    fn preserves_aurora_sibling_anchor() {
-        let file = external_file("../system/example.dll");
-
-        assert_eq!(
-            external_install_destination(&file),
-            std::path::PathBuf::from("../system/example.dll")
-        );
-    }
-
-    #[test]
-    fn leaves_data_relative_paths_unanchored() {
-        let file = external_file("Textures/Example.dds");
-
-        assert_eq!(
-            external_install_destination(&file),
-            std::path::PathBuf::from("Textures/Example.dds")
-        );
     }
 }

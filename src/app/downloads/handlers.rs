@@ -486,7 +486,6 @@ impl App {
         resolved_file_id: Option<i64>,
         version: Option<String>,
         author: Option<String>,
-        sender: &ComponentSender<Self>,
     ) {
         let metadata_fetched =
             metadata_identifies_file(nexus_file_name.as_deref(), resolved_file_id);
@@ -542,19 +541,6 @@ impl App {
                 }
             }
         }
-        // Persist updated entry
-        if let Some(tracker) = self.session.tracker.clone()
-            && let Some(entry) = self.download.all.iter().find(|e| e.id == download_id)
-        {
-            let entry = entry.clone();
-            sender.oneshot_command(async move {
-                let result = tracker
-                    .save_download_entry(&entry)
-                    .await
-                    .map_err(|error| error.to_string());
-                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
-            });
-        }
         // Update factory
         {
             let mut guard = self.download.rows.guard();
@@ -604,40 +590,9 @@ impl App {
                 ..
             }) = entry.nexus_ids
             && nxs_file_id != 0
-            && let Some(tracker) = self.session.tracker.clone()
-            && let Some(game) = self.selected_game().cloned()
         {
-            let version_db = v.clone();
             let version_ui = v.clone();
-            let author_db = author.clone();
             let author_ui = author.clone();
-            let game_id = game.id.clone();
-            sender.oneshot_command(async move {
-                let result = if let Some(ref a) = author_db {
-                    tracker
-                        .update_mod_version_author_by_nexus_ids(
-                            &game_id,
-                            nxs_mod_id,
-                            nxs_file_id,
-                            &version_db,
-                            a,
-                        )
-                        .await
-                        .map(|_| ())
-                } else {
-                    tracker
-                        .update_mod_version_by_nexus_ids(
-                            &game_id,
-                            nxs_mod_id,
-                            nxs_file_id,
-                            &version_db,
-                        )
-                        .await
-                        .map(|_| ())
-                }
-                .map_err(|error| error.to_string());
-                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
-            });
             // Surgically update the matching factory row so the subtitle appears without a reload.
             let mut guard = self.mods.rows.guard();
             for i in 0..guard.len() {
@@ -653,36 +608,6 @@ impl App {
                     break;
                 }
             }
-        }
-        if let Some(entry) = self.download.all.iter().find(|e| e.id == download_id)
-            && let Some(NexusIds {
-                mod_id: nxs_mod_id,
-                file_id: nxs_file_id,
-                ..
-            }) = entry.nexus_ids
-            && nxs_file_id != 0
-            && let Some(tracker) = self.session.tracker.clone()
-            && let Some(game) = self.selected_game().cloned()
-        {
-            let game_id = game.id.clone();
-            let source_file_name = entry.nexus_file_name.clone();
-            let source_is_primary = entry.nexus_is_primary;
-            let source_md5 = entry.archive_md5.clone();
-            sender.oneshot_command(async move {
-                let result = tracker
-                    .update_mod_source_metadata_by_nexus_ids(
-                        &game_id,
-                        nxs_mod_id,
-                        nxs_file_id,
-                        source_file_name.as_deref(),
-                        source_is_primary,
-                        source_md5.as_deref(),
-                    )
-                    .await
-                    .map(|_| ())
-                    .map_err(|error| error.to_string());
-                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
-            });
         }
         // Rebuild views only if game_domain actually changed (affects filtering)
         if game_domain.is_some() && old_domain != game_domain {

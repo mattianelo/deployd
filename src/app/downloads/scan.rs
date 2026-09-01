@@ -22,6 +22,10 @@ impl App {
             self.download.initial_scan_done = true;
             return;
         }
+        let Some(tracker) = self.session.tracker.clone() else {
+            self.push_notification("Downloads scan failed: database unavailable");
+            return;
+        };
 
         self.begin_work(WorkKind::ScanningDownloads, "Scanning downloads...");
         let selected_game_id = self
@@ -31,10 +35,7 @@ impl App {
         let entries = self.download.all.clone();
         sender.oneshot_command(async move {
             let timing_start = std::time::Instant::now();
-            let result = tokio::task::spawn_blocking(move || scan_downloads(base_dir, entries))
-                .await
-                .map_err(|e| e.to_string())
-                .and_then(|result| result);
+            let result = scan_downloads_and_persist(base_dir, entries, tracker).await;
             if let Ok(scan) = &result {
                 crate::app::timing::log_phase(
                     "downloads.scan",
@@ -48,6 +49,21 @@ impl App {
             ))
         });
     }
+}
+
+async fn scan_downloads_and_persist(
+    base_dir: PathBuf,
+    entries: Vec<DownloadEntry>,
+    tracker: crate::core::tracker::Tracker,
+) -> Result<DownloadScanResult, String> {
+    let scan = tokio::task::spawn_blocking(move || scan_downloads(base_dir, entries))
+        .await
+        .map_err(|error| error.to_string())??;
+    tracker
+        .persist_download_scan(&scan.removed_ids, &scan.to_persist)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(scan)
 }
 
 fn scan_downloads(
@@ -603,6 +619,36 @@ mod tests {
     use super::*;
     use anyhow::Result;
     use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn scan_is_persisted_before_result_is_returned() -> Result<()> {
+        let temp = TempDir::new()?;
+        let archive = temp
+            .path()
+            .join("Dynamic Grass 108480 1.3.0 2026-08-31T12-00Z Gpr9A6gVu.zip");
+        std::fs::write(&archive, b"archive")?;
+        let tracker = crate::core::tracker::Tracker::open("sqlite::memory:")
+            .await?
+            .tracker;
+
+        let scan =
+            scan_downloads_and_persist(temp.path().to_path_buf(), Vec::new(), tracker.clone())
+                .await
+                .map_err(anyhow::Error::msg)?;
+
+        assert_eq!(scan.new_count, 1);
+        let loaded = tracker.load_download_entries().await?;
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].archive_path.as_deref(), Some(archive.as_path()));
+        assert_eq!(
+            loaded[0]
+                .nexus_ids
+                .as_ref()
+                .map(|ids| (ids.mod_id, ids.file_id, ids.domain.as_str())),
+            Some((108_480, 0, ""))
+        );
+        Ok(())
+    }
 
     #[test]
     fn scan_reattaches_archive_to_imported_metadata_entry() -> Result<()> {

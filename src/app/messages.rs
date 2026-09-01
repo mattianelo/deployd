@@ -561,6 +561,15 @@ pub(crate) enum DownloadsCmdMsg {
         String,
         Result<crate::app::types::ManualMetadataResult, String>,
     ),
+    NexusIdentityPersisted {
+        download_id: String,
+        nexus_ids: crate::models::download::NexusIds,
+        result: Result<(), String>,
+    },
+    NexusMetadataPersisted {
+        toast: Option<String>,
+        result: Result<(), String>,
+    },
     DownloadsDirUpdated(Result<Option<PathBuf>, String>),
     DownloadsScanned(Result<DownloadScanResult, String>),
 }

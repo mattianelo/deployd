@@ -16,10 +16,8 @@ impl App {
         &mut self,
         download_id: String,
         metadata: NexusDownloadMetadata,
-        sender: &ComponentSender<Self>,
     ) {
         let latest_version = metadata.latest_version.clone();
-        let summary = metadata.summary.clone();
         self.handle_download_name_resolved(
             download_id.clone(),
             metadata.mod_name,
@@ -29,7 +27,6 @@ impl App {
             metadata.file_id,
             metadata.version,
             metadata.author,
-            sender,
         );
 
         let installed_mod_id = self
@@ -49,9 +46,7 @@ impl App {
                     })
                     .map(|row| row.mod_entry.id.clone())
             });
-        if let (Some(tracker), Some(installed_mod_id)) =
-            (self.session.tracker.clone(), installed_mod_id)
-        {
+        if let Some(installed_mod_id) = installed_mod_id {
             let author = self
                 .download
                 .all
@@ -72,25 +67,12 @@ impl App {
                     }
                 }
             }
-            sender.oneshot_command(async move {
-                let result = tracker
-                    .update_mod_nexus_metadata_exact(
-                        &installed_mod_id,
-                        latest_version.as_deref(),
-                        &author,
-                        summary.as_deref().unwrap_or(""),
-                    )
-                    .await
-                    .map_err(|error| error.to_string());
-                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
-            });
         }
     }
 
     pub(crate) fn handle_cmd_downloads_scanned(
         &mut self,
         result: Result<DownloadScanResult, String>,
-        sender: &ComponentSender<Self>,
     ) {
         self.finish_work(WorkKind::ScanningDownloads);
 
@@ -105,36 +87,6 @@ impl App {
 
         self.download.all = scan.entries;
         self.rebuild_downloads_view();
-
-        if !scan.removed_ids.is_empty()
-            && let Some(tracker) = self.session.tracker.clone()
-        {
-            let removed_ids = scan.removed_ids.clone();
-            sender.oneshot_command(async move {
-                let result = tracker
-                    .delete_download_entries(&removed_ids)
-                    .await
-                    .map_err(|error| error.to_string());
-                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
-            });
-        }
-
-        if !scan.to_persist.is_empty()
-            && let Some(tracker) = self.session.tracker.clone()
-        {
-            let to_persist = scan.to_persist.clone();
-            sender.oneshot_command(async move {
-                let result = async {
-                    for entry in &to_persist {
-                        tracker.save_download_entry(entry).await?;
-                    }
-                    anyhow::Ok(())
-                }
-                .await
-                .map_err(|error| error.to_string());
-                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
-            });
-        }
 
         if self.download.initial_scan_done && scan.new_count > 0 {
             self.show_toast(&format!("Found {} archive(s)", scan.new_count));
@@ -154,19 +106,12 @@ impl App {
             .iter_mut()
             .find(|entry| entry.id == download_id)
         {
-            entry.archive_md5 = Some(md5);
+            entry.archive_md5 = Some(md5.clone());
         }
-        if let Some(tracker) = self.session.tracker.clone()
-            && let Some(entry) = self
-                .download
-                .all
-                .iter()
-                .find(|entry| entry.id == download_id)
-                .cloned()
-        {
+        if let Some(tracker) = self.session.tracker.clone() {
             sender.oneshot_command(async move {
                 let result = tracker
-                    .save_download_entry(&entry)
+                    .update_download_archive_md5(&download_id, &md5)
                     .await
                     .map_err(|error| error.to_string());
                 AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
@@ -183,9 +128,17 @@ impl App {
         match result {
             Ok(ManualMetadataResult::Resolved(metadata)) => {
                 let toast = metadata.mod_name.clone();
+                let latest_version = metadata.latest_version.clone();
+                let summary = metadata.summary.clone();
                 self.finish_download_metadata_fetch(&download_id);
-                self.apply_nexus_download_metadata(download_id.clone(), metadata, sender);
-                self.show_toast(&format!("Metadata updated: {toast}"));
+                self.apply_nexus_download_metadata(download_id.clone(), metadata);
+                self.persist_applied_nexus_metadata(
+                    &download_id,
+                    latest_version,
+                    summary,
+                    Some(toast),
+                    sender,
+                );
             }
             Ok(ManualMetadataResult::NeedsFileId(metadata)) => {
                 let mod_id = self
@@ -197,8 +150,17 @@ impl App {
                     .map(|ids| ids.mod_id);
                 let domain = metadata.domain.clone();
                 let partial_name = metadata.mod_name.clone();
+                let latest_version = metadata.latest_version.clone();
+                let summary = metadata.summary.clone();
                 self.finish_download_metadata_fetch(&download_id);
-                self.apply_nexus_download_metadata(download_id.clone(), metadata, sender);
+                self.apply_nexus_download_metadata(download_id.clone(), metadata);
+                self.persist_applied_nexus_metadata(
+                    &download_id,
+                    latest_version,
+                    summary,
+                    None,
+                    sender,
+                );
                 if let Some(mod_id) = mod_id {
                     let _ = sender.input_sender().send(AppMsg::Downloads(
                         crate::app::messages::DownloadsMsg::ShowFileIdDialog {
@@ -218,11 +180,102 @@ impl App {
         }
     }
 
+    pub(crate) fn handle_cmd_nexus_identity_persisted(
+        &mut self,
+        download_id: String,
+        nexus_ids: NexusIds,
+        result: Result<(), String>,
+        sender: &ComponentSender<Self>,
+    ) {
+        match result {
+            Ok(()) => {
+                if let Some(entry) = self
+                    .download
+                    .all
+                    .iter_mut()
+                    .find(|entry| entry.id == download_id)
+                {
+                    entry.nexus_ids = Some(nexus_ids.clone());
+                }
+                let mut guard = self.download.rows.guard();
+                for index in 0..guard.len() {
+                    if let Some(row) = guard.get_mut(index)
+                        && row.entry.id == download_id
+                    {
+                        row.entry.nexus_ids = Some(nexus_ids.clone());
+                        break;
+                    }
+                }
+                drop(guard);
+                self.start_nexus_metadata_fetch(download_id, sender);
+            }
+            Err(error) => {
+                eprintln!("deployd: failed to persist Nexus identity: {error}");
+                self.push_notification(&format!("Nexus identity could not be saved: {error}"));
+            }
+        }
+    }
+
+    fn persist_applied_nexus_metadata(
+        &mut self,
+        download_id: &str,
+        latest_version: Option<String>,
+        summary: Option<String>,
+        toast: Option<String>,
+        sender: &ComponentSender<Self>,
+    ) {
+        let Some(tracker) = self.session.tracker.clone() else {
+            self.push_notification("Metadata update could not be saved: database unavailable");
+            return;
+        };
+        let Some(entry) = self
+            .download
+            .all
+            .iter()
+            .find(|entry| entry.id == download_id)
+            .cloned()
+        else {
+            self.push_notification("Metadata update could not be saved: download no longer exists");
+            return;
+        };
+        sender.oneshot_command(async move {
+            let result = tracker
+                .persist_fetched_download_metadata(
+                    &entry,
+                    latest_version.as_deref(),
+                    summary.as_deref(),
+                )
+                .await
+                .map_err(|error| error.to_string());
+            AppCmdMsg::Downloads(
+                crate::app::messages::DownloadsCmdMsg::NexusMetadataPersisted { toast, result },
+            )
+        });
+    }
+
+    pub(crate) fn handle_cmd_nexus_metadata_persisted(
+        &mut self,
+        toast: Option<String>,
+        result: Result<(), String>,
+    ) {
+        match result {
+            Ok(()) => {
+                if let Some(toast) = toast {
+                    self.show_toast(&format!("Metadata updated: {toast}"));
+                }
+            }
+            Err(error) => {
+                eprintln!("deployd: failed to persist Nexus metadata: {error}");
+                self.push_notification(&format!("Metadata update could not be saved: {error}"));
+            }
+        }
+    }
+
     pub(crate) fn handle_cmd_nxm_download_complete(
         &mut self,
         nxm_download_id: String,
         result: Result<NxmDownloadResult, String>,
-        sender: &ComponentSender<Self>,
+        _sender: &ComponentSender<Self>,
     ) {
         match result {
             Ok(nxm_result) => {
@@ -262,7 +315,6 @@ impl App {
                 self.apply_nexus_download_metadata(
                     nxm_result.download_id.clone(),
                     nxm_result.metadata,
-                    sender,
                 );
                 // When this was the last active download, rebuild the view so the
                 // sort order and filter chips (Active/Completed) reflect the new status.

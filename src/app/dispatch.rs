@@ -646,10 +646,16 @@ impl App {
             DownloadsCmdMsg::NexusMetadataFetched(download_id, result) => {
                 self.handle_cmd_nexus_metadata_fetched(download_id, result, &sender)
             }
-            DownloadsCmdMsg::DownloadsDirUpdated(dir) => self.handle_cmd_downloads_dir_updated(dir),
-            DownloadsCmdMsg::DownloadsScanned(result) => {
-                self.handle_cmd_downloads_scanned(result, &sender)
+            DownloadsCmdMsg::NexusIdentityPersisted {
+                download_id,
+                nexus_ids,
+                result,
+            } => self.handle_cmd_nexus_identity_persisted(download_id, nexus_ids, result, &sender),
+            DownloadsCmdMsg::NexusMetadataPersisted { toast, result } => {
+                self.handle_cmd_nexus_metadata_persisted(toast, result)
             }
+            DownloadsCmdMsg::DownloadsDirUpdated(dir) => self.handle_cmd_downloads_dir_updated(dir),
+            DownloadsCmdMsg::DownloadsScanned(result) => self.handle_cmd_downloads_scanned(result),
         }
     }
 
