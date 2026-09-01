@@ -7,7 +7,9 @@
   bridge the configured prefix's Documents and application data, and download, verify, cache, and
   silently install Wine Mono 10.4.1 on first use. Setup progress is visible in-app, Mono failures
   can be retried or bypassed for native tools, and failed Wine exits no longer trigger scanning,
-  sorting, or deployment.
+  sorting, or deployment. Wine's duplicate Mono prompt is suppressed, already-installed Mono is
+  recognized correctly, and only prefix creation uses the expanded setup console; every later
+  attempt returns to the compact launch dialog while any required Mono retry continues.
 - Merging detected external files into an existing mod now starts a valid install session, so its
   database and cache result is accepted and remains available after restart. Moving a merged file
   between Data and Root now replaces the previous database route, allowing deployment cleanup to

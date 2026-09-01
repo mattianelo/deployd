@@ -26,11 +26,16 @@ const MONO_URL: &str = "https://dl.winehq.org/wine/wine-mono/10.4.1/wine-mono-10
 const MONO_SIZE: u64 = 85_504_000;
 const MONO_DOWNLOAD_LIMIT: u64 = 90_000_000;
 const MONO_SHA256: &str = "071f4b2887e1c97a11d791ff3d65be9429eed6dec4c2708888bfd546ba358e23";
+const PREFIX_INIT_DLL_OVERRIDES: &str = "mscoree=d;mshtml=d;winemenubuilder.exe=d";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CachedPackageAction {
     Reuse,
     Replace,
+}
+
+pub(super) fn initial_setup_required(wine_config: &WineConfig) -> bool {
+    !prefix_is_initialized(&wine_config.prefix)
 }
 
 pub(super) fn build_command(
@@ -132,14 +137,7 @@ fn initialize_prefix(
         launcher: wine_config.launcher.clone(),
     };
 
-    let (wine_binary, wine_platform, wine_runtime) = snap_runtime(&temporary_config)?;
-    let mut wineboot = setup_command(
-        &temporary_config,
-        &wine_binary,
-        &wine_platform,
-        &wine_runtime,
-    );
-    wineboot.args(["wineboot", "--init"]);
+    let mut wineboot = prefix_init_command(&temporary_config)?;
     run_required(
         &mut wineboot,
         Some(cancel),
@@ -345,6 +343,17 @@ async fn prepare_mono(
             .map_err(|error| mono_error(error, cancel.as_ref()))?;
     mono_version_for_wine(&wine_version)
         .map_err(|error| ToolPrepareError::Mono(error.to_string()))?;
+
+    let config = wine_config.clone();
+    let existing_mono = tokio::task::spawn_blocking(move || record_verified_mono(&config))
+        .await
+        .map_err(|error| {
+            ToolPrepareError::Mono(format!("Wine Mono verification stopped: {error}"))
+        })?
+        .map_err(|error| mono_error(error, cancel.as_ref()))?;
+    if existing_mono {
+        return Ok(());
+    }
 
     let package = ensure_mono_package(cancel.clone(), on_progress.clone())
         .await
@@ -556,22 +565,11 @@ fn install_mono(wine_config: &WineConfig, package: &Path, cancel: &AtomicBool) -
     let mut install = mono_install_command(wine_config, package)?;
     run_required(&mut install, Some(cancel), "install Wine Mono")?;
 
-    let (wine_binary, wine_platform, wine_runtime) = snap_runtime(wine_config)?;
-    let mut verify = setup_command(wine_config, &wine_binary, &wine_platform, &wine_runtime);
-    verify.args(["reg", "query", r"HKLM\Software", "/s", "/f", "Wine Mono"]);
-    let output = run_required(
-        &mut verify,
-        Some(cancel),
-        "verify the Wine Mono installation",
-    )?;
-    let registry = String::from_utf8_lossy(&output.stdout);
-    if !mono_registry_output_is_expected(&registry) {
+    if !record_verified_mono(wine_config)? {
         return Err(anyhow!(
             "Wine Mono installed without reporting the expected product and version"
         ));
     }
-    std::fs::write(wine_config.prefix.join(MONO_MARKER), MONO_VERSION)
-        .context("record verified Wine Mono setup")?;
     Ok(())
 }
 
@@ -584,9 +582,49 @@ fn mono_install_command(wine_config: &WineConfig, package: &Path) -> Result<Comm
     Ok(command)
 }
 
-fn mono_registry_output_is_expected(output: &str) -> bool {
-    let lower = output.to_ascii_lowercase();
-    lower.contains("wine mono") && lower.contains(MONO_VERSION)
+fn prefix_init_command(wine_config: &WineConfig) -> Result<Command> {
+    let (wine_binary, wine_platform, wine_runtime) = snap_runtime(wine_config)?;
+    let mut command = setup_command(wine_config, &wine_binary, &wine_platform, &wine_runtime);
+    command.env("WINEDLLOVERRIDES", PREFIX_INIT_DLL_OVERRIDES);
+    command.args(["wineboot", "--init"]);
+    Ok(command)
+}
+
+fn record_verified_mono(wine_config: &WineConfig) -> Result<bool> {
+    let registry_path = wine_config.prefix.join("system.reg");
+    let registry = match std::fs::read_to_string(&registry_path) {
+        Ok(registry) => registry,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error).context("read the Wine registry for Mono verification"),
+    };
+    if !mono_registry_has_expected_product(&registry) {
+        return Ok(false);
+    }
+    std::fs::write(wine_config.prefix.join(MONO_MARKER), MONO_VERSION)
+        .context("record verified Wine Mono setup")?;
+    Ok(true)
+}
+
+fn mono_registry_has_expected_product(registry: &str) -> bool {
+    let mut has_product = false;
+    let mut has_version = false;
+    for line in registry.lines() {
+        if line.starts_with('[') {
+            if has_product && has_version {
+                return true;
+            }
+            has_product = false;
+            has_version = false;
+        }
+        let line = line.to_ascii_lowercase();
+        if line.contains("displayname") && line.contains("wine mono runtime") {
+            has_product = true;
+        }
+        if line.contains("displayversion") && line.contains(MONO_VERSION) {
+            has_version = true;
+        }
+    }
+    has_product && has_version
 }
 
 fn unix_path_to_wine_path(path: &Path) -> Result<String> {
@@ -873,12 +911,61 @@ mod tests {
     // @variants: snap
     #[test]
     fn mono_product_verification_requires_name_and_version() {
-        assert!(mono_registry_output_is_expected(
-            "DisplayName REG_SZ Wine Mono Runtime\nDisplayVersion REG_SZ 10.4.1"
+        assert!(mono_registry_has_expected_product(
+            "[Software\\Mono] 1\n\
+             \"DisplayName\"=\"Wine Mono Runtime\"\n\
+             \"DisplayVersion\"=\"10.4.1\"\n"
         ));
-        assert!(!mono_registry_output_is_expected(
-            "DisplayName REG_SZ Wine Mono Runtime\nDisplayVersion REG_SZ 9.4.0"
+        assert!(!mono_registry_has_expected_product(
+            "[Software\\Mono] 1\n\
+             \"DisplayName\"=\"Wine Mono Runtime\"\n\
+             \"DisplayVersion\"=\"9.4.0\"\n"
         ));
+        assert!(!mono_registry_has_expected_product(
+            "[Software\\Mono] 1\n\
+             \"DisplayName\"=\"Wine Mono Runtime\"\n\n\
+             [Software\\Other] 2\n\
+             \"DisplayVersion\"=\"10.4.1\"\n"
+        ));
+    }
+
+    // @variants: snap
+    #[test]
+    fn existing_verified_mono_is_recorded_without_reinstalling() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let config = test_config(temp.path().to_path_buf());
+        std::fs::write(
+            temp.path().join("system.reg"),
+            "[Software\\Mono] 1\n\
+             \"DisplayName\"=\"Wine Mono Runtime\"\n\
+             \"DisplayVersion\"=\"10.4.1\"\n",
+        )?;
+
+        assert!(record_verified_mono(&config)?);
+        assert_eq!(
+            std::fs::read_to_string(temp.path().join(MONO_MARKER))?,
+            MONO_VERSION
+        );
+        Ok(())
+    }
+
+    // @variants: snap
+    #[test]
+    fn prefix_initialization_suppresses_the_wine_mono_prompt() -> Result<()> {
+        let config = test_config(PathBuf::from("/snap-common/prefix"));
+        let command = prefix_init_command(&config)?;
+        assert_eq!(
+            environment(&command, "WINEDLLOVERRIDES"),
+            Some(PREFIX_INIT_DLL_OVERRIDES.to_string())
+        );
+        assert_eq!(
+            command
+                .get_args()
+                .map(|argument| argument.to_string_lossy().into_owned())
+                .collect::<Vec<_>>(),
+            ["wineboot", "--init"]
+        );
+        Ok(())
     }
 
     // @variants: snap
@@ -905,6 +992,22 @@ mod tests {
         #[cfg(unix)]
         std::os::unix::fs::symlink("../drive_c", temp.path().join("dosdevices/c:"))?;
         assert!(prefix_is_initialized(temp.path()));
+        Ok(())
+    }
+
+    // @variants: snap
+    #[test]
+    fn setup_console_is_needed_only_until_the_prefix_is_ready() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let config = test_config(temp.path().to_path_buf());
+        assert!(initial_setup_required(&config));
+
+        std::fs::write(temp.path().join(PREFIX_MARKER), b"1")?;
+        std::fs::write(temp.path().join("system.reg"), b"")?;
+        std::fs::create_dir_all(temp.path().join("dosdevices"))?;
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("../drive_c", temp.path().join("dosdevices/c:"))?;
+        assert!(!initial_setup_required(&config));
         Ok(())
     }
 

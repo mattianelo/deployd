@@ -601,7 +601,8 @@ impl App {
             state: ToolSessionState::Preparing,
             process: None,
         });
-        self.show_tool_launch_dialog(root, &tool_name, sender);
+        let show_setup_console = tool_launcher::initial_setup_required(&wine_config);
+        self.show_tool_launch_dialog(root, &tool_name, show_setup_console, sender);
         sender.oneshot_command(async move {
             let launch_cancel = cancel.clone();
             let session_cancel = cancel.clone();
@@ -675,6 +676,7 @@ impl App {
         &mut self,
         root: &adw::ApplicationWindow,
         tool_name: &str,
+        show_setup_console: bool,
         sender: &ComponentSender<Self>,
     ) {
         let dialog = adw::AlertDialog::builder()
@@ -685,7 +687,11 @@ impl App {
         dialog.set_close_response("cancel");
 
         let content = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
+            .orientation(if show_setup_console {
+                gtk::Orientation::Vertical
+            } else {
+                gtk::Orientation::Horizontal
+            })
             .spacing(12)
             .margin_top(6)
             .margin_bottom(6)
@@ -699,27 +705,34 @@ impl App {
             .hexpand(true)
             .build();
         label.add_css_class("dim-label");
-        let status = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-        status.append(&spinner);
-        status.append(&label);
-        content.append(&status);
+        if show_setup_console {
+            let status = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+            status.append(&spinner);
+            status.append(&label);
+            content.append(&status);
 
-        let buffer = gtk::TextBuffer::new(None);
-        buffer.set_text("Preparing the tool environment...\n");
-        let console = gtk::TextView::builder()
-            .buffer(&buffer)
-            .editable(false)
-            .cursor_visible(false)
-            .monospace(true)
-            .wrap_mode(gtk::WrapMode::WordChar)
-            .height_request(150)
-            .build();
-        let scroll = gtk::ScrolledWindow::builder()
-            .hscrollbar_policy(gtk::PolicyType::Automatic)
-            .vscrollbar_policy(gtk::PolicyType::Automatic)
-            .child(&console)
-            .build();
-        content.append(&scroll);
+            let buffer = gtk::TextBuffer::new(None);
+            buffer.set_text("Preparing the tool environment...\n");
+            let console = gtk::TextView::builder()
+                .buffer(&buffer)
+                .editable(false)
+                .cursor_visible(false)
+                .monospace(true)
+                .wrap_mode(gtk::WrapMode::WordChar)
+                .height_request(150)
+                .build();
+            let scroll = gtk::ScrolledWindow::builder()
+                .hscrollbar_policy(gtk::PolicyType::Automatic)
+                .vscrollbar_policy(gtk::PolicyType::Automatic)
+                .child(&console)
+                .build();
+            content.append(&scroll);
+            self.ui.tool_launch_log = Some(buffer);
+        } else {
+            content.append(&spinner);
+            content.append(&label);
+            self.ui.tool_launch_log = None;
+        }
         dialog.set_extra_child(Some(&content));
 
         let input_sender = sender.input_sender().clone();
@@ -731,7 +744,6 @@ impl App {
             }
         });
         dialog.present(Some(root));
-        self.ui.tool_launch_log = Some(buffer);
         self.ui.tool_launch_dialog = Some(dialog);
     }
 }

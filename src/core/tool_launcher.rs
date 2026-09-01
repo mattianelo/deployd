@@ -38,7 +38,7 @@ impl ToolSetupStage {
                 "Downloading Wine Mono 10.4.1; please wait for setup to finish..."
             }
             Self::VerifyingMono => "Verifying the Wine Mono download...",
-            Self::InstallingMono => "Installing Wine Mono silently...",
+            Self::InstallingMono => "Installing Wine Mono...",
             Self::LaunchingTool => "Starting the external tool...",
         }
     }
@@ -77,6 +77,13 @@ pub(crate) async fn prepare_tool_runtime(
         game::WineLauncher::SnapWine { .. } => {
             snap::prepare_runtime(game, wine_config, cancel, skip_mono, on_progress).await
         }
+    }
+}
+
+pub(crate) fn initial_setup_required(wine_config: &WineConfig) -> bool {
+    match &wine_config.launcher {
+        game::WineLauncher::Umu(_) => false,
+        game::WineLauncher::SnapWine { .. } => snap::initial_setup_required(wine_config),
     }
 }
 
