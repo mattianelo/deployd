@@ -131,6 +131,18 @@ fn match_nexus_file(
     }
 
     let raw = archive_filename?;
+    if let Some(identity) = crate::core::nexus_identity::current_nexus_file_identity(raw) {
+        return files.into_iter().find(|file| {
+            file.display_name()
+                .trim()
+                .eq_ignore_ascii_case(&identity.label)
+                && file
+                    .version
+                    .as_deref()
+                    .map(str::trim)
+                    .is_some_and(|version| version.eq_ignore_ascii_case(&identity.version))
+        });
+    }
     let normalized = crate::core::nexus_identity::normalize_nexus_filename(raw);
     let timestamp = crate::core::nexus_identity::extract_nexus_timestamp(raw);
     let candidates: Vec<_> = files
@@ -500,6 +512,38 @@ mod tests {
             .expect("the archived file should be matched");
 
         assert_eq!(matched.file_id, 77);
+    }
+
+    #[test]
+    fn resolves_current_nexus_filename_by_file_display_name() {
+        let old_file: NexusFileEntry = serde_json::from_value(serde_json::json!({
+            "file_id": 409998,
+            "name": "Dynamic Grass",
+            "version": "1.1.0",
+            "file_name": "Dynamic-Grass-1.1.0.zip",
+            "category_name": "MAIN",
+            "is_primary": true,
+            "uploaded_timestamp": 1788000000
+        }))
+        .unwrap();
+        let current_file: NexusFileEntry = serde_json::from_value(serde_json::json!({
+            "file_id": 409999,
+            "name": "Dynamic Grass",
+            "version": "1.3.0",
+            "file_name": "Dynamic-Grass-1.3.0.zip",
+            "category_name": "MAIN",
+            "is_primary": true,
+            "uploaded_timestamp": 1788177600
+        }))
+        .unwrap();
+        let matched = match_nexus_file(
+            vec![old_file, current_file],
+            0,
+            Some("Dynamic Grass 108480 1.3.0 2026-08-31T12-00Z Gpr9A6gVu.zip"),
+        )
+        .expect("the current Nexus filename should match its display name");
+
+        assert_eq!(matched.file_id, 409999);
     }
 
     #[test]

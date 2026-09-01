@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::core::nexus_identity::normalize_nexus_filename;
+use crate::core::nexus_identity::{
+    CurrentNexusFileIdentity, current_nexus_file_identity, normalize_nexus_filename,
+};
 use crate::models::download::{DownloadEntry, DownloadStatus, NexusIds};
 
 use super::super::App;
@@ -111,6 +113,10 @@ fn reconcile_downloads(
     let mut new_count = 0usize;
     for archive in archives {
         let domain = archive.game_domain.as_deref();
+        changed_ids.extend(detach_conflicting_current_filename_metadata(
+            &mut all_downloads,
+            &archive.path,
+        ));
         if let Some(outcome) = reconcile_archive(
             &mut all_downloads,
             &archive.path,
@@ -250,16 +256,47 @@ fn reconcile_archive(
     Some(outcome)
 }
 
+fn detach_conflicting_current_filename_metadata(
+    all_downloads: &mut [DownloadEntry],
+    path: &std::path::Path,
+) -> Vec<String> {
+    let Some(identity) = path
+        .file_name()
+        .and_then(|name| current_nexus_file_identity(&name.to_string_lossy()))
+    else {
+        return Vec::new();
+    };
+    let mut changed_ids = Vec::new();
+    for entry in all_downloads.iter_mut().filter(|entry| {
+        !entry.is_active()
+            && entry.archive_path.as_deref() == Some(path)
+            && stored_metadata_conflicts_with_current_filename(entry, &identity)
+    }) {
+        entry.archive_path = None;
+        entry.hidden = true;
+        changed_ids.push(entry.id.clone());
+    }
+    changed_ids
+}
+
 fn archive_match_candidates(
     all_downloads: &[DownloadEntry],
     path: &std::path::Path,
     domain: Option<&str>,
     scanned_nexus_ids: &Option<NexusIds>,
 ) -> Option<Vec<usize>> {
+    let file_name = path.file_name()?.to_string_lossy();
+    let current_identity = current_nexus_file_identity(&file_name);
     let exact_path: Vec<usize> = all_downloads
         .iter()
         .enumerate()
-        .filter(|(_, entry)| entry.archive_path.as_ref().is_some_and(|p| p == path))
+        .filter(|(_, entry)| {
+            entry.archive_path.as_ref().is_some_and(|p| p == path)
+                && (entry.is_active()
+                    || !current_identity.as_ref().is_some_and(|identity| {
+                        stored_metadata_conflicts_with_current_filename(entry, identity)
+                    }))
+        })
         .map(|(idx, _)| idx)
         .collect();
     if exact_path.iter().any(|idx| all_downloads[*idx].is_active()) {
@@ -270,7 +307,6 @@ fn archive_match_candidates(
         return Some(active_path);
     }
 
-    let file_name = path.file_name()?.to_string_lossy();
     let normalized_file = normalize_nexus_filename(&file_name);
     let mut candidates = exact_path;
 
@@ -291,10 +327,15 @@ fn archive_match_candidates(
             !candidates.contains(idx)
                 && !entry.is_active()
                 && download_domain_matches(entry, domain)
-                && entry
-                    .nexus_file_name
-                    .as_deref()
-                    .is_some_and(|name| normalize_nexus_filename(name) == normalized_file)
+                && current_identity.as_ref().map_or_else(
+                    || {
+                        entry
+                            .nexus_file_name
+                            .as_deref()
+                            .is_some_and(|name| normalize_nexus_filename(name) == normalized_file)
+                    },
+                    |identity| stored_metadata_matches_current_filename(entry, identity),
+                )
         })
         .map(|(idx, _)| idx)
         .collect();
@@ -462,7 +503,7 @@ fn group_by_exact_nexus_file(all_downloads: &[DownloadEntry]) -> Vec<Vec<usize>>
 }
 
 fn group_by_normalized_nexus_file_name(all_downloads: &[DownloadEntry]) -> Vec<Vec<usize>> {
-    let mut grouped: HashMap<(String, String), Vec<usize>> = HashMap::new();
+    let mut grouped: HashMap<(String, String, Option<String>), Vec<usize>> = HashMap::new();
     for (idx, entry) in all_downloads.iter().enumerate() {
         if entry.is_active() {
             continue;
@@ -474,13 +515,35 @@ fn group_by_normalized_nexus_file_name(all_downloads: &[DownloadEntry]) -> Vec<V
             continue;
         };
         grouped
-            .entry((domain.to_string(), normalize_nexus_filename(file_name)))
+            .entry((
+                domain.to_string(),
+                normalize_nexus_filename(file_name),
+                entry.version.as_ref().map(|version| version.to_lowercase()),
+            ))
             .or_default()
             .push(idx);
     }
     grouped
         .into_values()
-        .filter(|group| group.len() > 1)
+        .filter(|group| {
+            if group.len() <= 1 {
+                return false;
+            }
+            let mut exact_file_ids = group
+                .iter()
+                .filter_map(|idx| all_downloads[*idx].nexus_ids.as_ref())
+                .map(|ids| ids.file_id)
+                .filter(|file_id| *file_id > 0);
+            let first = exact_file_ids.next();
+            let has_conflict = exact_file_ids.any(|file_id| Some(file_id) != first);
+            let has_incomplete_identity = group.iter().any(|idx| {
+                all_downloads[*idx]
+                    .nexus_ids
+                    .as_ref()
+                    .is_none_or(|ids| ids.file_id == 0)
+            });
+            has_incomplete_identity && !has_conflict
+        })
         .collect()
 }
 
@@ -492,7 +555,16 @@ fn merge_download_metadata(
     let Some(winner) = all_downloads.iter_mut().find(|entry| entry.id == winner_id) else {
         return;
     };
-    if winner.nexus_ids.is_none() {
+    if !winner.metadata_fetched && loser.metadata_fetched {
+        winner.mod_name = loser.mod_name.clone();
+    }
+    if winner.nexus_ids.is_none()
+        || winner
+            .nexus_ids
+            .as_ref()
+            .is_some_and(|ids| ids.file_id == 0)
+            && loser.nexus_ids.as_ref().is_some_and(|ids| ids.file_id > 0)
+    {
         winner.nexus_ids = loser.nexus_ids.clone();
     }
     if winner.game_domain.is_none() {
@@ -607,6 +679,45 @@ fn exact_nexus_file_matches(entry: &DownloadEntry, scanned_nexus_ids: &Option<Ne
     }
 }
 
+fn stored_metadata_matches_current_filename(
+    entry: &DownloadEntry,
+    identity: &CurrentNexusFileIdentity,
+) -> bool {
+    entry
+        .nexus_ids
+        .as_ref()
+        .is_some_and(|ids| ids.mod_id == identity.mod_id)
+        && entry
+            .nexus_file_name
+            .as_deref()
+            .is_some_and(|name| name.trim().eq_ignore_ascii_case(&identity.label))
+        && entry
+            .version
+            .as_deref()
+            .is_some_and(|version| version.trim().eq_ignore_ascii_case(&identity.version))
+}
+
+fn stored_metadata_conflicts_with_current_filename(
+    entry: &DownloadEntry,
+    identity: &CurrentNexusFileIdentity,
+) -> bool {
+    let has_exact_metadata =
+        entry.metadata_fetched || entry.nexus_ids.as_ref().is_some_and(|ids| ids.file_id > 0);
+    has_exact_metadata
+        && (entry
+            .nexus_ids
+            .as_ref()
+            .is_some_and(|ids| ids.mod_id != identity.mod_id)
+            || entry
+                .nexus_file_name
+                .as_deref()
+                .is_some_and(|name| !name.trim().eq_ignore_ascii_case(&identity.label))
+            || entry
+                .version
+                .as_deref()
+                .is_some_and(|version| !version.trim().eq_ignore_ascii_case(&identity.version)))
+}
+
 fn entry_domain(entry: &DownloadEntry) -> Option<&str> {
     entry
         .game_domain
@@ -647,6 +758,192 @@ mod tests {
                 .map(|ids| (ids.mod_id, ids.file_id, ids.domain.as_str())),
             Some((108_480, 0, ""))
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn scan_reattaches_current_nexus_filename_to_pathless_metadata() -> Result<()> {
+        let temp = TempDir::new()?;
+        let domain_dir = temp.path().join("fallout4");
+        std::fs::create_dir_all(&domain_dir)?;
+        let archive = domain_dir.join("Dynamic Grass 108480 1.3.0 2026-08-31T12-00Z Gpr9A6gVu.zip");
+        std::fs::write(&archive, b"archive")?;
+        let mut metadata = download_entry("metadata", "Dynamic Grass");
+        metadata.status = DownloadStatus::Downloaded;
+        metadata.archive_path = None;
+        metadata.nexus_ids = Some(NexusIds {
+            mod_id: 108_480,
+            file_id: 409_999,
+            domain: "fallout4".to_string(),
+        });
+        metadata.nexus_file_name = Some("Dynamic Grass".to_string());
+        metadata.version = Some("1.3.0".to_string());
+        let tracker = crate::core::tracker::Tracker::open("sqlite::memory:")
+            .await?
+            .tracker;
+        tracker.save_download_entry(&metadata).await?;
+
+        let scan =
+            scan_downloads_and_persist(temp.path().to_path_buf(), vec![metadata], tracker.clone())
+                .await
+                .map_err(anyhow::Error::msg)?;
+
+        assert_eq!(scan.new_count, 0);
+        assert_eq!(scan.entries.len(), 1);
+        assert_eq!(scan.entries[0].id, "metadata");
+        assert_eq!(
+            scan.entries[0].archive_path.as_deref(),
+            Some(archive.as_path())
+        );
+        assert!(scan.entries[0].metadata_fetched);
+        let loaded = tracker.load_download_entries().await?;
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].id, "metadata");
+        assert_eq!(loaded[0].archive_path.as_deref(), Some(archive.as_path()));
+        assert!(loaded[0].metadata_fetched);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn scan_persists_metadata_for_distinct_current_nexus_versions() -> Result<()> {
+        let temp = TempDir::new()?;
+        let domain_dir = temp.path().join("fallout4");
+        std::fs::create_dir_all(&domain_dir)?;
+        let old_archive =
+            domain_dir.join("Dynamic Grass 108480 1.1.0 2026-08-29T08-43Z ySsaoNzPF.zip");
+        let current_archive =
+            domain_dir.join("Dynamic Grass 108480 1.3.0 2026-08-31T12-00Z Gpr9A6gVu.zip");
+        std::fs::write(&old_archive, b"old")?;
+        std::fs::write(&current_archive, b"current")?;
+
+        let mut old = download_entry("old", "Dynamic Grass");
+        old.status = DownloadStatus::Downloaded;
+        old.archive_path = None;
+        old.nexus_ids = Some(NexusIds {
+            mod_id: 108_480,
+            file_id: 409_100,
+            domain: "fallout4".to_string(),
+        });
+        old.nexus_file_name = Some("Dynamic Grass".to_string());
+        old.version = Some("1.1.0".to_string());
+        let mut current = old.clone();
+        current.id = "current".to_string();
+        current.nexus_ids.as_mut().unwrap().file_id = 409_999;
+        current.version = Some("1.3.0".to_string());
+
+        let tracker = crate::core::tracker::Tracker::open("sqlite::memory:")
+            .await?
+            .tracker;
+        tracker.save_download_entry(&old).await?;
+        tracker.save_download_entry(&current).await?;
+        scan_downloads_and_persist(
+            temp.path().to_path_buf(),
+            vec![old, current],
+            tracker.clone(),
+        )
+        .await
+        .map_err(anyhow::Error::msg)?;
+
+        let loaded = tracker.load_download_entries().await?;
+        assert_eq!(loaded.len(), 2);
+        let old = loaded.iter().find(|entry| entry.id == "old").unwrap();
+        let current = loaded.iter().find(|entry| entry.id == "current").unwrap();
+        assert_eq!(old.archive_path.as_deref(), Some(old_archive.as_path()));
+        assert_eq!(old.version.as_deref(), Some("1.1.0"));
+        assert!(old.metadata_fetched);
+        assert_eq!(
+            current.archive_path.as_deref(),
+            Some(current_archive.as_path())
+        );
+        assert_eq!(current.version.as_deref(), Some("1.3.0"));
+        assert!(current.metadata_fetched);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn scan_repairs_metadata_attached_to_an_older_current_nexus_archive() -> Result<()> {
+        let temp = TempDir::new()?;
+        let domain_dir = temp.path().join("fallout4");
+        std::fs::create_dir_all(&domain_dir)?;
+        let old_archive =
+            domain_dir.join("Dynamic Grass 108480 1.1.0 2026-08-29T08-43Z ySsaoNzPF.zip");
+        let current_archive =
+            domain_dir.join("Dynamic Grass 108480 1.3.0 2026-08-31T12-00Z Gpr9A6gVu.zip");
+        std::fs::write(&old_archive, b"old")?;
+        std::fs::write(&current_archive, b"current")?;
+
+        let mut corrupted = download_entry("current", "Dynamic Grass");
+        corrupted.archive_path = Some(old_archive.clone());
+        corrupted.nexus_ids = Some(NexusIds {
+            mod_id: 108_480,
+            file_id: 409_999,
+            domain: "fallout4".to_string(),
+        });
+        corrupted.nexus_file_name = Some("Dynamic Grass".to_string());
+        corrupted.version = Some("1.3.0".to_string());
+        let tracker = crate::core::tracker::Tracker::open("sqlite::memory:")
+            .await?
+            .tracker;
+        tracker.save_download_entry(&corrupted).await?;
+
+        scan_downloads_and_persist(temp.path().to_path_buf(), vec![corrupted], tracker.clone())
+            .await
+            .map_err(anyhow::Error::msg)?;
+
+        let loaded = tracker.load_download_entries().await?;
+        assert_eq!(loaded.len(), 2);
+        let repaired = loaded.iter().find(|entry| entry.id == "current").unwrap();
+        assert_eq!(
+            repaired.archive_path.as_deref(),
+            Some(current_archive.as_path())
+        );
+        assert_eq!(repaired.version.as_deref(), Some("1.3.0"));
+        assert!(repaired.metadata_fetched);
+        let old = loaded.iter().find(|entry| entry.id != "current").unwrap();
+        assert_eq!(old.archive_path.as_deref(), Some(old_archive.as_path()));
+        assert!(!old.metadata_fetched);
+        assert_eq!(old.status, DownloadStatus::Downloaded);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn scan_keeps_mismatched_metadata_when_its_archive_is_absent() -> Result<()> {
+        let temp = TempDir::new()?;
+        let domain_dir = temp.path().join("fallout4");
+        std::fs::create_dir_all(&domain_dir)?;
+        let old_archive =
+            domain_dir.join("Dynamic Grass 108480 1.1.0 2026-08-29T08-43Z ySsaoNzPF.zip");
+        std::fs::write(&old_archive, b"old")?;
+
+        let mut corrupted = download_entry("current", "Dynamic Grass");
+        corrupted.archive_path = Some(old_archive.clone());
+        corrupted.nexus_ids = Some(NexusIds {
+            mod_id: 108_480,
+            file_id: 409_999,
+            domain: "fallout4".to_string(),
+        });
+        corrupted.nexus_file_name = Some("Dynamic Grass".to_string());
+        corrupted.version = Some("1.3.0".to_string());
+        let tracker = crate::core::tracker::Tracker::open("sqlite::memory:")
+            .await?
+            .tracker;
+        tracker.save_download_entry(&corrupted).await?;
+
+        scan_downloads_and_persist(temp.path().to_path_buf(), vec![corrupted], tracker.clone())
+            .await
+            .map_err(anyhow::Error::msg)?;
+
+        let loaded = tracker.load_download_entries().await?;
+        assert_eq!(loaded.len(), 2);
+        let metadata = loaded.iter().find(|entry| entry.id == "current").unwrap();
+        assert_eq!(metadata.archive_path, None);
+        assert_eq!(metadata.version.as_deref(), Some("1.3.0"));
+        assert!(metadata.metadata_fetched);
+        assert!(metadata.hidden);
+        let old = loaded.iter().find(|entry| entry.id != "current").unwrap();
+        assert_eq!(old.archive_path.as_deref(), Some(old_archive.as_path()));
+        assert!(!old.metadata_fetched);
+        assert!(!old.hidden);
         Ok(())
     }
 
@@ -813,6 +1110,53 @@ mod tests {
         assert_eq!(scan.removed_ids, vec!["duplicate".to_string()]);
         assert_eq!(scan.to_persist.len(), 1);
         assert_eq!(scan.to_persist[0].id, "imported");
+        Ok(())
+    }
+
+    #[test]
+    fn scan_preserves_fetched_metadata_when_installed_duplicate_wins() -> Result<()> {
+        let temp = TempDir::new()?;
+        let archive = temp
+            .path()
+            .join("Dynamic Grass 108480 1.3.0 2026-08-31T12-00Z Gpr9A6gVu.zip");
+        std::fs::write(&archive, b"archive")?;
+
+        let mut installed = download_entry("installed", "Raw archive name");
+        installed.archive_path = Some(archive.clone());
+        installed.metadata_fetched = false;
+        installed.nexus_ids = Some(NexusIds {
+            mod_id: 108_480,
+            file_id: 0,
+            domain: "fallout4".to_string(),
+        });
+        installed.nexus_file_name = None;
+        installed.version = None;
+        installed.author = None;
+        let mut fetched = download_entry("fetched", "Dynamic Grass");
+        fetched.status = DownloadStatus::Downloaded;
+        fetched.archive_path = Some(archive.clone());
+        fetched.nexus_ids = Some(NexusIds {
+            mod_id: 108_480,
+            file_id: 409_999,
+            domain: "fallout4".to_string(),
+        });
+        fetched.nexus_file_name = Some("Dynamic Grass".to_string());
+        fetched.version = Some("1.3.0".to_string());
+
+        let scan = scan_downloads(temp.path().to_path_buf(), vec![installed, fetched])
+            .map_err(anyhow::Error::msg)?;
+
+        assert_eq!(scan.entries.len(), 1);
+        let merged = &scan.entries[0];
+        assert_eq!(merged.id, "installed");
+        assert_eq!(merged.status, DownloadStatus::Installed);
+        assert_eq!(merged.mod_name, "Dynamic Grass");
+        assert_eq!(
+            merged.nexus_ids.as_ref().map(|ids| ids.file_id),
+            Some(409_999)
+        );
+        assert_eq!(merged.version.as_deref(), Some("1.3.0"));
+        assert!(merged.metadata_fetched);
         Ok(())
     }
 

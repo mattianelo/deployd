@@ -20,6 +20,45 @@ pub(crate) fn normalize_nexus_filename(filename: &str) -> String {
         .to_string()
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct CurrentNexusFileIdentity {
+    pub(crate) label: String,
+    pub(crate) mod_id: i64,
+    pub(crate) version: String,
+}
+
+pub(crate) fn current_nexus_file_identity(filename: &str) -> Option<CurrentNexusFileIdentity> {
+    let stem = filename
+        .rsplit_once('.')
+        .map(|(left, _)| left)
+        .unwrap_or(filename);
+    let tokens: Vec<_> = stem.split_whitespace().collect();
+    let timestamp_index = tokens
+        .iter()
+        .position(|token| is_nexus_download_timestamp(token))?;
+    if timestamp_index < 2 || timestamp_index + 2 != tokens.len() {
+        return None;
+    }
+    let download_token = tokens[timestamp_index + 1];
+    if !download_token
+        .chars()
+        .all(|character| character.is_ascii_alphanumeric())
+    {
+        return None;
+    }
+    let mod_id = tokens[timestamp_index - 2].parse::<i64>().ok()?;
+    if mod_id <= 0 || mod_id >= 1_000_000_000 {
+        return None;
+    }
+    let label = tokens[..timestamp_index - 2].join(" ");
+    let version = tokens[timestamp_index - 1].to_string();
+    (!label.is_empty() && !version.is_empty()).then_some(CurrentNexusFileIdentity {
+        label,
+        mod_id,
+        version,
+    })
+}
+
 fn nexus_timestamp_suffix(value: &str) -> Option<&str> {
     let (_, suffix) = value.rsplit_once('-')?;
     (suffix.len() == 10 && suffix.bytes().all(|byte| byte.is_ascii_digit())).then_some(suffix)
@@ -107,6 +146,46 @@ mod tests {
             "foo-1.0-175668456"
         );
         assert_eq!(normalize_nexus_filename("foo-1.0.zip"), "foo-1.0");
+    }
+
+    #[test]
+    fn parses_current_nexus_file_identity() {
+        assert_eq!(
+            current_nexus_file_identity(
+                "Dynamic Grass 108480 1.3.0 2026-08-31T12-00Z Gpr9A6gVu.zip"
+            ),
+            Some(CurrentNexusFileIdentity {
+                label: "Dynamic Grass".to_string(),
+                mod_id: 108_480,
+                version: "1.3.0".to_string(),
+            })
+        );
+        assert_eq!(
+            current_nexus_file_identity(
+                "RobCo Patcher - RD 69798 6.0.5 2026-08-26T23-09Z z23PjGUj8.zip"
+            ),
+            Some(CurrentNexusFileIdentity {
+                label: "RobCo Patcher - RD".to_string(),
+                mod_id: 69_798,
+                version: "6.0.5".to_string(),
+            })
+        );
+        assert_eq!(
+            current_nexus_file_identity(
+                "Fancy Prefabs 1.0.0 107091 1 2026-07-18T19-18Z z23PjGFON.zip"
+            ),
+            Some(CurrentNexusFileIdentity {
+                label: "Fancy Prefabs 1.0.0".to_string(),
+                mod_id: 107_091,
+                version: "1".to_string(),
+            })
+        );
+        assert_eq!(
+            current_nexus_file_identity(
+                "Release 108480 1.3.0 2026-08-31T12-00Z Gpr9A6gVu notes.zip"
+            ),
+            None
+        );
     }
 
     // @variants: both

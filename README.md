@@ -179,6 +179,8 @@ Open **Settings** (gear icon) and log in under **Nexus Mods**:
   not contact Nexus or request an ID. Clearing metadata restores the archive name and re-detects
   its Nexus identity when the filename contains one. Newly scanned archives are committed before
   they become available for metadata refresh, so resolved metadata remains after restarting.
+  Rescanning current Nexus filenames matches the page, file label, and version, keeping metadata
+  attached to the correct archive when multiple versions of the same file are present.
 - **From Nexus Mods** — Click **Mod Manager Download**; the file downloads into Deployd automatically
 - **FOMOD mods** — A wizard opens automatically if the archive includes a FOMOD installer
 - **File selection** — The Install Mod dialog lets you deselect archive entries before they are

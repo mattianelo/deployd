@@ -9,7 +9,9 @@
   repairs duplicate Data/Root route pairs created by earlier versions.
 - Newly scanned archives are now committed before they appear in the Downloads panel, preventing a
   stale scan write from erasing manually fetched Nexus metadata or its relocated archive path.
-  Metadata remains available in later sessions even when the archive was not installed.
+  Metadata remains available in later sessions even when the archive was not installed. Rescans of
+  current Nexus filenames now distinguish versions of the same file and repair metadata previously
+  attached to the wrong archive path.
 - Replacing a mod now returns the previous archive to an installable state while preserving the
   replacement's Mod Order position and matching plugin states.
 - Nexus update badges now follow file-specific update relationships, refresh together at startup
