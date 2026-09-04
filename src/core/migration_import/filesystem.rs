@@ -264,4 +264,17 @@ mod tests {
         assert!(rewritten.ends_with(std::path::MAIN_SEPARATOR));
         Ok(())
     }
+
+    #[test]
+    fn preserves_nested_vanilla_backup_path() -> Result<()> {
+        let import_paths = ImportPaths {
+            cache_root: PathBuf::from("/snap/cache"),
+            backup_root: PathBuf::from("/snap/backup"),
+        };
+
+        let rewritten = rewrite_backup_path("vanilla-backup/data/base_scripts.d2a", &import_paths)?;
+
+        assert_eq!(rewritten, Path::new("/snap/backup/data/base_scripts.d2a"));
+        Ok(())
+    }
 }

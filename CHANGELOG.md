@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### AppImage and Snap
+
+- Vanilla game files replaced by mods now keep verified, collision-safe backups across mod-to-mod
+  winner changes and restore when the final owning mod is removed on a later Deploy or Purge.
+  Deployment warns before affecting vanilla paths, offers the global default-enabled protection
+  switch in the warning and Settings, and reports originals that require platform verification.
+
 ## [2.4.0]
 
 ### AppImage and Snap

@@ -4,27 +4,120 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
-use super::backup::{backup_vanilla_file, bake_modified_plugins, restore_vanilla_for_paths};
+use super::backup::{
+    backup_exists, backup_vanilla_file, bake_modified_plugins, files_match,
+    restore_vanilla_for_paths,
+};
 use super::filesystem::{
     build_dir_canonical_map, create_dirs_case_insensitive, ensure_dirs_case_insensitive,
-    remove_deployed_file, resolve_deploy_path, split_deploy_target,
+    find_existing_deploy_path_case_insensitive, remove_deployed_file, resolve_deploy_path,
+    split_deploy_target,
 };
-use super::planning::compute_winners;
-use super::report::DeployOutcome;
+use super::planning::build_plan;
+use super::report::{
+    DeployOutcome, DeploymentPreflight, VanillaReplacement, VanillaReplacementStatus,
+};
 use crate::core::game;
 use crate::core::mod_folders;
 use crate::core::tracker::Tracker;
 use crate::dlog;
 use crate::models::game::Game;
 use crate::models::manifest::ModFile;
+use crate::utils::paths;
 
-pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result<DeployOutcome> {
+pub(crate) fn vanilla_protection_enabled(value: Option<&str>) -> bool {
+    value
+        .and_then(|value| value.parse::<bool>().ok())
+        .unwrap_or(true)
+}
+
+pub(crate) async fn deployment_preflight(
+    game: &Game,
+    tracker: &Tracker,
+) -> Result<DeploymentPreflight> {
+    let game_data = game::deploy_dir(game);
+    let plan = build_plan(tracker, &game.id, game::handler_for(&game.engine)).await?;
+    let vanilla_snapshot = tracker.get_vanilla_metadata(&game.id).await?;
+    let deployed_paths: HashSet<&str> = plan
+        .deployed
+        .iter()
+        .map(|file| file.game_rel_lowercase.as_str())
+        .collect();
+    let mut vanilla_replacements = Vec::new();
+
+    for index in plan.to_add {
+        let winner = &plan.winners[index];
+        if winner.game_rel_lowercase.ends_with('/')
+            || !vanilla_snapshot.contains_key(&winner.game_rel_lowercase)
+        {
+            continue;
+        }
+        let status = if backup_exists(game, tracker, &winner.game_rel_lowercase).await? {
+            VanillaReplacementStatus::Protected
+        } else if deployed_paths.contains(winner.game_rel_lowercase.as_str()) {
+            let deployed = plan
+                .deployed
+                .iter()
+                .find(|file| file.game_rel_lowercase == winner.game_rel_lowercase)
+                .context("Deployment plan lost the currently deployed vanilla path")?;
+            let live_path = find_existing_deploy_path_case_insensitive(
+                &deployed.game_rel_original,
+                &game.path,
+                &game_data,
+            )?;
+            let cache_path = Path::new(&deployed.cache_path);
+            if let Some(live_path) = live_path
+                && cache_path.try_exists().with_context(|| {
+                    format!(
+                        "Failed to inspect deployed cache '{}'",
+                        cache_path.display()
+                    )
+                })?
+                && !files_match(&live_path, cache_path)?
+            {
+                VanillaReplacementStatus::ReadyToBackUp
+            } else {
+                VanillaReplacementStatus::BackupUnavailable
+            }
+        } else {
+            if find_existing_deploy_path_case_insensitive(
+                &winner.game_rel_original,
+                &game.path,
+                &game_data,
+            )?
+            .is_some()
+            {
+                VanillaReplacementStatus::ReadyToBackUp
+            } else {
+                VanillaReplacementStatus::BackupUnavailable
+            }
+        };
+        vanilla_replacements.push(VanillaReplacement {
+            path: winner.game_rel_original.clone(),
+            status,
+        });
+    }
+    vanilla_replacements.sort_by(|left, right| left.path.cmp(&right.path));
+
+    let protection_setting = tracker.get_setting("protect_vanilla_files").await?;
+    let protect_vanilla_files = vanilla_protection_enabled(protection_setting.as_deref());
+    Ok(DeploymentPreflight {
+        protect_vanilla_files,
+        vanilla_replacements,
+    })
+}
+
+pub async fn deploy(
+    game: &Game,
+    tracker: &Tracker,
+    cache_root: &Path,
+    protect_vanilla_files: bool,
+) -> Result<DeployOutcome> {
     let game_data = game::deploy_dir(game);
     let mut warnings = Vec::new();
 
-    bake_modified_plugins(game, tracker, &game_data).await?;
-
-    let deployed = tracker.get_deployed_files(&game.id).await?;
+    let plan = build_plan(tracker, &game.id, game::handler_for(&game.engine)).await?;
+    let deployed = &plan.deployed;
     let deployed_map: HashMap<&str, &ModFile> = deployed
         .iter()
         .map(|f| (f.game_rel_lowercase.as_str(), f))
@@ -32,8 +125,7 @@ pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result
 
     let vanilla_snapshot = tracker.get_vanilla_metadata(&game.id).await?;
 
-    let (winners, conflicts_resolved) =
-        compute_winners(tracker, &game.id, game::handler_for(&game.engine)).await?;
+    let winners = &plan.winners;
     let winners_map: HashMap<&str, &ModFile> = winners
         .iter()
         .map(|f| (f.game_rel_lowercase.as_str(), f))
@@ -45,23 +137,12 @@ pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result
         winners.len()
     );
 
-    let mut to_remove: Vec<&ModFile> = Vec::new();
-    for dep in &deployed {
-        match winners_map.get(dep.game_rel_lowercase.as_str()) {
-            None => to_remove.push(dep),
-            Some(want) if want.cache_path != dep.cache_path => to_remove.push(dep),
-            _ => {}
-        }
-    }
-
-    let mut to_add: Vec<&ModFile> = Vec::new();
-    for winner in &winners {
-        match deployed_map.get(winner.game_rel_lowercase.as_str()) {
-            None => to_add.push(winner),
-            Some(dep) if dep.cache_path != winner.cache_path => to_add.push(winner),
-            _ => {}
-        }
-    }
+    let to_remove: Vec<&ModFile> = plan
+        .to_remove
+        .iter()
+        .map(|index| &deployed[*index])
+        .collect();
+    let to_add: Vec<&ModFile> = plan.to_add.iter().map(|index| &winners[*index]).collect();
 
     eprintln!(
         "[deployd] delta: to_remove={}, to_add={}",
@@ -97,22 +178,104 @@ pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result
         })
         .collect::<Result<_>>()?;
 
-    // Needed to restore vanilla backups after the removal loop.
-    let removed_rels: Vec<String> = to_remove
+    let mut restore_paths: Vec<String> = to_remove
         .iter()
-        .map(|f| f.game_rel_original.clone())
+        .filter(|file| !winners_map.contains_key(file.game_rel_lowercase.as_str()))
+        .map(|file| file.game_rel_lowercase.clone())
         .collect();
+    for (backup_path, _) in tracker.get_all_vanilla_backups(&game.id).await? {
+        let canonical_path = paths::lowercase_path_str(Path::new(&backup_path));
+        if !winners_map.contains_key(canonical_path.as_str()) {
+            restore_paths.push(canonical_path);
+        }
+    }
+    restore_paths.sort();
+    restore_paths.dedup();
+
+    let canonical_dirs = build_dir_canonical_map(winners);
+    let mut dir_cache: HashMap<PathBuf, HashMap<String, PathBuf>> = HashMap::new();
+    let mut vanilla_files_backed_up = 0;
+    if protect_vanilla_files {
+        for f in &to_add {
+            if f.game_rel_lowercase.ends_with('/')
+                || !vanilla_snapshot.contains_key(&f.game_rel_lowercase)
+            {
+                continue;
+            }
+            let (base, rel, anchor) =
+                split_deploy_target(&f.game_rel_original, &game.path, &game_data)?;
+            let deploy_target =
+                ensure_dirs_case_insensitive(&base, rel, &canonical_dirs, &mut dir_cache)?;
+            if !deploy_target.try_exists().with_context(|| {
+                format!(
+                    "Failed to inspect vanilla target '{}'",
+                    deploy_target.display()
+                )
+            })? {
+                continue;
+            }
+            let is_ours = if let Some(deployed) = deployed_map.get(f.game_rel_lowercase.as_str()) {
+                let cache_path = Path::new(&deployed.cache_path);
+                if cache_path.try_exists().with_context(|| {
+                    format!(
+                        "Failed to inspect deployed cache '{}'",
+                        cache_path.display()
+                    )
+                })? {
+                    files_match(&deploy_target, cache_path)?
+                } else {
+                    true
+                }
+            } else {
+                false
+            };
+            if !is_ours {
+                let actual_rel = deploy_target
+                    .strip_prefix(&base)
+                    .unwrap_or(&deploy_target)
+                    .to_string_lossy();
+                let original_path = anchor.with_prefix(&actual_rel);
+                if backup_vanilla_file(
+                    game,
+                    tracker,
+                    &f.game_rel_lowercase,
+                    &original_path,
+                    &deploy_target,
+                )
+                .await?
+                {
+                    vanilla_files_backed_up += 1;
+                }
+            }
+        }
+    }
+
+    bake_modified_plugins(game, tracker, &game_data).await?;
+
+    let mut missing_restore_paths = Vec::new();
+    for path in &restore_paths {
+        if vanilla_snapshot.contains_key(path)
+            && tracker.get_vanilla_backup(&game.id, path).await?.is_none()
+        {
+            missing_restore_paths.push(path);
+        }
+    }
 
     for f in &to_remove {
         warnings.extend(remove_deployed_file(f, game, &game_data)?);
     }
+    dir_cache.clear();
 
-    warnings.extend(restore_vanilla_for_paths(game, tracker, &game_data, &removed_rels).await?);
-
-    let canonical_dirs = build_dir_canonical_map(&winners);
+    for path in missing_restore_paths {
+        warnings.push(format!(
+            "No vanilla backup is available for '{path}'. Restore it with the game's platform verification tool if needed"
+        ));
+    }
+    let restore = restore_vanilla_for_paths(game, tracker, &game_data, &restore_paths).await?;
+    let vanilla_files_restored = restore.restored;
+    warnings.extend(restore.warnings);
 
     let mut newly_linked: Vec<ModFile> = Vec::new();
-    let mut dir_cache: HashMap<PathBuf, HashMap<String, PathBuf>> = HashMap::new();
     for f in &to_add {
         let cache_file = PathBuf::from(&f.cache_path);
 
@@ -146,14 +309,6 @@ pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result
             ensure_dirs_case_insensitive(&base, rel, &canonical_dirs, &mut dir_cache)?;
 
         if deploy_target.exists() {
-            // If this file was not previously deployed by deployd it's a vanilla/user
-            // file — copy it to our backup store before replacing it with the mod file.
-            let deploy_target_lower = deploy_target.to_string_lossy().to_lowercase();
-            let is_ours = deployed_lower.contains(&deploy_target_lower);
-            let is_vanilla = vanilla_snapshot.contains_key(&f.game_rel_lowercase);
-            if !is_ours && is_vanilla {
-                backup_vanilla_file(game, tracker, &f.game_rel_original, &deploy_target).await?;
-            }
             fs::remove_file(&deploy_target)?;
         } else if let (Some(parent), Some(fname)) =
             (deploy_target.parent(), deploy_target.file_name())
@@ -257,7 +412,9 @@ pub async fn deploy(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result
         files_total: winners.len(),
         files_added: newly_linked.len(),
         files_removed: to_remove.len(),
-        conflicts_resolved,
+        conflicts_resolved: plan.conflicts_resolved,
+        vanilla_files_backed_up,
+        vanilla_files_restored,
         warnings,
     })
 }
@@ -272,7 +429,76 @@ mod tests {
     use crate::models::manifest::ModFile;
     use crate::models::mod_entry::{InstallTarget, ModEntry};
 
-    use super::deploy;
+    use super::{deploy, deployment_preflight, vanilla_protection_enabled};
+
+    fn mod_entry(id: &str, game_id: &str, priority: i32) -> ModEntry {
+        ModEntry {
+            id: id.to_string(),
+            game_id: game_id.to_string(),
+            name: id.to_string(),
+            archive_hash: None,
+            archive_path: None,
+            installed_at: None,
+            enabled: true,
+            priority,
+            nexus_mod_id: None,
+            nexus_file_id: None,
+            nexus_domain: None,
+            version: None,
+            author: None,
+            nexus_description: None,
+            latest_version: None,
+            nexus_file_name: None,
+            nexus_is_primary: false,
+            archive_md5: None,
+            install_target: InstallTarget::Data,
+            notes: None,
+        }
+    }
+
+    #[test]
+    fn vanilla_protection_defaults_to_enabled() {
+        assert!(vanilla_protection_enabled(None));
+        assert!(vanilla_protection_enabled(Some("invalid")));
+        assert!(vanilla_protection_enabled(Some("true")));
+        assert!(!vanilla_protection_enabled(Some("false")));
+    }
+
+    #[tokio::test]
+    async fn later_deploy_retries_orphaned_vanilla_backup() -> Result<()> {
+        let temp = tempdir()?;
+        let game_root = temp.path().join("game");
+        let game_data = game_root.join("Data");
+        let cache_root = temp.path().join("cache");
+        let backup = temp.path().join("backup.bin");
+        std::fs::create_dir_all(&game_data)?;
+        std::fs::write(&backup, b"vanilla")?;
+        let game = Game {
+            id: "game".to_string(),
+            title: "Game".to_string(),
+            path: game_root,
+            data_subdir: "Data".to_string(),
+            engine: GameEngine::Bethesda,
+            wine_prefix: None,
+        };
+        let tracker = Tracker::open("sqlite::memory:").await?.tracker;
+        tracker
+            .save_vanilla_backup(&game.id, "file.bin", "File.bin", &backup)
+            .await?;
+
+        let outcome = deploy(&game, &tracker, &cache_root, false).await?;
+
+        assert_eq!(outcome.vanilla_files_restored, 1);
+        assert_eq!(std::fs::read(game_data.join("File.bin"))?, b"vanilla");
+        assert!(!backup.exists());
+        assert!(
+            tracker
+                .get_vanilla_backup(&game.id, "file.bin")
+                .await?
+                .is_none()
+        );
+        Ok(())
+    }
 
     #[tokio::test]
     async fn deployment_removes_previous_data_route_after_root_merge() -> Result<()> {
@@ -350,7 +576,7 @@ mod tests {
             )
             .await?;
 
-        let outcome = deploy(&game, &tracker, &cache_root).await?;
+        let outcome = deploy(&game, &tracker, &cache_root, true).await?;
 
         assert_eq!(outcome.files_removed, 1);
         assert_eq!(outcome.files_added, 1);
@@ -362,6 +588,153 @@ mod tests {
         let deployed = tracker.get_deployed_files(&game.id).await?;
         assert_eq!(deployed.len(), 1);
         assert_eq!(deployed[0].game_rel_lowercase, "../enbseries/settings.ini");
+        Ok(())
+    }
+
+    // @variants: both
+    #[tokio::test]
+    async fn witcher_2_restores_vanilla_after_multiple_mod_winners() -> Result<()> {
+        let temp = tempdir()?;
+        let game_root = temp.path().join("Witcher 2");
+        let game_data = game_root.join("CookedPC");
+        let cache_root = temp.path().join("cache");
+        let cache_a = cache_root.join("mod-a/base_scripts.d2a");
+        let cache_b = cache_root.join("mod-b/base_scripts.d2a");
+        let live_path = game_data.join("Base_Scripts.d2a");
+        let backup_path = temp.path().join("legacy-flat-backup");
+        std::fs::create_dir_all(&game_data)?;
+        std::fs::create_dir_all(cache_a.parent().expect("mod A cache parent"))?;
+        std::fs::create_dir_all(cache_b.parent().expect("mod B cache parent"))?;
+        std::fs::write(&live_path, b"mod A")?;
+        std::fs::write(&cache_a, b"mod A")?;
+        std::fs::write(&cache_b, b"mod B")?;
+        std::fs::write(&backup_path, b"vanilla")?;
+
+        let game = Game {
+            id: "witcher-2".to_string(),
+            title: "The Witcher 2: Assassins of Kings".to_string(),
+            path: game_root,
+            data_subdir: "CookedPC".to_string(),
+            engine: GameEngine::REDEngine,
+            wine_prefix: None,
+        };
+        let tracker = Tracker::open("sqlite::memory:").await?.tracker;
+        tracker.insert_mod(&mod_entry("mod-a", &game.id, 1)).await?;
+        tracker.insert_mod(&mod_entry("mod-b", &game.id, 2)).await?;
+        let file_a = ModFile {
+            mod_id: "mod-a".to_string(),
+            game_rel_lowercase: "base_scripts.d2a".to_string(),
+            game_rel_original: "Base_Scripts.d2a".to_string(),
+            cache_path: cache_a.to_string_lossy().into_owned(),
+        };
+        let file_b = ModFile {
+            mod_id: "mod-b".to_string(),
+            game_rel_lowercase: "base_scripts.d2a".to_string(),
+            game_rel_original: "base_scripts.d2a".to_string(),
+            cache_path: cache_b.to_string_lossy().into_owned(),
+        };
+        tracker.record_files(&[file_a.clone(), file_b]).await?;
+        tracker
+            .record_deployed_files(&game.id, std::slice::from_ref(&file_a))
+            .await?;
+        tracker
+            .reset_vanilla_snapshot(&game.id, &[("base_scripts.d2a".to_string(), 7, 0)])
+            .await?;
+        tracker
+            .save_vanilla_backup(
+                &game.id,
+                "base_scripts.d2a",
+                "Base_Scripts.d2a",
+                &backup_path,
+            )
+            .await?;
+
+        let switched = deploy(&game, &tracker, &cache_root, true).await?;
+        assert_eq!(switched.vanilla_files_restored, 0);
+        assert_eq!(std::fs::read(game_data.join("base_scripts.d2a"))?, b"mod B");
+        assert!(
+            tracker
+                .get_vanilla_backup(&game.id, "BASE_SCRIPTS.D2A")
+                .await?
+                .is_some()
+        );
+
+        tracker.delete_mod_files("mod-b").await?;
+        tracker.delete_mod("mod-b").await?;
+        let switched_back = deploy(&game, &tracker, &cache_root, true).await?;
+        assert_eq!(switched_back.vanilla_files_restored, 0);
+        assert_eq!(std::fs::read(&live_path)?, b"mod A");
+
+        tracker.delete_mod_files("mod-a").await?;
+        tracker.delete_mod("mod-a").await?;
+        let restored = deploy(&game, &tracker, &cache_root, false).await?;
+        assert_eq!(restored.vanilla_files_restored, 1);
+        assert_eq!(std::fs::read(&live_path)?, b"vanilla");
+        assert!(
+            tracker
+                .get_vanilla_backup(&game.id, "base_scripts.d2a")
+                .await?
+                .is_none()
+        );
+        assert!(!backup_path.exists());
+        Ok(())
+    }
+
+    // @variants: both
+    #[tokio::test]
+    async fn preflight_reports_unprotected_mod_to_mod_replacement() -> Result<()> {
+        let temp = tempdir()?;
+        let game_root = temp.path().join("game");
+        let game_data = game_root.join("CookedPC");
+        let cache_root = temp.path().join("cache");
+        let cache_a = cache_root.join("a/file.d2a");
+        let cache_b = cache_root.join("b/file.d2a");
+        std::fs::create_dir_all(&game_data)?;
+        std::fs::create_dir_all(cache_a.parent().expect("cache A parent"))?;
+        std::fs::create_dir_all(cache_b.parent().expect("cache B parent"))?;
+        std::fs::write(game_data.join("file.d2a"), b"a")?;
+        std::fs::write(&cache_a, b"a")?;
+        std::fs::write(&cache_b, b"b")?;
+        let game = Game {
+            id: "witcher-2".to_string(),
+            title: "Witcher 2".to_string(),
+            path: game_root,
+            data_subdir: "CookedPC".to_string(),
+            engine: GameEngine::REDEngine,
+            wine_prefix: None,
+        };
+        let tracker = Tracker::open("sqlite::memory:").await?.tracker;
+        tracker.insert_mod(&mod_entry("a", &game.id, 1)).await?;
+        tracker.insert_mod(&mod_entry("b", &game.id, 2)).await?;
+        let deployed = ModFile {
+            mod_id: "a".to_string(),
+            game_rel_lowercase: "file.d2a".to_string(),
+            game_rel_original: "file.d2a".to_string(),
+            cache_path: cache_a.to_string_lossy().into_owned(),
+        };
+        tracker
+            .record_files(&[
+                deployed.clone(),
+                ModFile {
+                    mod_id: "b".to_string(),
+                    game_rel_lowercase: "file.d2a".to_string(),
+                    game_rel_original: "file.d2a".to_string(),
+                    cache_path: cache_b.to_string_lossy().into_owned(),
+                },
+            ])
+            .await?;
+        tracker.record_deployed_files(&game.id, &[deployed]).await?;
+        tracker
+            .reset_vanilla_snapshot(&game.id, &[("file.d2a".to_string(), 1, 0)])
+            .await?;
+
+        let preflight = deployment_preflight(&game, &tracker).await?;
+
+        assert_eq!(preflight.vanilla_replacements.len(), 1);
+        assert_eq!(
+            preflight.vanilla_replacements[0].status,
+            super::VanillaReplacementStatus::BackupUnavailable
+        );
         Ok(())
     }
 }

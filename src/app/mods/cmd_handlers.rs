@@ -73,7 +73,9 @@ impl App {
                     self.push_notification(&warning);
                 }
                 self.mods.pending_scroll_restore = None;
-                self.show_toast("Mod removed. Deploy to update game files");
+                self.show_toast(
+                    "Mod removed. Deploy to update game files and restore protected originals",
+                );
                 let changed = self.reset_installed_download_for_mod(
                     nexus_ids,
                     &mod_name,

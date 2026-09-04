@@ -6,7 +6,62 @@ use crate::core::game::engine_handler::EngineHandler;
 use crate::core::tracker::Tracker;
 use crate::models::manifest::ModFile;
 
-pub(super) async fn compute_winners(
+pub(super) struct DeploymentPlan {
+    pub(super) deployed: Vec<ModFile>,
+    pub(super) winners: Vec<ModFile>,
+    pub(super) to_remove: Vec<usize>,
+    pub(super) to_add: Vec<usize>,
+    pub(super) conflicts_resolved: usize,
+}
+
+pub(super) async fn build_plan(
+    tracker: &Tracker,
+    game_id: &str,
+    handler: &dyn EngineHandler,
+) -> Result<DeploymentPlan> {
+    let deployed = tracker.get_deployed_files(game_id).await?;
+    let (winners, conflicts_resolved) = compute_winners(tracker, game_id, handler).await?;
+    let deployed_map: HashMap<&str, &ModFile> = deployed
+        .iter()
+        .map(|file| (file.game_rel_lowercase.as_str(), file))
+        .collect();
+    let winners_map: HashMap<&str, &ModFile> = winners
+        .iter()
+        .map(|file| (file.game_rel_lowercase.as_str(), file))
+        .collect();
+    let to_remove = deployed
+        .iter()
+        .enumerate()
+        .filter_map(|(index, deployed)| {
+            match winners_map.get(deployed.game_rel_lowercase.as_str()) {
+                None => Some(index),
+                Some(winner) if winner.cache_path != deployed.cache_path => Some(index),
+                _ => None,
+            }
+        })
+        .collect();
+    let to_add = winners
+        .iter()
+        .enumerate()
+        .filter_map(
+            |(index, winner)| match deployed_map.get(winner.game_rel_lowercase.as_str()) {
+                None => Some(index),
+                Some(deployed) if deployed.cache_path != winner.cache_path => Some(index),
+                _ => None,
+            },
+        )
+        .collect();
+
+    Ok(DeploymentPlan {
+        deployed,
+        winners,
+        to_remove,
+        to_add,
+        conflicts_resolved,
+    })
+}
+
+async fn compute_winners(
     tracker: &Tracker,
     game_id: &str,
     handler: &dyn EngineHandler,

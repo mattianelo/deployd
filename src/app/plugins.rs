@@ -424,7 +424,7 @@ impl App {
             Ok(data) => {
                 self.apply_loaded_data(data, sender);
                 if post_action == PostLootAction::Deploy {
-                    self.execute_deploy(sender);
+                    self.prepare_deploy(sender);
                 }
             }
             Err(error) => {

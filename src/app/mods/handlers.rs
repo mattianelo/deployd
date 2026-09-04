@@ -879,7 +879,9 @@ impl App {
                 n,
                 if n == 1 { "" } else { "s" }
             ))
-            .body("This will delete the selected mods and cannot be undone.")
+            .body(
+                "This will delete the selected mods and cannot be undone. Live game files are updated on the next Deploy, when protected originals are restored if no enabled mod still uses them.",
+            )
             .build();
         dialog.add_response("cancel", "Cancel");
         dialog.add_response("remove", &format!("Remove {n}"));

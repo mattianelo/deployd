@@ -33,7 +33,11 @@ impl App {
 
         match msg {
             ShellMsg::DeployClicked => self.handle_deploy_clicked(root, &sender),
-            ShellMsg::DeployConfirmed => self.execute_deploy(&sender),
+            ShellMsg::DeployConfirmed => self.prepare_deploy(&sender),
+            ShellMsg::DeployVanillaConfirmed(protect) => {
+                self.handle_vanilla_deploy_confirmed(protect, &sender)
+            }
+            ShellMsg::DeployPreflightCancelled => self.handle_deploy_preflight_cancelled(),
             ShellMsg::PurgeClicked => self.handle_purge_clicked(root, &sender),
             ShellMsg::PurgeConfirmed => self.handle_purge_confirmed(&sender),
             ShellMsg::GrantGameFolderAccess => self.handle_grant_game_folder_access(root, &sender),
@@ -463,12 +467,18 @@ impl App {
         &mut self,
         msg: crate::app::messages::ShellCmdMsg,
         sender: ComponentSender<Self>,
-        _root: &adw::ApplicationWindow,
+        root: &adw::ApplicationWindow,
     ) {
         use crate::app::messages::ShellCmdMsg;
 
         match msg {
             ShellCmdMsg::Initialized(result) => self.handle_cmd_initialized(*result, &sender),
+            ShellCmdMsg::DeployPreflightDone(result) => {
+                self.handle_cmd_deploy_preflight_done(result, root, &sender)
+            }
+            ShellCmdMsg::VanillaProtectionSaved { protect, result } => {
+                self.handle_cmd_vanilla_protection_saved(protect, result, &sender)
+            }
             ShellCmdMsg::DeployDone(result) => self.handle_cmd_deploy_done(result, &sender),
             ShellCmdMsg::PurgeDone(result) => self.handle_cmd_purge_done(result),
             ShellCmdMsg::GamePathSaved {

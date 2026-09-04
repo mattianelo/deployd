@@ -17,13 +17,28 @@ pub async fn purge(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result<
     bake_modified_plugins(game, tracker, &game_data).await?;
 
     let deployed = tracker.get_deployed_files(&game.id).await?;
+    let vanilla_snapshot = tracker.get_vanilla_metadata(&game.id).await?;
     let count = deployed.len();
+    for file in &deployed {
+        if vanilla_snapshot.contains_key(&file.game_rel_lowercase)
+            && tracker
+                .get_vanilla_backup(&game.id, &file.game_rel_lowercase)
+                .await?
+                .is_none()
+        {
+            warnings.push(format!(
+                "No vanilla backup is available for '{}'. Restore it with the game's platform verification tool if needed",
+                file.game_rel_lowercase
+            ));
+        }
+    }
     for f in &deployed {
         warnings.extend(remove_deployed_file(f, game, &game_data)?);
     }
     tracker.clear_deployed_files(&game.id).await?;
 
-    warnings.extend(restore_all_vanilla(game, tracker, &game_data).await?);
+    let restore = restore_all_vanilla(game, tracker, &game_data).await?;
+    warnings.extend(restore.warnings);
 
     if let Err(e) = mod_folders::refresh_named_mod_folders(tracker, &game.id, cache_root).await {
         warnings.push(format!("Named mod-folder refresh failed: {e}"));
@@ -31,6 +46,7 @@ pub async fn purge(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result<
 
     Ok(PurgeOutcome {
         files_removed: count,
+        vanilla_files_restored: restore.restored,
         warnings,
     })
 }

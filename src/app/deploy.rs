@@ -12,6 +12,166 @@ use super::App;
 use super::messages::{AppCmdMsg, AppMsg};
 use super::types::{DeployCompletion, WorkKind};
 
+const VANILLA_REPLACEMENT_DISPLAY_LIMIT: usize = 50;
+
+#[derive(Debug, PartialEq, Eq)]
+struct VanillaDeployAction {
+    label: &'static str,
+    destructive: bool,
+}
+
+fn vanilla_deploy_action(protect: bool) -> VanillaDeployAction {
+    if protect {
+        VanillaDeployAction {
+            label: "Back Up and Deploy",
+            destructive: false,
+        }
+    } else {
+        VanillaDeployAction {
+            label: "Deploy Without Backup",
+            destructive: true,
+        }
+    }
+}
+
+fn present_vanilla_replacement_dialog(
+    root: &adw::ApplicationWindow,
+    sender: &ComponentSender<App>,
+    preflight: crate::core::deployer::DeploymentPreflight,
+) {
+    use crate::core::deployer::VanillaReplacementStatus;
+
+    let count = preflight.vanilla_replacements.len();
+    let unavailable = preflight
+        .vanilla_replacements
+        .iter()
+        .filter(|replacement| replacement.status == VanillaReplacementStatus::BackupUnavailable)
+        .count();
+    let body = if unavailable == 0 {
+        format!(
+            "This deployment affects {count} vanilla game file(s). With protection enabled, Deployd keeps verified backups and restores them when no enabled mod uses those paths."
+        )
+    } else {
+        format!(
+            "This deployment affects {count} vanilla game file(s). {unavailable} original file(s) are already missing or were overwritten without a backup and may require game-platform verification."
+        )
+    };
+    let dialog = adw::AlertDialog::builder()
+        .heading("Replace vanilla game files?")
+        .body(&body)
+        .build();
+    dialog.add_response("cancel", "Cancel");
+    let initial_action = vanilla_deploy_action(preflight.protect_vanilla_files);
+    dialog.add_response("deploy", initial_action.label);
+    dialog.set_default_response(Some("cancel"));
+    dialog.set_close_response("cancel");
+    dialog.set_response_appearance(
+        "deploy",
+        if initial_action.destructive {
+            adw::ResponseAppearance::Destructive
+        } else {
+            adw::ResponseAppearance::Suggested
+        },
+    );
+
+    let content = gtk::Box::new(gtk::Orientation::Vertical, 12);
+    let list = gtk::ListBox::new();
+    list.set_selection_mode(gtk::SelectionMode::None);
+    list.add_css_class("boxed-list");
+    for replacement in preflight
+        .vanilla_replacements
+        .into_iter()
+        .take(VANILLA_REPLACEMENT_DISPLAY_LIMIT)
+    {
+        let row = adw::ActionRow::new();
+        row.set_title(&gtk::glib::markup_escape_text(&replacement.path));
+        row.set_title_lines(1);
+        row.set_subtitle(match replacement.status {
+            VanillaReplacementStatus::ReadyToBackUp => "Will be backed up before deployment",
+            VanillaReplacementStatus::Protected => "A verified backup is already available",
+            VanillaReplacementStatus::BackupUnavailable => {
+                "Original backup unavailable; platform verification may be required"
+            }
+        });
+        row.set_tooltip_text(Some(&replacement.path));
+        list.append(&row);
+    }
+    if count > VANILLA_REPLACEMENT_DISPLAY_LIMIT {
+        let row = adw::ActionRow::new();
+        row.set_title(&format!(
+            "… and {} more file(s)",
+            count - VANILLA_REPLACEMENT_DISPLAY_LIMIT
+        ));
+        list.append(&row);
+    }
+    let scrolled = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .min_content_height(80)
+        .max_content_height(220)
+        .propagate_natural_height(true)
+        .child(&list)
+        .build();
+    content.append(&scrolled);
+
+    let protection = adw::SwitchRow::builder()
+        .title("Back up and restore vanilla files automatically")
+        .subtitle("Applies to all managed games")
+        .active(preflight.protect_vanilla_files)
+        .build();
+    let group = adw::PreferencesGroup::new();
+    group.add(&protection);
+    content.append(&group);
+    dialog.set_extra_child(Some(&content));
+
+    let dynamic_dialog = dialog.clone();
+    protection.connect_active_notify(move |row| {
+        let action = vanilla_deploy_action(row.is_active());
+        dynamic_dialog.set_response_label("deploy", action.label);
+        dynamic_dialog.set_response_appearance(
+            "deploy",
+            if action.destructive {
+                adw::ResponseAppearance::Destructive
+            } else {
+                adw::ResponseAppearance::Suggested
+            },
+        );
+    });
+
+    let input = sender.input_sender().clone();
+    dialog.connect_response(None, move |_, response| {
+        let message = if response == "deploy" {
+            crate::app::messages::ShellMsg::DeployVanillaConfirmed(protection.is_active())
+        } else {
+            crate::app::messages::ShellMsg::DeployPreflightCancelled
+        };
+        let _ = input.send(AppMsg::Shell(message));
+    });
+    dialog.present(Some(root));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{VanillaDeployAction, vanilla_deploy_action};
+
+    #[test]
+    fn vanilla_warning_action_tracks_protection_switch() {
+        assert_eq!(
+            vanilla_deploy_action(true),
+            VanillaDeployAction {
+                label: "Back Up and Deploy",
+                destructive: false,
+            }
+        );
+        assert_eq!(
+            vanilla_deploy_action(false),
+            VanillaDeployAction {
+                label: "Deploy Without Backup",
+                destructive: true,
+            }
+        );
+    }
+}
+
 impl App {
     pub(crate) fn handle_deploy_clicked(
         &mut self,
@@ -87,11 +247,109 @@ impl App {
             return;
         }
 
-        self.execute_deploy(sender);
+        self.prepare_deploy(sender);
     }
 
-    /// Run the deploy operation directly (after any required confirmation dialog).
-    pub(crate) fn execute_deploy(&mut self, sender: &ComponentSender<Self>) {
+    pub(crate) fn prepare_deploy(&mut self, sender: &ComponentSender<Self>) {
+        let Some(tracker) = self.session.tracker.clone() else {
+            self.push_notification("Database not ready yet");
+            return;
+        };
+        let Some(game) = self.selected_game().cloned() else {
+            self.push_notification("No game selected");
+            return;
+        };
+        if !game.path.exists() {
+            sender.input(AppMsg::Shell(
+                crate::app::messages::ShellMsg::GrantGameFolderAccess,
+            ));
+            return;
+        }
+
+        self.shell.deploying = true;
+        self.begin_work(WorkKind::Deploying, "Checking deployment...");
+        sender.oneshot_command(async move {
+            AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::DeployPreflightDone(
+                deployer::deployment_preflight(&game, &tracker)
+                    .await
+                    .map_err(|error| error.to_string()),
+            ))
+        });
+    }
+
+    pub(crate) fn handle_cmd_deploy_preflight_done(
+        &mut self,
+        result: Result<crate::core::deployer::DeploymentPreflight, String>,
+        root: &adw::ApplicationWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.finish_work(WorkKind::Deploying);
+        let preflight = match result {
+            Ok(preflight) => preflight,
+            Err(error) => {
+                self.shell.deploying = false;
+                self.push_notification(&format!("Could not inspect deployment: {error}"));
+                return;
+            }
+        };
+        if preflight.vanilla_replacements.is_empty() {
+            self.shell.deploying = false;
+            self.execute_deploy(preflight.protect_vanilla_files, sender);
+            return;
+        }
+        present_vanilla_replacement_dialog(root, sender, preflight);
+    }
+
+    pub(crate) fn handle_vanilla_deploy_confirmed(
+        &mut self,
+        protect: bool,
+        sender: &ComponentSender<Self>,
+    ) {
+        let Some(tracker) = self.session.tracker.clone() else {
+            self.shell.deploying = false;
+            self.push_notification("Database not ready yet");
+            return;
+        };
+        self.shell.deploying = true;
+        self.begin_work(WorkKind::Deploying, "Saving protection preference...");
+        sender.oneshot_command(async move {
+            AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::VanillaProtectionSaved {
+                protect,
+                result: tracker
+                    .set_setting("protect_vanilla_files", &protect.to_string())
+                    .await
+                    .map_err(|error| error.to_string()),
+            })
+        });
+    }
+
+    pub(crate) fn handle_cmd_vanilla_protection_saved(
+        &mut self,
+        protect: bool,
+        result: Result<(), String>,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.shell.deploying = false;
+        self.finish_work(WorkKind::Deploying);
+        match result {
+            Ok(()) => self.execute_deploy(protect, sender),
+            Err(error) => self.push_notification(&format!(
+                "Deployment cancelled because the vanilla protection preference could not be saved: {error}"
+            )),
+        }
+    }
+
+    pub(crate) fn handle_deploy_preflight_cancelled(&mut self) {
+        self.shell.deploying = false;
+        self.finish_work(WorkKind::Deploying);
+    }
+
+    /// Run the deploy operation directly after all required confirmations.
+    pub(crate) fn execute_deploy(
+        &mut self,
+        protect_vanilla_files: bool,
+        sender: &ComponentSender<Self>,
+    ) {
         let Some(tracker) = self.session.tracker.clone() else {
             self.push_notification("Database not ready yet");
             return;
@@ -134,21 +392,22 @@ impl App {
             }
             let timing_start = std::time::Instant::now();
             let game_id = game.id.clone();
-            let result = match deployer::deploy(&game, &tracker, &cache_root).await {
-                Ok(result) => {
-                    crate::app::timing::log_phase("deploy.apply", &game_id, timing_start, None);
-                    match tracker.record_deployed_profile(&game_id, &profile_id).await {
-                        Ok(()) => Ok(DeployCompletion {
-                            outcome: result,
-                            profile_id,
-                        }),
-                        Err(error) => {
-                            Err(format!("Failed to record the deployed profile: {error}"))
+            let result =
+                match deployer::deploy(&game, &tracker, &cache_root, protect_vanilla_files).await {
+                    Ok(result) => {
+                        crate::app::timing::log_phase("deploy.apply", &game_id, timing_start, None);
+                        match tracker.record_deployed_profile(&game_id, &profile_id).await {
+                            Ok(()) => Ok(DeployCompletion {
+                                outcome: result,
+                                profile_id,
+                            }),
+                            Err(error) => {
+                                Err(format!("Failed to record the deployed profile: {error}"))
+                            }
                         }
                     }
-                }
-                Err(error) => Err(error.to_string()),
-            };
+                    Err(error) => Err(error.to_string()),
+                };
             AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::DeployDone(result))
         });
     }
@@ -367,9 +626,21 @@ impl App {
                 if conflicts > 0 {
                     msg.push_str(&format!(", {conflicts} conflict(s) resolved"));
                 }
+                if outcome.vanilla_files_backed_up > 0 {
+                    msg.push_str(&format!(
+                        ", {} vanilla file(s) backed up",
+                        outcome.vanilla_files_backed_up
+                    ));
+                }
+                if outcome.vanilla_files_restored > 0 {
+                    msg.push_str(&format!(
+                        ", {} vanilla file(s) restored",
+                        outcome.vanilla_files_restored
+                    ));
+                }
                 self.show_toast(&msg);
                 for warning in outcome.warnings {
-                    self.push_notification(&format!("Deployment cleanup warning: {warning}"));
+                    self.push_notification(&format!("Deployment warning: {warning}"));
                 }
                 sender.input(AppMsg::Mods(
                     crate::app::messages::ModsMsg::ScanExternalFiles,
@@ -395,10 +666,17 @@ impl App {
                         "No deployed files tracked — the game folder may already be clean, or try redeploying first",
                     );
                 } else {
-                    self.show_toast(&format!("Purged {} deployed files", outcome.files_removed));
+                    let mut message = format!("Purged {} deployed files", outcome.files_removed);
+                    if outcome.vanilla_files_restored > 0 {
+                        message.push_str(&format!(
+                            ", restored {} vanilla file(s)",
+                            outcome.vanilla_files_restored
+                        ));
+                    }
+                    self.show_toast(&message);
                 }
                 for warning in outcome.warnings {
-                    self.push_notification(&format!("Purge cleanup warning: {warning}"));
+                    self.push_notification(&format!("Purge warning: {warning}"));
                 }
             }
             Err(e) => {

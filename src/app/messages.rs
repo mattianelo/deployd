@@ -39,6 +39,8 @@ pub(crate) enum ShellMsg {
     DeployClicked,
     /// User confirmed deploy after the cross-profile mismatch warning dialog.
     DeployConfirmed,
+    DeployVanillaConfirmed(bool),
+    DeployPreflightCancelled,
     PurgeClicked,
     PurgeConfirmed,
     /// Open a file-chooser dialog so the user can confirm access to the current
@@ -437,6 +439,11 @@ pub(crate) enum AppCmdMsg {
 #[derive(Debug)]
 pub(crate) enum ShellCmdMsg {
     Initialized(Box<Result<InitData, String>>),
+    DeployPreflightDone(Result<crate::core::deployer::DeploymentPreflight, String>),
+    VanillaProtectionSaved {
+        protect: bool,
+        result: Result<(), String>,
+    },
     DeployDone(Result<DeployCompletion, String>),
     PurgeDone(Result<crate::core::deployer::PurgeOutcome, String>),
     GamePathSaved {

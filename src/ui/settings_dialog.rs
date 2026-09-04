@@ -19,6 +19,9 @@ pub struct SettingsDialog {
     test_button: gtk::Button,
     save_button: gtk::Button,
     backup_cap_row: adw::SpinRow,
+    vanilla_protection_row: adw::SwitchRow,
+    vanilla_protection_status: gtk::Label,
+    updating_vanilla_protection: bool,
     downloads_dir: String,
     can_preview_appimage_export: bool,
 }
@@ -34,6 +37,7 @@ pub enum SettingsMsg {
     ManageGames,
     SetColorScheme(u32),
     SetSaveBackupCap(f64),
+    SetVanillaProtection(bool),
 }
 
 #[derive(Debug)]
@@ -46,6 +50,11 @@ pub enum SettingsCmdMsg {
     DownloadsDirSaved(Result<(), String>),
     SaveBackupCapLoaded(Result<Option<String>, String>),
     SaveBackupCapSaved(Result<(), String>),
+    VanillaProtectionLoaded(Result<Option<String>, String>),
+    VanillaProtectionSaved {
+        enabled: bool,
+        result: Result<(), String>,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -223,6 +232,27 @@ impl Component for SettingsDialog {
                 },
 
                 add = &adw::PreferencesGroup {
+                    set_title: "Deployment",
+                    set_description: Some("Deployd can preserve files supplied by the game before a mod replaces them."),
+
+                    #[local_ref]
+                    add = vanilla_protection_row -> adw::SwitchRow {
+                        set_title: "Protect vanilla game files",
+                        set_subtitle: "Back up originals before replacement and restore them when no enabled mod uses the path",
+                        connect_active_notify[sender] => move |row| {
+                            sender.input(SettingsMsg::SetVanillaProtection(row.is_active()));
+                        },
+                    },
+
+                    #[local_ref]
+                    add = vanilla_protection_status -> gtk::Label {
+                        set_halign: gtk::Align::Start,
+                        set_wrap: true,
+                        set_visible: false,
+                    },
+                },
+
+                add = &adw::PreferencesGroup {
                     set_title: "Save Backups",
                     set_description: Some("The limit applies independently to automatic recovery points for each game. Manual backups are never pruned automatically."),
 
@@ -309,6 +339,11 @@ impl Component for SettingsDialog {
             1.0,
             0,
         );
+        let vanilla_protection_row = adw::SwitchRow::builder()
+            .active(true)
+            .sensitive(false)
+            .build();
+        let vanilla_protection_status = gtk::Label::new(None);
 
         let default_dir = paths::default_downloads_dir().to_string_lossy().to_string();
 
@@ -321,6 +356,9 @@ impl Component for SettingsDialog {
             test_button,
             save_button,
             backup_cap_row,
+            vanilla_protection_row,
+            vanilla_protection_status,
+            updating_vanilla_protection: false,
             downloads_dir: default_dir,
             can_preview_appimage_export,
         };
@@ -331,6 +369,8 @@ impl Component for SettingsDialog {
         let test_button = &model.test_button;
         let save_button = &model.save_button;
         let backup_cap_row = &model.backup_cap_row;
+        let vanilla_protection_row = &model.vanilla_protection_row;
+        let vanilla_protection_status = &model.vanilla_protection_status;
         let widgets = view_output!();
 
         // Ko-fi support row suffix
@@ -370,6 +410,16 @@ impl Component for SettingsDialog {
             }
             .await;
             SettingsCmdMsg::KeyLoaded(result)
+        });
+
+        let protection_tracker = model.tracker.clone();
+        sender.oneshot_command(async move {
+            SettingsCmdMsg::VanillaProtectionLoaded(
+                protection_tracker
+                    .get_setting("protect_vanilla_files")
+                    .await
+                    .map_err(|error| error.to_string()),
+            )
         });
 
         let cap_tracker = model.tracker.clone();
@@ -514,6 +564,23 @@ impl Component for SettingsDialog {
                     )
                 });
             }
+            SettingsMsg::SetVanillaProtection(enabled) => {
+                if self.updating_vanilla_protection {
+                    return;
+                }
+                self.vanilla_protection_row.set_sensitive(false);
+                self.vanilla_protection_status.set_visible(false);
+                let tracker = self.tracker.clone();
+                sender.oneshot_command(async move {
+                    SettingsCmdMsg::VanillaProtectionSaved {
+                        enabled,
+                        result: tracker
+                            .set_setting("protect_vanilla_files", &enabled.to_string())
+                            .await
+                            .map_err(|error| error.to_string()),
+                    }
+                });
+            }
             SettingsMsg::DownloadsDirChosen(selection) => {
                 let path = match resolve_downloads_folder_with(&selection, |path| {
                     snap::validate_selected_folder(path, SelectedFolderKind::DownloadsFolder)
@@ -648,6 +715,36 @@ impl Component for SettingsDialog {
                         .set_label(&format!("Failed to save backup storage cap: {error}"));
                     self.status_label.add_css_class("error");
                     self.status_label.set_visible(true);
+                }
+            }
+            SettingsCmdMsg::VanillaProtectionLoaded(result) => match result {
+                Ok(value) => {
+                    let enabled =
+                        crate::core::deployer::vanilla_protection_enabled(value.as_deref());
+                    self.updating_vanilla_protection = true;
+                    self.vanilla_protection_row.set_active(enabled);
+                    self.updating_vanilla_protection = false;
+                    self.vanilla_protection_row.set_sensitive(true);
+                }
+                Err(error) => {
+                    self.vanilla_protection_row.set_sensitive(true);
+                    self.vanilla_protection_status
+                        .set_label(&format!("Failed to load vanilla-file protection: {error}"));
+                    self.vanilla_protection_status.add_css_class("error");
+                    self.vanilla_protection_status.set_visible(true);
+                }
+            },
+            SettingsCmdMsg::VanillaProtectionSaved { enabled, result } => {
+                self.vanilla_protection_row.set_sensitive(true);
+                if let Err(error) = result {
+                    self.updating_vanilla_protection = true;
+                    self.vanilla_protection_row.set_active(!enabled);
+                    self.updating_vanilla_protection = false;
+                    self.vanilla_protection_status
+                        .set_label(&format!("Failed to save vanilla-file protection: {error}"));
+                    self.vanilla_protection_status.remove_css_class("success");
+                    self.vanilla_protection_status.add_css_class("error");
+                    self.vanilla_protection_status.set_visible(true);
                 }
             }
         }

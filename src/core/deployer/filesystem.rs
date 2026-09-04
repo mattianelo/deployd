@@ -109,6 +109,48 @@ pub(super) fn resolve_deploy_path(
     Ok(base.join(rel))
 }
 
+pub(super) fn find_existing_deploy_path_case_insensitive(
+    game_rel: &str,
+    game_root: &Path,
+    game_data: &Path,
+) -> Result<Option<PathBuf>> {
+    let (base, rel, _) = split_deploy_target(game_rel, game_root, game_data)?;
+    let mut current = base;
+    for component in Path::new(rel).components() {
+        let std::path::Component::Normal(name) = component else {
+            continue;
+        };
+        let entries = match fs::read_dir(&current) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!("Failed to inspect deploy directory '{}'", current.display())
+                });
+            }
+        };
+        let mut found = None;
+        for entry in entries {
+            let entry = entry.with_context(|| {
+                format!("Failed to inspect an entry in '{}'", current.display())
+            })?;
+            if entry
+                .file_name()
+                .to_string_lossy()
+                .eq_ignore_ascii_case(&name.to_string_lossy())
+            {
+                found = Some(entry.path());
+                break;
+            }
+        }
+        let Some(path) = found else {
+            return Ok(None);
+        };
+        current = path;
+    }
+    Ok(Some(current))
+}
+
 fn docs_base(game_data: &Path) -> PathBuf {
     game_data
         .parent()
@@ -290,7 +332,8 @@ mod tests {
     use crate::models::manifest::ModFile;
 
     use super::{
-        DOCS_PREFIX, DeployAnchor, remove_deployed_file, resolve_deploy_path, split_deploy_target,
+        DOCS_PREFIX, DeployAnchor, find_existing_deploy_path_case_insensitive,
+        remove_deployed_file, resolve_deploy_path, split_deploy_target,
     };
 
     #[test]
@@ -339,6 +382,42 @@ mod tests {
             format!("{DOCS_PREFIX}BioWare/Settings.xml")
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn finds_case_variant_files_without_changing_engine_anchors() -> Result<()> {
+        let temp = tempdir()?;
+        let game_root = temp.path().join("game");
+        let game_data = game_root.join("packages/core/override");
+        let docs_base = game_root.join("packages");
+        std::fs::create_dir_all(game_data.join("Mixed"))?;
+        std::fs::create_dir_all(game_root.join("System"))?;
+        std::fs::create_dir_all(docs_base.join("Settings"))?;
+        std::fs::write(game_data.join("Mixed/Data.bin"), b"data")?;
+        std::fs::write(game_root.join("System/Root.ini"), b"root")?;
+        std::fs::write(docs_base.join("Settings/Doc.xml"), b"docs")?;
+
+        assert_eq!(
+            find_existing_deploy_path_case_insensitive("mixed/data.bin", &game_root, &game_data)?,
+            Some(game_data.join("Mixed/Data.bin"))
+        );
+        assert_eq!(
+            find_existing_deploy_path_case_insensitive(
+                "../system/root.ini",
+                &game_root,
+                &game_data
+            )?,
+            Some(game_root.join("System/Root.ini"))
+        );
+        assert_eq!(
+            find_existing_deploy_path_case_insensitive(
+                &format!("{DOCS_PREFIX}settings/doc.xml"),
+                &game_root,
+                &game_data
+            )?,
+            Some(docs_base.join("Settings/Doc.xml"))
+        );
         Ok(())
     }
 

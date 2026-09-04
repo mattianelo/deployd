@@ -216,6 +216,13 @@ Mods are deployed as **hardlinks** into the game's Data directory — originals 
 - **Deploy** — applies your changes to the game folder
 - **Purge** — removes all Deployd-managed files (only tracked hardlinks; your game files are safe)
 
+When a deployment will replace files supplied by the game, Deployd shows the affected paths before
+making changes. **Protect vanilla game files** is enabled by default and can be changed in that
+warning or under **Settings → Deployment**. Protected originals are verified before deployment and
+restored on the next Deploy or Purge after no enabled mod uses their path. Disabling protection
+allows an explicit unprotected deployment; originals that were already replaced without a backup
+must be recovered with the game platform's file-verification feature.
+
 ### 5. Plugin Load Order
 
 For Bethesda games, manage plugins separately in the **Plugins** tab:
