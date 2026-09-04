@@ -73,9 +73,9 @@
   <releases>
     <release version="2.4.1" date="2026-09-04" type="stable">
       <description>
-        <p>Protects vanilla game files with verified, collision-safe backups, warns before mods
-        replace originals, and reliably restores protected files after the final mod using their
-        path is removed.</p>
+        <p>Protects vanilla files for every supported game with verified, collision-safe backups,
+        warns before mods replace originals, and reliably restores protected files after the final
+        mod using their path is removed.</p>
       </description>
     </release>
     <release version="2.4.0" date="2026-09-01" type="stable">

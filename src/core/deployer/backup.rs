@@ -211,7 +211,7 @@ pub(super) async fn backup_vanilla_file(
     .await
 }
 
-async fn backup_vanilla_file_in(
+pub(super) async fn backup_vanilla_file_in(
     game: &Game,
     tracker: &Tracker,
     canonical_path: &str,

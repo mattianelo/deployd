@@ -6,8 +6,12 @@
 
 ### AppImage and Snap — Key changes
 
+- Made vanilla-file protection a shared invariant for every supported game across Bethesda,
+  REDEngine, Aurora, and Eclipse. Witcher 2's `CookedPC` failure was the original reported
+  regression; Data, game-root, engine-specific sibling, and Wine Documents targets now follow the
+  same backup and restoration lifecycle.
 - Fixed vanilla backups being detached during mod-to-mod winner changes, so removing the final mod
-  from paths such as Witcher 2's `CookedPC` now restores the exact original file.
+  now restores the exact original file regardless of the game or a later winner's path casing.
 - Added a bounded pre-deployment warning listing affected vanilla paths, with a global,
   default-enabled protection switch available in both the warning and Settings.
 - Made backup capture durable and collision-safe with separate Data, game-root, and Documents
@@ -18,6 +22,8 @@
   is later disabled.
 - Added deployment and purge backup/restore counts, clearer mod-removal timing, and actionable
   platform-verification guidance when an original was already lost or its backup is unavailable.
+- Added registry-driven lifecycle coverage for every supported game, including backup creation,
+  case-variant winner changes, restoration through Deploy and Purge, and each engine's path anchors.
 
 ## [2.4.0]
 

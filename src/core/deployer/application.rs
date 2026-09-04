@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use super::backup::{
-    backup_exists, backup_vanilla_file, bake_modified_plugins, files_match,
+    backup_exists, backup_vanilla_file, backup_vanilla_file_in, bake_modified_plugins, files_match,
     restore_vanilla_for_paths,
 };
 use super::filesystem::{
@@ -112,6 +112,16 @@ pub async fn deploy(
     tracker: &Tracker,
     cache_root: &Path,
     protect_vanilla_files: bool,
+) -> Result<DeployOutcome> {
+    deploy_with_backup_dir(game, tracker, cache_root, protect_vanilla_files, None).await
+}
+
+pub(super) async fn deploy_with_backup_dir(
+    game: &Game,
+    tracker: &Tracker,
+    cache_root: &Path,
+    protect_vanilla_files: bool,
+    backup_dir: Option<&Path>,
 ) -> Result<DeployOutcome> {
     let game_data = game::deploy_dir(game);
     let mut warnings = Vec::new();
@@ -235,15 +245,27 @@ pub async fn deploy(
                     .unwrap_or(&deploy_target)
                     .to_string_lossy();
                 let original_path = anchor.with_prefix(&actual_rel);
-                if backup_vanilla_file(
-                    game,
-                    tracker,
-                    &f.game_rel_lowercase,
-                    &original_path,
-                    &deploy_target,
-                )
-                .await?
-                {
+                let created = if let Some(backup_dir) = backup_dir {
+                    backup_vanilla_file_in(
+                        game,
+                        tracker,
+                        &f.game_rel_lowercase,
+                        &original_path,
+                        &deploy_target,
+                        backup_dir,
+                    )
+                    .await?
+                } else {
+                    backup_vanilla_file(
+                        game,
+                        tracker,
+                        &f.game_rel_lowercase,
+                        &original_path,
+                        &deploy_target,
+                    )
+                    .await?
+                };
+                if created {
                     vanilla_files_backed_up += 1;
                 }
             }
