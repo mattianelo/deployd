@@ -2,6 +2,21 @@ use adw::prelude::*;
 use gtk::prelude::*;
 use relm4::prelude::*;
 
+pub(crate) const DEPLOY_SELECTION_TOOLTIP: &str =
+    "Finish Select Mode with Done before deploying changes";
+
+fn deploy_button_sensitive(has_games: bool, is_busy: bool, selection_active: bool) -> bool {
+    has_games && !is_busy && !selection_active
+}
+
+fn deploy_button_tooltip(selection_active: bool) -> &'static str {
+    if selection_active {
+        DEPLOY_SELECTION_TOOLTIP
+    } else {
+        "Deploy mods to game folder"
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct HeaderState {
     pub(crate) nexus_username: Option<String>,
@@ -16,6 +31,7 @@ pub(crate) struct HeaderState {
     pub(crate) busy_message: String,
     pub(crate) deploying: bool,
     pub(crate) needs_deploy: bool,
+    pub(crate) selection_active: bool,
     pub(crate) notification_count: usize,
     pub(crate) notification_badge: String,
     pub(crate) external_changes_count: usize,
@@ -337,9 +353,14 @@ impl SimpleComponent for Header {
                     } else {
                         &[]
                     },
-                    set_tooltip_text: Some("Deploy mods to game folder"),
                     #[watch]
-                    set_sensitive: !model.state.is_busy && model.state.has_games,
+                    set_tooltip_text: Some(deploy_button_tooltip(model.state.selection_active)),
+                    #[watch]
+                    set_sensitive: deploy_button_sensitive(
+                        model.state.has_games,
+                        model.state.is_busy,
+                        model.state.selection_active,
+                    ),
                     connect_clicked[sender] => move |_| {
                                     sender.output(HeaderOutput::DeployClicked).ok();
                                 },
@@ -657,5 +678,25 @@ impl SimpleComponent for Header {
 
     fn update(&mut self, state: Self::Input, _sender: ComponentSender<Self>) {
         self.state = state;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DEPLOY_SELECTION_TOOLTIP, deploy_button_sensitive, deploy_button_tooltip};
+
+    #[test]
+    fn selection_mode_blocks_deployment() {
+        assert!(!deploy_button_sensitive(true, false, true));
+    }
+
+    #[test]
+    fn completed_selection_allows_deployment() {
+        assert!(deploy_button_sensitive(true, false, false));
+    }
+
+    #[test]
+    fn blocked_deploy_explains_how_to_finish_selection() {
+        assert_eq!(deploy_button_tooltip(true), DEPLOY_SELECTION_TOOLTIP);
     }
 }

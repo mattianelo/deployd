@@ -83,7 +83,8 @@ Deployd uses libadwaita throughout its primary workflows:
 - Select Mode is the v2 reorder workflow for Mod Order and Plugin Order. Enter Select Mode before
   selecting rows, dragging items, or changing load order. Dragging a selected plugin moves the
   selected plugin block together. Batch Enable and Disable actions keep Select Mode active so
-  additional rows can be managed before choosing Done.
+  additional rows can be managed before choosing Done, with each row showing its current state.
+  Deployment remains unavailable until Select Mode is finished.
 - Downloads, notifications, profile actions, deploy actions, snapshots, and Nexus account controls
   use GNOME-style rows, popovers, status pages, and toast feedback.
 - Install-related workflows, including FOMOD, Pre-install, Absorb External Changes, Mod Properties,

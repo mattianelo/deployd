@@ -5,7 +5,9 @@
 ### AppImage and Snap
 
 - Select Mode now stays active after enabling, disabling, or removing selected entries and remains
-  visually synchronized when an action refreshes the Mod Order and Plugin Order lists.
+  visually synchronized when an action refreshes the Mod Order and Plugin Order lists. Rows show
+  their current enabled state during the session, and Deploy remains unavailable—with explanatory
+  hover text—until the changes are confirmed with Done.
 - Mod Order and Plugin Order drops now use insertion positions consistently, fixing downward moves
   that previously landed one row below the displayed drop marker, including end-of-list and grouped
   moves.

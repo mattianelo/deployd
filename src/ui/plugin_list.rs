@@ -145,6 +145,20 @@ impl FactoryComponent for PluginRow {
 
             add_suffix = &gtk::Label {
                 #[watch]
+                set_visible: self.selection_mode,
+                #[watch]
+                set_label: if self.plugin.enabled { "Enabled" } else { "Disabled" },
+                #[watch]
+                set_css_classes: if self.plugin.enabled {
+                    &["caption", "success"]
+                } else {
+                    &["caption", "dim-label"]
+                },
+                set_valign: gtk::Align::Center,
+            },
+
+            add_suffix = &gtk::Label {
+                #[watch]
                 set_label: &self.order_label,
                 add_css_class: "dim-label",
                 add_css_class: "caption",

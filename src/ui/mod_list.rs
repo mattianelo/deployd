@@ -383,6 +383,24 @@ impl FactoryComponent for ModListItem {
 
                     add_suffix = &gtk::Label {
                         #[watch]
+                        set_visible: self.selection_mode,
+                        #[watch]
+                        set_label: if matches!(&self.kind, ModListItemKind::Mod(r) if r.mod_entry.enabled) {
+                            "Enabled"
+                        } else {
+                            "Disabled"
+                        },
+                        #[watch]
+                        set_css_classes: if matches!(&self.kind, ModListItemKind::Mod(r) if r.mod_entry.enabled) {
+                            &["caption", "success"]
+                        } else {
+                            &["caption", "dim-label"]
+                        },
+                        set_valign: gtk::Align::Center,
+                    },
+
+                    add_suffix = &gtk::Label {
+                        #[watch]
                         set_label: if let ModListItemKind::Mod(r) = &self.kind { r.priority_label.as_str() } else { "" },
                         add_css_class: "dim-label",
                         add_css_class: "caption",

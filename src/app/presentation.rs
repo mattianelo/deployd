@@ -19,6 +19,7 @@ impl App {
             busy_message: self.busy_message(),
             deploying: self.shell.deploying,
             needs_deploy: self.shell.needs_deploy,
+            selection_active: self.selection_mode_active(),
             notification_count: self.notifications_count(),
             notification_badge: self.notifications_badge(),
             external_changes_count: self.mods.external_changes_count,
@@ -35,6 +36,10 @@ impl App {
     }
     pub(crate) fn has_games(&self) -> bool {
         !self.session.games.is_empty()
+    }
+
+    pub(crate) fn selection_mode_active(&self) -> bool {
+        self.mods.selection_active || self.plugins.selection_active
     }
 
     /// True when the mod list has no mod rows (only separators or empty).

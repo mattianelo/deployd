@@ -212,6 +212,7 @@ pub(super) fn build_model(
                 busy_message: "Working...".to_string(),
                 deploying: false,
                 needs_deploy: false,
+                selection_active: false,
                 notification_count: 0,
                 notification_badge: String::new(),
                 external_changes_count: 0,

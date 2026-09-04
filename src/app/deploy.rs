@@ -6,6 +6,7 @@ use gtk::prelude::*;
 use relm4::prelude::*;
 
 use crate::core::deployer;
+use crate::ui::header::DEPLOY_SELECTION_TOOLTIP;
 use crate::utils::snap::{self, SelectedFolderKind};
 
 use super::App;
@@ -178,6 +179,10 @@ impl App {
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
+        if self.selection_mode_active() {
+            self.show_toast(DEPLOY_SELECTION_TOOLTIP);
+            return;
+        }
         // Validate preconditions before showing any dialog.
         if self.session.tracker.is_none() {
             self.push_notification("Database not ready yet");
@@ -251,6 +256,10 @@ impl App {
     }
 
     pub(crate) fn prepare_deploy(&mut self, sender: &ComponentSender<Self>) {
+        if self.selection_mode_active() {
+            self.show_toast(DEPLOY_SELECTION_TOOLTIP);
+            return;
+        }
         let Some(tracker) = self.session.tracker.clone() else {
             self.push_notification("Database not ready yet");
             return;
