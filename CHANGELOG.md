@@ -2,12 +2,22 @@
 
 ## [Unreleased]
 
-### AppImage and Snap
+## [2.4.1]
 
-- Vanilla game files replaced by mods now keep verified, collision-safe backups across mod-to-mod
-  winner changes and restore when the final owning mod is removed on a later Deploy or Purge.
-  Deployment warns before affecting vanilla paths, offers the global default-enabled protection
-  switch in the warning and Settings, and reports originals that require platform verification.
+### AppImage and Snap — Key changes
+
+- Fixed vanilla backups being detached during mod-to-mod winner changes, so removing the final mod
+  from paths such as Witcher 2's `CookedPC` now restores the exact original file.
+- Added a bounded pre-deployment warning listing affected vanilla paths, with a global,
+  default-enabled protection switch available in both the warning and Settings.
+- Made backup capture durable and collision-safe with separate Data, game-root, and Documents
+  trees, temporary-file writes, SHA-256 verification, and case-insensitive deployment keys that
+  remain compatible with legacy backup records.
+- Made restoration safe and retryable: protected originals return only when no winning mod remains,
+  existing divergent files are never overwritten, and retained backups restore even if protection
+  is later disabled.
+- Added deployment and purge backup/restore counts, clearer mod-removal timing, and actionable
+  platform-verification guidance when an original was already lost or its backup is unavailable.
 
 ## [2.4.0]
 
