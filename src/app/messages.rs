@@ -580,6 +580,15 @@ pub(crate) enum DownloadsCmdMsg {
         download_id: String,
         result: Result<(), String>,
     },
+    DownloadArchiveDeleted {
+        download_id: String,
+        result: Result<(), String>,
+    },
+    DownloadEntryRemoved {
+        download_id: String,
+        success_message: String,
+        result: Result<(), String>,
+    },
     NxmDownloadComplete(String, Result<NxmDownloadResult, String>),
     NexusMetadataFetched(
         String,

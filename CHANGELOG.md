@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.4.2]
+
 ### AppImage and Snap
 
 - Mod Properties cache rescans now refresh the open file list immediately, preserve saved and
@@ -16,9 +18,9 @@
 ### Snap
 
 - Confirmed that archive Trash failures with xdg-desktop-portal 1.20.4 and 1.21.1 are caused by an
-  upstream portal regression. Deployd retains the safe Trash portal flow and does not silently
-  replace it with permanent deletion. Retest Trash after updating the portal to 1.21.2, 1.22.0,
-  or newer; Snap application updates remain managed by snapd.
+  upstream portal regression. When the portal fails, Deployd now explicitly offers to delete the
+  archive permanently or remove its Downloads entry while keeping the archive; it never silently
+  converts Trash into permanent deletion. Snap application updates remain managed by snapd.
 
 ## [2.4.1]
 

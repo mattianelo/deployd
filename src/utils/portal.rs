@@ -47,6 +47,19 @@ pub async fn trash_file(path: PathBuf) -> Result<()> {
     }
 }
 
+pub(crate) async fn delete_file_permanently(path: PathBuf) -> Result<()> {
+    tokio::task::spawn_blocking(move || match std::fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(anyhow::anyhow!(
+            "could not permanently delete {}: {error}",
+            path.display()
+        )),
+    })
+    .await
+    .map_err(|error| anyhow::anyhow!("permanent-delete task failed: {error}"))?
+}
+
 async fn trash_file_by_path(path: &Path) -> Result<()> {
     let file = match std::fs::OpenOptions::new()
         .read(true)
@@ -137,6 +150,33 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use super::*;
+
+    // @variants: both
+    #[tokio::test]
+    async fn permanent_delete_removes_only_the_requested_file() {
+        let directory = tempfile::tempdir().expect("create temp directory");
+        let target = directory.path().join("delete.zip");
+        let sibling = directory.path().join("keep.zip");
+        std::fs::write(&target, "delete").expect("write target");
+        std::fs::write(&sibling, "keep").expect("write sibling");
+
+        delete_file_permanently(target.clone())
+            .await
+            .expect("delete target");
+
+        assert!(!target.exists());
+        assert!(sibling.exists());
+    }
+
+    // @variants: both
+    #[tokio::test]
+    async fn permanent_delete_accepts_an_already_missing_file() {
+        let directory = tempfile::tempdir().expect("create temp directory");
+
+        delete_file_permanently(directory.path().join("missing.zip"))
+            .await
+            .expect("accept missing target");
+    }
 
     // Regression: the document portal inserts the exported entry's basename after its ID.
     // @variants: snap

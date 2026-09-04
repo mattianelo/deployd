@@ -1,6 +1,6 @@
 # Deployd
 
-![Version](https://img.shields.io/badge/version-2.4.1-blue)
+![Version](https://img.shields.io/badge/version-2.4.2-blue)
 ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey?logo=linux)
 ![License](https://img.shields.io/badge/license-GPL--3.0--only-green)
 [![deployd](https://snapcraft.io/deployd/badge.svg)](https://snapcraft.io/deployd)
@@ -8,7 +8,7 @@
 A Linux-native mod manager for Bethesda, REDEngine, Aurora, and Eclipse games, built with GTK4,
 libadwaita, and Rust.
 
-> **v2.4.1** If you find bugs, please [open an issue](https://gitlab.com/mattianelo/deployd/-/issues).
+> **v2.4.2** If you find bugs, please [open an issue](https://gitlab.com/mattianelo/deployd/-/issues).
 
 Feature overview: [Deployd GitLab Page](https://mattianelo.gitlab.io/deployd/)
 
@@ -118,6 +118,10 @@ external drives. The downloads folder picker always requests this portal access 
 on direct removable-media access. When download records point at a document-portal mount, Deployd
 resolves the original host path without retaining the portal's synthetic document basename before
 moving the archive to Trash.
+
+If the desktop Trash service fails, Deployd asks whether to permanently delete only that archive
+or remove its Downloads entry while leaving the archive untouched. It never silently converts a
+Trash action into permanent deletion.
 
 If the desktop portal returns an external drive's direct mount path or an inaccessible portal route,
 Deployd prompts for the Snap's manual removable-media connection. The displayed command uses the

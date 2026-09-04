@@ -647,7 +647,7 @@ impl App {
         &mut self,
         msg: crate::app::messages::DownloadsCmdMsg,
         sender: ComponentSender<Self>,
-        _root: &adw::ApplicationWindow,
+        root: &adw::ApplicationWindow,
     ) {
         use crate::app::messages::DownloadsCmdMsg;
 
@@ -655,7 +655,16 @@ impl App {
             DownloadsCmdMsg::DownloadArchiveTrashed {
                 download_id,
                 result,
-            } => self.handle_download_archive_trashed(download_id, result, &sender),
+            } => self.handle_download_archive_trashed(download_id, result, root, &sender),
+            DownloadsCmdMsg::DownloadArchiveDeleted {
+                download_id,
+                result,
+            } => self.handle_download_archive_deleted(download_id, result, &sender),
+            DownloadsCmdMsg::DownloadEntryRemoved {
+                download_id,
+                success_message,
+                result,
+            } => self.handle_download_entry_removed(download_id, success_message, result),
             DownloadsCmdMsg::NxmDownloadComplete(id, result) => {
                 self.handle_cmd_nxm_download_complete(id, result, &sender)
             }

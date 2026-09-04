@@ -43,13 +43,44 @@ fn reset_download_metadata(entry: &mut DownloadEntry) {
     entry.author = None;
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum TrashFallbackAction {
+    DeletePermanently,
+    RemoveFromList,
+}
+
+fn trash_fallback_action(response: &str) -> Option<TrashFallbackAction> {
+    match response {
+        "delete" => Some(TrashFallbackAction::DeletePermanently),
+        "remove" => Some(TrashFallbackAction::RemoveFromList),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
     use crate::models::download::{DownloadEntry, NexusIds};
 
-    use super::{metadata_identifies_file, reset_download_metadata};
+    use super::{
+        TrashFallbackAction, metadata_identifies_file, reset_download_metadata,
+        trash_fallback_action,
+    };
+
+    // @variants: both
+    #[test]
+    fn trash_failure_requires_an_explicit_fallback_choice() {
+        assert_eq!(trash_fallback_action("cancel"), None);
+        assert_eq!(
+            trash_fallback_action("delete"),
+            Some(TrashFallbackAction::DeletePermanently)
+        );
+        assert_eq!(
+            trash_fallback_action("remove"),
+            Some(TrashFallbackAction::RemoveFromList)
+        );
+    }
 
     #[test]
     fn partial_mod_metadata_does_not_complete_file_metadata() {
@@ -725,15 +756,103 @@ impl App {
         &mut self,
         download_id: String,
         result: Result<(), String>,
+        root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
         match result {
             Ok(()) => {
-                self.show_toast("Download moved to Trash");
-                self.handle_confirm_delete_download(download_id, sender);
+                self.persist_download_removal(
+                    download_id,
+                    "Download moved to Trash".to_string(),
+                    sender,
+                );
             }
-            Err(e) => {
-                self.push_notification(&format!("Could not move download archive to Trash: {e}"));
+            Err(error) => {
+                self.show_trash_fallback(download_id, error, root, sender);
+            }
+        }
+    }
+
+    fn show_trash_fallback(
+        &self,
+        download_id: String,
+        error: String,
+        root: &adw::ApplicationWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        let Some(entry) = self
+            .download
+            .all
+            .iter()
+            .find(|entry| entry.id == download_id)
+        else {
+            return;
+        };
+        let Some(archive_path) = entry.archive_path.clone() else {
+            return;
+        };
+        let dialog = adw::AlertDialog::builder()
+            .heading("Could Not Move Archive to Trash")
+            .body(format!(
+                "The desktop Trash service could not move \"{}\":\n{}\n\nYou can permanently delete this archive, or remove only its Deployd list entry and keep the archive.\n\n{error}",
+                entry.mod_name,
+                archive_path.display()
+            ))
+            .build();
+        dialog.add_response("cancel", "Cancel");
+        dialog.add_response("remove", "Remove from List");
+        dialog.add_response("delete", "Delete Permanently");
+        dialog.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
+        dialog.set_default_response(Some("cancel"));
+        dialog.set_close_response("cancel");
+
+        let input_sender = sender.input_sender().clone();
+        let command_sender = sender.clone();
+        dialog.connect_response(None, move |_, response| {
+            match trash_fallback_action(response) {
+                Some(TrashFallbackAction::DeletePermanently) => {
+                    let download_id = download_id.clone();
+                    let archive_path = archive_path.clone();
+                    command_sender.oneshot_command(async move {
+                        AppCmdMsg::Downloads(
+                            crate::app::messages::DownloadsCmdMsg::DownloadArchiveDeleted {
+                                download_id,
+                                result: crate::utils::portal::delete_file_permanently(archive_path)
+                                    .await
+                                    .map_err(|error| error.to_string()),
+                            },
+                        )
+                    });
+                }
+                Some(TrashFallbackAction::RemoveFromList) => {
+                    input_sender
+                        .send(AppMsg::Downloads(
+                            crate::app::messages::DownloadsMsg::ConfirmDeleteDownload(
+                                download_id.clone(),
+                            ),
+                        ))
+                        .ok();
+                }
+                None => {}
+            }
+        });
+        dialog.present(Some(root));
+    }
+
+    pub(crate) fn handle_download_archive_deleted(
+        &mut self,
+        download_id: String,
+        result: Result<(), String>,
+        sender: &ComponentSender<Self>,
+    ) {
+        match result {
+            Ok(()) => self.persist_download_removal(
+                download_id,
+                "Download permanently deleted".to_string(),
+                sender,
+            ),
+            Err(error) => {
+                self.push_notification(&format!("Could not permanently delete archive: {error}"));
             }
         }
     }
@@ -743,6 +862,50 @@ impl App {
         download_id: String,
         sender: &ComponentSender<Self>,
     ) {
+        self.persist_download_removal(
+            download_id,
+            "Download removed from list".to_string(),
+            sender,
+        );
+    }
+
+    fn persist_download_removal(
+        &mut self,
+        download_id: String,
+        success_message: String,
+        sender: &ComponentSender<Self>,
+    ) {
+        let Some(tracker) = self.session.tracker.clone() else {
+            self.push_notification("Could not remove download entry: database unavailable");
+            return;
+        };
+        let id = download_id.clone();
+        sender.oneshot_command(async move {
+            let result = tracker
+                .delete_download_entries(&[id])
+                .await
+                .map_err(|error| error.to_string());
+            AppCmdMsg::Downloads(
+                crate::app::messages::DownloadsCmdMsg::DownloadEntryRemoved {
+                    download_id,
+                    success_message,
+                    result,
+                },
+            )
+        });
+    }
+
+    pub(crate) fn handle_download_entry_removed(
+        &mut self,
+        download_id: String,
+        success_message: String,
+        result: Result<(), String>,
+    ) {
+        if let Err(error) = result {
+            self.push_notification(&format!("Could not remove download entry: {error}"));
+            return;
+        }
+
         self.download.all.retain(|e| e.id != download_id);
         {
             let mut guard = self.download.rows.guard();
@@ -753,17 +916,8 @@ impl App {
                 }
             }
         }
-        if let Some(tracker) = self.session.tracker.clone() {
-            let id = download_id.clone();
-            sender.oneshot_command(async move {
-                let result = tracker
-                    .delete_download_entries(&[id])
-                    .await
-                    .map_err(|error| error.to_string());
-                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
-            });
-        }
         self.refresh_download_counts();
+        self.show_toast(&success_message);
     }
 
     pub(crate) fn handle_hide_download(
