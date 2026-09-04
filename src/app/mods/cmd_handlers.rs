@@ -197,16 +197,38 @@ impl App {
 
     pub(crate) fn handle_cmd_mod_files_rescanned(
         &mut self,
-        result: Result<String, String>,
+        mod_id: String,
+        result: Result<crate::app::messages::RescannedModFiles, String>,
         sender: &ComponentSender<Self>,
     ) {
         match result {
-            Ok(msg) => {
+            Ok(rescan) => {
                 self.shell.needs_deploy = true;
+                if let Some(controller) = &self.ui.mod_properties_dialog {
+                    controller
+                        .sender()
+                        .send(
+                            crate::ui::mod_properties_dialog::ModPropertiesMsg::LoadFiles {
+                                mod_id,
+                                files: rescan.files,
+                            },
+                        )
+                        .ok();
+                }
                 self.reload_mods(sender);
-                self.show_toast(&msg);
+                self.show_toast(&rescan.summary);
             }
             Err(e) => {
+                if let Some(controller) = &self.ui.mod_properties_dialog {
+                    controller
+                        .sender()
+                        .send(
+                            crate::ui::mod_properties_dialog::ModPropertiesMsg::RescanFailed(
+                                mod_id,
+                            ),
+                        )
+                        .ok();
+                }
                 self.push_notification(&format!("Rescan failed: {e}"));
             }
         }
@@ -214,11 +236,14 @@ impl App {
 
     pub(crate) fn handle_cmd_mod_files_loaded(
         &mut self,
+        mod_id: String,
         files: Vec<crate::models::manifest::ModFile>,
     ) {
         if let Some(ctrl) = &self.ui.mod_properties_dialog {
             ctrl.sender()
-                .send(crate::ui::mod_properties_dialog::ModPropertiesMsg::LoadFiles(files))
+                .send(
+                    crate::ui::mod_properties_dialog::ModPropertiesMsg::LoadFiles { mod_id, files },
+                )
                 .ok();
         }
     }

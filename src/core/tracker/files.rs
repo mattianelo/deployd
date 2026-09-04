@@ -5,7 +5,6 @@ use anyhow::{Context, Result};
 use crate::core::game::engine_handler::EngineHandler;
 use crate::dlog;
 use crate::models::manifest::ModFile;
-use crate::models::mod_entry::InstallTarget;
 
 use super::{OverrideInfo, Tracker};
 
@@ -26,6 +25,33 @@ impl Tracker {
             .await?;
         }
         tx.commit().await.context("Failed to commit mod_files")?;
+        Ok(())
+    }
+
+    /// Atomically replace every tracked file for one mod.
+    pub(crate) async fn replace_mod_files(&self, mod_id: &str, files: &[ModFile]) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("DELETE FROM mod_files WHERE mod_id = ?")
+            .bind(mod_id)
+            .execute(&mut *tx)
+            .await
+            .context("Failed to clear files before cache rescan")?;
+        for file in files {
+            sqlx::query(
+                "INSERT INTO mod_files (mod_id, game_rel_lowercase, game_rel_original, cache_path)
+                 VALUES (?, ?, ?, ?)",
+            )
+            .bind(mod_id)
+            .bind(&file.game_rel_lowercase)
+            .bind(&file.game_rel_original)
+            .bind(&file.cache_path)
+            .execute(&mut *tx)
+            .await
+            .context("Failed to record rescanned mod file")?;
+        }
+        tx.commit()
+            .await
+            .context("Failed to commit rescanned mod files")?;
         Ok(())
     }
 
@@ -160,54 +186,6 @@ impl Tracker {
                 cache_path: cache,
             })
             .collect())
-    }
-
-    /// Update per-file install targets for a mod.
-    ///
-    /// `changes` maps the **current** `game_rel_lowercase` to the desired `InstallTarget`.
-    pub async fn update_file_targets(
-        &self,
-        mod_id: &str,
-        changes: &HashMap<String, InstallTarget>,
-    ) -> Result<()> {
-        let mut tx = self.pool.begin().await?;
-
-        for (current_lowercase, target) in changes {
-            match target {
-                InstallTarget::Root if !current_lowercase.starts_with("../") => {
-                    sqlx::query(
-                        "UPDATE mod_files
-                         SET game_rel_lowercase = '../' || game_rel_lowercase,
-                             game_rel_original  = '../' || game_rel_original
-                         WHERE mod_id = ? AND game_rel_lowercase = ?",
-                    )
-                    .bind(mod_id)
-                    .bind(current_lowercase)
-                    .execute(&mut *tx)
-                    .await
-                    .context("Failed to set file target to root")?;
-                }
-                InstallTarget::Data if current_lowercase.starts_with("../") => {
-                    sqlx::query(
-                        "UPDATE mod_files
-                         SET game_rel_lowercase = SUBSTR(game_rel_lowercase, 4),
-                             game_rel_original  = SUBSTR(game_rel_original, 4)
-                         WHERE mod_id = ? AND game_rel_lowercase = ?",
-                    )
-                    .bind(mod_id)
-                    .bind(current_lowercase)
-                    .execute(&mut *tx)
-                    .await
-                    .context("Failed to set file target to data")?;
-                }
-                _ => {} // already in correct state — no update needed
-            }
-        }
-
-        tx.commit()
-            .await
-            .context("Failed to commit file target updates")?;
-        Ok(())
     }
 
     /// Clear all deployed file records for a game.
@@ -447,6 +425,65 @@ mod tests {
         .execute(&tracker.pool)
         .await
         .expect("insert test file");
+    }
+
+    // @variants: both
+    #[tokio::test]
+    async fn replace_mod_files_rolls_back_on_invalid_replacement() {
+        let tracker = make_tracker().await;
+        tracker
+            .insert_mod(&mod_entry("a", "ModA", 1))
+            .await
+            .expect("insert test mod");
+        insert_file(&tracker, "a", "original.txt").await;
+        let duplicate = ModFile {
+            mod_id: "a".to_string(),
+            game_rel_lowercase: "duplicate.txt".to_string(),
+            game_rel_original: "duplicate.txt".to_string(),
+            cache_path: "/cache/duplicate.txt".to_string(),
+        };
+
+        let result = tracker
+            .replace_mod_files("a", &[duplicate.clone(), duplicate])
+            .await;
+
+        assert!(result.is_err());
+        let files = tracker
+            .get_mod_files("a")
+            .await
+            .expect("load original files");
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].game_rel_lowercase, "original.txt");
+    }
+
+    // @variants: both
+    #[tokio::test]
+    async fn repeated_file_replacement_removes_deleted_paths_without_duplicates() {
+        let tracker = make_tracker().await;
+        tracker
+            .insert_mod(&mod_entry("a", "ModA", 1))
+            .await
+            .expect("insert test mod");
+        insert_file(&tracker, "a", "deleted.txt").await;
+        let refreshed = ModFile {
+            mod_id: "a".to_string(),
+            game_rel_lowercase: "new.txt".to_string(),
+            game_rel_original: "new.txt".to_string(),
+            cache_path: "/cache/new.txt".to_string(),
+        };
+
+        tracker
+            .replace_mod_files("a", std::slice::from_ref(&refreshed))
+            .await
+            .expect("replace files");
+        tracker
+            .replace_mod_files("a", std::slice::from_ref(&refreshed))
+            .await
+            .expect("repeat replacement");
+
+        let files = tracker.get_mod_files("a").await.expect("load files");
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].game_rel_lowercase, "new.txt");
     }
 
     #[tokio::test]

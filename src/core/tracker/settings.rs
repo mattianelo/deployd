@@ -3,8 +3,6 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
-use crate::models::mod_entry::InstallTarget;
-
 use super::Tracker;
 
 impl Tracker {
@@ -284,20 +282,5 @@ impl Tracker {
                 Some((game_id, PathBuf::from(value)))
             })
             .collect())
-    }
-
-    /// Update only the `mods.install_target` column — no path rewriting.
-    pub async fn set_mod_install_target_column(
-        &self,
-        mod_id: &str,
-        target: &InstallTarget,
-    ) -> Result<()> {
-        sqlx::query("UPDATE mods SET install_target = ? WHERE id = ?")
-            .bind(target.to_string())
-            .bind(mod_id)
-            .execute(&self.pool)
-            .await
-            .context("Failed to update install_target column")?;
-        Ok(())
     }
 }

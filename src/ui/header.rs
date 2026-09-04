@@ -530,7 +530,8 @@ impl SimpleComponent for Header {
 
                                 adw::ActionRow {
                                     #[watch]
-                                    set_visible: model.state.app_update_version.is_some(),
+                            set_visible: model.state.running_as_appimage
+                                && model.state.app_update_version.is_some(),
                                     set_title: "App Update Available",
                                     #[watch]
                                     set_subtitle: model.state.app_update_version.as_deref().unwrap_or(""),
@@ -539,7 +540,7 @@ impl SimpleComponent for Header {
                                         set_valign: gtk::Align::Center,
                                     },
                                     add_suffix = &gtk::Button {
-                                        set_label: if model.state.running_as_appimage { "Download" } else { "View" },
+                                        set_label: "Download",
                                         set_valign: gtk::Align::Center,
                                         add_css_class: "suggested-action",
                                         add_css_class: "pill",

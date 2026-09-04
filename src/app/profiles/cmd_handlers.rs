@@ -290,35 +290,37 @@ impl App {
                     crate::app::messages::ModsMsg::ScanExternalFiles,
                 ));
 
-                let input = sender.input_sender().clone();
-                let tracker_for_update = self.session.tracker.clone();
-                relm4::spawn(async move {
-                    let api_key = if let Some(ref t) = tracker_for_update {
-                        match t.get_setting("nexus_api_key").await {
-                            Ok(key) => key,
-                            Err(error) => {
-                                let _ = input.send(AppMsg::Shell(
-                                    crate::app::messages::ShellMsg::ShowToast(format!(
-                                        "Could not read update settings: {error}"
-                                    )),
-                                ));
-                                None
+                if self.shell.running_as_appimage {
+                    let input = sender.input_sender().clone();
+                    let tracker_for_update = self.session.tracker.clone();
+                    relm4::spawn(async move {
+                        let api_key = if let Some(ref tracker) = tracker_for_update {
+                            match tracker.get_setting("nexus_api_key").await {
+                                Ok(key) => key,
+                                Err(error) => {
+                                    let _ = input.send(AppMsg::Shell(
+                                        crate::app::messages::ShellMsg::ShowToast(format!(
+                                            "Could not read update settings: {error}"
+                                        )),
+                                    ));
+                                    None
+                                }
                             }
+                        } else {
+                            None
+                        };
+                        if let Some(info) =
+                            crate::core::update_check::check_for_app_update(api_key).await
+                        {
+                            let _ = input.send(AppMsg::Shell(
+                                crate::app::messages::ShellMsg::AppUpdateAvailable(
+                                    info.version,
+                                    info.url,
+                                ),
+                            ));
                         }
-                    } else {
-                        None
-                    };
-                    if let Some(info) =
-                        crate::core::update_check::check_for_app_update(api_key).await
-                    {
-                        let _ = input.send(AppMsg::Shell(
-                            crate::app::messages::ShellMsg::AppUpdateAvailable(
-                                info.version,
-                                info.url,
-                            ),
-                        ));
-                    }
-                });
+                    });
+                }
             }
             Err(e) => {
                 self.session.initializing = false;

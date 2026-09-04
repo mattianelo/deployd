@@ -216,7 +216,7 @@ pub(super) fn build_model(
                 notification_badge: String::new(),
                 external_changes_count: 0,
                 app_update_version: None,
-                running_as_appimage: std::env::var("APPIMAGE").is_ok(),
+                running_as_appimage: crate::utils::snap::is_appimage(),
                 global_active_count: 0,
                 downloads_visible: false,
                 search_active: false,
@@ -337,7 +337,7 @@ pub(super) fn build_model(
             nexus_is_premium: false,
             app_update_version: None,
             app_update_url: None,
-            running_as_appimage: std::env::var("APPIMAGE").is_ok(),
+            running_as_appimage: crate::utils::snap::is_appimage(),
             color_scheme_idx: 0,
         },
         session: SessionState {

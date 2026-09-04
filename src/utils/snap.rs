@@ -72,6 +72,21 @@ pub(crate) fn is_snap() -> bool {
     std::env::var_os("SNAP").is_some()
 }
 
+/// True only for a packaged AppImage process, never for a Snap or source build.
+pub(crate) fn is_appimage() -> bool {
+    is_appimage_environment(
+        std::env::var_os("APPIMAGE").as_deref(),
+        std::env::var_os("SNAP").as_deref(),
+    )
+}
+
+fn is_appimage_environment(
+    appimage: Option<&std::ffi::OsStr>,
+    snap: Option<&std::ffi::OsStr>,
+) -> bool {
+    appimage.is_some() && snap.is_none()
+}
+
 /// Durable per-user Snap data root, if this process is running inside a Snap.
 pub(crate) fn user_common_dir() -> Option<PathBuf> {
     std::env::var_os("SNAP_USER_COMMON").map(PathBuf::from)
@@ -310,6 +325,39 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+
+    // @variants: appimage
+    #[test]
+    fn recognizes_only_appimage_runtime() {
+        assert!(is_appimage_environment(
+            Some(std::ffi::OsStr::new("/opt/Deployd.AppImage")),
+            None,
+        ));
+    }
+
+    // @variants: snap
+    #[test]
+    fn snap_runtime_overrides_appimage_marker() {
+        assert!(!is_appimage_environment(
+            Some(std::ffi::OsStr::new("/opt/Deployd.AppImage")),
+            Some(std::ffi::OsStr::new("/snap/deployd/current")),
+        ));
+    }
+
+    // @variants: snap
+    #[test]
+    fn snap_runtime_is_not_appimage() {
+        assert!(!is_appimage_environment(
+            None,
+            Some(std::ffi::OsStr::new("/snap/deployd/current")),
+        ));
+    }
+
+    // @variants: both
+    #[test]
+    fn source_runtime_is_not_appimage() {
+        assert!(!is_appimage_environment(None, None));
+    }
 
     // @variants: snap
     #[test]

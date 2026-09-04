@@ -163,14 +163,15 @@ pub(crate) enum ModsMsg {
     /// Apply changes from the mod Properties dialog.
     ModPropertiesApplied {
         mod_id: String,
-        mod_idx: usize,
         name: String,
         notes: String,
+        version: Option<String>,
         nexus_mod_id: Option<i64>,
         nexus_id_changed: bool,
         install_target: InstallTarget,
         /// Per-file targets: current game_rel_lowercase → desired InstallTarget.
         file_targets: HashMap<String, InstallTarget>,
+        routing_changed: bool,
     },
     /// User cancelled the mod Properties dialog.
     ModPropertiesCancelled,
@@ -518,17 +519,33 @@ pub(crate) enum ModsCmdMsg {
         mod_id: String,
         result: Result<(String, String, String), String>,
     },
+    ModPropertiesSaved {
+        saved: Box<crate::app::mods::properties::SavedModProperties>,
+        result: Result<(), String>,
+    },
     ExternalScanDone(Result<Vec<ExternalFile>, String>),
     /// Empty mod created (mod_id, cache_dir_path).
     EmptyModCreated(Result<(String, std::path::PathBuf), String>),
-    /// Mod cache rescanned — payload is a user-readable summary or error.
-    ModFilesRescanned(Result<String, String>),
+    /// Mod cache rescanned, including the replacement file list for the open dialog.
+    ModFilesRescanned {
+        mod_id: String,
+        result: Result<RescannedModFiles, String>,
+    },
     /// Per-file list loaded for the open mod properties dialog.
-    ModFilesLoaded(Vec<ModFile>),
+    ModFilesLoaded {
+        mod_id: String,
+        files: Vec<ModFile>,
+    },
     /// Mod order snapshot saved.
     ModOrderSnapshotSaved(Result<(), String>),
     /// Mod order snapshot restored.
     ModOrderSnapshotRestored(Box<Result<crate::app::types::LoadedData, String>>),
+}
+
+#[derive(Debug)]
+pub(crate) struct RescannedModFiles {
+    pub(crate) files: Vec<ModFile>,
+    pub(crate) summary: String,
 }
 
 #[derive(Debug)]

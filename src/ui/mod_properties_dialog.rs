@@ -41,7 +41,7 @@ pub struct ModPropertiesDialog {
     nexus_mod_id_text: String,
     nexus_id_invalid: bool,
     install_target: InstallTarget,
-    version: Option<String>,
+    version_text: String,
     author: Option<String>,
     installed_at: Option<String>,
     /// Whether the selected game is a Bethesda game.
@@ -53,9 +53,10 @@ pub struct ModPropertiesDialog {
     /// Desired per-file targets, indexed parallel to `files`.
     file_targets: Vec<InstallTarget>,
     files_loading: bool,
+    saving: bool,
+    rescanning: bool,
     files_visible: bool,
-    /// Direct handle to root — hidden synchronously in update() before any output
-    /// to prevent button clicks after the parent drops the controller.
+    /// Direct handle to root for synchronous dialog lifecycle changes.
     window: adw::Window,
     /// Stored handle to the file list widget so LoadFiles can populate it imperatively.
     files_list: gtk::ListBox,
@@ -77,12 +78,18 @@ pub enum ModPropertiesMsg {
     NameChanged(String),
     NotesChanged(String),
     NexusModIdChanged(String),
+    VersionChanged(String),
     SetFileTarget(usize, InstallTarget),
     SetAllFileTargets(InstallTarget),
     ToggleFiles,
     ToggleConflicts,
     /// Received from app once the async DB query for this mod's files completes.
-    LoadFiles(Vec<ModFile>),
+    LoadFiles {
+        mod_id: String,
+        files: Vec<ModFile>,
+    },
+    SaveFailed,
+    RescanFailed(String),
     Apply,
     Cancel,
     OpenFolder,
@@ -94,11 +101,13 @@ pub enum ModPropertiesOutput {
     Applied {
         name: String,
         notes: String,
+        version: Option<String>,
         nexus_mod_id: Option<i64>,
         nexus_id_changed: bool,
         install_target: InstallTarget,
         /// Maps current game_rel_lowercase → desired InstallTarget for every file.
         file_targets: HashMap<String, InstallTarget>,
+        routing_changed: bool,
     },
     Cancelled,
     ScanCache {
@@ -117,6 +126,8 @@ impl SimpleComponent for ModPropertiesDialog {
             set_title: Some("Mod Properties"),
             set_default_size: (980, 820),
             set_modal: true,
+            #[watch]
+            set_deletable: !model.saving,
 
             adw::ToolbarView {
                 add_top_bar = &adw::HeaderBar {
@@ -149,15 +160,20 @@ impl SimpleComponent for ModPropertiesDialog {
                                 set_orientation: gtk::Orientation::Horizontal,
                                 set_spacing: 8,
                                 #[watch]
-                                set_visible: model.files_loading,
+                                set_visible: model.files_loading || model.rescanning,
 
                                 gtk::Spinner {
                                     #[watch]
-                                    set_spinning: model.files_loading,
+                                    set_spinning: model.files_loading || model.rescanning,
                                 },
 
                                 gtk::Label {
-                                    set_label: "Loading file list…",
+                                    #[watch]
+                                    set_label: if model.rescanning {
+                                        "Rescanning cache…"
+                                    } else {
+                                        "Loading file list…"
+                                    },
                                     add_css_class: "dim-label",
                                 },
                             },
@@ -355,6 +371,8 @@ impl SimpleComponent for ModPropertiesDialog {
                                     set_tooltip_text: Some("Rescan Cache"),
                                     set_valign: gtk::Align::Center,
                                     add_css_class: "flat",
+                                    #[watch]
+                                    set_sensitive: !model.files_loading && !model.rescanning && !model.saving,
                                     connect_clicked => ModPropertiesMsg::ScanCacheClicked,
                                 },
                             },
@@ -382,9 +400,10 @@ impl SimpleComponent for ModPropertiesDialog {
                                 set_visible: model.nexus_id_invalid,
                             },
 
-                            add = &adw::ActionRow {
+                            #[name = "version_entry"]
+                            add = &adw::EntryRow {
                                 set_title: "Version",
-                                set_subtitle: model.version.as_deref().unwrap_or("Unknown"),
+                                set_text: &model.version_text,
                             },
 
                             add = &adw::ActionRow {
@@ -405,6 +424,8 @@ impl SimpleComponent for ModPropertiesDialog {
                 add_bottom_bar = &gtk::ActionBar {
                     pack_start = &gtk::Button {
                         set_label: "Cancel",
+                        #[watch]
+                        set_sensitive: !model.saving,
                         connect_clicked => ModPropertiesMsg::Cancel,
                     },
 
@@ -412,14 +433,13 @@ impl SimpleComponent for ModPropertiesDialog {
                         set_label: "Apply",
                         add_css_class: "suggested-action",
                         #[watch]
-                        set_sensitive: !model.files_loading,
+                        set_sensitive: !model.files_loading && !model.rescanning && !model.saving,
                         connect_clicked => ModPropertiesMsg::Apply,
                     },
                 },
             },
 
-            connect_close_request[sender] => move |window| {
-                window.set_visible(false);
+            connect_close_request[sender] => move |_| {
                 sender.input(ModPropertiesMsg::Cancel);
                 glib::Propagation::Stop
             },
@@ -454,7 +474,7 @@ impl SimpleComponent for ModPropertiesDialog {
                 .unwrap_or_default(),
             nexus_id_invalid: false,
             install_target: mod_entry.install_target,
-            version: mod_entry.version,
+            version_text: mod_entry.version.unwrap_or_default(),
             author: mod_entry.author,
             installed_at: mod_entry.installed_at,
             is_bethesda,
@@ -462,6 +482,8 @@ impl SimpleComponent for ModPropertiesDialog {
             files: Vec::new(),
             file_targets: Vec::new(),
             files_loading: true,
+            saving: false,
+            rescanning: false,
             files_visible: false,
             window: root.clone(),
             // Placeholder widgets replaced with real widget clones after view_output!().
@@ -539,6 +561,14 @@ impl SimpleComponent for ModPropertiesDialog {
         }
 
         {
+            let input_sender = sender.input_sender().clone();
+            widgets.version_entry.connect_changed(move |entry| {
+                let _ =
+                    input_sender.send(ModPropertiesMsg::VersionChanged(entry.text().to_string()));
+            });
+        }
+
+        {
             let buffer = widgets.notes_view.buffer();
             buffer.set_text(&model.notes);
             let input_sender = sender.input_sender().clone();
@@ -570,10 +600,14 @@ impl SimpleComponent for ModPropertiesDialog {
                 self.nexus_mod_id_text = raw;
                 self.nexus_id_invalid = false;
             }
+            ModPropertiesMsg::VersionChanged(version) => {
+                self.version_text = version;
+            }
             ModPropertiesMsg::SetFileTarget(idx, target) => {
                 if let Some(t) = self.file_targets.get_mut(idx) {
                     *t = target;
                 }
+                self.sync_install_target();
             }
             ModPropertiesMsg::SetAllFileTargets(target) => {
                 for t in &mut self.file_targets {
@@ -587,16 +621,18 @@ impl SimpleComponent for ModPropertiesDialog {
             ModPropertiesMsg::ToggleConflicts => {
                 self.conflicts_visible = !self.conflicts_visible;
             }
-            ModPropertiesMsg::LoadFiles(files) => {
-                // Build model state from loaded ModFile list.
-                for f in &files {
-                    let db_path = f.game_rel_lowercase.clone();
-                    let display_path = db_path.strip_prefix("../").unwrap_or(&db_path).to_string();
-                    let target = if db_path.starts_with("../") {
-                        InstallTarget::Root
-                    } else {
-                        InstallTarget::Data
-                    };
+            ModPropertiesMsg::LoadFiles { mod_id, files } => {
+                if !is_current_mod(&self.mod_id, &mod_id) {
+                    return;
+                }
+                let pending_targets = self.pending_file_targets();
+                self.files.clear();
+                self.file_targets.clear();
+                clear_list_box(&self.files_list);
+                clear_box(&self.set_all_row);
+                for (db_path, display_path, target) in
+                    reconcile_file_targets(files, &pending_targets)
+                {
                     self.files.push((db_path, display_path));
                     self.file_targets.push(target);
                 }
@@ -741,6 +777,15 @@ impl SimpleComponent for ModPropertiesDialog {
                 // Auto-expand the file list and mark loading as done.
                 self.files_visible = true;
                 self.files_loading = false;
+                self.rescanning = false;
+            }
+            ModPropertiesMsg::SaveFailed => {
+                self.saving = false;
+            }
+            ModPropertiesMsg::RescanFailed(mod_id) => {
+                if is_current_mod(&self.mod_id, &mod_id) {
+                    self.rescanning = false;
+                }
             }
             ModPropertiesMsg::Apply => {
                 let raw_nexus_id = self.nexus_mod_id_text.trim();
@@ -756,23 +801,35 @@ impl SimpleComponent for ModPropertiesDialog {
                     }
                 };
                 self.nexus_mod_id = parsed_nexus_id;
-                self.window.set_visible(false);
+                let version = trimmed_optional(&self.version_text);
                 let file_targets: HashMap<String, InstallTarget> = self
                     .files
                     .iter()
                     .zip(self.file_targets.iter())
                     .map(|((db_path, _), target)| (db_path.clone(), target.clone()))
                     .collect();
-                let _ = sender.output(ModPropertiesOutput::Applied {
-                    name: self.name.clone(),
-                    notes: self.notes.clone(),
-                    nexus_mod_id: self.nexus_mod_id,
-                    nexus_id_changed: self.nexus_mod_id != self.nexus_mod_id_original,
-                    install_target: self.install_target.clone(),
-                    file_targets,
-                });
+                let routing_changed = has_routing_changes(&file_targets);
+                self.saving = true;
+                if sender
+                    .output(ModPropertiesOutput::Applied {
+                        name: self.name.clone(),
+                        notes: self.notes.clone(),
+                        version,
+                        nexus_mod_id: self.nexus_mod_id,
+                        nexus_id_changed: self.nexus_mod_id != self.nexus_mod_id_original,
+                        install_target: self.install_target.clone(),
+                        file_targets,
+                        routing_changed,
+                    })
+                    .is_err()
+                {
+                    self.saving = false;
+                }
             }
             ModPropertiesMsg::Cancel => {
+                if self.saving {
+                    return;
+                }
                 self.window.set_visible(false);
                 let _ = sender.output(ModPropertiesOutput::Cancelled);
             }
@@ -797,10 +854,161 @@ impl SimpleComponent for ModPropertiesDialog {
                 }
             }
             ModPropertiesMsg::ScanCacheClicked => {
-                let _ = sender.output(ModPropertiesOutput::ScanCache {
-                    mod_id: self.mod_id.clone(),
-                });
+                self.rescanning = true;
+                if sender
+                    .output(ModPropertiesOutput::ScanCache {
+                        mod_id: self.mod_id.clone(),
+                    })
+                    .is_err()
+                {
+                    self.rescanning = false;
+                }
             }
         }
+    }
+}
+
+impl ModPropertiesDialog {
+    fn pending_file_targets(&self) -> HashMap<String, InstallTarget> {
+        self.files
+            .iter()
+            .zip(&self.file_targets)
+            .map(|((path, _), target)| (path_without_target(path).to_lowercase(), target.clone()))
+            .collect()
+    }
+
+    fn sync_install_target(&mut self) {
+        if !self.file_targets.is_empty() {
+            self.install_target = if self
+                .file_targets
+                .iter()
+                .all(|target| *target == InstallTarget::Root)
+            {
+                InstallTarget::Root
+            } else {
+                InstallTarget::Data
+            };
+        }
+    }
+}
+
+fn reconcile_file_targets(
+    files: Vec<ModFile>,
+    pending_targets: &HashMap<String, InstallTarget>,
+) -> Vec<(String, String, InstallTarget)> {
+    files
+        .into_iter()
+        .map(|file| {
+            let db_path = file.game_rel_lowercase;
+            let display_path = path_without_target(&db_path).to_string();
+            let path_key = display_path.to_lowercase();
+            let persisted_target = if db_path.starts_with("../") {
+                InstallTarget::Root
+            } else {
+                InstallTarget::Data
+            };
+            let target = pending_targets
+                .get(&path_key)
+                .cloned()
+                .unwrap_or(persisted_target);
+            (db_path, display_path, target)
+        })
+        .collect()
+}
+
+fn path_without_target(path: &str) -> &str {
+    path.strip_prefix("../").unwrap_or(path)
+}
+
+fn trimmed_optional(value: &str) -> Option<String> {
+    let value = value.trim();
+    (!value.is_empty()).then(|| value.to_string())
+}
+
+fn is_current_mod(current_mod_id: &str, result_mod_id: &str) -> bool {
+    current_mod_id == result_mod_id
+}
+
+fn has_routing_changes(file_targets: &HashMap<String, InstallTarget>) -> bool {
+    file_targets
+        .iter()
+        .any(|(path, target)| path.starts_with("../") != (target == &InstallTarget::Root))
+}
+
+fn clear_list_box(list: &gtk::ListBox) {
+    while let Some(child) = list.first_child() {
+        list.remove(&child);
+    }
+}
+
+fn clear_box(container: &gtk::Box) {
+    while let Some(child) = container.first_child() {
+        container.remove(&child);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mod_file(path: &str) -> ModFile {
+        ModFile {
+            mod_id: "mod-a".to_string(),
+            game_rel_lowercase: path.to_string(),
+            game_rel_original: path.to_string(),
+            cache_path: format!("/cache/{path}"),
+        }
+    }
+
+    // @variants: both
+    #[test]
+    fn preserves_pending_target_when_refreshed_path_keeps_identity() {
+        let pending = HashMap::from([("bin/tool.dll".to_string(), InstallTarget::Data)]);
+
+        let rows = reconcile_file_targets(vec![mod_file("../BIN/Tool.DLL")], &pending);
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "../BIN/Tool.DLL");
+        assert_eq!(rows[0].1, "BIN/Tool.DLL");
+        assert_eq!(rows[0].2, InstallTarget::Data);
+    }
+
+    // @variants: both
+    #[test]
+    fn refresh_uses_persisted_target_for_new_file() {
+        let rows = reconcile_file_targets(vec![mod_file("../new.dll")], &HashMap::new());
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].2, InstallTarget::Root);
+    }
+
+    // @variants: both
+    #[test]
+    fn ignores_refresh_results_for_another_mod() {
+        assert!(!is_current_mod("mod-a", "mod-b"));
+        assert!(is_current_mod("mod-a", "mod-a"));
+    }
+
+    // @variants: both
+    #[test]
+    fn metadata_only_edits_do_not_require_deployment() {
+        let unchanged = HashMap::from([
+            ("data/file.txt".to_string(), InstallTarget::Data),
+            ("../root/file.dll".to_string(), InstallTarget::Root),
+        ]);
+        let changed = HashMap::from([("data/file.txt".to_string(), InstallTarget::Root)]);
+
+        assert!(!has_routing_changes(&unchanged));
+        assert!(has_routing_changes(&changed));
+    }
+
+    // @variants: both
+    #[test]
+    fn trims_manual_version_and_clears_blank_value() {
+        assert_eq!(
+            trimmed_optional("  1.2 beta  ").as_deref(),
+            Some("1.2 beta")
+        );
+        assert_eq!(trimmed_optional("   "), None);
     }
 }

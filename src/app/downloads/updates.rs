@@ -114,12 +114,20 @@ impl App {
     }
 
     pub(crate) fn handle_app_update_available(&mut self, version: String, url: String) {
+        if !self.shell.running_as_appimage {
+            self.shell.app_update_version = None;
+            self.shell.app_update_url = None;
+            return;
+        }
         self.shell.app_update_version = Some(format!("Deployd {version} is available"));
         self.shell.app_update_url = Some(url);
     }
 
     pub(crate) fn handle_self_update_clicked(&mut self, sender: &ComponentSender<Self>) {
         self.ui.notifications_menu_btn.popdown();
+        if !self.shell.running_as_appimage {
+            return;
+        }
         self.handle_self_update_download(sender);
     }
 

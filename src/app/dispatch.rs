@@ -155,23 +155,25 @@ impl App {
             ModsMsg::OpenModProperties(idx) => self.handle_open_mod_properties(idx, root, &sender),
             ModsMsg::ModPropertiesApplied {
                 mod_id,
-                mod_idx,
                 name,
                 notes,
+                version,
                 nexus_mod_id,
                 nexus_id_changed,
                 install_target,
                 file_targets,
+                routing_changed,
             } => self.handle_mod_properties_applied(
                 super::mods::properties::AppliedModProperties {
                     mod_id,
-                    mod_idx,
                     name,
                     notes,
+                    version,
                     nexus_mod_id,
                     nexus_id_changed,
                     install_target,
                     file_targets,
+                    routing_changed,
                 },
                 &sender,
             ),
@@ -581,15 +583,19 @@ impl App {
             ModsCmdMsg::ModNexusMetadataRefreshed { mod_id, result } => {
                 self.handle_cmd_mod_nexus_metadata_refreshed(mod_id, result)
             }
+            ModsCmdMsg::ModPropertiesSaved { saved, result } => {
+                self.handle_cmd_mod_properties_saved(*saved, result, &sender)
+            }
             ModsCmdMsg::ExternalScanDone(result) => self.handle_cmd_external_scan_done(result),
             ModsCmdMsg::EmptyModCreated(result) => {
                 self.handle_cmd_empty_mod_created(result, &sender)
             }
-            ModsCmdMsg::ModFilesRescanned(result) => {
-                self.handle_cmd_mod_files_rescanned(result, &sender)
+            ModsCmdMsg::ModFilesRescanned { mod_id, result } => {
+                self.handle_cmd_mod_files_rescanned(mod_id, result, &sender)
             }
-            #[cfg(feature = "loot")]
-            ModsCmdMsg::ModFilesLoaded(files) => self.handle_cmd_mod_files_loaded(files),
+            ModsCmdMsg::ModFilesLoaded { mod_id, files } => {
+                self.handle_cmd_mod_files_loaded(mod_id, files)
+            }
             ModsCmdMsg::ModOrderSnapshotSaved(result) => {
                 self.handle_cmd_mod_order_snapshot_saved(result, &sender)
             }

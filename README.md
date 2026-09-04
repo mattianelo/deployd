@@ -26,6 +26,8 @@ You can also install from the [Deployd Snap Store page](https://snapcraft.io/dep
 The Snap package uses the core24 runtime, a pinned Rust toolchain, and currently targets 64-bit
 x86 (`amd64`) Linux systems.
 Stable Snap Store updates are built and published from Deployd's stable version tags.
+Application update notifications are shown only by the AppImage; Snap updates are managed by
+snapd and the configured Snap Store channel.
 The Nexus Mods page remains available for users who prefer that distribution channel:
 [Deployd on Nexus Mods](https://www.nexusmods.com/skyrimspecialedition/mods/174218).
 
@@ -46,7 +48,7 @@ The Nexus Mods page remains available for users who prefer that distribution cha
 
 - **Game Setup Wizard** — A first-run wizard guides you through selecting your games and pointing Deployd to their installation folder and Wine prefix
 - **Nexus Mods Integration** — SSO login, NXM deep links, one-click update checking,
-  and manual Nexus Mod ID correction from Mod Properties
+  and manual Nexus Mod ID and installed-version correction from Mod Properties
 - **FOMOD Installer** — Full wizard with conditional steps, image previews, and DLC-aware auto-selection
 - **Mod Profiles** — Per-game profiles to switch between configurations instantly
 - **Plugin Load Order** — Select Mode reorder workflow for `.esp`/`.esm`/`.esl` management written to `plugins.txt`
@@ -198,6 +200,8 @@ Open **Settings** (gear icon) and log in under **Nexus Mods**:
   preserve its Mod Order position and plugin states, and make the previous archive installable again
 - **Absorb external changes** — Merging a detected external file into an existing mod persists it in
   that mod. Changing the file between Data and Root removes the previous route on the next deployment
+- **Rescan Cache** — Refreshes the open Mod Properties file list and preserves saved or pending
+  per-file Data/Root targets for unchanged files
 - **Nexus updates** — Installed Nexus files are checked together at startup; after an installation,
   only that mod is checked. Update badges follow Nexus' file-specific replacement chain, so
   unrelated optional files do not create false alerts

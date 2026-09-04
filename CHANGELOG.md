@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### AppImage and Snap
+
+- Mod Properties cache rescans now refresh the open file list immediately, preserve saved and
+  pending per-file Data/Root choices, and replace tracked file records atomically.
+- Mod Properties now allows the installed version to be edited or cleared, and saves all property
+  fields atomically before reporting success. Metadata-only changes no longer require deployment.
+
+### AppImage
+
+- Application update checks and notifications now run only for AppImage installations.
+
+### Snap
+
+- Confirmed that archive Trash failures with xdg-desktop-portal 1.20.4 and 1.21.1 are caused by an
+  upstream portal regression. Deployd retains the safe Trash portal flow and does not silently
+  replace it with permanent deletion. Retest Trash after updating the portal to 1.21.2, 1.22.0,
+  or newer; Snap application updates remain managed by snapd.
+
 ## [2.4.1]
 
 ### AppImage and Snap — Key changes

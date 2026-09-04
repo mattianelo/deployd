@@ -22,7 +22,11 @@ impl App {
             notification_count: self.notifications_count(),
             notification_badge: self.notifications_badge(),
             external_changes_count: self.mods.external_changes_count,
-            app_update_version: self.shell.app_update_version.clone(),
+            app_update_version: if self.shell.running_as_appimage {
+                self.shell.app_update_version.clone()
+            } else {
+                None
+            },
             running_as_appimage: self.shell.running_as_appimage,
             global_active_count: self.download.global_active_count,
             downloads_visible: self.download.visible,
@@ -105,7 +109,7 @@ impl App {
     /// Number of distinct notification items currently in the popover.
     pub(crate) fn notifications_count(&self) -> usize {
         usize::from(self.mods.external_changes_count > 0)
-            + usize::from(self.shell.app_update_version.is_some())
+            + usize::from(self.shell.running_as_appimage && self.shell.app_update_version.is_some())
             + self.ui.notification_count
     }
 

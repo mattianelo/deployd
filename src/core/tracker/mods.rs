@@ -1,11 +1,108 @@
-use anyhow::{Context, Result};
+use std::collections::HashMap;
+
+use anyhow::{Context, Result, bail};
 use sqlx::Row;
 
 use crate::models::mod_entry::{InstallTarget, ModEntry};
 
 use super::Tracker;
 
+pub(crate) struct ModPropertiesUpdate<'a> {
+    pub(crate) mod_id: &'a str,
+    pub(crate) name: &'a str,
+    pub(crate) notes: Option<&'a str>,
+    pub(crate) version: Option<&'a str>,
+    pub(crate) install_target: &'a InstallTarget,
+    pub(crate) file_targets: &'a HashMap<String, InstallTarget>,
+    pub(crate) nexus_identity: Option<ModNexusIdentityUpdate<'a>>,
+}
+
+pub(crate) struct ModNexusIdentityUpdate<'a> {
+    pub(crate) mod_id: Option<i64>,
+    pub(crate) file_id: Option<i64>,
+    pub(crate) domain: Option<&'a str>,
+}
+
 impl Tracker {
+    pub(crate) async fn update_mod_properties(
+        &self,
+        update: ModPropertiesUpdate<'_>,
+    ) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        let result = if let Some(identity) = update.nexus_identity {
+            sqlx::query(
+                "UPDATE mods
+                 SET name = ?, notes = ?, version = ?, install_target = ?,
+                     nexus_mod_id = ?, nexus_file_id = ?, nexus_domain = ?
+                 WHERE id = ?",
+            )
+            .bind(update.name)
+            .bind(update.notes)
+            .bind(update.version)
+            .bind(update.install_target.to_string())
+            .bind(identity.mod_id)
+            .bind(identity.file_id)
+            .bind(identity.domain)
+            .bind(update.mod_id)
+            .execute(&mut *tx)
+            .await
+        } else {
+            sqlx::query(
+                "UPDATE mods
+                 SET name = ?, notes = ?, version = ?, install_target = ?
+                 WHERE id = ?",
+            )
+            .bind(update.name)
+            .bind(update.notes)
+            .bind(update.version)
+            .bind(update.install_target.to_string())
+            .bind(update.mod_id)
+            .execute(&mut *tx)
+            .await
+        };
+        let result = result.context("Failed to update mod properties")?;
+        if result.rows_affected() != 1 {
+            bail!("Mod '{}' no longer exists", update.mod_id);
+        }
+
+        for (current_lowercase, target) in update.file_targets {
+            match target {
+                InstallTarget::Root if !current_lowercase.starts_with("../") => {
+                    sqlx::query(
+                        "UPDATE mod_files
+                         SET game_rel_lowercase = '../' || game_rel_lowercase,
+                             game_rel_original = '../' || game_rel_original
+                         WHERE mod_id = ? AND game_rel_lowercase = ?",
+                    )
+                    .bind(update.mod_id)
+                    .bind(current_lowercase)
+                    .execute(&mut *tx)
+                    .await
+                    .context("Failed to set file target to root")?;
+                }
+                InstallTarget::Data if current_lowercase.starts_with("../") => {
+                    sqlx::query(
+                        "UPDATE mod_files
+                         SET game_rel_lowercase = SUBSTR(game_rel_lowercase, 4),
+                             game_rel_original = SUBSTR(game_rel_original, 4)
+                         WHERE mod_id = ? AND game_rel_lowercase = ?",
+                    )
+                    .bind(update.mod_id)
+                    .bind(current_lowercase)
+                    .execute(&mut *tx)
+                    .await
+                    .context("Failed to set file target to data")?;
+                }
+                _ => {}
+            }
+        }
+
+        tx.commit()
+            .await
+            .context("Failed to commit mod properties")?;
+        Ok(())
+    }
+
     /// Insert a new mod record.
     pub async fn insert_mod(&self, entry: &ModEntry) -> Result<()> {
         sqlx::query(
@@ -128,17 +225,6 @@ impl Tracker {
         Ok(())
     }
 
-    /// Update a mod's display name.
-    pub async fn update_mod_name(&self, mod_id: &str, new_name: &str) -> Result<()> {
-        sqlx::query("UPDATE mods SET name = ? WHERE id = ?")
-            .bind(new_name)
-            .bind(mod_id)
-            .execute(&self.pool)
-            .await
-            .context("Failed to update mod name")?;
-        Ok(())
-    }
-
     /// Set `enabled` for every mod belonging to a game in one statement.
     pub async fn set_all_mods_enabled(&self, game_id: &str, enabled: bool) -> Result<()> {
         sqlx::query("UPDATE mods SET enabled = ? WHERE game_id = ?")
@@ -147,41 +233,6 @@ impl Tracker {
             .execute(&self.pool)
             .await
             .context("Failed to set all mods enabled")?;
-        Ok(())
-    }
-
-    /// Update a mod's user notes. Stores NULL when the string is empty.
-    pub async fn update_mod_notes(&self, mod_id: &str, notes: &str) -> Result<()> {
-        let value: Option<&str> = if notes.is_empty() { None } else { Some(notes) };
-        sqlx::query("UPDATE mods SET notes = ? WHERE id = ?")
-            .bind(value)
-            .bind(mod_id)
-            .execute(&self.pool)
-            .await
-            .context("Failed to update mod notes")?;
-        Ok(())
-    }
-
-    /// Update the Nexus coordinates attached to an installed mod.
-    pub async fn update_mod_nexus_ids(
-        &self,
-        mod_id: &str,
-        nexus_mod_id: Option<i64>,
-        nexus_file_id: Option<i64>,
-        nexus_domain: Option<&str>,
-    ) -> Result<()> {
-        sqlx::query(
-            "UPDATE mods
-             SET nexus_mod_id = ?, nexus_file_id = ?, nexus_domain = ?
-             WHERE id = ?",
-        )
-        .bind(nexus_mod_id)
-        .bind(nexus_file_id)
-        .bind(nexus_domain)
-        .bind(mod_id)
-        .execute(&self.pool)
-        .await
-        .context("Failed to update mod Nexus IDs")?;
         Ok(())
     }
 
@@ -246,25 +297,118 @@ mod tests {
         }
     }
 
+    // @variants: both
     #[tokio::test]
-    async fn updates_nexus_ids_without_changing_mod_identity() -> Result<()> {
+    async fn saves_all_mod_properties_in_one_transaction() -> Result<()> {
         let tracker = make_tracker().await?;
         tracker.insert_mod(&mod_entry("mod-a")).await?;
+        tracker
+            .record_files(&[crate::models::manifest::ModFile {
+                mod_id: "mod-a".to_string(),
+                game_rel_lowercase: "bin/tool.dll".to_string(),
+                game_rel_original: "bin/tool.dll".to_string(),
+                cache_path: "/cache/tool.dll".to_string(),
+            }])
+            .await?;
+        let file_targets = HashMap::from([("bin/tool.dll".to_string(), InstallTarget::Root)]);
 
         tracker
-            .update_mod_nexus_ids("mod-a", Some(101), None, Some("witcher"))
+            .update_mod_properties(ModPropertiesUpdate {
+                mod_id: "mod-a",
+                name: "Renamed Mod",
+                notes: Some("Remember this"),
+                version: Some("2 beta"),
+                install_target: &InstallTarget::Root,
+                file_targets: &file_targets,
+                nexus_identity: Some(ModNexusIdentityUpdate {
+                    mod_id: Some(42),
+                    file_id: None,
+                    domain: Some("skyrimspecialedition"),
+                }),
+            })
             .await?;
 
-        let mods = tracker.list_mods("g").await?;
-        assert_eq!(mods.len(), 1);
-        let mod_entry = mods
+        let entry = tracker
+            .list_mods("g")
+            .await?
             .into_iter()
             .next()
-            .ok_or_else(|| anyhow::anyhow!("expected one mod entry"))?;
-        assert_eq!(mod_entry.id, "mod-a");
-        assert_eq!(mod_entry.nexus_mod_id, Some(101));
-        assert_eq!(mod_entry.nexus_file_id, None);
-        assert_eq!(mod_entry.nexus_domain.as_deref(), Some("witcher"));
+            .ok_or_else(|| anyhow::anyhow!("expected saved mod"))?;
+        assert_eq!(entry.name, "Renamed Mod");
+        assert_eq!(entry.notes.as_deref(), Some("Remember this"));
+        assert_eq!(entry.version.as_deref(), Some("2 beta"));
+        assert_eq!(entry.install_target, InstallTarget::Root);
+        assert_eq!(entry.nexus_mod_id, Some(42));
+        assert_eq!(entry.nexus_file_id, None);
+        assert_eq!(entry.nexus_domain.as_deref(), Some("skyrimspecialedition"));
+        assert_eq!(
+            tracker.get_mod_files("mod-a").await?[0].game_rel_lowercase,
+            "../bin/tool.dll"
+        );
+
+        let file_targets = HashMap::from([("../bin/tool.dll".to_string(), InstallTarget::Root)]);
+        tracker
+            .update_mod_properties(ModPropertiesUpdate {
+                mod_id: "mod-a",
+                name: "Renamed Mod",
+                notes: Some("Remember this"),
+                version: None,
+                install_target: &InstallTarget::Root,
+                file_targets: &file_targets,
+                nexus_identity: Some(ModNexusIdentityUpdate {
+                    mod_id: Some(42),
+                    file_id: None,
+                    domain: Some("skyrimspecialedition"),
+                }),
+            })
+            .await?;
+        assert_eq!(tracker.list_mods("g").await?[0].version, None);
+        Ok(())
+    }
+
+    // @variants: both
+    #[tokio::test]
+    async fn rolls_back_mod_fields_when_file_target_update_fails() -> Result<()> {
+        let tracker = make_tracker().await?;
+        tracker.insert_mod(&mod_entry("mod-a")).await?;
+        tracker
+            .record_files(&[
+                crate::models::manifest::ModFile {
+                    mod_id: "mod-a".to_string(),
+                    game_rel_lowercase: "same.txt".to_string(),
+                    game_rel_original: "same.txt".to_string(),
+                    cache_path: "/cache/data.txt".to_string(),
+                },
+                crate::models::manifest::ModFile {
+                    mod_id: "mod-a".to_string(),
+                    game_rel_lowercase: "../same.txt".to_string(),
+                    game_rel_original: "../same.txt".to_string(),
+                    cache_path: "/cache/root.txt".to_string(),
+                },
+            ])
+            .await?;
+        let file_targets = HashMap::from([("same.txt".to_string(), InstallTarget::Root)]);
+
+        let result = tracker
+            .update_mod_properties(ModPropertiesUpdate {
+                mod_id: "mod-a",
+                name: "Must Roll Back",
+                notes: None,
+                version: None,
+                install_target: &InstallTarget::Data,
+                file_targets: &file_targets,
+                nexus_identity: None,
+            })
+            .await;
+
+        assert!(result.is_err());
+        let entry = tracker
+            .list_mods("g")
+            .await?
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("expected original mod"))?;
+        assert_eq!(entry.name, "Test Mod");
         Ok(())
     }
 }
