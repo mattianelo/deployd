@@ -82,7 +82,8 @@ Deployd uses libadwaita throughout its primary workflows:
   show both panes side by side while narrow windows collapse cleanly.
 - Select Mode is the v2 reorder workflow for Mod Order and Plugin Order. Enter Select Mode before
   selecting rows, dragging items, or changing load order. Dragging a selected plugin moves the
-  selected plugin block together.
+  selected plugin block together. Batch Enable and Disable actions keep Select Mode active so
+  additional rows can be managed before choosing Done.
 - Downloads, notifications, profile actions, deploy actions, snapshots, and Nexus account controls
   use GNOME-style rows, popovers, status pages, and toast feedback.
 - Install-related workflows, including FOMOD, Pre-install, Absorb External Changes, Mod Properties,
@@ -196,7 +197,9 @@ Open **Settings** (gear icon) and log in under **Nexus Mods**:
   Rescanning current Nexus filenames matches the page, file label, and version, keeping metadata
   attached to the correct archive when multiple versions of the same file are present.
 - **From Nexus Mods** — Click **Mod Manager Download**; the file downloads into Deployd automatically
-- **FOMOD mods** — A wizard opens automatically if the archive includes a FOMOD installer
+- **FOMOD mods** — A wizard opens automatically if the archive includes a FOMOD installer. Option
+  labels remain grouped with their controls, and conditional steps support installers that use an
+  empty dependency value to represent an unset flag.
 - **File selection** — The Install Mod dialog lets you deselect archive entries before they are
   cached and deployed
 - **Reinstall** — Use the ↺ button on any mod row to re-extract from its original archive, or use the refresh button in the Downloads panel

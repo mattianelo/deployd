@@ -15,6 +15,7 @@ mod plugins;
 mod presentation;
 mod profiles;
 mod progress;
+mod reorder;
 mod search;
 mod session;
 mod startup;

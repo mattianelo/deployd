@@ -12,6 +12,7 @@ use crate::ui::plugin_list::PluginRowInit;
 
 use super::App;
 use super::messages::AppCmdMsg;
+use super::reorder::{block_destination, item_destination};
 use super::session::{GameLoadMode, load_game_data};
 use super::types::PostLootAction;
 
@@ -24,9 +25,6 @@ impl App {
     ) {
         let mut guard = self.plugins.rows.guard();
         let len = guard.len();
-        if from >= len || to >= len || from == to {
-            return;
-        }
         if self.plugins.selection_active
             && self.plugins.selected.contains(&from)
             && self.plugins.selected.len() > 1
@@ -35,6 +33,12 @@ impl App {
             let mut selected: Vec<usize> = self.plugins.selected.iter().copied().collect();
             selected.sort_unstable();
             self.handle_move_selected_plugins_to(selected, from, to, sender);
+            return;
+        }
+        let Some(to) = item_destination(from, to, len) else {
+            return;
+        };
+        if from == to {
             return;
         }
         if from < to {
@@ -70,12 +74,13 @@ impl App {
                 .filter(|&idx| guard.get(idx).is_some_and(|row| !row.is_vanilla))
                 .collect()
         };
-        let n = selected.len();
-        if n == 0 || to >= len {
+        if !selected.contains(&from) {
             return;
         }
-        let drag_pos = selected.iter().position(|&s| s == from).unwrap_or(0);
-        let anchor = to.saturating_sub(drag_pos).min(len.saturating_sub(n));
+        let n = selected.len();
+        let Some(anchor) = block_destination(&selected, to, len) else {
+            return;
+        };
         if selected.iter().enumerate().all(|(i, &s)| anchor + i == s) {
             return;
         }
@@ -538,8 +543,6 @@ impl App {
                 result.await.map_err(|e| e.to_string()),
             ))
         });
-
-        self.handle_exit_plugin_selection_mode();
     }
 
     pub(crate) fn handle_disable_selected_plugins(&mut self, sender: &ComponentSender<Self>) {
@@ -588,7 +591,5 @@ impl App {
                 result.await.map_err(|e| e.to_string()),
             ))
         });
-
-        self.handle_exit_plugin_selection_mode();
     }
 }

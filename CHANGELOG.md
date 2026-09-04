@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### AppImage and Snap
+
+- Select Mode now stays active after enabling, disabling, or removing selected entries and remains
+  visually synchronized when an action refreshes the Mod Order and Plugin Order lists.
+- Mod Order and Plugin Order drops now use insertion positions consistently, fixing downward moves
+  that previously landed one row below the displayed drop marker, including end-of-list and grouped
+  moves.
+- FOMOD option labels now stay beside their checkboxes, and unset condition flags correctly match
+  empty dependency values so valid conditional choices are no longer hidden.
+
 ## [2.4.2]
 
 ### AppImage and Snap

@@ -8,7 +8,7 @@ use crate::dlog;
 
 use super::io::read_fomod_xml;
 use super::path_index::{build_path_index, collect_file};
-use super::types::{FomodFileMapping, FomodSelections};
+use super::types::{FomodFileMapping, FomodSelections, flag_value_matches};
 use super::xml_structs::{XmlConfig, XmlDependencies, XmlGroup, XmlPlugin};
 
 /// Resolve files to install based on user selections from the FOMOD wizard.
@@ -318,7 +318,7 @@ fn evaluate_dependencies(deps: &XmlDependencies, flags: &HashMap<String, String>
     let mut results: Vec<bool> = Vec::new();
 
     for fd in &deps.flag_dependencies {
-        let matched = flags.get(&fd.flag).is_some_and(|v| v == &fd.value);
+        let matched = flag_value_matches(flags, &fd.flag, &fd.value);
         results.push(matched);
     }
 

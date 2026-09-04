@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use adw::prelude::*;
 use gtk::gdk;
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -424,29 +423,50 @@ fn build_group_widget(
         };
 
     for (plugin_idx, plugin) in group.plugins.iter().enumerate() {
-        let row = adw::ActionRow::new();
-        row.set_title(&gtk::glib::markup_escape_text(&plugin.name));
-        // Only show description subtitle when it adds information beyond the title.
-        // Many FOMODs have descriptions that merely restate the plugin name.
-        if !plugin.description.is_empty()
-            && plugin.description.to_lowercase() != plugin.name.to_lowercase()
-        {
-            row.set_subtitle(&gtk::glib::markup_escape_text(&plugin.description));
-            row.set_subtitle_lines(2);
-        }
+        let row = gtk::ListBoxRow::new();
+        row.set_selectable(false);
+        row.set_activatable(true);
+        let row_content = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+        row_content.set_margin_top(8);
+        row_content.set_margin_bottom(8);
+        row_content.set_margin_start(12);
+        row_content.set_margin_end(12);
+        let check = gtk::CheckButton::new();
+        check.set_active(selected.contains(&plugin_idx));
+        check.set_valign(gtk::Align::Center);
+        row_content.append(&check);
 
-        // Type hint badge
+        let labels = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        labels.set_hexpand(true);
+        let heading = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        let name = gtk::Label::new(Some(&plugin.name));
+        name.set_halign(gtk::Align::Start);
+        name.set_xalign(0.0);
+        name.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        heading.append(&name);
         if !plugin.type_hint.is_empty() {
             let badge = gtk::Label::new(Some(&plugin.type_hint));
             badge.add_css_class("dim-label");
             badge.add_css_class("caption");
             badge.set_valign(gtk::Align::Center);
-            row.add_suffix(&badge);
+            heading.append(&badge);
         }
+        labels.append(&heading);
 
-        let check = gtk::CheckButton::new();
-        check.set_active(selected.contains(&plugin_idx));
-        check.set_valign(gtk::Align::Center);
+        if !plugin.description.is_empty()
+            && plugin.description.to_lowercase() != plugin.name.to_lowercase()
+        {
+            let description = gtk::Label::new(Some(&plugin.description));
+            description.add_css_class("dim-label");
+            description.set_halign(gtk::Align::Start);
+            description.set_xalign(0.0);
+            description.set_wrap(true);
+            description.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+            description.set_lines(2);
+            labels.append(&description);
+        }
+        row_content.append(&labels);
+        row.set_child(Some(&row_content));
 
         match group.group_type {
             FomodGroupType::SelectAll => {
@@ -476,8 +496,12 @@ fn build_group_widget(
             }
         }
 
-        row.add_prefix(&check);
-        row.set_activatable_widget(Some(&check));
+        let activatable_check = check.clone();
+        row.connect_activate(move |_| {
+            if activatable_check.is_sensitive() {
+                activatable_check.set_active(!activatable_check.is_active());
+            }
+        });
 
         let motion = gtk::EventControllerMotion::new();
         let s = sender.clone();

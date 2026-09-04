@@ -87,6 +87,7 @@ impl App {
         groups: &[ModGroup],
         overrides: &HashMap<String, OverrideInfo>,
     ) {
+        self.mods.selected.clear();
         let mut sorted_groups = groups.to_vec();
         sorted_groups.sort_by(|a, b| {
             a.position
@@ -177,6 +178,11 @@ impl App {
             });
             group_idx += 1;
         }
+        for item in guard.iter_mut() {
+            item.selection_mode = self.mods.selection_active;
+            item.selected = false;
+            item.drag_enabled.set(self.mods.selection_active);
+        }
         drop(guard);
 
         glib::idle_add_local_once(move || {
@@ -191,6 +197,7 @@ impl App {
         plugin_masters: &HashMap<String, Vec<String>>,
         discovery: PluginDiscovery<'_>,
     ) {
+        self.plugins.selected.clear();
         let vanilla_plugins = discovery.vanilla_plugins;
         let vanilla_plugin_master_counts = discovery.vanilla_master_counts;
         let vanilla_derived = discovery.vanilla_derived;
@@ -341,6 +348,12 @@ impl App {
             } else {
                 0
             };
+        for row in guard.iter_mut() {
+            row.selection_mode = self.plugins.selection_active;
+            row.selected = false;
+            row.drag_enabled
+                .set(self.plugins.selection_active && !row.is_vanilla);
+        }
     }
 
     pub(crate) fn update_profile_list(&mut self, profiles: Vec<Profile>, active_idx: usize) {

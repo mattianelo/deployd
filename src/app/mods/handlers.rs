@@ -12,6 +12,7 @@ use crate::utils::paths;
 use super::super::App;
 use super::super::messages::AppCmdMsg;
 use super::super::messages::AppMsg;
+use super::super::reorder::{block_destination, item_destination};
 use super::super::session::load_game_data;
 
 impl App {
@@ -60,10 +61,9 @@ impl App {
 
         let mut guard = self.mods.rows.guard();
         let len = guard.len();
-        if from >= len || to > len {
+        let Some(to) = item_destination(from, to, len) else {
             return;
-        }
-        let to = to.min(len.saturating_sub(1));
+        };
         if from == to {
             return;
         }
@@ -133,7 +133,9 @@ impl App {
             }
         } else {
             // Expanded group: move just the separator so grouping shifts dynamically.
-            let to = to.min(len.saturating_sub(1));
+            let Some(to) = item_destination(from, to, len) else {
+                return;
+            };
             if from == to {
                 return;
             }
@@ -166,13 +168,20 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         let len = self.mods.rows.guard().len();
-        let n = selected.len();
-        if n == 0 || to > len {
+        let selected: Vec<usize> = {
+            let guard = self.mods.rows.guard();
+            selected
+                .into_iter()
+                .filter(|&idx| guard.get(idx).is_some_and(|row| !row.is_separator()))
+                .collect()
+        };
+        if !selected.contains(&from) {
             return;
         }
-        let to = to.min(len.saturating_sub(1));
-        let drag_pos = selected.iter().position(|&s| s == from).unwrap_or(0);
-        let anchor = to.saturating_sub(drag_pos).min(len.saturating_sub(n));
+        let n = selected.len();
+        let Some(anchor) = block_destination(&selected, to, len) else {
+            return;
+        };
         if selected.iter().enumerate().all(|(i, &s)| anchor + i == s) {
             return;
         }
@@ -786,8 +795,6 @@ impl App {
                     .map_err(|e| e.to_string()),
             ))
         });
-
-        self.handle_exit_mod_selection_mode();
     }
 
     pub(crate) fn handle_disable_selected_mods(&mut self, sender: &ComponentSender<Self>) {
@@ -860,8 +867,6 @@ impl App {
                     .map_err(|e| e.to_string()),
             ))
         });
-
-        self.handle_exit_mod_selection_mode();
     }
 
     pub(crate) fn handle_remove_selected_mods(
@@ -982,7 +987,7 @@ impl App {
 
         self.shell.needs_deploy = true;
         self.mods.selection_dirty = true;
+        self.mods.selected.clear();
         self.save_group_positions(sender);
-        self.handle_exit_mod_selection_mode();
     }
 }

@@ -49,7 +49,7 @@ impl FomodUiDependencies {
         let mut results: Vec<bool> = Vec::new();
 
         for (name, value) in &self.flag_deps {
-            results.push(flags.get(name).is_some_and(|v| v == value));
+            results.push(flag_value_matches(flags, name, value));
         }
         for (file, state) in &self.file_deps {
             let present = files.contains(file.as_str());
@@ -73,6 +73,14 @@ impl FomodUiDependencies {
             results.iter().any(|&r| r)
         }
     }
+}
+
+pub(super) fn flag_value_matches(
+    flags: &HashMap<String, String>,
+    name: &str,
+    expected: &str,
+) -> bool {
+    flags.get(name).map(String::as_str).unwrap_or_default() == expected
 }
 
 #[derive(Debug, Clone)]
@@ -113,4 +121,41 @@ pub struct FomodUiPlugin {
 #[derive(Debug, Clone)]
 pub struct FomodSelections {
     pub selections: Vec<Vec<HashSet<usize>>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::{FomodUiDependencies, flag_value_matches};
+
+    #[test]
+    fn missing_flag_matches_empty_dependency_value() {
+        assert!(flag_value_matches(&HashMap::new(), "OPTIONAL_FLAG", ""));
+    }
+
+    #[test]
+    fn missing_flag_does_not_match_nonempty_dependency_value() {
+        assert!(!flag_value_matches(
+            &HashMap::new(),
+            "REQUIRED_FLAG",
+            "Active"
+        ));
+    }
+
+    #[test]
+    fn mixed_active_and_unset_flags_make_step_visible() {
+        let flags = HashMap::from([("INSTALL_SETTINGS".to_string(), "Active".to_string())]);
+        let dependencies = FomodUiDependencies {
+            operator: "And".to_string(),
+            flag_deps: vec![
+                ("INSTALL_SETTINGS".to_string(), "Active".to_string()),
+                ("DISABLE_EFFECTS".to_string(), String::new()),
+            ],
+            file_deps: vec![],
+            nested: vec![],
+        };
+
+        assert!(dependencies.evaluate(&flags));
+    }
 }
