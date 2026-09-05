@@ -13,7 +13,6 @@ use crate::core::migration_import::{
     ValidationItem, import_bundle, preview_import_bundle,
 };
 use crate::utils;
-use crate::utils::snap::{self, SelectedFolderKind};
 
 use super::super::App;
 use super::super::messages::{AppCmdMsg, AppMsg};
@@ -108,7 +107,7 @@ impl App {
             downloads_dir: self.download.directory.clone(),
             output_path,
         };
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             AppCmdMsg::Migration(crate::app::messages::MigrationCmdMsg::GameExportedForSnap(
                 export_game_bundle(request).await.map_err(|e| e.to_string()),
             ))
@@ -200,7 +199,7 @@ impl App {
             WorkKind::PreviewingMigration,
             "Previewing AppImage export...",
         );
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             AppCmdMsg::Migration(
                 crate::app::messages::MigrationCmdMsg::AppImageExportPreviewed(
                     preview_import_bundle(&tracker, PreviewImportRequest { bundle_path })
@@ -239,6 +238,7 @@ impl App {
             return;
         }
         self.ui.pending_migration_import = Some(PendingMigrationImport {
+            locations: Vec::new(),
             bundle_path,
             confirmed_game_path: None,
             confirmed_wine_prefix: None,
@@ -246,39 +246,49 @@ impl App {
         self.select_import_game_folder(root, sender);
     }
 
-    pub(crate) fn handle_import_game_folder_chosen(
+    pub(crate) fn handle_import_folder_selected(
         &mut self,
-        path: PathBuf,
+        role: crate::utils::location::FolderRole,
+        result: Result<Option<crate::utils::location::SelectedLocation>, String>,
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
-        if let Err(message) = snap::validate_selected_folder(&path, SelectedFolderKind::GameFolder)
-        {
-            self.push_notification(&message.to_string());
-            return;
-        }
+        let selected = match result {
+            Ok(Some(selected)) => selected,
+            Ok(None) => {
+                self.ui.pending_migration_import = None;
+                return;
+            }
+            Err(error) => {
+                self.ui.pending_migration_import = None;
+                self.push_notification(&format!("Could not select the import folder: {error}"));
+                return;
+            }
+        };
         let Some(pending) = self.ui.pending_migration_import.as_mut() else {
             return;
         };
-        pending.confirmed_game_path = Some(path);
-        self.select_import_wine_prefix(root, sender);
-    }
-
-    pub(crate) fn handle_import_wine_prefix_chosen(
-        &mut self,
-        path: PathBuf,
-        sender: &ComponentSender<Self>,
-    ) {
-        if let Err(message) = snap::validate_selected_folder(&path, SelectedFolderKind::WinePrefix)
-        {
-            self.push_notification(&message.to_string());
-            return;
+        match role {
+            crate::utils::location::FolderRole::Game => {
+                pending.confirmed_game_path = Some(selected.root.clone())
+            }
+            crate::utils::location::FolderRole::Prefix => {
+                pending.confirmed_wine_prefix = Some(selected.root.clone())
+            }
         }
-        let Some(pending) = self.ui.pending_migration_import.as_mut() else {
-            return;
-        };
-        pending.confirmed_wine_prefix = Some(path);
-        self.start_appimage_export_import(sender);
+        pending
+            .locations
+            .push(crate::utils::location::FolderSelection {
+                role,
+                location: selected,
+                relative: PathBuf::new(),
+            });
+        match role {
+            crate::utils::location::FolderRole::Game => {
+                self.select_import_wine_prefix(root, sender)
+            }
+            crate::utils::location::FolderRole::Prefix => self.start_appimage_export_import(sender),
+        }
     }
 
     fn start_appimage_export_import(&mut self, sender: &ComponentSender<Self>) {
@@ -308,11 +318,12 @@ impl App {
 
         self.begin_work(WorkKind::ImportingMigration, "Importing AppImage export...");
         let request = ImportBundleRequest {
+            locations: pending.locations,
             bundle_path: pending.bundle_path,
             confirmed_game_path,
             confirmed_wine_prefix,
         };
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             AppCmdMsg::Migration(
                 crate::app::messages::MigrationCmdMsg::AppImageExportImported(
                     import_bundle(&tracker, request)
@@ -371,47 +382,33 @@ impl App {
 
     fn select_import_game_folder(
         &self,
-        root: &adw::ApplicationWindow,
+        _root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
-        let dialog = gtk::FileDialog::builder()
-            .title("Confirm Imported Game Folder")
-            .modal(true)
-            .build();
-        let input_sender = sender.input_sender().clone();
-        dialog.select_folder(Some(root), None::<&gio::Cancellable>, move |result| {
-            if let Ok(file) = result
-                && let Some(path) = file.path()
-            {
-                input_sender
-                    .send(AppMsg::Migration(
-                        crate::app::messages::MigrationMsg::ImportGameFolderChosen(path),
-                    ))
-                    .ok();
-            }
-        });
+        self.select_import_location(crate::utils::location::FolderRole::Game, sender);
     }
 
     fn select_import_wine_prefix(
         &self,
-        root: &adw::ApplicationWindow,
+        _root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
-        let dialog = gtk::FileDialog::builder()
-            .title("Confirm Imported Wine Prefix")
-            .modal(true)
-            .build();
-        let input_sender = sender.input_sender().clone();
-        dialog.select_folder(Some(root), None::<&gio::Cancellable>, move |result| {
-            if let Ok(file) = result
-                && let Some(path) = file.path()
-            {
-                input_sender
-                    .send(AppMsg::Migration(
-                        crate::app::messages::MigrationMsg::ImportWinePrefixChosen(path),
-                    ))
-                    .ok();
-            }
+        self.select_import_location(crate::utils::location::FolderRole::Prefix, sender);
+    }
+
+    fn select_import_location(
+        &self,
+        role: crate::utils::location::FolderRole,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.location_command(sender, async move {
+            let title = format!("Confirm Imported {}", role.label());
+            let result = crate::utils::portal::select_location(&title, None, role.kind())
+                .await
+                .map_err(|error| error.to_string());
+            AppCmdMsg::Migration(crate::app::messages::MigrationCmdMsg::ImportFolderSelected(
+                role, result,
+            ))
         });
     }
 }

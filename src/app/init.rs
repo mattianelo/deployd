@@ -324,6 +324,7 @@ pub(super) fn build_model(
 
     let model = App {
         shell: ShellState {
+            location_recovery: None,
             deploying: false,
             needs_deploy: false,
             status_msg: None,
@@ -342,6 +343,7 @@ pub(super) fn build_model(
             color_scheme_idx: 0,
         },
         session: SessionState {
+            location_blocked: HashSet::new(),
             initializing: true,
             tracker: None,
             games,
@@ -757,6 +759,22 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
         let open_report = Tracker::open(&db_url).await.map_err(|e| e.to_string())?;
         let tracker = open_report.tracker;
         let mut startup_warnings = open_report.warnings;
+        if crate::utils::snap::is_snap() {
+            let _lease = crate::core::location_recovery::activity_lock()
+                .write_owned()
+                .await;
+            if let Err(error) = crate::core::location_recovery::resume_repairs(&tracker).await {
+                startup_warnings.push(format!("Folder recovery needs attention: {error:#}. Open Manage Games → Restore folder access to retry."));
+            }
+            if let Err(error) = tracker.backfill_location_hints().await {
+                startup_warnings.push(format!(
+                    "Original folder locations could not be remembered: {error}"
+                ));
+            }
+        }
+        let location_blocked = crate::core::location_recovery::blocked_games(&tracker)
+            .await
+            .map_err(|error| error.to_string())?;
 
         // Determine which game to select: prefer last_game_id from settings.
         // detect_games() returns empty, so load persisted games from DB to find
@@ -953,6 +971,7 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
         startup_warnings.extend(access_warnings);
 
         Ok::<_, String>(InitData {
+            location_blocked,
             tracker,
             mods,
             plugins,

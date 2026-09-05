@@ -14,6 +14,7 @@ mod appimage;
 mod launch_plan;
 mod runtime;
 mod snap;
+pub(crate) use snap::repair_source_bridges;
 
 pub use runtime::{ToolLaunchHooks, ToolProcessHandle};
 

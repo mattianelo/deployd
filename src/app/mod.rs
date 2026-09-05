@@ -7,6 +7,7 @@ mod external;
 mod init;
 mod install;
 mod install_file_id;
+mod location_recovery;
 mod messages;
 mod mods;
 mod notifications;

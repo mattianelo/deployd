@@ -31,6 +31,7 @@ pub use report::ImportBundleResult;
 
 #[derive(Debug, Clone)]
 pub struct ImportBundleRequest {
+    pub(crate) locations: Vec<crate::utils::location::FolderSelection>,
     pub bundle_path: PathBuf,
     pub confirmed_game_path: PathBuf,
     pub confirmed_wine_prefix: PathBuf,
@@ -43,6 +44,37 @@ pub async fn import_bundle(
     validate_required_confirmation(&request.confirmed_game_path, "game folder")?;
     validate_required_confirmation(&request.confirmed_wine_prefix, "Wine prefix")?;
 
+    let mut locations = Vec::new();
+    for (role, path) in [
+        (
+            crate::utils::location::FolderRole::Game,
+            &request.confirmed_game_path,
+        ),
+        (
+            crate::utils::location::FolderRole::Prefix,
+            &request.confirmed_wine_prefix,
+        ),
+    ] {
+        let selected = request
+            .locations
+            .iter()
+            .find(|selected| selected.role == role)
+            .cloned();
+        let selected = match selected {
+            Some(selected) => selected,
+            None => crate::utils::location::FolderSelection {
+                role,
+                location: crate::utils::location::SelectedLocation::capture(path.clone()).await,
+                relative: PathBuf::new(),
+            },
+        };
+        if crate::utils::location::resolve_relative(&selected.location.root, &selected.relative)?
+            != *path
+        {
+            bail!("Import folder selection does not match the confirmed location");
+        }
+        locations.push(selected);
+    }
     let staged = tokio::task::spawn_blocking({
         let bundle_path = request.bundle_path.clone();
         move || extract_import_bundle(&bundle_path)
@@ -84,6 +116,7 @@ pub async fn import_bundle(
         &staged.manifest,
         &imported_game,
         &import_paths,
+        &locations,
     )
     .await;
     export_pool.close().await;
@@ -559,6 +592,7 @@ mod tests {
         let result = import_bundle(
             &fixture.snap_tracker,
             ImportBundleRequest {
+                locations: Vec::new(),
                 bundle_path: fixture.bundle_path.clone(),
                 confirmed_game_path: fixture._temp.path().join("snap-visible-game"),
                 confirmed_wine_prefix: fixture._temp.path().join("snap-visible-prefix"),
@@ -723,6 +757,7 @@ mod tests {
         import_bundle(
             &fixture.snap_tracker,
             ImportBundleRequest {
+                locations: Vec::new(),
                 bundle_path: fixture.bundle_path.clone(),
                 confirmed_game_path: fixture._temp.path().join("snap-visible-game"),
                 confirmed_wine_prefix: fixture._temp.path().join("snap-visible-prefix"),
@@ -755,6 +790,7 @@ mod tests {
         import_bundle(
             &fixture.snap_tracker,
             ImportBundleRequest {
+                locations: Vec::new(),
                 bundle_path: fixture.bundle_path.clone(),
                 confirmed_game_path: fixture._temp.path().join("snap-visible-game"),
                 confirmed_wine_prefix: fixture._temp.path().join("snap-visible-prefix"),
@@ -821,6 +857,7 @@ mod tests {
         let err = import_bundle(
             &fixture.snap_tracker,
             ImportBundleRequest {
+                locations: Vec::new(),
                 bundle_path: fixture.bundle_path.clone(),
                 confirmed_game_path: fixture._temp.path().join("snap-visible-game"),
                 confirmed_wine_prefix: fixture._temp.path().join("snap-visible-prefix"),
@@ -878,6 +915,7 @@ mod tests {
         let result = import_bundle(
             &fixture.snap_tracker,
             ImportBundleRequest {
+                locations: Vec::new(),
                 bundle_path: fixture.bundle_path.clone(),
                 confirmed_game_path: fixture._temp.path().join("snap-visible-game"),
                 confirmed_wine_prefix: fixture._temp.path().join("snap-visible-prefix"),
@@ -907,6 +945,7 @@ mod tests {
         let err = import_bundle(
             &fixture.snap_tracker,
             ImportBundleRequest {
+                locations: Vec::new(),
                 bundle_path: fixture.bundle_path.clone(),
                 confirmed_game_path: PathBuf::new(),
                 confirmed_wine_prefix: fixture._temp.path().join("prefix"),
@@ -937,6 +976,7 @@ mod tests {
         let err = import_bundle(
             &fixture.snap_tracker,
             ImportBundleRequest {
+                locations: Vec::new(),
                 bundle_path: fixture.bundle_path.clone(),
                 confirmed_game_path: fixture._temp.path().join("snap-visible-game"),
                 confirmed_wine_prefix: fixture._temp.path().join("snap-visible-prefix"),

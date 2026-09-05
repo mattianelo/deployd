@@ -116,6 +116,19 @@ fn sqlite_url(path: &Path) -> String {
 }
 
 pub(crate) async fn prune_export_database(pool: &sqlx::SqlitePool, game: &Game) -> Result<()> {
+    for table in ["location_repairs", "game_locations", "folder_locations"] {
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?)",
+        )
+        .bind(table)
+        .fetch_one(pool)
+        .await?;
+        if exists {
+            sqlx::query(&format!("DELETE FROM {table}"))
+                .execute(pool)
+                .await?;
+        }
+    }
     let game_id = game.id.as_str();
     sqlx::query("DELETE FROM games WHERE id != ?")
         .bind(game_id)

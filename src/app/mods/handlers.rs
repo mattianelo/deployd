@@ -31,7 +31,7 @@ impl App {
             self.session.games.get(new_idx),
         ) {
             let game_id = game.id.clone();
-            sender.oneshot_command(async move {
+            self.location_command(sender, async move {
                 let result = tracker
                     .set_setting("last_game_id", &game_id)
                     .await
@@ -284,7 +284,7 @@ impl App {
                 })
                 .collect()
         };
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             if let Err(e) = tracker.set_all_mods_enabled(&game_id, true).await {
                 return AppCmdMsg::Mods(crate::app::messages::ModsCmdMsg::OverridesRefreshed(Err(
                     e.to_string(),
@@ -348,7 +348,7 @@ impl App {
                 })
                 .collect()
         };
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             if let Err(e) = tracker.set_all_mods_enabled(&game_id, false).await {
                 return AppCmdMsg::Mods(crate::app::messages::ModsCmdMsg::OverridesRefreshed(Err(
                     e.to_string(),
@@ -426,7 +426,7 @@ impl App {
 
         if let Some(tracker) = self.session.tracker.clone() {
             let gid = group_id.clone();
-            sender.oneshot_command(async move {
+            self.location_command(sender, async move {
                 let result = tracker
                     .set_group_collapsed(&gid, new_collapsed)
                     .await
@@ -457,7 +457,7 @@ impl App {
         if let (Some(tracker), Some(game)) =
             (self.session.tracker.clone(), self.selected_game().cloned())
         {
-            sender.oneshot_command(async move {
+            self.location_command(sender, async move {
                 if let Err(e) = tracker.delete_group(&group_id).await {
                     return AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::ModsLoaded(
                         Err(e.to_string()),
@@ -481,7 +481,7 @@ impl App {
                 let guard = self.mods.rows.guard();
                 guard.len() as f64
             };
-            sender.oneshot_command(async move {
+            self.location_command(sender, async move {
                 if let Err(e) = tracker.create_group(&game.id, &name, position).await {
                     return AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::ModsLoaded(
                         Err(e.to_string()),
@@ -525,7 +525,7 @@ impl App {
         }
 
         if let Some(tracker) = self.session.tracker.clone() {
-            sender.oneshot_command(async move {
+            self.location_command(sender, async move {
                 let result = tracker
                     .rename_group(&group_id, &new_name)
                     .await
@@ -565,7 +565,7 @@ impl App {
 
         if let Some(tracker) = self.session.tracker.clone() {
             let color_ref = color.as_deref().map(String::from);
-            sender.oneshot_command(async move {
+            self.location_command(sender, async move {
                 let result = tracker
                     .set_group_color(&group_id, color_ref.as_deref())
                     .await
@@ -593,7 +593,7 @@ impl App {
                 return;
             }
         };
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             let result: Result<(String, std::path::PathBuf), String> = async {
                 let mod_id = uuid::Uuid::new_v4().to_string();
                 let cache_dir = crate::utils::paths::mod_cache_dir_in(&cache_root, &mod_id);
@@ -780,7 +780,7 @@ impl App {
                 })
                 .collect()
         };
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             for mod_id in &mod_ids {
                 if let Err(e) = tracker.toggle_mod(mod_id, true).await {
                     return AppCmdMsg::Mods(crate::app::messages::ModsCmdMsg::OverridesRefreshed(
@@ -852,7 +852,7 @@ impl App {
                 })
                 .collect()
         };
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             for mod_id in &mod_ids {
                 if let Err(e) = tracker.toggle_mod(mod_id, false).await {
                     return AppCmdMsg::Mods(crate::app::messages::ModsCmdMsg::OverridesRefreshed(
@@ -954,7 +954,7 @@ impl App {
 
             let tracker_clone = tracker.clone();
             let cache_root_clone = cache_root.clone();
-            sender.oneshot_command(async move {
+            self.location_command(sender, async move {
                 let result: Result<(String, Vec<String>), String> = async {
                     tracker_clone
                         .delete_plugins_for_mod(&mod_id)

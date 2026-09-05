@@ -44,6 +44,7 @@ pub(crate) struct App {
 }
 
 pub(crate) struct ShellState {
+    pub(crate) location_recovery: Option<tokio::sync::OwnedRwLockWriteGuard<()>>,
     pub(crate) deploying: bool,
     pub(crate) needs_deploy: bool,
     pub(crate) status_msg: Option<String>,
@@ -104,6 +105,7 @@ pub(crate) struct UiState {
 }
 
 pub(crate) struct SessionState {
+    pub(crate) location_blocked: HashSet<String>,
     pub(crate) initializing: bool,
     pub(crate) tracker: Option<Tracker>,
     pub(crate) games: Vec<Game>,

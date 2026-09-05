@@ -58,7 +58,7 @@ impl App {
             .nexus_avatar_widget
             .set_custom_image(None::<&gtk::gdk::Texture>);
         if let Some(url) = avatar_url {
-            sender.oneshot_command(async move {
+            self.location_command(sender, async move {
                 AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::NexusAvatarLoaded(
                     fetch_avatar_bytes(&url).await,
                 ))
@@ -110,6 +110,8 @@ impl App {
                     }
                 }
 
+                self.session.location_blocked = data.location_blocked.iter().cloned().collect();
+
                 // One-time migration: persist any corrected data_subdir values to DB
                 // so subsequent loads get the right value directly.
                 if let Some(tracker) = self.session.tracker.clone() {
@@ -140,7 +142,7 @@ impl App {
                         })
                         .collect();
                     if !migrations.is_empty() {
-                        sender.oneshot_command(async move {
+                        self.location_command(sender, async move {
                             let result = async {
                                 for (id, title, path, data_subdir, engine, wine_prefix) in
                                     migrations
@@ -212,7 +214,7 @@ impl App {
                     self.ui.nexus_avatar_widget.set_text(Some(username));
                 }
                 if let Some(url) = data.nexus_avatar_url.clone() {
-                    sender.oneshot_command(async move {
+                    self.location_command(sender, async move {
                         AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::NexusAvatarLoaded(
                             fetch_avatar_bytes(&url).await,
                         ))
@@ -236,6 +238,10 @@ impl App {
                     .map(|g| g.id.clone())
                     .collect();
                 let loaded = LoadedData {
+                    location_accessible: data
+                        .init_game_id
+                        .as_ref()
+                        .is_none_or(|id| !self.session.location_blocked.contains(id)),
                     game_id: data.init_game_id.clone().unwrap_or_default(),
                     mods: data.mods,
                     plugins: data.plugins,
@@ -605,7 +611,7 @@ impl App {
                 if let Some(tracker) = self.session.tracker.clone()
                     && let Some(game) = self.selected_game().cloned()
                 {
-                    sender.oneshot_command(async move {
+                    self.location_command(sender, async move {
                         AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::ModsLoaded(
                             load_game_data(&tracker, &game, GameLoadMode::Refresh).await,
                             true,

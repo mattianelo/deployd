@@ -11,7 +11,22 @@ impl App {
         sender: ComponentSender<Self>,
         root: &adw::ApplicationWindow,
     ) {
+        if self.shell.location_recovery.is_some()
+            && (requires_game_access(&msg) || changes_folder_context(&msg))
+        {
+            self.push_notification("Wait for folder access recovery to finish");
+            return;
+        }
+        if self
+            .selected_game()
+            .is_some_and(|game| self.session.location_blocked.contains(&game.id))
+            && requires_game_access(&msg)
+        {
+            self.push_notification("This game's folder access needs attention. Open Manage Games → Restore folder access before continuing");
+            return;
+        }
         match msg {
+            AppMsg::Recovery(msg) => self.handle_recovery(msg, &sender, root),
             AppMsg::Shell(msg) => self.dispatch_shell_input(msg, sender, root),
             AppMsg::Games(msg) => self.dispatch_games_input(msg, sender, root),
             AppMsg::Mods(msg) => self.dispatch_mods_input(msg, sender, root),
@@ -438,12 +453,6 @@ impl App {
             MigrationMsg::ImportAppImageExport(bundle_path) => {
                 self.handle_import_appimage_export(bundle_path, root, &sender)
             }
-            MigrationMsg::ImportGameFolderChosen(path) => {
-                self.handle_import_game_folder_chosen(path, root, &sender)
-            }
-            MigrationMsg::ImportWinePrefixChosen(path) => {
-                self.handle_import_wine_prefix_chosen(path, &sender)
-            }
         }
     }
 
@@ -454,6 +463,11 @@ impl App {
         root: &adw::ApplicationWindow,
     ) {
         match msg {
+            AppCmdMsg::Recovery(msg) => self.handle_recovery_command(msg, &sender, root),
+            AppCmdMsg::LocationActivityCompleted(lease, msg) => {
+                self.dispatch_command(*msg, sender, root);
+                drop(lease);
+            }
             AppCmdMsg::Shell(msg) => self.dispatch_shell_command(msg, sender, root),
             AppCmdMsg::Games(msg) => self.dispatch_games_command(msg, sender, root),
             AppCmdMsg::Mods(msg) => self.dispatch_mods_command(msg, sender, root),
@@ -518,6 +532,12 @@ impl App {
         use crate::app::messages::GamesCmdMsg;
 
         match msg {
+            GamesCmdMsg::LocationAccessChecked(result) => match result {
+                Ok(blocked) => self.session.location_blocked = blocked.into_iter().collect(),
+                Err(error) => {
+                    self.push_notification(&format!("Could not check folder access: {error}"))
+                }
+            },
             GamesCmdMsg::ModsLoaded(result, preserve) => {
                 self.handle_cmd_mods_loaded(result, preserve, &sender)
             }
@@ -734,6 +754,9 @@ impl App {
         use crate::app::messages::MigrationCmdMsg;
 
         match msg {
+            MigrationCmdMsg::ImportFolderSelected(role, result) => {
+                self.handle_import_folder_selected(role, result, root, &sender)
+            }
             MigrationCmdMsg::GameExportedForSnap(result) => {
                 self.handle_cmd_game_exported_for_snap(result)
             }
@@ -744,5 +767,88 @@ impl App {
                 self.handle_cmd_appimage_export_imported(result, &sender)
             }
         }
+    }
+}
+
+fn requires_game_access(msg: &AppMsg) -> bool {
+    use crate::app::messages::{DownloadsMsg, GamesMsg, ShellMsg, ToolsMsg};
+    match msg {
+        AppMsg::Mods(_) | AppMsg::Plugins(_) | AppMsg::Install(_) => true,
+        AppMsg::Tools(ToolsMsg::LaunchTool(_)) => true,
+        AppMsg::Downloads(
+            DownloadsMsg::InstallDownload(_) | DownloadsMsg::ReinstallDownload(_),
+        ) => true,
+        AppMsg::Shell(
+            ShellMsg::DeployClicked
+            | ShellMsg::DeployConfirmed
+            | ShellMsg::DeployVanillaConfirmed(_)
+            | ShellMsg::PurgeClicked
+            | ShellMsg::PurgeConfirmed,
+        ) => true,
+        AppMsg::Games(msg) => !matches!(
+            msg,
+            GamesMsg::GameSelected(_)
+                | GamesMsg::SettingsClicked
+                | GamesMsg::SettingsClosed
+                | GamesMsg::ManageGamesClicked
+                | GamesMsg::ManageGamesClosed
+                | GamesMsg::GamesConfigured(_, _)
+                | GamesMsg::RemoveCurrentGame
+                | GamesMsg::RemoveGameConfirmed { .. }
+                | GamesMsg::NexusApiKeyUpdated
+                | GamesMsg::ShowWelcomeWizard
+                | GamesMsg::WelcomeWizardConfirmed(_, _)
+                | GamesMsg::WelcomeWizardSkipped
+        ),
+        _ => false,
+    }
+}
+
+fn changes_folder_context(msg: &AppMsg) -> bool {
+    use crate::app::messages::{GamesMsg, ShellMsg};
+    matches!(
+        msg,
+        AppMsg::Migration(_)
+            | AppMsg::Games(
+                GamesMsg::GameSelected(_)
+                    | GamesMsg::GamesConfigured(_, _)
+                    | GamesMsg::WelcomeWizardConfirmed(_, _)
+                    | GamesMsg::ManageGamesClicked
+                    | GamesMsg::RemoveCurrentGame
+                    | GamesMsg::RemoveGameConfirmed { .. }
+            )
+            | AppMsg::Shell(ShellMsg::GrantGameFolderAccess | ShellMsg::GameFolderGranted(_))
+    )
+}
+
+#[cfg(test)]
+mod location_tests {
+    use super::*;
+    use crate::app::messages::{DownloadsMsg, GamesMsg};
+
+    // @variants: snap
+    #[test]
+    fn permits_recovery_navigation_while_blocking_save_changes() {
+        assert!(!requires_game_access(&AppMsg::Games(
+            GamesMsg::ManageGamesClicked
+        )));
+        assert!(requires_game_access(&AppMsg::Games(
+            GamesMsg::SyncSavesConfirmed
+        )));
+        assert!(changes_folder_context(&AppMsg::Games(
+            GamesMsg::GameSelected(1)
+        )));
+    }
+
+    // @variants: both
+    #[test]
+    fn retains_download_progress_during_folder_recovery() {
+        let progress = AppMsg::Downloads(DownloadsMsg::DownloadProgress(
+            "archive".to_string(),
+            0.5,
+            "Downloading".to_string(),
+        ));
+        assert!(!requires_game_access(&progress));
+        assert!(!changes_folder_context(&progress));
     }
 }

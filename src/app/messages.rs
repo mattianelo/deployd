@@ -24,6 +24,7 @@ use crate::models::download::DownloadFilter;
 
 #[derive(Debug)]
 pub(crate) enum AppMsg {
+    Recovery(super::location_recovery::RecoveryMsg),
     Shell(ShellMsg),
     Games(GamesMsg),
     Mods(ModsMsg),
@@ -363,10 +364,6 @@ pub(crate) enum MigrationMsg {
     PreviewAppImageExportChosen(std::path::PathBuf),
     /// User chose to import a previewed AppImage export bundle.
     ImportAppImageExport(std::path::PathBuf),
-    /// User confirmed the game folder for an AppImage export import.
-    ImportGameFolderChosen(std::path::PathBuf),
-    /// User confirmed the Wine prefix for an AppImage export import.
-    ImportWinePrefixChosen(std::path::PathBuf),
 }
 
 pub(crate) enum PrepareResultMsg {
@@ -427,6 +424,8 @@ impl std::fmt::Debug for PrepareResultMsg {
 
 #[derive(Debug)]
 pub(crate) enum AppCmdMsg {
+    Recovery(super::location_recovery::RecoveryCmd),
+    LocationActivityCompleted(tokio::sync::OwnedRwLockReadGuard<()>, Box<AppCmdMsg>),
     Shell(ShellCmdMsg),
     Games(GamesCmdMsg),
     Mods(ModsCmdMsg),
@@ -465,6 +464,7 @@ pub(crate) enum ShellCmdMsg {
 
 #[derive(Debug)]
 pub(crate) enum GamesCmdMsg {
+    LocationAccessChecked(Result<Vec<String>, String>),
     ModsLoaded(Result<LoadedData, String>, bool),
     CacheDirMoved {
         game_id: String,
@@ -636,6 +636,10 @@ pub(crate) enum ToolsCmdMsg {
 
 #[derive(Debug)]
 pub(crate) enum MigrationCmdMsg {
+    ImportFolderSelected(
+        crate::utils::location::FolderRole,
+        Result<Option<crate::utils::location::SelectedLocation>, String>,
+    ),
     /// Result of writing an AppImage-to-Snap export bundle.
     GameExportedForSnap(Result<crate::core::migration_export::ExportGameResult, String>),
     /// Result of reading an AppImage-to-Snap export bundle without importing it.

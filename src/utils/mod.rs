@@ -1,4 +1,5 @@
 pub mod fomod_resolver;
+pub(crate) mod location;
 pub mod nxm_handler;
 pub mod paths;
 pub mod plugin_header;

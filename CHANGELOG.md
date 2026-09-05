@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Snap
+
+- Added guided recovery for inaccessible game folders and Wine prefixes. Manage Games can reopen
+  the folder picker near the remembered original location and reconnect games sharing that folder
+  after explicit authorization.
+- Folder recovery now preserves durable repair state across restarts, repairs recognized tool links
+  and interrupted save references, and protects modified links. Affected operations remain blocked
+  while repairs need attention. Migration exports omit package-specific folder permissions.
+- Downloads and custom-cache recovery retain their existing behavior, including the external-drive
+  Downloads fallback requiring the removable-media connection.
+
 ### AppImage and Snap
 
 - Select Mode now stays active after enabling, disabling, or removing selected entries and remains

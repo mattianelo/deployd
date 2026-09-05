@@ -130,6 +130,18 @@ Deployd prompts for the Snap's manual removable-media connection. The displayed 
 active Snap instance name, including the instance key used by parallel development installations.
 Run the command, then select the downloads folder again.
 
+If a saved game folder or Wine prefix becomes inaccessible in the Snap, open Manage Games and
+choose its Restore access action. Deployd remembers the original location when the desktop portal
+provides it and suggests it in the folder picker; you must select the original folder again to
+authorize access. Older grants may require manual navigation and confirmation. A desktop may
+ignore the suggested starting folder.
+
+Recovery updates games sharing that selected folder together and repairs recognized tool links and
+interrupted save references. Repairs resume after restart. Modified links are preserved and reported;
+affected game operations stay blocked until recovery finishes. Changing to a different installation
+uses the separate Change folder action. Downloads and custom-cache recovery are unchanged, including
+the manual removable-media connection needed when the external-drive Downloads portal route fails.
+
 AppImage-to-Snap game migration preserves installed-mod source metadata, download metadata, and
 the profile associated with currently deployed files. AppImage archive paths are cleared because
 they are not valid inside the Snap; rescanning the Snap downloads folder reattaches those archives.

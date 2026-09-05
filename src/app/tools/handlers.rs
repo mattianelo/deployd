@@ -361,7 +361,7 @@ impl App {
         self.rebuild_tool_buttons(sender);
 
         if let Some(tracker) = self.session.tracker.clone() {
-            sender.oneshot_command(async move {
+            self.location_command(sender, async move {
                 AppCmdMsg::Tools(crate::app::messages::ToolsCmdMsg::Saved(
                     tracker
                         .insert_tool(&tool_clone)
@@ -378,7 +378,7 @@ impl App {
 
         if let Some(tracker) = self.session.tracker.clone() {
             let id = tool_id.clone();
-            sender.oneshot_command(async move {
+            self.location_command(sender, async move {
                 AppCmdMsg::Tools(crate::app::messages::ToolsCmdMsg::Deleted(
                     tracker
                         .delete_tool(&id)
@@ -401,7 +401,7 @@ impl App {
         }
 
         if let Some(tracker) = self.session.tracker.clone() {
-            sender.oneshot_command(async move {
+            self.location_command(sender, async move {
                 AppCmdMsg::Tools(crate::app::messages::ToolsCmdMsg::WorkingDirSaved(
                     tracker
                         .update_tool_working_dir(&tool_id, &new_dir)
@@ -603,7 +603,7 @@ impl App {
         });
         let show_setup_console = tool_launcher::initial_setup_required(&wine_config);
         self.show_tool_launch_dialog(root, &tool_name, show_setup_console, sender);
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             let launch_cancel = cancel.clone();
             let session_cancel = cancel.clone();
             let original_tool_name = tool_name.clone();

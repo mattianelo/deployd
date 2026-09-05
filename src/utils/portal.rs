@@ -10,9 +10,17 @@ use gio::prelude::*;
 /// list is empty, and `Err` on cancellation or portal unavailability.
 /// Callers that use `if let Ok(Some(path))` treat all outcomes correctly.
 pub async fn select_folder(title: &str) -> Result<Option<PathBuf>> {
+    select_folder_at(title, None).await
+}
+
+pub(crate) async fn select_folder_at(
+    title: &str,
+    initial: Option<&Path>,
+) -> Result<Option<PathBuf>> {
     let files = ashpd::desktop::file_chooser::SelectedFiles::open_file()
         .title(title)
         .directory(true)
+        .current_folder::<&Path>(initial)?
         .send()
         .await?
         .response()?;
@@ -24,6 +32,41 @@ pub async fn select_folder(title: &str) -> Result<Option<PathBuf>> {
         .map(|(p, _)| p);
 
     Ok(path)
+}
+
+pub(crate) async fn select_location(
+    title: &str,
+    initial: Option<&Path>,
+    kind: crate::utils::snap::SelectedFolderKind,
+) -> Result<Option<crate::utils::location::SelectedLocation>> {
+    let path = match select_folder_at(title, initial).await {
+        Err(error)
+            if matches!(
+                error.downcast_ref::<ashpd::Error>(),
+                Some(ashpd::Error::Response(
+                    ashpd::desktop::ResponseError::Cancelled
+                ))
+            ) =>
+        {
+            return Ok(None);
+        }
+        result => match result? {
+            Some(path) => path,
+            None => return Ok(None),
+        },
+    };
+    let location = crate::utils::location::SelectedLocation::capture(path).await;
+    let root = location.root.clone();
+    tokio::task::spawn_blocking(move || {
+        crate::utils::snap::validate_selected_folder(&root, kind)
+            .map_err(|error| anyhow::anyhow!(error.to_string()))
+    })
+    .await??;
+    Ok(Some(location))
+}
+
+pub(crate) fn is_document_path(path: &Path) -> bool {
+    split_document_portal_path(path).is_some()
 }
 
 /// Move a file to the desktop Trash.

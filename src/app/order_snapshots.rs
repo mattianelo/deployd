@@ -41,7 +41,7 @@ impl App {
         let Some(game) = self.selected_game().cloned() else {
             return;
         };
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             let mod_snaps = tracker
                 .list_order_snapshots(&game.id, SnapshotKind::Mod)
                 .await
@@ -99,7 +99,7 @@ impl App {
                 .collect()
         };
 
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             AppCmdMsg::Mods(crate::app::messages::ModsCmdMsg::ModOrderSnapshotSaved(
                 tracker
                     .save_order_snapshot(&game.id, &name, SnapshotKind::Mod, &entries)
@@ -132,7 +132,7 @@ impl App {
                 .collect()
         };
 
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             AppCmdMsg::Plugins(
                 crate::app::messages::PluginsCmdMsg::PluginOrderSnapshotSaved(
                     tracker
@@ -156,7 +156,7 @@ impl App {
             return;
         };
 
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             let result = async {
                 tracker
                     .restore_mod_order_snapshot(&snapshot_id, &game.id)
@@ -185,7 +185,7 @@ impl App {
             return;
         };
 
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             let result = async {
                 tracker
                     .restore_plugin_order_snapshot(&snapshot_id, &game.id)
@@ -211,7 +211,7 @@ impl App {
             return;
         };
 
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::OrderSnapshotDeleted(
                 tracker
                     .delete_order_snapshot(&snapshot_id)

@@ -38,13 +38,23 @@ pub(crate) async fn load_game_data(
 ) -> Result<LoadedData, String> {
     let game_id = &game.id;
     let mut access_warnings = Vec::new();
-    let game_folder_accessible = if matches!(mode, GameLoadMode::OpenGame) {
+    let repair_pending = if snap::is_snap() {
+        tracker.ensure_location_ready(game_id).await.err()
+    } else {
+        None
+    };
+    if let Some(error) = &repair_pending {
+        access_warnings.push(error.to_string());
+    }
+    let game_folder_accessible = if repair_pending.is_some() {
+        false
+    } else if matches!(mode, GameLoadMode::OpenGame) || snap::is_snap() {
         match snap::validate_selected_folder(&game.path, SelectedFolderKind::GameFolder) {
             Ok(()) => true,
             Err(error) => {
                 access_warnings.push(format!(
                     "Access to {}'s game folder is no longer valid. Open Settings → Manage Games \
-                     and reselect the installation folder. {error}",
+                     and choose Restore game-folder access. {error}",
                     game.title
                 ));
                 false
@@ -53,7 +63,9 @@ pub(crate) async fn load_game_data(
     } else {
         true
     };
-    let wine_prefix_accessible = if matches!(mode, GameLoadMode::OpenGame) {
+    let wine_prefix_accessible = if repair_pending.is_some() {
+        false
+    } else if matches!(mode, GameLoadMode::OpenGame) || snap::is_snap() {
         match game.wine_prefix.as_deref() {
             Some(prefix) => {
                 match snap::validate_selected_folder(prefix, SelectedFolderKind::WinePrefix) {
@@ -61,7 +73,7 @@ pub(crate) async fn load_game_data(
                     Err(error) => {
                         access_warnings.push(format!(
                             "Access to {}'s Wine prefix is no longer valid. Open Settings → \
-                             Manage Games and reselect the Wine prefix. {error}",
+                             Manage Games and choose Restore Wine-prefix access. {error}",
                             game.title
                         ));
                         false
@@ -275,6 +287,7 @@ pub(crate) async fn load_game_data(
         .collect();
 
     Ok(LoadedData {
+        location_accessible: game_folder_accessible && wine_prefix_accessible,
         game_id: game_id.clone(),
         mods,
         plugins,

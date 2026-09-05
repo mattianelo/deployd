@@ -277,7 +277,7 @@ impl App {
 
         self.shell.deploying = true;
         self.begin_work(WorkKind::Deploying, "Checking deployment...");
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::DeployPreflightDone(
                 deployer::deployment_preflight(&game, &tracker)
                     .await
@@ -321,7 +321,7 @@ impl App {
         };
         self.shell.deploying = true;
         self.begin_work(WorkKind::Deploying, "Saving protection preference...");
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::VanillaProtectionSaved {
                 protect,
                 result: tracker
@@ -393,7 +393,7 @@ impl App {
         self.shell.deploying = true;
         self.begin_work(WorkKind::Deploying, "Deploying...");
 
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             if let Err(error) = tracker.save_to_profile(&profile_id, &game.id).await {
                 return AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::DeployDone(Err(
                     format!("Failed to save the active profile before deployment: {error}"),
@@ -510,7 +510,7 @@ impl App {
         self.shell.deploying = true;
         self.begin_work(WorkKind::Purging, "Purging...");
 
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PurgeDone(
                 deployer::purge(&game, &tracker, &cache_root)
                     .await
@@ -527,6 +527,17 @@ impl App {
         let Some(game) = self.selected_game().cloned() else {
             return;
         };
+        if snap::is_snap() {
+            self.handle_recovery(
+                crate::app::location_recovery::RecoveryMsg::Start(
+                    game.id,
+                    crate::utils::location::FolderRole::Game,
+                ),
+                sender,
+                root,
+            );
+            return;
+        }
         let dialog = gtk::FileDialog::builder()
             .title(format!("Confirm {} Game Folder", game.title))
             .modal(true)
@@ -564,7 +575,7 @@ impl App {
             return;
         };
         let saved_path = path.clone();
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             let result = tracker
                 .upsert_game_path(&game_id, &saved_path)
                 .await

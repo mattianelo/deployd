@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 
 use super::{PersistedGame, Tracker};
+use crate::utils::location::FolderRole;
 
 impl Tracker {
     pub async fn persist_game_configs(
@@ -45,6 +46,22 @@ impl Tracker {
             .execute(&mut *transaction)
             .await
             .with_context(|| format!("Failed to save game '{}'", config.game.title))?;
+            for (role, path) in [
+                (FolderRole::Game, Some(config.game.path.as_path())),
+                (FolderRole::Prefix, config.game.wine_prefix.as_deref()),
+            ] {
+                super::locations::sync_binding(
+                    &mut transaction,
+                    &config.game.id,
+                    role,
+                    path,
+                    config
+                        .locations
+                        .iter()
+                        .find(|selection| selection.role == role),
+                )
+                .await?;
+            }
         }
         for game_id in hidden_ids {
             sqlx::query(
@@ -84,6 +101,7 @@ impl Tracker {
         wine_prefix: Option<&std::path::Path>,
         custom: bool,
     ) -> Result<()> {
+        let mut transaction = self.pool.begin().await?;
         sqlx::query(
             "INSERT INTO games (id, title, path, data_subdir, engine, wine_prefix, custom, hidden)
              VALUES (?, ?, ?, ?, ?, ?, ?, 0)
@@ -103,26 +121,49 @@ impl Tracker {
         .bind(engine)
         .bind(wine_prefix.map(|p| p.to_string_lossy().into_owned()))
         .bind(custom as i32)
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await?;
+        super::locations::sync_binding(&mut transaction, id, FolderRole::Game, Some(path), None)
+            .await?;
+        super::locations::sync_binding(&mut transaction, id, FolderRole::Prefix, wine_prefix, None)
+            .await?;
+        transaction.commit().await?;
         Ok(())
     }
 
     /// Persist only the game folder path (used by the game folder confirmation dialog).
     pub async fn upsert_game_path(&self, game_id: &str, path: &std::path::Path) -> Result<()> {
+        let selected = crate::utils::location::SelectedLocation::capture(path.to_path_buf()).await;
+        let mut transaction = self.pool.begin().await?;
         sqlx::query(
             "INSERT INTO games (id, path) VALUES (?, ?)
              ON CONFLICT(id) DO UPDATE SET path = excluded.path",
         )
         .bind(game_id)
         .bind(path.to_string_lossy().as_ref())
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await?;
+        super::locations::sync_binding(
+            &mut transaction,
+            game_id,
+            FolderRole::Game,
+            Some(path),
+            None,
+        )
+        .await?;
+        let location = sqlx::query("UPDATE folder_locations SET host_hint=COALESCE(?,host_hint) WHERE root=? AND id IN (SELECT location_id FROM game_locations WHERE game_id=? AND role='game')")
+            .bind(selected.host_hint.map(|path| path.to_string_lossy().into_owned())).bind(path.to_string_lossy().into_owned()).bind(game_id);
+        location.execute(&mut *transaction).await?;
+        transaction.commit().await?;
         Ok(())
     }
 
     /// Load all persisted game configurations from the games table.
     pub async fn load_persisted_games(&self) -> Result<Vec<PersistedGame>> {
+        self.load_games(false).await
+    }
+
+    pub(crate) async fn load_games(&self, include_hidden: bool) -> Result<Vec<PersistedGame>> {
         #[allow(clippy::type_complexity)]
         // Flat SQLx row tuple — a struct would need manual FromRow impl.
         let rows: Vec<(
@@ -135,8 +176,9 @@ impl Tracker {
             Option<i32>,
         )> = sqlx::query_as(
             "SELECT id, title, path, data_subdir, engine, wine_prefix, custom
-                 FROM games WHERE path IS NOT NULL AND (hidden IS NULL OR hidden = 0)",
+                 FROM games WHERE path IS NOT NULL AND (? OR hidden IS NULL OR hidden = 0)",
         )
+        .bind(include_hidden)
         .fetch_all(&self.pool)
         .await?;
         Ok(rows

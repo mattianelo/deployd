@@ -6,6 +6,7 @@ pub mod downloads;
 pub mod files;
 pub mod games;
 pub mod groups;
+pub(crate) mod locations;
 pub mod migrations;
 pub mod mods;
 pub mod order_snapshots;
@@ -277,6 +278,7 @@ impl Tracker {
 
         migrations::migrate_game_ids(&pool).await?;
         migrations::migrate_games_columns(&pool).await?;
+        locations::migrate(&pool).await?;
         migrations::migrate_nexus_columns(&pool).await?;
         migrations::migrate_download_columns(&pool).await?;
         migrations::migrate_mod_source_metadata_columns(&pool).await?;

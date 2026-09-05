@@ -26,7 +26,7 @@ impl App {
             return;
         };
         let input = sender.input_sender().clone();
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             let refresh_result: Result<usize, String> = async {
                 let api_key = tracker
                     .get_setting("nexus_api_key")
@@ -148,7 +148,7 @@ impl App {
 
         self.show_toast("Downloading update...");
 
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             let result: Result<(), String> = async {
                 let api_key = tracker
                     .get_setting("nexus_api_key")

@@ -8,6 +8,7 @@ use relm4::prelude::*;
 use crate::core::game;
 use crate::core::tracker::PersistedGame;
 use crate::models::game::{Game, GameConfig, GameEngine};
+use crate::utils::location::{FolderRole, FolderSelection, SelectedLocation};
 use crate::utils::paths;
 use crate::utils::snap::{self, SelectedFolderKind};
 
@@ -21,6 +22,8 @@ struct GameEntry {
 
 pub struct GameSetupDialog {
     entries: Vec<GameEntry>,
+    selected_locations: HashMap<PathBuf, SelectedLocation>,
+    dirty: bool,
     /// Custom cache dirs per game_id (passed in at init, updated on change).
     game_cache_dirs: HashMap<String, PathBuf>,
     /// Navigation view — "list" vs "add".
@@ -48,10 +51,10 @@ pub enum GameSetupMsg {
     ToggleEnabled(usize),
     /// Browse for a new game folder for entry at index.
     BrowsePath(usize),
-    PathChosen(usize, PathBuf),
+    PathChosen(usize, PathBuf, Option<PathBuf>),
     /// Browse for a wine prefix override for entry at index.
     BrowsePrefix(usize),
-    PrefixChosen(usize, PathBuf),
+    PrefixChosen(usize, PathBuf, Option<PathBuf>),
     /// Browse for a custom cache folder for the game at index.
     BrowseCacheDir(usize),
     CacheDirChosen(usize, PathBuf),
@@ -69,15 +72,17 @@ pub enum GameSetupMsg {
     GameTypeSelected(u32),
     /// Browse for the new game's installation folder.
     BrowseNewPath,
-    NewPathChosen(PathBuf),
+    NewPathChosen(PathBuf, Option<PathBuf>),
     /// Browse for the new game's wine prefix.
     BrowseNewPrefix,
-    NewPrefixChosen(PathBuf),
+    NewPrefixChosen(PathBuf, Option<PathBuf>),
     /// Commit the pending "add" form.
     ConfirmAdd,
     /// User confirmed: emit the final game list.
     Confirm,
     Cancel,
+    FolderSelectionFailed(String),
+    RestoreAccess(usize, bool),
 }
 
 #[derive(Debug)]
@@ -88,6 +93,10 @@ pub enum GameSetupOutput {
         hidden_ids: Vec<String>,
     },
     Closed,
+    RestoreAccessRequested {
+        game_id: String,
+        wine_prefix: bool,
+    },
     /// User selected a new cache directory for a game; the App runs the move.
     CacheDirChangeRequested {
         game_id: String,
@@ -176,7 +185,7 @@ impl GameSetupDialog {
         let path_btn = gtk::Button::from_icon_name("folder-symbolic");
         path_btn.set_valign(gtk::Align::Center);
         path_btn.add_css_class("flat");
-        path_btn.set_tooltip_text(Some("Browse…"));
+        path_btn.set_tooltip_text(Some("Change folder…"));
         {
             let input = sender.input_sender().clone();
             path_btn.connect_clicked(move |_| {
@@ -200,7 +209,7 @@ impl GameSetupDialog {
         let prefix_btn = gtk::Button::from_icon_name("folder-symbolic");
         prefix_btn.set_valign(gtk::Align::Center);
         prefix_btn.add_css_class("flat");
-        prefix_btn.set_tooltip_text(Some("Browse…"));
+        prefix_btn.set_tooltip_text(Some("Change folder…"));
         {
             let input = sender.input_sender().clone();
             prefix_btn.connect_clicked(move |_| {
@@ -209,6 +218,26 @@ impl GameSetupDialog {
         }
         prefix_row.add_suffix(&prefix_btn);
         row.add_row(&prefix_row);
+        if snap::is_snap() {
+            for (label, wine_prefix) in [
+                ("Restore game-folder access", false),
+                ("Restore Wine-prefix access", true),
+            ] {
+                if wine_prefix && entry.game.wine_prefix.is_none() {
+                    continue;
+                }
+                let recovery = adw::ActionRow::builder()
+                    .title(label)
+                    .activatable(true)
+                    .build();
+                recovery.add_suffix(&gtk::Image::from_icon_name("view-refresh-symbolic"));
+                let input = sender.input_sender().clone();
+                recovery.connect_activated(move |_| {
+                    let _ = input.send(GameSetupMsg::RestoreAccess(idx, wine_prefix));
+                });
+                row.add_row(&recovery);
+            }
+        }
 
         // Cache folder row.
         let cache_row = adw::ActionRow::new();
@@ -546,6 +575,8 @@ impl Component for GameSetupDialog {
 
         let model = GameSetupDialog {
             entries,
+            selected_locations: HashMap::new(),
+            dirty: false,
             game_cache_dirs,
             navigation_view,
             games_list,
@@ -575,7 +606,25 @@ impl Component for GameSetupDialog {
 
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, root: &Self::Root) {
         match msg {
+            GameSetupMsg::FolderSelectionFailed(message) => Self::show_path_error(root, &message),
+            GameSetupMsg::RestoreAccess(idx, wine_prefix) => {
+                if self.dirty {
+                    Self::show_path_error(
+                        root,
+                        "Save or cancel your Manage Games changes before restoring folder access.",
+                    );
+                    return;
+                }
+                if let Some(entry) = self.entries.get(idx) {
+                    let _ = sender.output(GameSetupOutput::RestoreAccessRequested {
+                        game_id: entry.game.id.clone(),
+                        wine_prefix,
+                    });
+                }
+            }
+
             GameSetupMsg::ToggleEnabled(idx) => {
+                self.dirty = true;
                 if let Some(entry) = self.entries.get_mut(idx) {
                     entry.enabled = !entry.enabled;
                 }
@@ -585,21 +634,38 @@ impl Component for GameSetupDialog {
             GameSetupMsg::BrowsePath(idx) => {
                 let input = sender.input_sender().clone();
                 sender.oneshot_command(async move {
-                    if let Ok(Some(path)) =
-                        crate::utils::portal::select_folder("Select Game Folder").await
+                    match crate::utils::portal::select_location(
+                        "Select Game Folder",
+                        None,
+                        SelectedFolderKind::GameFolder,
+                    )
+                    .await
                     {
-                        let _ = input.send(GameSetupMsg::PathChosen(idx, path));
+                        Ok(Some(location)) => {
+                            let _ = input.send(GameSetupMsg::PathChosen(
+                                idx,
+                                location.root,
+                                location.host_hint,
+                            ));
+                        }
+                        Ok(None) => {}
+                        Err(error) => {
+                            let _ =
+                                input.send(GameSetupMsg::FolderSelectionFailed(error.to_string()));
+                        }
                     }
                 });
             }
 
-            GameSetupMsg::PathChosen(idx, path) => {
-                if let Err(message) =
-                    snap::validate_selected_folder(&path, SelectedFolderKind::GameFolder)
-                {
-                    Self::show_path_error(root, &message.to_string());
-                    return;
-                }
+            GameSetupMsg::PathChosen(idx, path, host_hint) => {
+                self.dirty = true;
+                self.selected_locations.insert(
+                    path.clone(),
+                    SelectedLocation {
+                        root: path.clone(),
+                        host_hint,
+                    },
+                );
                 if let Some(entry) = self.entries.get_mut(idx) {
                     entry.game.path = path;
                 }
@@ -609,21 +675,38 @@ impl Component for GameSetupDialog {
             GameSetupMsg::BrowsePrefix(idx) => {
                 let input = sender.input_sender().clone();
                 sender.oneshot_command(async move {
-                    if let Ok(Some(path)) =
-                        crate::utils::portal::select_folder("Select Wine Prefix Folder").await
+                    match crate::utils::portal::select_location(
+                        "Select Wine Prefix Folder",
+                        None,
+                        SelectedFolderKind::WinePrefix,
+                    )
+                    .await
                     {
-                        let _ = input.send(GameSetupMsg::PrefixChosen(idx, path));
+                        Ok(Some(location)) => {
+                            let _ = input.send(GameSetupMsg::PrefixChosen(
+                                idx,
+                                location.root,
+                                location.host_hint,
+                            ));
+                        }
+                        Ok(None) => {}
+                        Err(error) => {
+                            let _ =
+                                input.send(GameSetupMsg::FolderSelectionFailed(error.to_string()));
+                        }
                     }
                 });
             }
 
-            GameSetupMsg::PrefixChosen(idx, path) => {
-                if let Err(message) =
-                    snap::validate_selected_folder(&path, SelectedFolderKind::WinePrefix)
-                {
-                    Self::show_path_error(root, &message.to_string());
-                    return;
-                }
+            GameSetupMsg::PrefixChosen(idx, path, host_hint) => {
+                self.dirty = true;
+                self.selected_locations.insert(
+                    path.clone(),
+                    SelectedLocation {
+                        root: path.clone(),
+                        host_hint,
+                    },
+                );
                 if let Some(entry) = self.entries.get_mut(idx) {
                     entry.game.wine_prefix = Some(path);
                 }
@@ -683,6 +766,7 @@ impl Component for GameSetupDialog {
             }
 
             GameSetupMsg::RemoveGame(idx) => {
+                self.dirty = true;
                 self.entries.remove(idx);
                 self.rebuild_games(&sender);
             }
@@ -708,21 +792,36 @@ impl Component for GameSetupDialog {
             GameSetupMsg::BrowseNewPath => {
                 let input = sender.input_sender().clone();
                 sender.oneshot_command(async move {
-                    if let Ok(Some(path)) =
-                        crate::utils::portal::select_folder("Select Game Installation Folder").await
+                    match crate::utils::portal::select_location(
+                        "Select Game Installation Folder",
+                        None,
+                        SelectedFolderKind::GameFolder,
+                    )
+                    .await
                     {
-                        let _ = input.send(GameSetupMsg::NewPathChosen(path));
+                        Ok(Some(location)) => {
+                            let _ = input.send(GameSetupMsg::NewPathChosen(
+                                location.root,
+                                location.host_hint,
+                            ));
+                        }
+                        Ok(None) => {}
+                        Err(error) => {
+                            let _ =
+                                input.send(GameSetupMsg::FolderSelectionFailed(error.to_string()));
+                        }
                     }
                 });
             }
 
-            GameSetupMsg::NewPathChosen(path) => {
-                if let Err(message) =
-                    snap::validate_selected_folder(&path, SelectedFolderKind::GameFolder)
-                {
-                    Self::show_path_error(root, &message.to_string());
-                    return;
-                }
+            GameSetupMsg::NewPathChosen(path, host_hint) => {
+                self.selected_locations.insert(
+                    path.clone(),
+                    SelectedLocation {
+                        root: path.clone(),
+                        host_hint,
+                    },
+                );
                 self.new_path_entry.set_text(&path.to_string_lossy());
                 self.new_path = Some(path);
                 self.update_add_btn();
@@ -731,27 +830,43 @@ impl Component for GameSetupDialog {
             GameSetupMsg::BrowseNewPrefix => {
                 let input = sender.input_sender().clone();
                 sender.oneshot_command(async move {
-                    if let Ok(Some(path)) =
-                        crate::utils::portal::select_folder("Select Wine Prefix Folder").await
+                    match crate::utils::portal::select_location(
+                        "Select Wine Prefix Folder",
+                        None,
+                        SelectedFolderKind::WinePrefix,
+                    )
+                    .await
                     {
-                        let _ = input.send(GameSetupMsg::NewPrefixChosen(path));
+                        Ok(Some(location)) => {
+                            let _ = input.send(GameSetupMsg::NewPrefixChosen(
+                                location.root,
+                                location.host_hint,
+                            ));
+                        }
+                        Ok(None) => {}
+                        Err(error) => {
+                            let _ =
+                                input.send(GameSetupMsg::FolderSelectionFailed(error.to_string()));
+                        }
                     }
                 });
             }
 
-            GameSetupMsg::NewPrefixChosen(path) => {
-                if let Err(message) =
-                    snap::validate_selected_folder(&path, SelectedFolderKind::WinePrefix)
-                {
-                    Self::show_path_error(root, &message.to_string());
-                    return;
-                }
+            GameSetupMsg::NewPrefixChosen(path, host_hint) => {
+                self.selected_locations.insert(
+                    path.clone(),
+                    SelectedLocation {
+                        root: path.clone(),
+                        host_hint,
+                    },
+                );
                 self.new_prefix_entry.set_text(&path.to_string_lossy());
                 self.new_prefix = Some(path);
                 self.update_add_btn();
             }
 
             GameSetupMsg::ConfirmAdd => {
+                self.dirty = true;
                 let Some(path) = self.new_path.take() else {
                     return;
                 };
@@ -789,6 +904,21 @@ impl Component for GameSetupDialog {
                     .map(|e| GameConfig {
                         game: e.game.clone(),
                         custom: true,
+                        locations: [
+                            (FolderRole::Game, Some(e.game.path.as_path())),
+                            (FolderRole::Prefix, e.game.wine_prefix.as_deref()),
+                        ]
+                        .into_iter()
+                        .filter_map(|(role, path)| {
+                            self.selected_locations.get(path?).cloned().map(|location| {
+                                FolderSelection {
+                                    role,
+                                    location,
+                                    relative: PathBuf::new(),
+                                }
+                            })
+                        })
+                        .collect(),
                     })
                     .collect();
                 let hidden_ids: Vec<String> = self

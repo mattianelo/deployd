@@ -13,6 +13,7 @@ pub(super) async fn import_database_transaction(
     manifest: &ExportManifest,
     game: &Game,
     import_paths: &ImportPaths,
+    selections: &[crate::utils::location::FolderSelection],
 ) -> Result<()> {
     let mut tx = tracker
         .pool
@@ -21,6 +22,16 @@ pub(super) async fn import_database_transaction(
         .context("Failed to begin import")?;
 
     import_database_rows(&mut tx, export_pool, manifest, game, import_paths).await?;
+    for selection in selections {
+        crate::core::tracker::locations::sync_binding(
+            &mut tx,
+            &game.id,
+            selection.role,
+            Some(&selection.location.root),
+            Some(selection),
+        )
+        .await?;
+    }
 
     tx.commit()
         .await

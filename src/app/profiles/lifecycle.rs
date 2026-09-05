@@ -172,7 +172,7 @@ impl App {
         let old_profile_id = old_profile.as_ref().map(|p| p.id.clone());
         let old_save_mode = old_profile.map(|p| p.save_mode).unwrap_or(SaveMode::Global);
 
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             let result = async {
                 if let Some(old_id) = &old_profile_id {
                     tracker
@@ -238,7 +238,7 @@ impl App {
         };
         let save_set =
             save_manager::SaveSetId::for_profile(&game.id, &profile.id, &profile.save_mode);
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             let result = save_manager::initialize_save_set(&game, &save_set)
                 .await
                 .map(|_| (idx, None))
@@ -265,7 +265,7 @@ impl App {
         let global = save_manager::SaveSetId::Global {
             game_id: game.id.clone(),
         };
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             let result = async {
                 save_manager::initialize_save_set(&game, &global)
                     .await
@@ -310,7 +310,7 @@ impl App {
             .get(self.session.active_profile_idx)
             .map(|p| p.id.clone());
 
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             let result = async {
                 if let Some(active_id) = &active_profile_id {
                     tracker
@@ -352,7 +352,7 @@ impl App {
 
         let new_name = format!("{} (Copy)", source_profile.name);
 
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             let result = async {
                 tracker
                     .save_to_profile(&source_profile.id, &game.id)
@@ -425,7 +425,7 @@ impl App {
             return;
         };
 
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             let result = async {
                 let transition = if game::has_save_management(&game) {
                     let source_set = save_manager::SaveSetId::for_profile(
@@ -518,7 +518,7 @@ impl App {
         };
         let profile_id = profile.id.clone();
 
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             let result = tracker
                 .rename_profile(&profile_id, &new_name)
                 .await
@@ -547,7 +547,7 @@ impl App {
             SaveMode::ProfileSpecific => SaveMode::Global,
         };
         let profile_id = profile.id.clone();
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             let result = async {
                 if game::has_save_management(&game) {
                     let old_set = save_manager::SaveSetId::for_profile(
@@ -626,7 +626,7 @@ impl App {
         let global = save_manager::SaveSetId::Global {
             game_id: game.id.clone(),
         };
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             let result = async {
                 save_manager::initialize_save_set(&game, &global)
                     .await
@@ -658,7 +658,7 @@ impl App {
             return;
         };
         let profile_id = profile.id.clone();
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             let save_set =
                 save_manager::SaveSetId::for_profile(&game.id, &profile_id, &profile.save_mode);
             let backup_cap = save_manager::configured_backup_cap_bytes(&tracker).await;
@@ -674,7 +674,7 @@ impl App {
         let Some(game) = self.selected_game().cloned() else {
             return;
         };
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             let result = save_manager::list_backups(&game.id)
                 .await
                 .map_err(|error| error.to_string());
@@ -700,7 +700,7 @@ impl App {
         };
         let save_set =
             save_manager::SaveSetId::for_profile(&game.id, &profile.id, &profile.save_mode);
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             let result = save_manager::create_manual_backup(&game, &save_set, label)
                 .await
                 .map(|_| "Save backup created".to_string())
@@ -755,7 +755,7 @@ impl App {
         let active_set =
             save_manager::SaveSetId::for_profile(&game.id, &profile.id, &profile.save_mode);
         let tracker = self.session.tracker.clone();
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             let backup_cap = match tracker {
                 Some(tracker) => save_manager::configured_backup_cap_bytes(&tracker).await,
                 None => save_manager::DEFAULT_AUTOMATIC_BACKUP_CAP_BYTES,
@@ -803,7 +803,7 @@ impl App {
         let Some(game) = self.selected_game().cloned() else {
             return;
         };
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             let result = save_manager::delete_backup(&game.id, &backup_id)
                 .await
                 .map(|_| "Save backup deleted".to_string())
@@ -822,7 +822,7 @@ impl App {
         ) {
             let key = format!("last_profile_{}", game.id);
             let id = profile.id.clone();
-            sender.oneshot_command(async move {
+            self.location_command(sender, async move {
                 let result = tracker
                     .set_setting(&key, &id)
                     .await

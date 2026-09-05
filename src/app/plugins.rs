@@ -176,7 +176,7 @@ impl App {
             }
         }
         self.shell.needs_deploy = true;
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             let result = async {
                 tracker.set_all_plugins_enabled(&game.id, true).await?;
                 if let Some(pid) = &profile_id {
@@ -209,7 +209,7 @@ impl App {
             }
         }
         self.shell.needs_deploy = true;
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             let result = async {
                 tracker.set_all_plugins_enabled(&game.id, false).await?;
                 if let Some(pid) = &profile_id {
@@ -293,7 +293,7 @@ impl App {
         #[cfg(feature = "loot")]
         {
             let result_game_id = game_id.clone();
-            sender.oneshot_command(async move {
+            self.location_command(sender, async move {
                 AppCmdMsg::Plugins(crate::app::messages::PluginsCmdMsg::LootSortDone(
                     result_game_id,
                     crate::core::loot_sort::sort_plugins(
@@ -389,7 +389,7 @@ impl App {
                 if let (Some(tracker), Some(game)) =
                     (self.session.tracker.clone(), self.selected_game().cloned())
                 {
-                    sender.oneshot_command(async move {
+                    self.location_command(sender, async move {
                         let result = async {
                             if !updates.is_empty() {
                                 tracker
@@ -529,7 +529,7 @@ impl App {
         self.plugins.selection_dirty = true;
 
         let _game_id = game.id.clone();
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             let result = async {
                 for plugin_id in &plugin_ids {
                     tracker.toggle_plugin(plugin_id, true).await?;
@@ -577,7 +577,7 @@ impl App {
         self.shell.needs_deploy = true;
         self.plugins.selection_dirty = true;
 
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             let result = async {
                 for plugin_id in &plugin_ids {
                     tracker.toggle_plugin(plugin_id, false).await?;

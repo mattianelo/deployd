@@ -31,6 +31,15 @@ impl App {
                 return;
             }
         };
+        if let Some(tracker) = self.session.tracker.clone() {
+            self.location_command(sender, async move {
+                AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::LocationAccessChecked(
+                    crate::core::location_recovery::blocked_games(&tracker)
+                        .await
+                        .map_err(|error| error.to_string()),
+                ))
+            });
+        }
         let count = self.ui.game_model.n_items();
         for _ in 0..count {
             self.ui.game_model.remove(0);
@@ -67,6 +76,17 @@ impl App {
                 .transient_for(root)
                 .launch((detected, vec![], cache_dirs, can_export_for_snap))
                 .forward(sender.input_sender(), |output| match output {
+                    GameSetupOutput::RestoreAccessRequested {
+                        game_id,
+                        wine_prefix,
+                    } => AppMsg::Recovery(crate::app::location_recovery::RecoveryMsg::Start(
+                        game_id,
+                        if wine_prefix {
+                            crate::utils::location::FolderRole::Prefix
+                        } else {
+                            crate::utils::location::FolderRole::Game
+                        },
+                    )),
                     GameSetupOutput::Confirmed {
                         enabled,
                         hidden_ids,
@@ -113,7 +133,7 @@ impl App {
             return;
         };
         let configs_for_db = configs.clone();
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             let result = tracker
                 .persist_game_configs(&configs_for_db, &hidden_ids)
                 .await
@@ -140,7 +160,7 @@ impl App {
             }
         }
         if let Some(tracker) = self.session.tracker.clone() {
-            sender.oneshot_command(async move {
+            self.location_command(sender, async move {
                 let result: Result<(), String> = async {
                     for id in &ids {
                         tracker
@@ -218,7 +238,7 @@ impl App {
         } else {
             None
         };
-        sender.oneshot_command(async move {
+        self.location_command(sender, async move {
             let result: Result<Vec<String>, String> = async {
                 let mod_ids = tracker
                     .remove_managed_game(&game_id, delete_mods)

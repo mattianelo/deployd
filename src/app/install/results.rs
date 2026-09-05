@@ -176,7 +176,7 @@ impl App {
                         self.install.replacement =
                             Some(self.replacement_context(&old_mod_id, old_priority));
                         let tracker = self.session.tracker.clone();
-                        sender.oneshot_command(async move {
+                        self.location_command(sender, async move {
                             let selections = if let Some(t) = tracker {
                                 t.get_fomod_selections(&old_mod_id)
                                     .await
@@ -262,7 +262,7 @@ impl App {
                         && let Some(entry) = self.download.all.iter().find(|e| e.id == dl_id)
                     {
                         let entry = entry.clone();
-                        sender.oneshot_command(async move {
+                        self.location_command(sender, async move {
                             let result = tracker
                                 .save_download_entry(&entry)
                                 .await
@@ -334,7 +334,7 @@ impl App {
                 && let Some(entry) = self.download.all.iter().find(|e| e.id == dl_id)
             {
                 let entry = entry.clone();
-                sender.oneshot_command(async move {
+                self.location_command(sender, async move {
                     let result = tracker
                         .save_download_entry(&entry)
                         .await
@@ -358,7 +358,7 @@ impl App {
                 if !replaced_downloads.is_empty()
                     && let Some(tracker) = self.session.tracker.clone()
                 {
-                    sender.oneshot_command(async move {
+                    self.location_command(sender, async move {
                         let result = async {
                             for entry in &replaced_downloads {
                                 tracker.save_download_entry(entry).await?;
@@ -391,7 +391,7 @@ impl App {
                 {
                     let mod_id = add_result.mod_entry.id.clone();
                     let installed_mod = add_result.mod_entry.clone();
-                    sender.oneshot_command(async move {
+                    self.location_command(sender, async move {
                         let result = async {
                             if let Some(ref version) = version_from_dl {
                                 tracker
@@ -485,7 +485,7 @@ impl App {
                 && let Some(entry) = self.download.all.iter().find(|e| e.id == dl_id)
             {
                 let entry = entry.clone();
-                sender.oneshot_command(async move {
+                self.location_command(sender, async move {
                     let result = tracker
                         .save_download_entry(&entry)
                         .await

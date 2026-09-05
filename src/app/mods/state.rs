@@ -66,7 +66,7 @@ impl App {
         if let (Some(tracker), Some(game)) =
             (self.session.tracker.clone(), self.selected_game().cloned())
         {
-            sender.oneshot_command(async move {
+            self.location_command(sender, async move {
                 let mode = if sync_txt {
                     GameLoadMode::OpenGame
                 } else {
@@ -392,6 +392,11 @@ impl App {
         for warning in &data.access_warnings {
             self.push_notification(warning);
         }
+        if data.location_accessible {
+            self.session.location_blocked.remove(&data.game_id);
+        } else {
+            self.session.location_blocked.insert(data.game_id.clone());
+        }
         self.populate_plugins(
             data.plugins,
             &data.mods,
@@ -447,7 +452,7 @@ impl App {
             return;
         }
         if let Some(tracker) = self.session.tracker.clone() {
-            sender.oneshot_command(async move {
+            self.location_command(sender, async move {
                 let result = async {
                     for (group_id, position) in updates {
                         tracker.move_group(&group_id, position).await?;
@@ -490,7 +495,7 @@ impl App {
                     return;
                 }
             };
-            sender.oneshot_command(async move {
+            self.location_command(sender, async move {
                 if let Err(e) = tracker.update_priorities(&updates).await {
                     return AppCmdMsg::Mods(crate::app::messages::ModsCmdMsg::OverridesRefreshed(
                         Err(e.to_string()),
@@ -519,7 +524,7 @@ impl App {
         drop(guard);
 
         if let Some(tracker) = self.session.tracker.clone() {
-            sender.oneshot_command(async move {
+            self.location_command(sender, async move {
                 AppCmdMsg::Plugins(crate::app::messages::PluginsCmdMsg::PluginOrderSaved(
                     tracker
                         .update_plugin_order(&updates)
@@ -536,7 +541,7 @@ impl App {
         {
             let profile_id = profile.id.clone();
             let game_id = game.id.clone();
-            sender.oneshot_command(async move {
+            self.location_command(sender, async move {
                 let result = tracker
                     .save_to_profile(&profile_id, &game_id)
                     .await

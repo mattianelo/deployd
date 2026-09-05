@@ -32,6 +32,7 @@ pub enum ModFilter {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WorkKind {
+    RecoveringLocation,
     PreparingArchive,
     ExtractingArchive,
     ProcessingArchive,
@@ -49,6 +50,7 @@ pub(crate) enum WorkKind {
 
 #[derive(Debug, Clone)]
 pub(crate) struct PendingMigrationImport {
+    pub(crate) locations: Vec<crate::utils::location::FolderSelection>,
     pub(crate) bundle_path: PathBuf,
     pub(crate) confirmed_game_path: Option<PathBuf>,
     pub(crate) confirmed_wine_prefix: Option<PathBuf>,
@@ -157,6 +159,7 @@ pub(crate) struct NxmDownloadResult {
 
 #[derive(Debug)]
 pub struct InitData {
+    pub(crate) location_blocked: Vec<String>,
     pub tracker: Tracker,
     pub mods: Vec<ModEntry>,
     pub plugins: Vec<Plugin>,
@@ -199,6 +202,7 @@ pub struct InitData {
 
 #[derive(Debug)]
 pub struct LoadedData {
+    pub(crate) location_accessible: bool,
     pub game_id: String,
     pub mods: Vec<ModEntry>,
     pub plugins: Vec<Plugin>,

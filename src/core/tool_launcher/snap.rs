@@ -207,6 +207,34 @@ fn verify_source_bridges(source_prefix: &Path, tool_prefix: &Path) -> Result<()>
     Ok(())
 }
 
+pub(crate) fn repair_source_bridges(
+    tool_prefix: &Path,
+    old_prefixes: &[&Path],
+    new_prefix: &Path,
+) -> Result<()> {
+    let source_user = prefix_user_dir(new_prefix)?;
+    let tool_user = prefix_user_dir(tool_prefix)?;
+    crate::core::location_recovery::require_contained(tool_prefix, &tool_user)?;
+    crate::core::location_recovery::require_contained(new_prefix, &source_user)?;
+    let relative_user = source_user.strip_prefix(new_prefix)?;
+    for relative in ["Documents", "AppData"] {
+        let link = tool_user.join(relative);
+        let new = source_user.join(relative);
+        let actual = std::fs::read_link(&link)
+            .context("The Snap Wine bridge was changed or removed; it was preserved")?;
+        if actual == new {
+            continue;
+        }
+        let old = old_prefixes
+            .iter()
+            .map(|prefix| prefix.join(relative_user).join(relative))
+            .find(|old| *old == actual)
+            .context("The Snap Wine bridge has a user-modified target; it was preserved")?;
+        crate::core::location_recovery::replace_owned_link(&link, &old, &new)?;
+    }
+    Ok(())
+}
+
 fn ensure_game_drive_mappings(
     source_prefix: &Path,
     tool_prefix: &Path,

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use adw::prelude::*;
@@ -6,10 +7,12 @@ use relm4::prelude::*;
 
 use crate::core::game;
 use crate::models::game::{Game, GameConfig};
-use crate::utils::snap::{self, SelectedFolderKind};
+use crate::utils::location::{FolderRole, FolderSelection, SelectedLocation};
+use crate::utils::snap::SelectedFolderKind;
 
 pub struct WelcomeWizard {
     known_opts: Vec<game::KnownGameOption>,
+    selected_locations: HashMap<PathBuf, SelectedLocation>,
     /// Whether each known game is checked by the user.
     selected: Vec<bool>,
     /// User-browsed installation folder for each known game.
@@ -31,14 +34,15 @@ pub enum WelcomeWizardMsg {
     ToggleGame(usize),
     /// Browse for the installation folder of game at index.
     BrowseInstallPath(usize),
-    InstallPathChosen(usize, PathBuf),
+    InstallPathChosen(usize, PathBuf, Option<PathBuf>),
     /// Browse for the Wine prefix of game at index.
     BrowseWinePrefix(usize),
-    WinePrefixChosen(usize, PathBuf),
+    WinePrefixChosen(usize, PathBuf, Option<PathBuf>),
     NextToDirectories,
     BackToGames,
     Finish,
     Cancel,
+    FolderSelectionFailed(String),
 }
 
 #[derive(Debug)]
@@ -374,6 +378,7 @@ impl Component for WelcomeWizard {
             selected: vec![false; n],
             install_paths: vec![None; n],
             wine_prefixes: vec![None; n],
+            selected_locations: HashMap::new(),
             navigation_view,
             games_list,
             dirs_list,
@@ -396,6 +401,9 @@ impl Component for WelcomeWizard {
 
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, root: &Self::Root) {
         match msg {
+            WelcomeWizardMsg::FolderSelectionFailed(message) => {
+                Self::show_path_error(root, &message)
+            }
             WelcomeWizardMsg::GetStarted => {
                 self.navigation_view.push_by_tag("games");
             }
@@ -420,21 +428,37 @@ impl Component for WelcomeWizard {
             WelcomeWizardMsg::BrowseInstallPath(idx) => {
                 let input = sender.input_sender().clone();
                 sender.oneshot_command(async move {
-                    if let Ok(Some(path)) =
-                        crate::utils::portal::select_folder("Select Installation Folder").await
+                    match crate::utils::portal::select_location(
+                        "Select Installation Folder",
+                        None,
+                        SelectedFolderKind::GameFolder,
+                    )
+                    .await
                     {
-                        let _ = input.send(WelcomeWizardMsg::InstallPathChosen(idx, path));
+                        Ok(Some(location)) => {
+                            let _ = input.send(WelcomeWizardMsg::InstallPathChosen(
+                                idx,
+                                location.root,
+                                location.host_hint,
+                            ));
+                        }
+                        Ok(None) => {}
+                        Err(error) => {
+                            let _ = input
+                                .send(WelcomeWizardMsg::FolderSelectionFailed(error.to_string()));
+                        }
                     }
                 });
             }
 
-            WelcomeWizardMsg::InstallPathChosen(idx, path) => {
-                if let Err(message) =
-                    snap::validate_selected_folder(&path, SelectedFolderKind::GameFolder)
-                {
-                    Self::show_path_error(root, &message.to_string());
-                    return;
-                }
+            WelcomeWizardMsg::InstallPathChosen(idx, path, host_hint) => {
+                self.selected_locations.insert(
+                    path.clone(),
+                    SelectedLocation {
+                        root: path.clone(),
+                        host_hint,
+                    },
+                );
                 if let Some(slot) = self.install_paths.get_mut(idx) {
                     *slot = Some(path);
                 }
@@ -444,21 +468,37 @@ impl Component for WelcomeWizard {
             WelcomeWizardMsg::BrowseWinePrefix(idx) => {
                 let input = sender.input_sender().clone();
                 sender.oneshot_command(async move {
-                    if let Ok(Some(path)) =
-                        crate::utils::portal::select_folder("Select Wine Prefix Folder").await
+                    match crate::utils::portal::select_location(
+                        "Select Wine Prefix Folder",
+                        None,
+                        SelectedFolderKind::WinePrefix,
+                    )
+                    .await
                     {
-                        let _ = input.send(WelcomeWizardMsg::WinePrefixChosen(idx, path));
+                        Ok(Some(location)) => {
+                            let _ = input.send(WelcomeWizardMsg::WinePrefixChosen(
+                                idx,
+                                location.root,
+                                location.host_hint,
+                            ));
+                        }
+                        Ok(None) => {}
+                        Err(error) => {
+                            let _ = input
+                                .send(WelcomeWizardMsg::FolderSelectionFailed(error.to_string()));
+                        }
                     }
                 });
             }
 
-            WelcomeWizardMsg::WinePrefixChosen(idx, path) => {
-                if let Err(message) =
-                    snap::validate_selected_folder(&path, SelectedFolderKind::WinePrefix)
-                {
-                    Self::show_path_error(root, &message.to_string());
-                    return;
-                }
+            WelcomeWizardMsg::WinePrefixChosen(idx, path, host_hint) => {
+                self.selected_locations.insert(
+                    path.clone(),
+                    SelectedLocation {
+                        root: path.clone(),
+                        host_hint,
+                    },
+                );
                 if let Some(slot) = self.wine_prefixes.get_mut(idx) {
                     *slot = Some(path);
                 }
@@ -486,6 +526,21 @@ impl Component for WelcomeWizard {
                                 wine_prefix: self.wine_prefixes.get(i).cloned().flatten(),
                             },
                             custom: true,
+                            locations: [
+                                (FolderRole::Game, self.install_paths.get(i)?.as_deref()),
+                                (FolderRole::Prefix, self.wine_prefixes.get(i)?.as_deref()),
+                            ]
+                            .into_iter()
+                            .filter_map(|(role, path)| {
+                                self.selected_locations.get(path?).cloned().map(|location| {
+                                    FolderSelection {
+                                        role,
+                                        location,
+                                        relative: PathBuf::new(),
+                                    }
+                                })
+                            })
+                            .collect(),
                         })
                     })
                     .collect();

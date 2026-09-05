@@ -26,6 +26,7 @@ pub struct GameConfig {
     pub game: Game,
     /// `true` when the user added the game manually.
     pub custom: bool,
+    pub(crate) locations: Vec<crate::utils::location::FolderSelection>,
 }
 
 impl Game {

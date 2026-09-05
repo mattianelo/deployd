@@ -4,6 +4,7 @@ pub mod deployer;
 pub mod detector;
 pub mod game;
 pub mod installer;
+pub(crate) mod location_recovery;
 #[cfg(feature = "loot")]
 pub mod loot_sort;
 pub mod migration_bundle;
