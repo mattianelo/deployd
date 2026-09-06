@@ -1,6 +1,8 @@
 # Changelog
 
-## [Unreleased]
+## [2.4.3]
+
+Unreleased.
 
 ### Snap
 
