@@ -2,8 +2,6 @@
 
 ## [2.4.3]
 
-Unreleased.
-
 ### Snap
 
 - Added guided recovery for inaccessible game folders and Wine prefixes. Manage Games can reopen
