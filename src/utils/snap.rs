@@ -105,6 +105,14 @@ pub(crate) fn validate_selected_folder(
     validate_selected_folder_with(path, kind, environment.as_ref(), inspect_selected_folder)
 }
 
+pub(crate) fn validate_readable_folder(
+    path: &Path,
+    kind: SelectedFolderKind,
+) -> Result<(), SelectedFolderError> {
+    let environment = SnapEnvironment::from_process();
+    validate_selected_folder_with(path, kind, environment.as_ref(), inspect_readable_folder)
+}
+
 #[derive(Debug)]
 struct SnapEnvironment {
     home: Option<PathBuf>,
@@ -200,13 +208,17 @@ fn removable_media_recovery(
 }
 
 fn inspect_selected_folder(path: &Path) -> Result<(), FolderAccessError> {
+    inspect_readable_folder(path)?;
+    probe_folder_writable(path).map_err(FolderAccessError::Write)
+}
+
+fn inspect_readable_folder(path: &Path) -> Result<(), FolderAccessError> {
     let meta = std::fs::metadata(path).map_err(FolderAccessError::Metadata)?;
     if !meta.is_dir() {
         return Err(FolderAccessError::NotDirectory);
     }
 
     std::fs::read_dir(path).map_err(FolderAccessError::Read)?;
-    probe_folder_writable(path).map_err(FolderAccessError::Write)?;
 
     Ok(())
 }
@@ -637,5 +649,41 @@ mod tests {
             probed,
             "portal grants must still be checked for live access"
         );
+    }
+
+    // @variants: both
+    #[test]
+    fn readable_validation_accepts_read_only_storage_without_a_write_probe() -> anyhow::Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::tempdir()?;
+        std::fs::write(temp.path().join("managed.txt"), b"preserved")?;
+        std::fs::set_permissions(temp.path(), std::fs::Permissions::from_mode(0o500))?;
+        let environment = SnapEnvironment {
+            home: None,
+            user_common: Some(temp.path().to_owned()),
+            user_data: None,
+        };
+        let readable = validate_selected_folder_with(
+            temp.path(),
+            SelectedFolderKind::GameFolder,
+            Some(&environment),
+            inspect_readable_folder,
+        );
+        let writable = validate_selected_folder_with(
+            temp.path(),
+            SelectedFolderKind::GameFolder,
+            Some(&environment),
+            inspect_selected_folder,
+        );
+        std::fs::set_permissions(temp.path(), std::fs::Permissions::from_mode(0o700))?;
+        assert!(readable.is_ok());
+        assert!(writable.is_err());
+        assert_eq!(std::fs::read_dir(temp.path())?.count(), 1);
+        assert_eq!(
+            std::fs::read(temp.path().join("managed.txt"))?,
+            b"preserved"
+        );
+        Ok(())
     }
 }

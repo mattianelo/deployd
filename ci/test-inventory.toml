@@ -1106,3 +1106,63 @@ path = "src/core/generations/ownership/tests.rs"
 name = "imported_ownership_survives_restart_without_following_the_selected_draft"
 variant = "both"
 interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/divergence.rs"
+name = "reports_live_edits_and_preserves_immutable_history_and_selected_draft"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/divergence.rs"
+name = "detects_missing_files_and_permission_changes_without_repairing_them"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/divergence.rs"
+name = "failed_or_cancelled_inspection_preserves_the_last_persisted_status"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/divergence.rs"
+name = "unavailable_roots_and_symlinks_do_not_report_a_clean_deployment"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/divergence.rs"
+name = "pending_recovery_and_missing_history_block_status_publication"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/divergence.rs"
+name = "legacy_deployments_without_generations_are_not_reported_as_verified"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/divergence/tests.rs"
+name = "inspects_each_engine_anchor_without_reinterpreting_other_engines"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/divergence/tests.rs"
+name = "missing_parents_are_missing_files_but_redirected_parents_block_inspection"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/snap.rs"
+name = "readable_validation_accepts_read_only_storage_without_a_write_probe"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/divergence.rs"
+name = "concurrent_deployed_state_changes_prevent_stale_inspection_publication"
+variant = "both"
+interface_state = "not_applicable"

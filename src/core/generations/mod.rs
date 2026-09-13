@@ -1,6 +1,7 @@
 mod catalog;
 pub(crate) mod content;
 mod coordinator;
+mod divergence;
 mod manifest;
 mod operation;
 mod ownership;
