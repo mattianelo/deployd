@@ -24,6 +24,7 @@ use crate::models::download::DownloadFilter;
 
 #[derive(Debug)]
 pub(crate) enum AppMsg {
+    Mele(super::mele::Msg),
     Recovery(super::location_recovery::RecoveryMsg),
     Shell(ShellMsg),
     Games(GamesMsg),
@@ -99,6 +100,7 @@ pub(crate) enum GamesMsg {
     /// Games confirmed from the setup dialog; apply and persist the configuration.
     /// Second argument is the list of game IDs the user unchecked (to be hidden).
     GamesConfigured(Vec<GameConfig>, Vec<String>),
+    SetupProgress(crate::core::game::mass_effect::baseline::progress::Progress),
     /// User removed a game from management (headerbar "×" button or Manage Games dialog).
     /// Remove the currently selected game (fired from the headerbar "×" button).
     RemoveCurrentGame,
@@ -368,6 +370,7 @@ pub(crate) enum MigrationMsg {
 
 pub(crate) enum PrepareResultMsg {
     Normal {
+        mele: Option<Box<crate::core::game::mass_effect::package::PackagePlan>>,
         file_list: Vec<(PathBuf, PathBuf)>,
         stripped_wrapper: Option<String>,
         tmp_dir: TempDir,
@@ -424,6 +427,7 @@ impl std::fmt::Debug for PrepareResultMsg {
 
 #[derive(Debug)]
 pub(crate) enum AppCmdMsg {
+    Mele(super::mele::Command),
     Recovery(super::location_recovery::RecoveryCmd),
     LocationActivityCompleted(tokio::sync::OwnedRwLockReadGuard<()>, Box<AppCmdMsg>),
     Shell(ShellCmdMsg),

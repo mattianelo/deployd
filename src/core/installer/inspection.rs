@@ -9,7 +9,11 @@ use crate::utils::fomod_resolver;
 
 use super::{dazip, file_list};
 
-pub enum PrepareResult {
+pub(crate) enum PrepareResult {
+    MassEffect {
+        plan: Box<crate::core::game::mass_effect::package::PackagePlan>,
+        tmp_dir: TempDir,
+    },
     Normal {
         file_list: Vec<(PathBuf, PathBuf)>,
         /// Original wrapper dir name stripped by detect_wrapper (e.g. `"modSkipMovies"`).
@@ -24,8 +28,9 @@ pub enum PrepareResult {
     },
 }
 
-pub async fn prepare_mod(
+pub(crate) async fn prepare_mod(
     archive_path: &Path,
+    manual_target: Option<crate::core::game::mass_effect::Target>,
     on_extract_progress: Option<Box<dyn Fn(usize, usize) + Send>>,
     on_processing: Option<Box<dyn FnOnce() + Send>>,
 ) -> Result<PrepareResult> {
@@ -59,6 +64,21 @@ pub async fn prepare_mod(
     tokio::task::spawn_blocking(move || {
         let extracted_root = tmp_dir.path();
         dlog!("[deployd] extracted to: {}", extracted_root.display());
+
+        reject_headmorphs(extracted_root)?;
+        if manual_target.is_some()
+            || crate::core::game::mass_effect::package::discover_manifest(extracted_root)?.is_some()
+        {
+            let plan = crate::core::game::mass_effect::package::PackagePlan::inspect(
+                extracted_root,
+                manual_target,
+            )?;
+            plan.verify_sources(extracted_root)?;
+            return Ok(PrepareResult::MassEffect {
+                plan: Box::new(plan),
+                tmp_dir,
+            });
+        }
 
         if is_dazip {
             dazip::process_dazip_root(extracted_root, &stem)
@@ -95,4 +115,79 @@ pub async fn prepare_mod(
     })
     .await
     .context("Post-extraction task panicked")?
+}
+
+fn reject_headmorphs(root: &Path) -> Result<()> {
+    for entry in walkdir::WalkDir::new(root).follow_links(false).min_depth(1) {
+        let entry = entry.context("Cannot inspect archive contents")?;
+        if entry
+            .path()
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| {
+                ["headmorph", "me2headmorph", "me3headmorph"]
+                    .iter()
+                    .any(|known| extension.eq_ignore_ascii_case(known))
+            })
+        {
+            anyhow::bail!(
+                "Headmorph support is deferred. This input cannot be installed as ordinary game files; no saves were modified"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // @variants: both
+    #[tokio::test]
+    async fn mele_inspection_preserves_structure_before_generic_wrapper_detection() -> Result<()> {
+        use crate::core::game::mass_effect::Target;
+        use std::io::Write;
+        let temp = tempfile::tempdir()?;
+        let archive = temp.path().join("manual.zip");
+        let mut zip = zip::ZipWriter::new(std::fs::File::create(&archive)?);
+        zip.start_file(
+            "BioGame/CookedPCConsole/Engine.pcc",
+            zip::write::SimpleFileOptions::default(),
+        )?;
+        zip.write_all(b"package")?;
+        zip.finish()?;
+        let prepared = prepare_mod(&archive, Some(Target::Le1), None, None).await?;
+        let PrepareResult::MassEffect { plan, tmp_dir } = prepared else {
+            anyhow::bail!("MELE bypassed structured inspection")
+        };
+        assert_eq!(plan.files[0].destination, "CookedPCConsole/Engine.pcc");
+        assert!(
+            tmp_dir
+                .path()
+                .join("BioGame/CookedPCConsole/Engine.pcc")
+                .is_file()
+        );
+        plan.verify_sources(tmp_dir.path())?;
+        assert!(matches!(
+            prepare_mod(&archive, None, None, None).await?,
+            PrepareResult::Normal { .. }
+        ));
+        Ok(())
+    }
+
+    // @variants: both
+    #[test]
+    fn refuses_headmorphs_before_generic_archive_processing() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        for extension in ["headmorph", "ME2HeadMorph", "me3headmorph"] {
+            let input = temp.path().join(format!("appearance.{extension}"));
+            std::fs::write(&input, b"fixture")?;
+            assert!(reject_headmorphs(temp.path()).is_err());
+            assert_eq!(std::fs::read(&input)?, b"fixture");
+            std::fs::remove_file(input)?;
+        }
+        std::fs::write(temp.path().join("normal.pcc"), b"fixture")?;
+        reject_headmorphs(temp.path())?;
+        Ok(())
+    }
 }

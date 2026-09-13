@@ -24,8 +24,8 @@ impl EngineHandler for BethesdaHandler {
         _stripped_wrapper: Option<&str>,
         file_list: Vec<(PathBuf, PathBuf)>,
         _file_targets: &HashMap<String, InstallTarget>,
-    ) -> Vec<(PathBuf, PathBuf)> {
-        file_list
+    ) -> anyhow::Result<Vec<(PathBuf, PathBuf)>> {
+        Ok(file_list)
     }
 
     fn deploy_to_root(

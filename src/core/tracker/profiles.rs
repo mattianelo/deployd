@@ -117,6 +117,8 @@ impl Tracker {
         .execute(&mut *tx)
         .await?;
 
+        sqlx::query("INSERT INTO mele_recipes (game_id, profile_id, document) SELECT game_id, ?, document FROM mele_recipes WHERE game_id = ? AND profile_id = ?")
+            .bind(&id).bind(game_id).bind(source_profile_id).execute(&mut *tx).await?;
         tx.commit().await.context("Failed to clone profile")?;
         Ok(id)
     }

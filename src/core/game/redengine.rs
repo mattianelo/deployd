@@ -17,7 +17,12 @@ impl EngineHandler for REDEngineHandler {
         stripped_wrapper: Option<&str>,
         file_list: Vec<(PathBuf, PathBuf)>,
         _file_targets: &HashMap<String, InstallTarget>,
-    ) -> Vec<(PathBuf, PathBuf)> {
-        installer::apply_redengine_path_fixups(game, mod_name, stripped_wrapper, file_list)
+    ) -> anyhow::Result<Vec<(PathBuf, PathBuf)>> {
+        Ok(installer::apply_redengine_path_fixups(
+            game,
+            mod_name,
+            stripped_wrapper,
+            file_list,
+        ))
     }
 }

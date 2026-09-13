@@ -7,7 +7,7 @@ use relm4::prelude::*;
 
 use crate::core::game;
 use crate::core::tracker::PersistedGame;
-use crate::models::game::{Game, GameConfig, GameEngine};
+use crate::models::game::{Game, GameConfig};
 use crate::utils::location::{FolderRole, FolderSelection, SelectedLocation};
 use crate::utils::paths;
 use crate::utils::snap::{self, SelectedFolderKind};
@@ -18,6 +18,7 @@ struct GameEntry {
     game: Game,
     /// Whether the user has included this game (checked).
     enabled: bool,
+    locations: Vec<FolderSelection>,
 }
 
 pub struct GameSetupDialog {
@@ -78,6 +79,8 @@ pub enum GameSetupMsg {
     NewPrefixChosen(PathBuf, Option<PathBuf>),
     /// Commit the pending "add" form.
     ConfirmAdd,
+    AddValidated(Result<Vec<GameConfig>, String>),
+    FamilyPathValidated(Result<Vec<GameConfig>, String>),
     /// User confirmed: emit the final game list.
     Confirm,
     Cancel,
@@ -369,19 +372,12 @@ impl Component for GameSetupDialog {
             .map(|g| GameEntry {
                 game: g,
                 enabled: true,
+                locations: Vec::new(),
             })
             .collect();
 
         for pg in persisted_custom {
-            let engine = if pg.engine == "redengine" {
-                GameEngine::REDEngine
-            } else if pg.engine == "eclipse" {
-                GameEngine::Eclipse
-            } else if pg.engine == "aurora" {
-                GameEngine::Aurora
-            } else {
-                GameEngine::Bethesda
-            };
+            let engine = pg.engine;
             entries.push(GameEntry {
                 game: Game {
                     id: pg.id,
@@ -392,11 +388,11 @@ impl Component for GameSetupDialog {
                     wine_prefix: pg.wine_prefix,
                 },
                 enabled: true,
+                locations: Vec::new(),
             });
         }
 
-        let known_opts: Vec<game::KnownGameOption> =
-            game::known_game_options().into_iter().collect();
+        let known_opts: Vec<game::KnownGameOption> = game::setup::options();
 
         // ── Shared widgets stored in model ────────────────────────────────────
         let games_list = gtk::ListBox::new();
@@ -632,10 +628,17 @@ impl Component for GameSetupDialog {
             }
 
             GameSetupMsg::BrowsePath(idx) => {
+                let family = self.entries.get(idx).is_some_and(|entry| {
+                    entry.game.engine == crate::models::game::GameEngine::MassEffect
+                });
                 let input = sender.input_sender().clone();
                 sender.oneshot_command(async move {
                     match crate::utils::portal::select_location(
-                        "Select Game Folder",
+                        if family {
+                            "Select Legendary Edition Folder (all three games)"
+                        } else {
+                            "Select Game Folder"
+                        },
                         None,
                         SelectedFolderKind::GameFolder,
                     )
@@ -658,6 +661,40 @@ impl Component for GameSetupDialog {
             }
 
             GameSetupMsg::PathChosen(idx, path, host_hint) => {
+                if self.entries.get(idx).is_some_and(|entry| {
+                    entry.game.engine == crate::models::game::GameEngine::MassEffect
+                }) {
+                    let config = GameConfig {
+                        game: Game {
+                            id: game::setup::MELE_FAMILY_ID.into(),
+                            title: "Mass Effect Legendary Edition".into(),
+                            path: path.clone(),
+                            data_subdir: "BioGame".into(),
+                            engine: crate::models::game::GameEngine::MassEffect,
+                            wine_prefix: None,
+                        },
+                        custom: true,
+                        locations: vec![FolderSelection {
+                            role: FolderRole::Game,
+                            location: SelectedLocation {
+                                root: path,
+                                host_hint,
+                            },
+                            relative: PathBuf::new(),
+                        }],
+                    };
+                    root.set_sensitive(false);
+                    let input = sender.input_sender().clone();
+                    sender.oneshot_command(async move {
+                        let result =
+                            tokio::task::spawn_blocking(move || game::setup::expand(vec![config]))
+                                .await
+                                .map_err(|error| error.to_string())
+                                .and_then(|result| result.map_err(|error| format!("{error:#}")));
+                        let _ = input.send(GameSetupMsg::FamilyPathValidated(result));
+                    });
+                    return;
+                }
                 self.dirty = true;
                 self.selected_locations.insert(
                     path.clone(),
@@ -866,34 +903,119 @@ impl Component for GameSetupDialog {
             }
 
             GameSetupMsg::ConfirmAdd => {
-                self.dirty = true;
-                let Some(path) = self.new_path.take() else {
+                let Some(path) = self.new_path.clone() else {
                     return;
                 };
-                let Some(prefix) = self.new_prefix.take() else {
+                let Some(prefix) = self.new_prefix.clone() else {
                     return;
                 };
                 let Some(opt) = self.known_opts.get(self.new_game_type_idx) else {
                     return;
                 };
-                let engine = opt.engine.clone();
-                let game = Game {
-                    id: opt.deployd_id.to_string(),
-                    title: opt.title.to_string(),
-                    path,
-                    data_subdir: opt.data_subdir.to_string(),
-                    engine,
-                    wine_prefix: Some(prefix),
+                let config = GameConfig {
+                    game: Game {
+                        id: opt.deployd_id.to_string(),
+                        title: opt.title.to_string(),
+                        path: path.clone(),
+                        data_subdir: opt.data_subdir.to_string(),
+                        engine: opt.engine.clone(),
+                        wine_prefix: Some(prefix.clone()),
+                    },
+                    custom: true,
+                    locations: [(FolderRole::Game, path), (FolderRole::Prefix, prefix)]
+                        .into_iter()
+                        .filter_map(|(role, path)| {
+                            self.selected_locations.get(&path).cloned().map(|location| {
+                                FolderSelection {
+                                    role,
+                                    location,
+                                    relative: PathBuf::new(),
+                                }
+                            })
+                        })
+                        .collect(),
                 };
-                self.entries.push(GameEntry {
-                    game,
-                    enabled: true,
+                root.set_sensitive(false);
+                let input = sender.input_sender().clone();
+                sender.oneshot_command(async move {
+                    let result =
+                        tokio::task::spawn_blocking(move || game::setup::expand(vec![config]))
+                            .await
+                            .map_err(|error| error.to_string())
+                            .and_then(|result| result.map_err(|error| format!("{error:#}")));
+                    let _ = input.send(GameSetupMsg::AddValidated(result));
                 });
+            }
+
+            GameSetupMsg::AddValidated(result) => {
+                root.set_sensitive(true);
+                let configs = match result {
+                    Ok(configs) => configs,
+                    Err(message) => {
+                        Self::show_path_error(root, &message);
+                        return;
+                    }
+                };
+                if let Some(existing) = configs.iter().find(|config| {
+                    self.entries
+                        .iter()
+                        .any(|entry| entry.game.id == config.game.id)
+                }) {
+                    Self::show_path_error(
+                        root,
+                        &format!(
+                            "{} is already configured. Change its folders in Manage Games.",
+                            existing.game.title
+                        ),
+                    );
+                    return;
+                }
+                self.dirty = true;
+                for config in configs {
+                    self.entries.push(GameEntry {
+                        game: config.game,
+                        enabled: true,
+                        locations: config.locations,
+                    });
+                }
+                self.new_path = None;
+                self.new_prefix = None;
                 self.new_path_entry.set_text("");
                 self.new_prefix_entry.set_text("");
                 self.update_add_btn();
                 self.rebuild_games(&sender);
                 self.navigation_view.pop();
+            }
+
+            GameSetupMsg::FamilyPathValidated(result) => {
+                root.set_sensitive(true);
+                let configs = match result {
+                    Ok(configs) => configs,
+                    Err(message) => {
+                        Self::show_path_error(root, &message);
+                        return;
+                    }
+                };
+                self.dirty = true;
+                for config in configs {
+                    if let Some(entry) = self
+                        .entries
+                        .iter_mut()
+                        .find(|entry| entry.game.id == config.game.id)
+                    {
+                        entry.game.path = config.game.path;
+                        entry
+                            .locations
+                            .retain(|location| location.role != FolderRole::Game);
+                        entry.locations.extend(
+                            config
+                                .locations
+                                .into_iter()
+                                .filter(|location| location.role == FolderRole::Game),
+                        );
+                    }
+                }
+                self.rebuild_games(&sender);
             }
 
             GameSetupMsg::Confirm => {
@@ -910,13 +1032,23 @@ impl Component for GameSetupDialog {
                         ]
                         .into_iter()
                         .filter_map(|(role, path)| {
-                            self.selected_locations.get(path?).cloned().map(|location| {
-                                FolderSelection {
-                                    role,
-                                    location,
-                                    relative: PathBuf::new(),
-                                }
-                            })
+                            let path = path?;
+                            e.locations
+                                .iter()
+                                .find(|selection| {
+                                    selection.role == role
+                                        && selection.location.root.join(&selection.relative) == path
+                                })
+                                .cloned()
+                                .or_else(|| {
+                                    self.selected_locations.get(path).cloned().map(|location| {
+                                        FolderSelection {
+                                            role,
+                                            location,
+                                            relative: PathBuf::new(),
+                                        }
+                                    })
+                                })
                         })
                         .collect(),
                     })

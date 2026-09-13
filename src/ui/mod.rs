@@ -13,3 +13,5 @@ pub mod pre_install_dialog;
 pub mod settings_dialog;
 pub mod tool_manager;
 pub mod welcome_wizard;
+
+pub(crate) mod mele_dialog;

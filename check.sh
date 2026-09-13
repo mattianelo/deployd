@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run approved Cargo commands inside the Deployd LXD build environment.
+# Run approved validation commands inside the Deployd LXD build environment.
 set -euo pipefail
 
 trap '' PIPE
@@ -13,8 +13,12 @@ BUILD_PATH="$BUILD_HOME/.cargo/bin:/opt/appimage-tools:/usr/local/sbin:/usr/loca
 CMD="${1:-check}"
 shift "$(( $# > 0 ? 1 : 0 ))"
 
-DEPLOYD_CI_FRESHNESS="${DEPLOYD_CI_FRESHNESS:-0}" \
-    "$REPO_ROOT/scripts/rust-command.sh" validate "$CMD" "$@"
+if [ "$CMD" = "mele" ]; then
+    python3 "$REPO_ROOT/scripts/mele-helper.py" validate "$@"
+else
+    DEPLOYD_CI_FRESHNESS="${DEPLOYD_CI_FRESHNESS:-0}" \
+        "$REPO_ROOT/scripts/rust-command.sh" validate "$CMD" "$@"
+fi
 
 if [ "${DEPLOYD_BUILD_CONTAINER:-0}" != "1" ]; then
     if ! command -v lxc &>/dev/null || ! lxc info &>/dev/null 2>&1; then
@@ -47,6 +51,10 @@ fi
 if [ "$REPO_ROOT" != "/workspace" ]; then
     echo "error: container workspace must be mounted at /workspace" >&2
     exit 1
+fi
+
+if [ "$CMD" = "mele" ]; then
+    exec python3 "$REPO_ROOT/scripts/mele-helper.py" run "$@"
 fi
 
 if [ ! -x "$BUILD_HOME/.cargo/bin/cargo" ]; then

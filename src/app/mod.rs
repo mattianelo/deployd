@@ -8,6 +8,7 @@ mod init;
 mod install;
 mod install_file_id;
 mod location_recovery;
+mod mele;
 mod messages;
 mod mods;
 mod notifications;

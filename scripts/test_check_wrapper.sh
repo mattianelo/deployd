@@ -43,6 +43,10 @@ assert_rejected check --config net.git-fetch-with-cli=true
 assert_rejected env unexpected
 assert_rejected freshness
 assert_rejected lock-update anyhow@1.0.102 1.0.103
+assert_rejected mele
+assert_rejected mele build --output /
+assert_rejected mele unknown
+assert_rejected mele lock
 
 if DEPLOYD_DEPENDENCY_MAINTENANCE=1 "$REPO_ROOT/check.sh" \
     lock-update 'bad/package' 1.0.103 >"$TEST_DIR/stdout" 2>"$TEST_DIR/stderr"; then
@@ -62,6 +66,16 @@ grep -Fx -- '--locked' "$LXC_LOG" >/dev/null || fail "missing forwarded safe arg
 
 PATH="$TEST_DIR:$PATH" LXC_LOG="$LXC_LOG" "$REPO_ROOT/check.sh" env
 grep -Fx -- 'env' "$LXC_LOG" >/dev/null || fail "missing diagnostic command"
+
+PATH="$TEST_DIR:$PATH" LXC_LOG="$LXC_LOG" "$REPO_ROOT/check.sh" mele test
+grep -Fx -- 'mele' "$LXC_LOG" >/dev/null || fail "missing helper command"
+grep -Fx -- 'test' "$LXC_LOG" >/dev/null || fail "missing helper action"
+grep -Fx -- '--user' "$LXC_LOG" >/dev/null || fail "helper omitted non-root user"
+grep -Fx -- '--group' "$LXC_LOG" >/dev/null || fail "helper omitted non-root group"
+grep -Fx -- 'HOME=/home/ubuntu' "$LXC_LOG" >/dev/null || fail "helper omitted non-root HOME"
+
+PATH="$TEST_DIR:$PATH" LXC_LOG="$LXC_LOG" "$REPO_ROOT/check.sh" mele licenses
+grep -Fx -- 'licenses' "$LXC_LOG" >/dev/null || fail "missing helper license action"
 
 PATH="$TEST_DIR:$PATH" LXC_LOG="$LXC_LOG" DEPLOYD_CI_FRESHNESS=1 \
     "$REPO_ROOT/check.sh" freshness

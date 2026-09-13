@@ -260,6 +260,13 @@ impl App {
             self.show_toast(DEPLOY_SELECTION_TOOLTIP);
             return;
         }
+        if self
+            .selected_game()
+            .is_some_and(|game| game.engine == crate::models::game::GameEngine::MassEffect)
+        {
+            sender.input(AppMsg::Mele(super::mele::Msg::Setup(false)));
+            return;
+        }
         let Some(tracker) = self.session.tracker.clone() else {
             self.push_notification("Database not ready yet");
             return;
@@ -485,6 +492,13 @@ impl App {
     }
 
     pub(crate) fn handle_purge_confirmed(&mut self, sender: &ComponentSender<Self>) {
+        if self
+            .selected_game()
+            .is_some_and(|game| game.engine == crate::models::game::GameEngine::MassEffect)
+        {
+            sender.input(AppMsg::Mele(super::mele::Msg::Setup(true)));
+            return;
+        }
         let Some(tracker) = self.session.tracker.clone() else {
             self.push_notification("Database not ready yet");
             return;

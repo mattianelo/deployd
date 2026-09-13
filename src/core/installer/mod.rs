@@ -6,7 +6,7 @@ mod inspection;
 mod paths;
 
 pub(crate) use file_list::is_ignorable_file;
-pub use inspection::{PrepareResult, prepare_mod};
+pub(crate) use inspection::{PrepareResult, prepare_mod};
 pub use paths::auto_detect_install_target;
 pub(crate) use paths::{
     apply_redengine_path_fixups, route_aurora_paths, strip_data_subdir_prefix_str,
@@ -102,7 +102,7 @@ pub(crate) async fn add_mod_with_file_list(request: AddModRequest<'_>) -> Result
         stripped_wrapper.as_deref(),
         &file_targets,
         excluded_files,
-    );
+    )?;
     let cache_dir = utils_paths::mod_cache_dir_in(cache_root, &mod_id);
     let cached = cache::write_files(&mod_id, &cache_dir, plan, on_progress.as_deref())?;
     let mod_files = cached.mod_files;
@@ -221,7 +221,7 @@ pub(crate) async fn merge_files_into_mod(request: MergeModRequest<'_>) -> Result
         stripped_wrapper.as_deref(),
         &file_targets,
         excluded_files,
-    );
+    )?;
     let cache_dir = utils_paths::mod_cache_dir_in(cache_root, existing_mod_id);
     let cached = cache::write_files(existing_mod_id, &cache_dir, plan, on_progress.as_deref())?;
     let mod_files = cached.mod_files;
@@ -317,6 +317,45 @@ fn exclusion_key_for_preview(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // @variants: both
+    #[tokio::test]
+    async fn refuses_generic_mele_installation_before_publishing_cache_or_records() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let source = temp.path().join("source.pcc");
+        std::fs::write(&source, b"immutable source")?;
+        let cache = temp.path().join("cache");
+        let game = Game {
+            id: "mass-effect-le1".into(),
+            title: "LE1".into(),
+            path: temp.path().join("game"),
+            data_subdir: "BioGame".into(),
+            engine: GameEngine::MassEffect,
+            wine_prefix: None,
+        };
+        let tracker = Tracker::open("sqlite::memory:").await?.tracker;
+        let result = add_mod_with_file_list(AddModRequest {
+            file_list: vec![(source.clone(), "DLC/DLC_MOD_EXAMPLE/file.pcc".into())],
+            game: &game,
+            mod_name: "Example",
+            tracker: &tracker,
+            cache_root: &cache,
+            nexus_ids: None,
+            archive_hash: None,
+            archive_path: None,
+            file_targets: HashMap::new(),
+            stripped_wrapper: None,
+            excluded_files: &HashSet::new(),
+            on_progress: None,
+        })
+        .await;
+        assert!(result.is_err());
+        assert!(tracker.list_mods(&game.id).await?.is_empty());
+        assert!(!cache.exists());
+        assert!(!game.path.exists());
+        assert_eq!(std::fs::read(source)?, b"immutable source");
+        Ok(())
+    }
 
     fn pairs(paths: &[&str]) -> Vec<(PathBuf, PathBuf)> {
         paths

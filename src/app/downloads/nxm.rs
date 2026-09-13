@@ -31,7 +31,7 @@ impl App {
         };
 
         // Check game domain is supported
-        if game::game_id_for_nexus_domain(&link.domain).is_none() {
+        if game::game_ids_for_nexus_domain(&link.domain).is_empty() {
             self.push_notification(&format!("Unsupported game: {}", link.domain));
             return;
         }

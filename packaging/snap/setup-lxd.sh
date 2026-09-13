@@ -13,7 +13,7 @@ fi
 
 apt-get update -qq
 apt-get install -y --no-install-recommends \
-    build-essential ca-certificates curl git
+    build-essential ca-certificates curl git python3
 
 snap wait system seed.loaded
 snap install snapcraft --classic --channel=9.x/stable

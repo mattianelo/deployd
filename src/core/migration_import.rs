@@ -168,18 +168,9 @@ async fn read_imported_game(
         title: title.unwrap_or_else(|| manifest.game_title.clone()),
         path: confirmed_game_path.to_path_buf(),
         data_subdir: data_subdir.unwrap_or_else(|| "Data".to_string()),
-        engine: parse_game_engine(engine.as_deref()),
+        engine: GameEngine::from_persisted(engine.as_deref())?,
         wine_prefix: Some(confirmed_wine_prefix.to_path_buf()),
     })
-}
-
-fn parse_game_engine(engine: Option<&str>) -> GameEngine {
-    match engine {
-        Some("redengine") => GameEngine::REDEngine,
-        Some("eclipse") => GameEngine::Eclipse,
-        Some("aurora") => GameEngine::Aurora,
-        _ => GameEngine::Bethesda,
-    }
 }
 
 async fn drop_hidden_game_state(tracker: &Tracker, game: &Game) -> Result<()> {

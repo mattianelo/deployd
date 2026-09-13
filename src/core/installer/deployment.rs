@@ -35,7 +35,7 @@ pub(super) fn route_and_plan(
     stripped_wrapper: Option<&str>,
     file_targets: &HashMap<String, InstallTarget>,
     excluded_files: &HashSet<String>,
-) -> Vec<PlannedFile> {
+) -> anyhow::Result<Vec<PlannedFile>> {
     let game_rules = rules::rules_for_game(&game.id);
     let file_list = filter_excluded_files(
         file_list,
@@ -46,15 +46,15 @@ pub(super) fn route_and_plan(
     );
     let handler = crate::core::game::engine_handler::handler_for(&game.engine);
     let file_list =
-        handler.route_file_list(game, mod_name, stripped_wrapper, file_list, file_targets);
-    plan_files(
+        handler.route_file_list(game, mod_name, stripped_wrapper, file_list, file_targets)?;
+    Ok(plan_files(
         file_list,
         game,
         &game_rules,
         handler,
         file_targets,
         excluded_files,
-    )
+    ))
 }
 
 fn plan_files(

@@ -12,6 +12,7 @@ use super::filesystem::remove_deployed_file;
 use super::report::PurgeOutcome;
 
 pub async fn purge(game: &Game, tracker: &Tracker, cache_root: &Path) -> Result<PurgeOutcome> {
+    game::handler_for(&game.engine).validate_file_deployment()?;
     let game_data = game::deploy_dir(game);
     let mut warnings = Vec::new();
     bake_modified_plugins(game, tracker, &game_data).await?;

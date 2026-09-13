@@ -39,6 +39,7 @@ impl App {
         configs: Vec<crate::models::game::GameConfig>,
         hidden_ids: Vec<String>,
         sender: &ComponentSender<Self>,
+        root: &adw::ApplicationWindow,
     ) {
         if let Some(w) = self.ui.welcome_wizard.take() {
             w.widget().close();
@@ -54,7 +55,7 @@ impl App {
             });
         }
         // Reuse the existing game-configure flow.
-        self.handle_games_configured(configs, hidden_ids, sender);
+        self.handle_games_configured(configs, hidden_ids, sender, root);
         // Kick off the downloads scan that was deferred while waiting for the wizard.
         // External-file scan is deliberately omitted here: it must run *after* GameSelected
         // loads the game data and creates the vanilla snapshot, otherwise every game file

@@ -35,6 +35,7 @@ pub(crate) async fn deployment_preflight(
     game: &Game,
     tracker: &Tracker,
 ) -> Result<DeploymentPreflight> {
+    game::handler_for(&game.engine).validate_file_deployment()?;
     let game_data = game::deploy_dir(game);
     let plan = build_plan(tracker, &game.id, game::handler_for(&game.engine)).await?;
     let vanilla_snapshot = tracker.get_vanilla_metadata(&game.id).await?;
@@ -123,6 +124,7 @@ pub(super) async fn deploy_with_backup_dir(
     protect_vanilla_files: bool,
     backup_dir: Option<&Path>,
 ) -> Result<DeployOutcome> {
+    game::handler_for(&game.engine).validate_file_deployment()?;
     let game_data = game::deploy_dir(game);
     let mut warnings = Vec::new();
 

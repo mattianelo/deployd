@@ -11,7 +11,7 @@ use relm4::prelude::*;
 use crate::core::game;
 use crate::core::tracker::Tracker;
 use crate::models::download::{DownloadFilter, DownloadSort};
-use crate::models::game::{Game, GameEngine};
+use crate::models::game::Game;
 use crate::ui::bottom_status::BottomStatus;
 use crate::ui::download_row::{DownloadRow, DownloadRowOutput};
 use crate::ui::header::{Header, HeaderInit, HeaderOutput, HeaderState};
@@ -200,6 +200,7 @@ pub(super) fn build_model(
     let header = Header::builder()
         .launch(HeaderInit {
             state: HeaderState {
+                mele: false,
                 nexus_username: None,
                 nexus_is_premium: false,
                 has_games: !games.is_empty(),
@@ -271,6 +272,9 @@ pub(super) fn build_model(
             HeaderOutput::DeployClicked => {
                 AppMsg::Shell(crate::app::messages::ShellMsg::DeployClicked)
             }
+            HeaderOutput::LauncherMods => AppMsg::Mele(crate::app::mele::Msg::Launcher(Box::new(
+                crate::app::mele::launcher::Msg::Open,
+            ))),
             HeaderOutput::OpenDeploymentFolder => {
                 AppMsg::Shell(crate::app::messages::ShellMsg::OpenDeploymentFolder)
             }
@@ -409,6 +413,8 @@ pub(super) fn build_model(
             game_model,
             game_dropdown,
             pre_install_dialog: None,
+            mele_operation: None,
+            mele_setup: None,
             fomod_dialog: None,
             downloads_pane,
             tool_buttons_box,
@@ -807,12 +813,7 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             data_subdir: game::known_data_subdir(&p.id)
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| p.data_subdir.clone()),
-            engine: match p.engine.as_str() {
-                "redengine" => GameEngine::REDEngine,
-                "eclipse" => GameEngine::Eclipse,
-                "aurora" => GameEngine::Aurora,
-                _ => GameEngine::Bethesda,
-            },
+            engine: p.engine.clone(),
             wine_prefix: p.wine_prefix.clone(),
         });
 

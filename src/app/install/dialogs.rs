@@ -87,6 +87,15 @@ impl App {
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
+        if self
+            .install
+            .pending
+            .as_ref()
+            .is_some_and(|pending| pending.mele.is_some())
+        {
+            self.open_mele_install_dialog(root, sender);
+            return;
+        }
         let Some(pending) = &self.install.pending else {
             self.install.set_stage(InstallStage::Failed);
             self.finish_current_work();

@@ -7,6 +7,9 @@ use super::types::{WorkKind, WorkStatus};
 impl App {
     pub(crate) fn header_state(&self) -> crate::ui::header::HeaderState {
         crate::ui::header::HeaderState {
+            mele: self
+                .selected_game()
+                .is_some_and(|game| game.engine == crate::models::game::GameEngine::MassEffect),
             nexus_username: self.shell.nexus_username.clone(),
             nexus_is_premium: self.shell.nexus_is_premium,
             has_games: self.has_games(),
@@ -48,7 +51,8 @@ impl App {
     }
 
     pub(crate) fn is_busy(&self) -> bool {
-        self.install.is_busy()
+        self.ui.mele_setup.is_some()
+            || self.install.is_busy()
             || self.shell.deploying
             || self.tools.proton_setup
             || self.shell.work_status.is_some()

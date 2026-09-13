@@ -578,6 +578,13 @@ impl App {
     }
 
     pub(crate) fn handle_create_empty_mod(&mut self, sender: &ComponentSender<Self>) {
+        if self
+            .selected_game()
+            .is_some_and(|game| game.engine == crate::models::game::GameEngine::MassEffect)
+        {
+            self.push_notification("Import MELE mods from archives so their source files and installation choices can be verified.");
+            return;
+        }
         self.ui.overflow_menu_btn.popdown();
         let Some(tracker) = self.session.tracker.clone() else {
             return;
@@ -912,6 +919,10 @@ impl App {
             self.push_notification("No game selected");
             return;
         };
+        if game.engine == crate::models::game::GameEngine::MassEffect {
+            self.remove_mele_mods(sender);
+            return;
+        }
         let cache_root = match self.cache_root_for(&game.id) {
             Ok(path) => path,
             Err(error) => {

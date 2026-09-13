@@ -24,6 +24,7 @@ impl App {
         }
         match result {
             Ok(PrepareResultMsg::Normal {
+                mele,
                 file_list,
                 stripped_wrapper,
                 tmp_dir,
@@ -39,7 +40,19 @@ impl App {
                     self.push_notification("Add failed: no game is selected");
                     return;
                 };
+                if mele
+                    .as_ref()
+                    .is_some_and(|plan| plan.manifest.target.game_id() != game.id)
+                {
+                    self.install.set_stage(InstallStage::Failed);
+                    self.finish_current_work();
+                    self.install.nexus_ids = None;
+                    self.install.reinstalling = false;
+                    self.push_notification("This MELE archive targets another game. Select its game and install the archive again.");
+                    return;
+                }
                 self.install.pending = Some(PendingInstall {
+                    mele,
                     tmp_dir,
                     mod_name: mod_name.clone(),
                     game,
@@ -137,6 +150,7 @@ impl App {
                     return;
                 };
                 self.install.pending = Some(PendingInstall {
+                    mele: None,
                     tmp_dir,
                     mod_name: mod_name.clone(),
                     game,
@@ -298,6 +312,7 @@ impl App {
         if !self.install.accepts(identity) {
             return;
         }
+        self.close_mele_operation();
         self.install.set_stage(if result.is_ok() {
             InstallStage::Succeeded
         } else {

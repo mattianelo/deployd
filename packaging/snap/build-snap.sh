@@ -58,10 +58,8 @@ else
 fi
 
 echo "==> Copying source into container-owned Snap build storage"
-lxc exec "$LXD_CONTAINER" -- rm -rf -- "$SNAP_BUILD_DIR"
-lxc exec "$LXD_CONTAINER" -- install -d -m 0755 "$SNAP_BUILD_DIR"
-lxc exec "$LXD_CONTAINER" -- sh -c \
-    'tar --exclude=.git --exclude=target --exclude=out --exclude=.craft --exclude=parts --exclude=prime --exclude=stage --exclude="*.AppImage" --exclude="*.snap" -C /workspace -cf - . | tar -C /build/deployd-snap -xf -'
+lxc exec "$LXD_CONTAINER" -- python3 /workspace/scripts/package_source.py \
+    /workspace "$SNAP_BUILD_DIR"
 
 echo "==> Building Snap inside $LXD_CONTAINER"
 lxc exec "$LXD_CONTAINER" --cwd "$SNAP_BUILD_DIR" -- \

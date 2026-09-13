@@ -30,6 +30,7 @@ pub struct ExportGameResult {
 }
 
 pub async fn export_game_bundle(request: ExportGameRequest) -> Result<ExportGameResult> {
+    crate::core::migration_bundle::ensure_game_supported(&request.game.id)?;
     let db_path = paths::db_path().context("Cannot resolve Deployd database path")?;
     let work = TempDir::new().context("Failed to create export work directory")?;
     let data_dir = work.path().join("data");
@@ -116,7 +117,17 @@ fn sqlite_url(path: &Path) -> String {
 }
 
 pub(crate) async fn prune_export_database(pool: &sqlx::SqlitePool, game: &Game) -> Result<()> {
-    for table in ["location_repairs", "game_locations", "folder_locations"] {
+    for table in [
+        "mele_journals",
+        "mele_families",
+        "mele_deployments",
+        "mele_originals",
+        "mele_baseline_files",
+        "mele_baselines",
+        "location_repairs",
+        "game_locations",
+        "folder_locations",
+    ] {
         let exists: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?)",
         )

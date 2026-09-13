@@ -19,6 +19,7 @@ fn deploy_button_tooltip(selection_active: bool) -> &'static str {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct HeaderState {
+    pub(crate) mele: bool,
     pub(crate) nexus_username: Option<String>,
     pub(crate) nexus_is_premium: bool,
     pub(crate) has_games: bool,
@@ -78,6 +79,7 @@ pub(crate) enum HeaderOutput {
     ManageSaveBackups,
     DeployClicked,
     OpenDeploymentFolder,
+    LauncherMods,
     PurgeClicked,
     CreateEmptyMod,
     ResetVanillaBaseline,
@@ -392,6 +394,16 @@ impl SimpleComponent for Header {
                                 add_css_class: "flat",
                                 connect_clicked[sender] => move |_| {
                                     sender.output(HeaderOutput::OpenDeploymentFolder).ok();
+                                },
+                            },
+
+                            gtk::Button {
+                                set_label: "Shared launcher mods",
+                                add_css_class: "flat",
+                                #[watch]
+                                set_visible: model.state.mele,
+                                connect_clicked[sender] => move |_| {
+                                    sender.output(HeaderOutput::LauncherMods).ok();
                                 },
                             },
 

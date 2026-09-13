@@ -114,6 +114,14 @@ chmod +x "$APPDIR/AppRun"
 mkdir -p "$APPDIR/usr/share/metainfo"
 cp "data/$DESKTOP_ID.metainfo.xml" "$APPDIR/usr/share/metainfo/"
 
+# The helper carries its own runtime and notices; game libraries stay user-owned.
+python3 helpers/mele/package.py "$APPDIR/usr/lib/deployd/mele"
+# .NET loads globalization and TLS libraries dynamically, outside ldd's dependency graph.
+linuxdeploy --appdir "$APPDIR" \
+    --library /usr/lib/x86_64-linux-gnu/libicuuc.so.74 \
+    --library /usr/lib/x86_64-linux-gnu/libicui18n.so.74 \
+    --library /usr/lib/x86_64-linux-gnu/libssl.so.3
+
 # 5. Package (zstd compression)
 echo "==> Packaging -> $OUTPUT"
 rm -f "$OUTPUT"

@@ -345,14 +345,14 @@ impl App {
             )
         };
 
-        // Switch to correct game based on nexus domain
+        // A shared Nexus domain cannot identify an individual game before package inspection.
         if let Some(NexusIds { ref domain, .. }) = nexus_ids
-            && let Some(target_game_id) = game::game_id_for_nexus_domain(domain)
+            && let [target_game_id] = game::game_ids_for_nexus_domain(domain).as_slice()
             && let Some(game_idx) = self
                 .session
                 .games
                 .iter()
-                .position(|g| g.id == target_game_id)
+                .position(|g| g.id == *target_game_id)
             && game_idx != self.session.selected_game_idx
         {
             self.session.selected_game_idx = game_idx;
@@ -407,6 +407,12 @@ impl App {
             ));
         }));
 
+        let manual_target = self.selected_game().and_then(|game| {
+            use crate::core::game::mass_effect::Target;
+            [Target::Le1, Target::Le2, Target::Le3]
+                .into_iter()
+                .find(|target| target.game_id() == game.id)
+        });
         sender.oneshot_command(async move {
             let result: Result<PrepareResultMsg, crate::app::messages::PrepareFailure> = async {
                 let timing_start = std::time::Instant::now();
@@ -426,14 +432,18 @@ impl App {
 
                 let timing_start = std::time::Instant::now();
                 let archive_label = archive_path.display().to_string();
-                let prepare =
-                    installer::prepare_mod(&archive_path, on_extract_progress, on_processing)
-                        .await
-                        .map_err(|error| {
-                            crate::app::messages::PrepareFailure::notification(format!(
-                                "{error:#}\nArchive: {archive_label}"
-                            ))
-                        })?;
+                let prepare = installer::prepare_mod(
+                    &archive_path,
+                    manual_target,
+                    on_extract_progress,
+                    on_processing,
+                )
+                .await
+                .map_err(|error| {
+                    crate::app::messages::PrepareFailure::notification(format!(
+                        "{error:#}\nArchive: {archive_label}"
+                    ))
+                })?;
                 crate::app::timing::log_phase(
                     "install.prepare_archive",
                     "download",
@@ -442,11 +452,21 @@ impl App {
                 );
                 let mod_name = suggested_name;
                 match prepare {
+                    PrepareResult::MassEffect { plan, tmp_dir } => Ok(PrepareResultMsg::Normal {
+                        file_list: Vec::new(),
+                        stripped_wrapper: None,
+                        mele: Some(plan),
+                        tmp_dir,
+                        mod_name,
+                        archive_hash,
+                        archive_path: archive_path_str,
+                    }),
                     PrepareResult::Normal {
                         file_list,
                         stripped_wrapper,
                         tmp_dir,
                     } => Ok(PrepareResultMsg::Normal {
+                        mele: None,
                         file_list,
                         stripped_wrapper,
                         tmp_dir,

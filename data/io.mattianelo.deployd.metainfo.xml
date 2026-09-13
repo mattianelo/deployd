@@ -7,7 +7,7 @@
   <project_license>GPL-3.0-only</project_license>
 
   <name>Deployd</name>
-  <summary>Linux-native mod manager for Bethesda and REDEngine games</summary>
+  <summary>Linux-native mod manager for PC games</summary>
 
   <developer id="io.mattianelo">
     <name>Mattianelo</name>
@@ -15,14 +15,16 @@
 
   <description>
     <p>
-      Deployd is a Linux-native mod manager for Bethesda and REDEngine games,
+      Deployd is a Linux-native mod manager for Bethesda, REDEngine, Aurora, and Eclipse games,
       built with GTK4 and libadwaita. It integrates with Steam and Heroic Launcher,
       handles Nexus Mods downloads via SSO login and NXM links, and deploys mods
-      as hardlinks for safe, non-destructive mod management.
+      with original-file protection. Experimental Mass Effect Legendary Edition support
+      lets you install, manage and restore mods for all three games.
     </p>
-    <p>Version 2.4.3.</p>
+    <p>Version 2.5.0.</p>
     <ul>
       <li>Supports Skyrim SE, Fallout 4, Fallout: New Vegas, Starfield, The Witcher 3, and Cyberpunk 2077</li>
+      <li>Experimental mod installation and profile rebuilding for Mass Effect Legendary Edition</li>
       <li>Game detection from Steam and Heroic Launcher (GOG/Epic)</li>
       <li>Nexus Mods SSO login and NXM deep-link support</li>
       <li>Install mods from ZIP, 7z, and RAR archives</li>
@@ -71,6 +73,14 @@
   </screenshots>
 
   <releases>
+    <release version="2.5.0" date="2026-09-11" type="development">
+      <description>
+        <p>Adds experimental Mass Effect Legendary Edition mod management for all three
+        games, including content, precompiled texture overrides, shader mods and approved
+        plugins. Manage separate game profiles, shared launcher mods and restore managed
+        files after removing mods.</p>
+      </description>
+    </release>
     <release version="2.4.3" date="2026-09-06" type="development">
       <description>
         <p>Adds guided recovery for inaccessible Snap game folders and Wine prefixes,

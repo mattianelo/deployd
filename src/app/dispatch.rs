@@ -26,6 +26,7 @@ impl App {
             return;
         }
         match msg {
+            AppMsg::Mele(msg) => self.handle_mele(msg, &sender, root),
             AppMsg::Recovery(msg) => self.handle_recovery(msg, &sender, root),
             AppMsg::Shell(msg) => self.dispatch_shell_input(msg, sender, root),
             AppMsg::Games(msg) => self.dispatch_games_input(msg, sender, root),
@@ -102,11 +103,16 @@ impl App {
             GamesMsg::ManageGamesClicked => self.handle_manage_games_clicked(root, &sender),
             GamesMsg::ManageGamesClosed => self.handle_manage_games_closed(&sender),
             GamesMsg::GamesConfigured(configs, hidden_ids) => {
-                self.handle_games_configured(configs, hidden_ids, &sender)
+                self.handle_games_configured(configs, hidden_ids, &sender, root)
+            }
+            GamesMsg::SetupProgress(progress) => {
+                if let Some(dialog) = &self.ui.mele_setup {
+                    dialog.update(&progress);
+                }
             }
             GamesMsg::ShowWelcomeWizard => self.handle_show_welcome_wizard(root, &sender),
             GamesMsg::WelcomeWizardConfirmed(configs, hidden_ids) => {
-                self.handle_welcome_wizard_confirmed(configs, hidden_ids, &sender)
+                self.handle_welcome_wizard_confirmed(configs, hidden_ids, &sender, root)
             }
             GamesMsg::WelcomeWizardSkipped => self.handle_welcome_wizard_skipped(),
             GamesMsg::RemoveCurrentGame => self.handle_remove_current_game(root, &sender),
@@ -468,6 +474,7 @@ impl App {
                 self.dispatch_command(*msg, sender, root);
                 drop(lease);
             }
+            AppCmdMsg::Mele(msg) => self.handle_mele_command(msg, &sender, root),
             AppCmdMsg::Shell(msg) => self.dispatch_shell_command(msg, sender, root),
             AppCmdMsg::Games(msg) => self.dispatch_games_command(msg, sender, root),
             AppCmdMsg::Mods(msg) => self.dispatch_mods_command(msg, sender, root),
@@ -775,6 +782,10 @@ fn requires_game_access(msg: &AppMsg) -> bool {
     match msg {
         AppMsg::Mods(_) | AppMsg::Plugins(_) | AppMsg::Install(_) => true,
         AppMsg::Tools(ToolsMsg::LaunchTool(_)) => true,
+        AppMsg::Mele(msg) => !matches!(
+            msg,
+            super::mele::Msg::Cancel | super::mele::Msg::Progress(_)
+        ),
         AppMsg::Downloads(
             DownloadsMsg::InstallDownload(_) | DownloadsMsg::ReinstallDownload(_),
         ) => true,
@@ -793,6 +804,7 @@ fn requires_game_access(msg: &AppMsg) -> bool {
                 | GamesMsg::ManageGamesClicked
                 | GamesMsg::ManageGamesClosed
                 | GamesMsg::GamesConfigured(_, _)
+                | GamesMsg::SetupProgress(_)
                 | GamesMsg::RemoveCurrentGame
                 | GamesMsg::RemoveGameConfirmed { .. }
                 | GamesMsg::NexusApiKeyUpdated
@@ -825,6 +837,20 @@ fn changes_folder_context(msg: &AppMsg) -> bool {
 mod location_tests {
     use super::*;
     use crate::app::messages::{DownloadsMsg, GamesMsg};
+
+    // @variants: both
+    #[test]
+    fn permits_setup_progress_when_game_access_is_blocked() {
+        use crate::core::game::mass_effect::baseline::progress::{Phase, Progress};
+        let message = AppMsg::Games(GamesMsg::SetupProgress(Progress {
+            game: "LE1".into(),
+            index: 1,
+            count: 3,
+            phase: Phase::Discovering(10),
+        }));
+        assert!(!requires_game_access(&message));
+        assert!(!changes_folder_context(&message));
+    }
 
     // @variants: snap
     #[test]

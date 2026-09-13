@@ -27,8 +27,8 @@ impl EngineHandler for EclipseHandler {
         _stripped_wrapper: Option<&str>,
         file_list: Vec<(PathBuf, PathBuf)>,
         _file_targets: &HashMap<String, InstallTarget>,
-    ) -> Vec<(PathBuf, PathBuf)> {
-        if is_tool_mod(&file_list) {
+    ) -> anyhow::Result<Vec<(PathBuf, PathBuf)>> {
+        let routed = if is_tool_mod(&file_list) {
             route_tool_paths(file_list, mod_name)
         } else {
             file_list
@@ -38,7 +38,8 @@ impl EngineHandler for EclipseHandler {
                     (src, PathBuf::from(routed))
                 })
                 .collect()
-        }
+        };
+        Ok(routed)
     }
 
     fn deploy_dir(&self, game: &Game) -> PathBuf {

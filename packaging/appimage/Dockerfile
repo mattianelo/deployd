@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential curl ca-certificates git pkg-config python3 \
     libgtk-4-dev libadwaita-1-dev \
     libglib2.0-bin libglib2.0-dev \
-    libsqlite3-dev libssl-dev libarchive-dev \
+    libsqlite3-dev libssl-dev libarchive-dev libicu74 \
     libunrar-dev \
     librsvg2-common \
     libgdk-pixbuf2.0-bin \

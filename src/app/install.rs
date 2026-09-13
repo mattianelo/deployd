@@ -163,6 +163,12 @@ impl App {
             ));
         }));
 
+        let manual_target = self.selected_game().and_then(|game| {
+            use crate::core::game::mass_effect::Target;
+            [Target::Le1, Target::Le2, Target::Le3]
+                .into_iter()
+                .find(|target| target.game_id() == game.id)
+        });
         sender.oneshot_command(async move {
             let result: Result<PrepareResultMsg, PrepareFailure> = async {
                 let timing_start = std::time::Instant::now();
@@ -194,21 +200,24 @@ impl App {
                 } else {
                     (path.clone(), downloads_dir)
                 };
-                let prepare = installer::prepare_mod(&path, on_extract_progress, on_processing)
-                    .await
-                    .map_err(|error| {
-                        if let Some(message) = crate::utils::snap::manual_archive_recovery_message(
-                            &recovery_path,
-                            &recovery_downloads_dir,
-                            &error,
-                        ) {
-                            PrepareFailure::dialog("Archive Access Required", message)
-                        } else {
-                            PrepareFailure::notification(format!(
-                                "{error:#}\nArchive: {archive_label}"
-                            ))
-                        }
-                    })?;
+                let prepare = installer::prepare_mod(
+                    &path,
+                    manual_target,
+                    on_extract_progress,
+                    on_processing,
+                )
+                .await
+                .map_err(|error| {
+                    if let Some(message) = crate::utils::snap::manual_archive_recovery_message(
+                        &recovery_path,
+                        &recovery_downloads_dir,
+                        &error,
+                    ) {
+                        PrepareFailure::dialog("Archive Access Required", message)
+                    } else {
+                        PrepareFailure::notification(format!("{error:#}\nArchive: {archive_label}"))
+                    }
+                })?;
                 crate::app::timing::log_phase(
                     "install.prepare_archive",
                     "manual",
@@ -216,11 +225,21 @@ impl App {
                     None,
                 );
                 match prepare {
+                    PrepareResult::MassEffect { plan, tmp_dir } => Ok(PrepareResultMsg::Normal {
+                        file_list: Vec::new(),
+                        stripped_wrapper: None,
+                        mele: Some(plan),
+                        tmp_dir,
+                        mod_name,
+                        archive_hash,
+                        archive_path,
+                    }),
                     PrepareResult::Normal {
                         file_list,
                         stripped_wrapper,
                         tmp_dir,
                     } => Ok(PrepareResultMsg::Normal {
+                        mele: None,
                         file_list,
                         stripped_wrapper,
                         tmp_dir,

@@ -19,6 +19,7 @@ pub struct ModPropertiesInit {
     /// Whether the selected game uses the Aurora engine (Witcher 1). Shows the
     /// same Data/Root toggles as Bethesda but with Aurora-specific labels.
     pub is_aurora: bool,
+    pub is_mele: bool,
     /// Resolved cache root for this game (used to locate the mod's cache folder).
     pub cache_root: std::path::PathBuf,
     /// Files this mod provides that win over lower-priority mods.
@@ -48,6 +49,7 @@ pub struct ModPropertiesDialog {
     is_bethesda: bool,
     /// Whether the selected game uses the Aurora engine (Witcher 1).
     is_aurora: bool,
+    is_mele: bool,
     /// (game_rel_lowercase as stored in DB, display_path without leading "../")
     files: Vec<(String, String)>,
     /// Desired per-file targets, indexed parallel to `files`.
@@ -348,6 +350,7 @@ impl SimpleComponent for ModPropertiesDialog {
 
                         adw::PreferencesGroup {
                             set_title: "Cache Folder",
+                            set_visible: !model.is_mele,
 
                             add = &adw::ActionRow {
                                 set_title: "Open Folder",
@@ -455,6 +458,7 @@ impl SimpleComponent for ModPropertiesDialog {
             mod_entry,
             is_bethesda,
             is_aurora,
+            is_mele,
             cache_root,
             override_files,
             overridden_files,
@@ -479,6 +483,7 @@ impl SimpleComponent for ModPropertiesDialog {
             installed_at: mod_entry.installed_at,
             is_bethesda,
             is_aurora,
+            is_mele,
             files: Vec::new(),
             file_targets: Vec::new(),
             files_loading: true,

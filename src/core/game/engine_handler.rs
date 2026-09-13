@@ -9,9 +9,13 @@ use crate::core::tracker::Tracker;
 use crate::models::game::{Game, GameEngine};
 use crate::models::mod_entry::InstallTarget;
 
-use super::{aurora, bethesda, eclipse, redengine};
+use super::{aurora, bethesda, eclipse, mass_effect, redengine};
 
 pub(crate) trait EngineHandler: Send + Sync {
+    fn validate_file_deployment(&self) -> Result<()> {
+        Ok(())
+    }
+
     /// Rewrite destination paths in the file list per engine rules.
     fn route_file_list(
         &self,
@@ -20,7 +24,7 @@ pub(crate) trait EngineHandler: Send + Sync {
         stripped_wrapper: Option<&str>,
         file_list: Vec<(PathBuf, PathBuf)>,
         file_targets: &HashMap<String, InstallTarget>,
-    ) -> Vec<(PathBuf, PathBuf)>;
+    ) -> Result<Vec<(PathBuf, PathBuf)>>;
 
     /// Returns the conflict detection key for a deployed file path.
     ///
@@ -109,5 +113,6 @@ pub(crate) fn handler_for(engine: &GameEngine) -> &'static dyn EngineHandler {
         GameEngine::REDEngine => &REDENGINE,
         GameEngine::Eclipse => &ECLIPSE,
         GameEngine::Aurora => &AURORA,
+        GameEngine::MassEffect => &mass_effect::MassEffectHandler,
     }
 }

@@ -46,7 +46,7 @@ pub(crate) async fn load_game_data(
     if let Some(error) = &repair_pending {
         access_warnings.push(error.to_string());
     }
-    let game_folder_accessible = if repair_pending.is_some() {
+    let mut game_folder_accessible = if repair_pending.is_some() {
         false
     } else if matches!(mode, GameLoadMode::OpenGame) || snap::is_snap() {
         match snap::validate_selected_folder(&game.path, SelectedFolderKind::GameFolder) {
@@ -86,6 +86,14 @@ pub(crate) async fn load_game_data(
         true
     };
 
+    if game_folder_accessible
+        && game.engine == crate::models::game::GameEngine::MassEffect
+        && let Err(error) = game::mass_effect::journal::recover(tracker.clone(), game.clone()).await
+    {
+        game_folder_accessible = false;
+        access_warnings.push(format!("MELE deployment recovery needs attention: {error:#}. Restore folder access or reconcile changed files, then reopen the game in Deployd."));
+    }
+
     // Ensure a "Default" profile exists. This is idempotent and covers both the
     // normal startup path and games added later via the wizard or Manage Games dialog.
     let active_profile = tracker
@@ -103,7 +111,9 @@ pub(crate) async fn load_game_data(
             .map_err(|e| e.to_string())?;
     }
 
-    if matches!(mode, GameLoadMode::OpenGame) {
+    if matches!(mode, GameLoadMode::OpenGame)
+        && (game.engine != crate::models::game::GameEngine::MassEffect || game_folder_accessible)
+    {
         let transition = tracker
             .restore_last_deployed_profile(game_id)
             .await
@@ -150,7 +160,11 @@ pub(crate) async fn load_game_data(
 
     // Take a one-time vanilla snapshot so the external-file detector can exclude
     // files that were already present before any mod was installed.
-    if game_folder_accessible {
+    if game_folder_accessible && game.engine == crate::models::game::GameEngine::MassEffect {
+        game::mass_effect::baseline::ensure_baseline(tracker, game)
+            .await
+            .map_err(|error| error.to_string())?;
+    } else if game_folder_accessible {
         let vanilla_entries = detector::snapshot_game_files(game);
         tracker
             .ensure_vanilla_snapshot(game_id, &vanilla_entries)

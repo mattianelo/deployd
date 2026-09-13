@@ -1,0 +1,65 @@
+{
+  "repository": "https://github.com/MassEffectModder/MassEffectModder",
+  "commit": "4364093b2d6c1bbeaf6d3ee40f1a0a9b56b5b2c1",
+  "directory": "MassEffectModder/Libs/oodle",
+  "files": [
+    {
+      "file": "pe_linker.c",
+      "size": 18833,
+      "sha256": "ff635f645d73cbc2646dea032cdcae05bd7b5f659a73b3e1050f7d313fd7b32a"
+    },
+    {
+      "file": "pe_linker.h",
+      "size": 13944,
+      "sha256": "965a51a8057a32f0d146980207fa866c162c36f72c1443b13e2b5ab22d2e8570"
+    },
+    {
+      "file": "winapi.c",
+      "size": 21736,
+      "sha256": "800cac3848ba2c0507e1928e5364613f6cc443f4956f5f5249cd2f4844b395dc"
+    },
+    {
+      "file": "winnt_types.h",
+      "size": 3964,
+      "sha256": "980c3a06b1c781b021ae46b9ca5fdadea6e76a8fec5d6a788d985bc1157ab25e"
+    },
+    {
+      "file": "log.c",
+      "size": 1611,
+      "sha256": "7cba60954128fe45353fea106c64164ecf565a1b82a9a8fdf8b0d1205a22762e"
+    },
+    {
+      "file": "log.h",
+      "size": 1709,
+      "sha256": "531f422a0302678b7d9e51d015863ef041dc5f2fa7c271b50003a76d30521ac9"
+    },
+    {
+      "file": "search_hsearch_r.c",
+      "size": 7252,
+      "sha256": "ff925c7bc4434cdc8b7429dabb6d59a567d9e956f555d725f3f0e36c54648dc1"
+    },
+    {
+      "file": "search_hsearch_r.h",
+      "size": 1524,
+      "sha256": "24720480e5e769adeb8c9afada2547472054113c4f34ace141bcc6d564e04268"
+    },
+    {
+      "file": "license_GPLv2.txt",
+      "size": 18092,
+      "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    },
+    {
+      "file": "license_GPLv3.txt",
+      "size": 35147,
+      "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+    }
+  ],
+  "additional_licenses": [
+    {
+      "file": "license_LGPLv2_1.txt",
+      "license": "LGPL-2.1-or-later",
+      "size": 26419,
+      "sha256": "20e50fe7aae3e56378ebf0417d9de904f55a0e61e4df315333e632a4d3555d95"
+    }
+  ]
+}

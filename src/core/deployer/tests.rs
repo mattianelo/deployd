@@ -304,6 +304,21 @@ async fn run_all_registered_games(final_action: FinalAction) -> Result<BTreeSet<
         backup_anchor: "data",
     };
     for option in known_game_options() {
+        if *option.engine == GameEngine::MassEffect {
+            let temp = tempfile::tempdir()?;
+            let game = configured_game(&option, &temp)?;
+            let tracker = Tracker::open("sqlite::memory:").await?.tracker;
+            assert!(deployment_preflight(&game, &tracker).await.is_err());
+            assert!(
+                deploy_with_backup_dir(&game, &tracker, temp.path(), true, None)
+                    .await
+                    .is_err()
+            );
+            assert!(purge(&game, &tracker, temp.path()).await.is_err());
+            assert!(!game.path.exists());
+            covered.insert(option.deployd_id.to_string());
+            continue;
+        }
         run_vanilla_lifecycle(&option, &path, final_action)
             .await
             .with_context(|| {
@@ -336,7 +351,39 @@ fn assert_current_registry_is_covered(covered: &BTreeSet<String>) {
 
 // @variants: both
 #[tokio::test]
-async fn all_registered_games_restore_vanilla_on_deploy() -> Result<()> {
+async fn preserves_existing_mele_files_and_records_when_generic_deployment_is_rejected()
+-> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let option = known_game_options()
+        .into_iter()
+        .find(|option| option.deployd_id == "mass-effect-le1")
+        .context("LE1 registration missing")?;
+    let game = configured_game(&option, &temp)?;
+    let tracker = Tracker::open("sqlite::memory:").await?.tracker;
+    let live = game.data_dir().join("existing.pcc");
+    std::fs::create_dir_all(game.data_dir())?;
+    std::fs::write(&live, b"preserve existing deployment")?;
+    let file = ModFile {
+        mod_id: "legacy-entry".into(),
+        game_rel_lowercase: "existing.pcc".into(),
+        game_rel_original: "existing.pcc".into(),
+        cache_path: temp.path().join("missing-cache").display().to_string(),
+    };
+    tracker.record_deployed_files(&game.id, &[file]).await?;
+    assert!(
+        deploy_with_backup_dir(&game, &tracker, temp.path(), true, None)
+            .await
+            .is_err()
+    );
+    assert!(purge(&game, &tracker, temp.path()).await.is_err());
+    assert_eq!(std::fs::read(live)?, b"preserve existing deployment");
+    assert_eq!(tracker.get_deployed_files(&game.id).await?.len(), 1);
+    Ok(())
+}
+
+// @variants: both
+#[tokio::test]
+async fn registered_games_restore_vanilla_or_reject_generic_deploy() -> Result<()> {
     let covered = run_all_registered_games(FinalAction::Deploy).await?;
     assert_current_registry_is_covered(&covered);
     assert_eq!(covered.len(), known_game_options().len());
@@ -345,7 +392,7 @@ async fn all_registered_games_restore_vanilla_on_deploy() -> Result<()> {
 
 // @variants: both
 #[tokio::test]
-async fn all_registered_games_restore_vanilla_on_purge() -> Result<()> {
+async fn registered_games_restore_vanilla_or_reject_generic_purge() -> Result<()> {
     let covered = run_all_registered_games(FinalAction::Purge).await?;
     assert_current_registry_is_covered(&covered);
     assert_eq!(covered.len(), known_game_options().len());

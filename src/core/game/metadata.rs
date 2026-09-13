@@ -33,13 +33,12 @@ pub fn nexus_domain(game: &Game) -> Option<&'static str> {
         .map(|k| k.nexus_domain)
 }
 
-/// Find the deployd game ID that matches a Nexus domain name.
-/// Returns the first match (GOG before Steam for backward compatibility).
-pub fn game_id_for_nexus_domain(domain: &str) -> Option<&'static str> {
+pub fn game_ids_for_nexus_domain(domain: &str) -> Vec<&'static str> {
     KNOWN_GAMES
         .iter()
-        .find(|k| k.nexus_domain == domain)
-        .map(|k| k.deployd_id)
+        .filter(|game| game.nexus_domain == domain)
+        .map(|game| game.deployd_id)
+        .collect()
 }
 
 /// Return the canonical `data_subdir` for a known game ID.
@@ -67,4 +66,30 @@ pub fn all_nexus_domains() -> Vec<&'static str> {
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // @variants: both
+    #[test]
+    fn resolves_the_shared_nexus_domain_without_picking_one_game() {
+        assert_eq!(
+            game_ids_for_nexus_domain("masseffectlegendaryedition"),
+            vec!["mass-effect-le1", "mass-effect-le2", "mass-effect-le3"]
+        );
+        assert_eq!(
+            all_nexus_domains()
+                .iter()
+                .filter(|domain| **domain == "masseffectlegendaryedition")
+                .count(),
+            1
+        );
+        assert_eq!(
+            game_ids_for_nexus_domain("skyrimspecialedition"),
+            vec!["skyrim-se"]
+        );
+        assert!(game_ids_for_nexus_domain("unknown").is_empty());
+    }
 }

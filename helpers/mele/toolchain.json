@@ -1,0 +1,15 @@
+{
+  "sdk": {
+    "version": "10.0.400",
+    "runtime_version": "10.0.11",
+    "url": "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.400/dotnet-sdk-10.0.400-linux-x64.tar.gz",
+    "size": 240133692,
+    "sha512": "1033977dd837150e0814cf0c5d5b17ceb63925fda7ba2158b47258a4bd7c048cf82eac3bc1166f3146f53124a3f5fba09db1de1260d2ce96399860303b404b48"
+  },
+  "legendary_explorer": {
+    "commit": "bd5ec550c5448e460af949c307c8d013e14f4a28",
+    "url": "https://codeload.github.com/ME3Tweaks/LegendaryExplorer/tar.gz/bd5ec550c5448e460af949c307c8d013e14f4a28",
+    "size": 388907471,
+    "sha256": "7a6f237bb231d74d5e0441b60807a1ef6f7a2fdd842d9d691fc91b301b771416"
+  }
+}

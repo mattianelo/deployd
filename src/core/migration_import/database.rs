@@ -2,18 +2,9 @@ use anyhow::{Context, Result};
 use sqlx::{Row, Sqlite, Transaction};
 
 use crate::core::migration_bundle::ExportManifest;
-use crate::models::game::{Game, GameEngine};
+use crate::models::game::Game;
 
 use super::filesystem::{ImportPaths, rewrite_backup_path, rewrite_cache_path_for_row};
-
-fn game_engine_db_value(engine: &GameEngine) -> &'static str {
-    match engine {
-        GameEngine::REDEngine => "redengine",
-        GameEngine::Eclipse => "eclipse",
-        GameEngine::Aurora => "aurora",
-        GameEngine::Bethesda => "bethesda",
-    }
-}
 
 pub(super) async fn import_database_rows(
     tx: &mut Transaction<'_, Sqlite>,
@@ -113,7 +104,7 @@ async fn import_game_row(tx: &mut Transaction<'_, Sqlite>, game: &Game) -> Resul
             .as_ref()
             .map(|path| path.to_string_lossy().into_owned()),
     )
-    .bind(game_engine_db_value(&game.engine))
+    .bind(game.engine.as_str())
     .execute(&mut **tx)
     .await
     .context("Failed to import game row")?;

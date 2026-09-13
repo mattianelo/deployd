@@ -31,8 +31,12 @@ impl EngineHandler for AuroraHandler {
         _stripped_wrapper: Option<&str>,
         file_list: Vec<(PathBuf, PathBuf)>,
         file_targets: &HashMap<String, InstallTarget>,
-    ) -> Vec<(PathBuf, PathBuf)> {
-        installer::route_aurora_paths(file_list, &game.data_subdir, file_targets)
+    ) -> anyhow::Result<Vec<(PathBuf, PathBuf)>> {
+        Ok(installer::route_aurora_paths(
+            file_list,
+            &game.data_subdir,
+            file_targets,
+        ))
     }
 }
 

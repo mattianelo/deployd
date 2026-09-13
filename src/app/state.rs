@@ -72,6 +72,8 @@ pub(crate) struct ToolState {
 }
 
 pub(crate) struct UiState {
+    pub(crate) mele_setup: Option<crate::ui::mele_dialog::SetupProgress>,
+    pub(crate) mele_operation: Option<adw::AlertDialog>,
     pub(crate) header: Controller<Header>,
     pub(crate) bottom_status: Controller<BottomStatus>,
     pub(crate) toast_overlay: adw::ToastOverlay,

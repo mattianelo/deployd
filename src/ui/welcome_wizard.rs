@@ -41,6 +41,7 @@ pub enum WelcomeWizardMsg {
     NextToDirectories,
     BackToGames,
     Finish,
+    SetupValidated(Result<Vec<GameConfig>, String>),
     Cancel,
     FolderSelectionFailed(String),
 }
@@ -210,7 +211,7 @@ impl Component for WelcomeWizard {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let known_opts: Vec<game::KnownGameOption> = game::known_game_options();
+        let known_opts: Vec<game::KnownGameOption> = game::setup::options();
         let n = known_opts.len();
 
         // ── Games list (rebuilt imperatively) ────────────────────────────────
@@ -545,11 +546,29 @@ impl Component for WelcomeWizard {
                     })
                     .collect();
 
-                let _ = sender.output(WelcomeWizardOutput::Confirmed {
-                    enabled,
-                    hidden_ids: vec![],
+                root.set_sensitive(false);
+                let input = sender.input_sender().clone();
+                sender.oneshot_command(async move {
+                    let result = tokio::task::spawn_blocking(move || game::setup::expand(enabled))
+                        .await
+                        .map_err(|error| error.to_string())
+                        .and_then(|result| result.map_err(|error| format!("{error:#}")));
+                    let _ = input.send(WelcomeWizardMsg::SetupValidated(result));
                 });
-                root.close();
+            }
+
+            WelcomeWizardMsg::SetupValidated(result) => {
+                root.set_sensitive(true);
+                match result {
+                    Ok(enabled) => {
+                        let _ = sender.output(WelcomeWizardOutput::Confirmed {
+                            enabled,
+                            hidden_ids: vec![],
+                        });
+                        root.close();
+                    }
+                    Err(message) => Self::show_path_error(root, &message),
+                }
             }
 
             WelcomeWizardMsg::Cancel => {

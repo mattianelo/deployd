@@ -1,14 +1,14 @@
 # Deployd
 
-![Version](https://img.shields.io/badge/version-2.4.3-blue)
+![Version](https://img.shields.io/badge/version-2.5.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey?logo=linux)
 ![License](https://img.shields.io/badge/license-GPL--3.0--only-green)
 [![deployd](https://snapcraft.io/deployd/badge.svg)](https://snapcraft.io/deployd)
 
-A Linux-native mod manager for Bethesda, REDEngine, Aurora, and Eclipse games, built with GTK4,
-libadwaita, and Rust.
+A Linux-native mod manager for Mass Effect Legendary Edition, Bethesda, REDEngine, Aurora,
+and Eclipse games.
 
-> **v2.4.3** (unreleased). If you find bugs, please [open an issue](https://gitlab.com/mattianelo/deployd/-/issues).
+> **v2.5.0** If you find bugs, please [open an issue](https://gitlab.com/mattianelo/deployd/-/issues).
 
 Feature overview: [Deployd GitLab Page](https://mattianelo.gitlab.io/deployd/)
 
@@ -23,9 +23,7 @@ sudo snap install deployd
 ```
 
 You can also install from the [Deployd Snap Store page](https://snapcraft.io/deployd).
-The Snap package uses the core24 runtime, a pinned Rust toolchain, and currently targets 64-bit
-x86 (`amd64`) Linux systems.
-Stable Snap Store updates are built and published from Deployd's stable version tags.
+The Snap package supports 64-bit x86 (`amd64`) Linux systems.
 Application update notifications are shown only by the AppImage; Snap updates are managed by
 snapd and the configured Snap Store channel.
 The Nexus Mods page remains available for users who prefer that distribution channel:
@@ -42,6 +40,47 @@ The Nexus Mods page remains available for users who prefer that distribution cha
 | Aurora | The Witcher 1 |
 | Eclipse | Dragon Age: Origins |
 
+### Mass Effect Legendary Edition (experimental)
+
+Manage LE1, LE2 and LE3 with separate mod libraries and profiles. Supported mods
+include Community Patch, cosmetic and content mods, precompiled M3TO textures
+(such as ALOT + ISL), shader mods, squadmate outfits and LE2 email additions.
+Deployd reports unsupported packages before installation.
+
+1. Add a **clean installation** containing all three games and select its Wine prefix
+   separately. Deployd treats this installation as your restoration point. Initial
+   setup can take several minutes and shows progress for each game.
+2. Select a game, install a mod archive and choose its options.
+3. Enable and order your mods, then choose **Deploy** and select the game language.
+4. Deploy again after disabling, removing, reordering or switching profiles.
+   **Purge** restores managed game files while keeping your mod library. Reinstall
+   an archive to change its options or contents.
+
+Place required mods before the mods that need them. Mod list order controls file
+replacements; DLC priority is set by mod authors and does not change when you
+reorder the list. Texture overrides and shader mods also follow DLC priority.
+
+Required support components download automatically on first use and are retained
+for offline reuse. Missing managed components and plugins can be repaired from the
+deployment dialog. Interrupted deployments recover after restart. Unexpected
+external changes are preserved and must be resolved before deploying again.
+Large texture installations can take time; follow the progress shown in Deployd.
+
+ASI/DLL plugins require your approval for each package version and game. Deployd
+never runs archive installers or scripts. Follow the mod author's instructions
+for any additional Proton DLL overrides.
+
+Use **Deploy options → Shared launcher mods** from any MELE game to manage launcher
+mods. This list applies to all three games and is independent of game profiles.
+Game Purge leaves launcher mods installed; restore them separately from this menu.
+Required launcher support remains active while a deployed game needs it.
+
+**Limitations:** MEM textures, raw M3TO source packages, headmorphs and portable
+MELE profile transfers are not supported. Launcher executable replacements and
+launcher installer choices are also unsupported; add supported launcher archives
+through the shared launcher menu. Restore existing MEM textures to clean game
+content before adding the game. Mod deployment does not edit saves.
+
 ---
 
 ## Features
@@ -53,7 +92,8 @@ The Nexus Mods page remains available for users who prefer that distribution cha
 - **Mod Profiles** — Per-game profiles to switch between configurations instantly
 - **Plugin Load Order** — Select Mode reorder workflow for `.esp`/`.esm`/`.esl` management written to `plugins.txt`
 - **Conflict Detection** — Per-file visibility into which mods override each other, with a detailed Conflicts section in each mod's Properties dialog (The Witcher 1's Override/ files are matched by filename regardless of subfolder depth)
-- **Priority-Based Deployment** — Hardlink deployment; lower in the list wins conflicts
+- **Priority-Based Deployment** — Lower in the list wins file conflicts; MELE also
+  respects the DLC priorities supplied by mod authors
 - **Tool Launcher** — Run xEdit, LOOT, BodySlide and more through the package-managed Windows
   runtime; the Snap prepares an isolated per-game tool environment and silently installs its
   verified .NET compatibility runtime on first use
@@ -102,7 +142,10 @@ Deployd uses libadwaita throughout its primary workflows:
 By default Deployd stores all cached mod files in `~/.local/share/deployd/cache/` (or `$SNAP_USER_COMMON/deployd/cache/` in the Snap). You can relocate a game's cache to any directory via **Settings → Manage Games**, under the "Cache Folder" row for that game.
 
 **Why would you move it?**  
-If your game lives on a secondary drive, placing the cache on the same drive eliminates the copy overhead on every install: Deployd deploys mods using **hardlinks** (zero-copy, zero extra disk space).
+Most supported games use **hardlinks**, which avoid duplicate file storage when the
+cache and game share a compatible filesystem. Moving the cache can make that possible
+for games on a secondary drive. MELE uses separate copies for rebuilding and requires
+additional disk space.
 
 In the Snap package, Steam-managed game folders can be exposed through a separate mount. When Linux rejects a hardlink across that boundary, Deployd falls back to copying the file while keeping it tracked as Deployd-managed.
 
@@ -118,8 +161,7 @@ blocked hidden-home paths, ungranted removable media, or read/write access failu
 Folders selected through the desktop portal remain available across restarts, including folders on
 external drives. The downloads folder picker always requests this portal access instead of relying
 on direct removable-media access. When download records point at a document-portal mount, Deployd
-resolves the original host path without retaining the portal's synthetic document basename before
-moving the archive to Trash.
+uses the desktop's Trash service to remove the archive.
 
 If the desktop Trash service fails, Deployd asks whether to permanently delete only that archive
 or remove its Downloads entry while leaving the archive untouched. It never silently converts a
@@ -127,7 +169,7 @@ Trash action into permanent deletion.
 
 If the desktop portal returns an external drive's direct mount path or an inaccessible portal route,
 Deployd prompts for the Snap's manual removable-media connection. The displayed command uses the
-active Snap instance name, including the instance key used by parallel development installations.
+name of the Snap installation you are running.
 Run the command, then select the downloads folder again.
 
 If a saved game folder or Wine prefix becomes inaccessible in the Snap, open Manage Games and
@@ -146,9 +188,8 @@ AppImage-to-Snap game migration preserves installed-mod source metadata, downloa
 the profile associated with currently deployed files. AppImage archive paths are cleared because
 they are not valid inside the Snap; rescanning the Snap downloads folder reattaches those archives.
 
-Deployd treats required database upgrades as startup-critical and reports an actionable error if
-one cannot be applied. Non-critical metadata repairs appear as warnings and are retried on a later
-launch, so a temporary repair failure does not make the database unusable.
+If a required data upgrade fails at startup, Deployd explains the problem. Recoverable
+metadata problems appear as warnings and are retried on a later launch.
 
 Deployment and purge report success only after required filesystem and tracking updates complete.
 Problems cleaning empty directories or restoring optional backups appear as warnings without
@@ -157,16 +198,17 @@ already-relocated files back and reports any rollback problem that still needs a
 
 **Hardlink filesystem constraint**
 
-Hardlinks require both the cache directory and the game directory to reside on the **same filesystem** — that is, they must share the same `st_dev` value as reported by the OS. Concretely:
+Hardlinks require both the cache directory and the game directory to reside on the **same filesystem**. Common examples:
 
 | Storage setup | What counts as "same filesystem" |
 |---|---|
 | Standard partitions | Same partition / block device |
-| BTRFS | Same **subvolume** — hardlinks cannot cross subvolume boundaries even on the same physical disk, because each subvolume has its own inode space |
+| BTRFS | Same **subvolume** — hardlinks cannot cross subvolume boundaries even when both folders are on the same drive |
 | ZFS | Same **dataset** — hardlinks cannot cross datasets even within the same pool |
 | LVM / LUKS | Same logical volume |
 
-If you select a cache directory on a different filesystem than the game folder, Deployd will reject the selection with a clear error message. No files are moved until the check passes.
+For games using hardlink deployment, selecting a cache directory on an incompatible
+filesystem produces an explanation before any files are moved.
 
 ---
 
@@ -205,8 +247,7 @@ Open **Settings** (gear icon) and log in under **Nexus Mods**:
 - **Archive metadata** — Manual metadata refresh uses the same Nexus mod and exact-file details as
   Mod Manager downloads. Installation uses the metadata already stored on the download and does
   not contact Nexus or request an ID. Clearing metadata restores the archive name and re-detects
-  its Nexus identity when the filename contains one. Newly scanned archives are committed before
-  they become available for metadata refresh, so resolved metadata remains after restarting.
+  its Nexus identity when the filename contains one. Refreshed metadata remains available after restarting.
   Rescanning current Nexus filenames matches the page, file label, and version, keeping metadata
   attached to the correct archive when multiple versions of the same file are present.
 - **From Nexus Mods** — Click **Mod Manager Download**; the file downloads into Deployd automatically
@@ -232,15 +273,16 @@ from the Downloads panel.
 
 ### 4. Deployment
 
-Mods are deployed as **hardlinks** into the game's Data directory — originals stay safely in Deployd's cache.
+Deploy applies your enabled mods in the selected order. Most supported games use
+hardlinks from the mod cache; MELE rebuilds its managed installation using separate copies.
 
 - Toggle individual mods on/off with the switch in each row
 - Enter **Select Mode** to reorder mods; in v2, Select Mode is the only way to modify load order
 - Drag selected rows to reorder; mods lower in the list win file conflicts
 - **Deploy** — applies your changes to the game folder
-- **Purge** — removes all Deployd-managed files (only tracked hardlinks; your game files are safe)
+- **Purge** — removes managed mod files and restores backed-up originals
 
-For every supported game, when a deployment will replace files supplied by the game, Deployd shows
+For games other than MELE, when a deployment will replace files supplied by the game, Deployd shows
 the affected paths before making changes. **Protect vanilla game files** is enabled by default and
 can be changed in that warning or under **Settings → Deployment**. Protected originals are verified
 before deployment and restored on the next Deploy or Purge after no enabled mod uses their path.
@@ -303,16 +345,13 @@ Launch modding tools through the package-managed runtime from the **Tools** pane
 
 ## How It Works
 
-1. **Cache** — Archives are extracted into a per-mod cache directory with normalised paths
-2. **Deploy** — Files are hardlinked from cache into the game's Data directory, with per-game path rules applied
-3. **Track** — Every deployed file is recorded in SQLite; purge removes only tracked links
-4. **Profiles** — Full mod + plugin state is saved and restored per profile
+1. **Import** — Add mod archives to your library and choose their installation options
+2. **Deploy** — Apply the enabled mods to the selected game
+3. **Restore** — Remove managed mods and restore backed-up originals with Purge
+4. **Profiles** — Save different mod selections and orders for each game
 
 Deployd treats downloaded archives and installer metadata as untrusted input. Keep the application
 updated so archive, XML, and network-parser security fixes are applied with new releases.
-
-Development changes are checked in explicit pre-release pipelines with compiler-backed semantic
-and structural analysis in the project's isolated development environment.
 
 ---
 

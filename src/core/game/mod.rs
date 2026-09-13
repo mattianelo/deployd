@@ -5,8 +5,10 @@ pub(crate) mod eclipse;
 pub(crate) mod engine_handler;
 mod ini;
 mod known_games;
+pub(crate) mod mass_effect;
 mod metadata;
 mod redengine;
+pub(crate) mod setup;
 mod tools;
 mod wine;
 
@@ -22,7 +24,7 @@ pub(crate) use ini::repair_ini_links;
 pub(crate) use ini::repair_registered_game_path;
 pub use ini::{ensure_ini_symlinks, missing_bethesda_reg_key, plugins_txt_paths};
 pub use metadata::{
-    all_nexus_domains, detect_save_dir, game_id_for_nexus_domain, has_save_management,
+    all_nexus_domains, detect_save_dir, game_ids_for_nexus_domain, has_save_management,
     known_data_subdir, nexus_domain,
 };
 pub use tools::{archive_mod_dir, detect_tool_path, tool_presets_for};
@@ -33,6 +35,7 @@ pub use wine::{
     snap_wine_status, umu_folders_path,
 };
 
+#[derive(Clone)]
 pub struct KnownGameOption {
     pub deployd_id: &'static str,
     pub title: &'static str,

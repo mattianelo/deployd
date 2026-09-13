@@ -33,7 +33,7 @@ pub(crate) fn throttled_install_progress(
     sender: Sender<AppMsg>,
     identity: InstallIdentity,
     label: &'static str,
-) -> Box<dyn Fn(usize, usize) + Send> {
+) -> Box<dyn Fn(usize, usize) + Send + Sync> {
     let state = Mutex::new(ProgressState { last_emit: None });
     Box::new(move |done, total| {
         let now = Instant::now();
@@ -104,6 +104,20 @@ pub(crate) fn throttled_download_install_progress(
                     detail,
                 ),
             ));
+        }
+    })
+}
+
+pub(crate) fn throttled_mele_progress(
+    sender: Sender<AppMsg>,
+) -> Box<dyn Fn(usize, usize) + Send + Sync> {
+    let state = Mutex::new(ProgressState { last_emit: None });
+    Box::new(move |done, total| {
+        let Ok(mut state) = state.lock() else { return };
+        if state.should_emit(Instant::now(), done, total) {
+            let _ = sender.send(AppMsg::Mele(super::mele::Msg::Progress(
+                (done as f64 / total.max(1) as f64).clamp(0.0, 1.0),
+            )));
         }
     })
 }

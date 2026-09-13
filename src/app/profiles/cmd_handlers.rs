@@ -90,12 +90,7 @@ impl App {
                     self.session.games.iter().map(|g| g.id.clone()).collect();
                 for persisted in data.persisted_games.iter().filter(|p| p.custom) {
                     if !known_ids.contains(&persisted.id) {
-                        let engine = match persisted.engine.as_str() {
-                            "redengine" => crate::models::game::GameEngine::REDEngine,
-                            "eclipse" => crate::models::game::GameEngine::Eclipse,
-                            "aurora" => crate::models::game::GameEngine::Aurora,
-                            _ => crate::models::game::GameEngine::Bethesda,
-                        };
+                        let engine = persisted.engine.clone();
                         self.ui.game_model.append(&persisted.title);
                         self.session.games.push(crate::models::game::Game {
                             id: persisted.id.clone(),
@@ -147,12 +142,7 @@ impl App {
                                 for (id, title, path, data_subdir, engine, wine_prefix) in
                                     migrations
                                 {
-                                    let engine_str = match engine {
-                                        crate::models::game::GameEngine::REDEngine => "redengine",
-                                        crate::models::game::GameEngine::Eclipse => "eclipse",
-                                        crate::models::game::GameEngine::Aurora => "aurora",
-                                        _ => "bethesda",
-                                    };
+                                    let engine_str = engine.as_str();
                                     tracker
                                         .upsert_game(
                                             &id,

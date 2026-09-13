@@ -24,6 +24,9 @@ impl App {
         result: Result<Vec<crate::models::game::GameConfig>, String>,
         sender: &ComponentSender<Self>,
     ) {
+        if let Some(dialog) = self.ui.mele_setup.take() {
+            dialog.close();
+        }
         let configs = match result {
             Ok(configs) => configs,
             Err(error) => {
@@ -119,7 +122,11 @@ impl App {
         configs: Vec<crate::models::game::GameConfig>,
         hidden_ids: Vec<String>,
         sender: &ComponentSender<Self>,
+        root: &adw::ApplicationWindow,
     ) {
+        if self.ui.mele_setup.is_some() {
+            return;
+        }
         if let Some(dialog) = self.ui.game_setup_dialog.take() {
             dialog.widget().close();
         }
@@ -133,13 +140,39 @@ impl App {
             return;
         };
         let configs_for_db = configs.clone();
-        self.location_command(sender, async move {
-            let result = tracker
-                .persist_game_configs(&configs_for_db, &hidden_ids)
-                .await
-                .map(|()| configs_for_db)
-                .map_err(|error| error.to_string());
-            AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::GamesPersisted(result))
+        let Ok(lease) = crate::core::location_recovery::activity_lock().try_read_owned() else {
+            self.push_notification(
+                "Wait for folder access recovery to finish, then save game settings again",
+            );
+            return;
+        };
+        if configs
+            .iter()
+            .any(|config| config.game.engine == crate::models::game::GameEngine::MassEffect)
+        {
+            self.ui.mele_setup = Some(crate::ui::mele_dialog::SetupProgress::new(root));
+        }
+        let progress_sender = sender.input_sender().clone();
+        sender.oneshot_command(async move {
+            let result = crate::core::game::mass_effect::baseline::configure(
+                &tracker,
+                &configs_for_db,
+                &hidden_ids,
+                std::sync::Arc::new(move |progress| {
+                    let _ = progress_sender.send(AppMsg::Games(
+                        crate::app::messages::GamesMsg::SetupProgress(progress),
+                    ));
+                }),
+            )
+            .await
+            .map(|()| configs_for_db)
+            .map_err(|error| format!("{error:#}"));
+            AppCmdMsg::LocationActivityCompleted(
+                lease,
+                Box::new(AppCmdMsg::Games(
+                    crate::app::messages::GamesCmdMsg::GamesPersisted(result),
+                )),
+            )
         });
 
         self.session.pending_new_game_ids.clear();

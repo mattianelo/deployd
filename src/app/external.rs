@@ -300,6 +300,12 @@ impl App {
     }
 
     pub(crate) fn handle_scan_external_files(&mut self, sender: &ComponentSender<Self>) {
+        if self
+            .selected_game()
+            .is_some_and(|game| game.engine == crate::models::game::GameEngine::MassEffect)
+        {
+            return;
+        }
         let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
@@ -400,6 +406,7 @@ impl App {
         self.mods.pending_external_files.clear();
         self.mods.external_changes_count = 0;
         self.install.pending = Some(PendingInstall {
+            mele: None,
             tmp_dir,
             mod_name: mod_name.clone(),
             game,

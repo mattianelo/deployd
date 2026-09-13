@@ -5,7 +5,7 @@ use std::sync::{Arc, OnceLock};
 use anyhow::{Context, Result, bail};
 use tokio::sync::RwLock;
 
-use crate::models::game::{Game, GameEngine};
+use crate::models::game::Game;
 use crate::utils::location::{FolderChange, FolderRole, SelectedLocation, resolve_relative};
 use crate::utils::{paths, snap};
 
@@ -24,12 +24,7 @@ pub(crate) fn persisted_game(record: PersistedGame) -> Game {
         path: record.path,
         data_subdir: record.data_subdir,
         wine_prefix: record.wine_prefix,
-        engine: match record.engine.as_str() {
-            "redengine" => GameEngine::REDEngine,
-            "aurora" => GameEngine::Aurora,
-            "eclipse" => GameEngine::Eclipse,
-            _ => GameEngine::Bethesda,
-        },
+        engine: record.engine,
     }
 }
 
@@ -278,6 +273,7 @@ pub(crate) fn replace_owned_link(link: &Path, old: &Path, new: &Path) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::game::GameEngine;
 
     fn bridge_fixture() -> Result<(
         tempfile::TempDir,

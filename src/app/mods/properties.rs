@@ -87,6 +87,7 @@ impl App {
                     mod_entry,
                     is_bethesda,
                     is_aurora,
+                    is_mele: game.engine == GameEngine::MassEffect,
                     cache_root,
                     override_files,
                     overridden_files,
@@ -355,6 +356,13 @@ impl App {
             send_rescan_failure(sender, mod_id, "Database unavailable".to_string());
             return;
         };
+        if self
+            .selected_game()
+            .is_some_and(|game| game.engine == GameEngine::MassEffect)
+        {
+            send_rescan_failure(sender, mod_id, "MELE source packages are immutable. Reinstall from an archive to change the package.".into());
+            return;
+        }
         let mod_name = self.mod_name_for_id(&mod_id);
         let Some(game) = self.selected_game() else {
             send_rescan_failure(sender, mod_id, "No game selected".to_string());

@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.5.0]
+
+- Added experimental Mass Effect Legendary Edition support for LE1, LE2 and LE3,
+  with separate mod libraries, installer choices and profiles for each game.
+- Install content and cosmetic mods, precompiled M3TO textures such as ALOT + ISL,
+  shader mods, squadmate outfits and LE2 email additions. Required mods and
+  installation options are checked before deployment.
+- Deploy applies enabled mods and their combined changes; Purge restores managed
+  game files while retaining the mod library. Setup uses the supplied clean game
+  as the restoration point. Interrupted deployments recover after restart, and
+  unexpected external changes are preserved.
+- Required support components download automatically and remain available for
+  offline reuse. Missing managed components can be repaired from the deployment dialog.
+- Added ASI/DLL plugin installation with explicit approval, and a shared launcher-mod
+  list independent of game profiles. Game Purge leaves shared launcher mods installed.
+- MELE setup and deployment show progress and support Snap parallel installations.
+- MEM textures, raw M3TO source packages, headmorphs, portable MELE profile transfers,
+  launcher installer choices and launcher executable replacements are not supported.
+  Mod deployment does not edit saves.
+
 ## [2.4.3]
 
 ### Snap

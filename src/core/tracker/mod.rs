@@ -7,6 +7,10 @@ pub mod files;
 pub mod games;
 pub mod groups;
 pub(crate) mod locations;
+mod mele_baselines;
+mod mele_families;
+mod mele_journals;
+mod mele_packages;
 pub mod migrations;
 pub mod mods;
 pub mod order_snapshots;
@@ -39,7 +43,7 @@ pub struct PersistedGame {
     pub title: String,
     pub path: std::path::PathBuf,
     pub data_subdir: String,
-    pub engine: String,
+    pub engine: crate::models::game::GameEngine,
     pub wine_prefix: Option<std::path::PathBuf>,
     pub custom: bool,
 }
@@ -277,8 +281,12 @@ impl Tracker {
         .await?;
 
         migrations::migrate_game_ids(&pool).await?;
+        mele_baselines::create_tables(&pool).await?;
+        mele_journals::create_tables(&pool).await?;
+        mele_packages::create_tables(&pool).await?;
         migrations::migrate_games_columns(&pool).await?;
         locations::migrate(&pool).await?;
+        mele_families::create_tables(&pool).await?;
         migrations::migrate_nexus_columns(&pool).await?;
         migrations::migrate_download_columns(&pool).await?;
         migrations::migrate_mod_source_metadata_columns(&pool).await?;

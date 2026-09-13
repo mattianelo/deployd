@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PlatformTarget>x64</PlatformTarget>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="TransformProtocol.cs" />
+    <Compile Include="M3daMerge.cs" />
+    <Compile Include="M3mAssets.cs" />
+    <Compile Include="M3mScripts.cs" />
+    <Compile Include="M3mClasses.cs" />
+    <Compile Include="M3mOrdered.cs" />
+    <Compile Include="PackageOutput.cs" />
+    <Compile Include="TlkMerge.cs" />
+    <Compile Include="PlotMerge.cs" />
+    <Compile Include="ShaderMerge.cs" />
+    <Compile Include="GlobalShaderFile.cs" />
+    <Compile Include="MergeDlcConfig.cs" />
+    <Compile Include="EmailGraph.cs" />
+    <Compile Include="SquadStreaming.cs" />
+    <Compile Include="MergeStartup.cs" />
+    <Compile Include="MergeDlcInputs.cs" />
+    <Compile Include="MergeDlc.cs" />
+    <Compile Include="SquadUi.cs" />
+    <Compile Include="M3cdMerge.cs" />
+    <Compile Include="Le1Config.cs" />
+    <!-- Pinned LEC supplies Unreal package serialization; its Linux Oodle port is built separately. -->
+    <ProjectReference Include="../LegendaryExplorerCore/LegendaryExplorerCore.csproj" />
+  </ItemGroup>
+</Project>

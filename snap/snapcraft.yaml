@@ -2,7 +2,7 @@ name: deployd
 base: core24
 platforms:
   amd64:
-version: '2.4.3'
+version: '2.5.0'
 adopt-info: deployd
 title: Deployd
 license: GPL-3.0-only
@@ -15,9 +15,11 @@ description: |
   Deployd is a non-destructive mod manager for PC games running on Linux.
   Supports Bethesda (Skyrim SE, Fallout 4, Fallout: New Vegas, Starfield),
   REDEngine (The Witcher 3, Cyberpunk 2077), Aurora (The Witcher 1), and
-  Eclipse (Dragon Age: Origins) engine games.
+  Eclipse (Dragon Age: Origins) engine games. Experimental Mass Effect
+  Legendary Edition support adds mod installation and profile rebuilding.
 
-  Mods are deployed as hardlinks — no copies, no risk of losing originals.
+  MELE deployments use independent copies and recoverable file replacement.
+  Other engines use hardlink deployment with original-file protection.
   Supports multiple profiles per game, FOMOD installers, load order management,
   conflict detection, and Nexus Mods integration (NXM links, SSO login).
 
@@ -58,6 +60,12 @@ apps:
     common-id: io.mattianelo.deployd
     desktop: usr/share/applications/io.mattianelo.deployd.desktop
 
+lint:
+  ignore:
+    # .NET resolves OpenSSL with dlopen, so it has no static ELF dependency edge.
+    - unused-library:
+        - usr/lib/x86_64-linux-gnu/libssl.so.3
+
 parts:
   rust-deps:
     plugin: nil
@@ -81,10 +89,17 @@ parts:
       - pkg-config
       - libarchive-dev
       - libunrar-dev
+      - python3
+      - g++
     stage-packages:
       - libarchive13t64
+      - libicu74
+      - libssl3t64
+    override-pull: |
+      python3 "$CRAFT_PROJECT_DIR/scripts/package_source.py" "$CRAFT_PROJECT_DIR" "$CRAFT_PART_SRC"
     override-build: |
       cargo build --locked --release --features loot,libarchive-fallback
+      python3 helpers/mele/package.py "$CRAFT_PART_INSTALL/usr/lib/deployd/mele"
       install -Dm755 target/release/deployd "$CRAFT_PART_INSTALL/bin/deployd"
       install -Dm644 data/io.mattianelo.deployd.desktop \
         "$CRAFT_PART_INSTALL/usr/share/applications/io.mattianelo.deployd.desktop"
