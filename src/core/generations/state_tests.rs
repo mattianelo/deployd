@@ -546,7 +546,8 @@ async fn saves_and_deployed_files_recover_from_the_same_commit_decision() -> Res
         let new_prefix = temp.path().join("reselected-prefix");
         fs::rename(&prefix, &new_prefix)?;
         game.wine_prefix = Some(new_prefix);
-        recovered.recover(&history, &game, committed).await?;
+        assert_eq!(recovered.id, journal.id);
+        super::recovery::recover_journal(&history, &game).await?;
         let current_live = crate::core::game::detect_save_dir(&game).expect("known save location");
         assert_eq!(
             fs::read(current_live.join("save.dat"))?,

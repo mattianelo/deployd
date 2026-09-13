@@ -232,6 +232,16 @@ fn parents(path: &Path, game: &Game) -> Result<()> {
 }
 
 impl Journal {
+    pub(super) fn from_record(version: i64, document: &str) -> Result<Self> {
+        let journal: Self =
+            serde_json::from_str(document).context("Invalid deployment recovery journal")?;
+        ensure!(
+            i64::from(journal.version) == version,
+            "Recovery journal versions disagree; records were preserved"
+        );
+        Ok(journal)
+    }
+
     pub(super) async fn prepare(
         history: &History,
         game: &Game,

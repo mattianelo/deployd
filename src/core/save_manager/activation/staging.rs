@@ -37,6 +37,14 @@ fn sync(parent: &Path) -> Result<()> {
 }
 
 impl Staging {
+    pub(super) fn owner(&self) -> &SaveSetId {
+        &self.save_set
+    }
+
+    pub(super) fn purpose(&self) -> Purpose {
+        self.purpose
+    }
+
     pub(super) fn new(save_set: &SaveSetId, purpose: Purpose, inventory: Tree) -> Self {
         Self {
             version: 1,

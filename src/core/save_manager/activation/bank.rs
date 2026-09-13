@@ -240,6 +240,11 @@ pub(super) fn replace(
 }
 
 #[cfg(test)]
+pub(super) fn leave_pending(root: &Path, save_set: &SaveSetId, source: &Path) -> Result<()> {
+    prepare(root, save_set, source, &Control::default()).map(|_| ())
+}
+
+#[cfg(test)]
 mod tests {
     use std::os::unix::fs::PermissionsExt;
     use std::sync::Arc;

@@ -11,6 +11,7 @@ use super::SaveSetId;
 
 mod bank;
 mod preparation;
+pub(crate) mod recovery;
 mod staging;
 mod tree;
 

@@ -860,3 +860,51 @@ path = "src/core/save_manager/activation/staging.rs"
 name = "pending_bank_publication_protects_its_staging_record"
 variant = "both"
 interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation/recovery.rs"
+name = "recovery_publishes_pending_banks_before_discarding_abandoned_copies"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation/recovery.rs"
+name = "invalid_publications_block_snapshot_cleanup"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation/recovery.rs"
+name = "recovery_preserves_unowned_files_and_other_games_snapshots"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation/recovery.rs"
+name = "bank_staging_with_another_game_owner_is_preserved"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation/recovery.rs"
+name = "missing_storage_is_not_created_and_symlinked_storage_is_rejected"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation/recovery.rs"
+name = "legacy_save_transitions_block_generation_cleanup"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/recovery.rs"
+name = "dispatcher_rolls_back_uncommitted_files_and_preserves_external_changes"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/recovery.rs"
+name = "unsupported_and_inconsistent_journals_remain_pending"
+variant = "both"
+interface_state = "not_applicable"

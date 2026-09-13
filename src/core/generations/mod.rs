@@ -8,6 +8,7 @@ mod target;
 mod history;
 mod journal;
 mod prepared;
+mod recovery;
 mod restore;
 mod state;
 #[cfg(test)]
