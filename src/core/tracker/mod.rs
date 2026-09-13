@@ -5,6 +5,7 @@ use std::str::FromStr;
 pub mod downloads;
 pub mod files;
 pub mod games;
+mod generations;
 pub mod groups;
 pub(crate) mod locations;
 mod mele_baselines;
@@ -301,6 +302,7 @@ impl Tracker {
         migrations::migrate_group_color_column(&pool).await?;
         migrations::migrate_profile_save_mode_column(&pool).await?;
         migrations::migrate_tools_working_dir_column(&pool).await?;
+        generations::create_tables(&pool).await?;
 
         for statement in &[
             "CREATE INDEX IF NOT EXISTS idx_mods_game_id      ON mods(game_id)",
