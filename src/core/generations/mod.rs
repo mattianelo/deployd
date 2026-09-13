@@ -12,6 +12,7 @@ mod journal;
 mod prepared;
 mod recovery;
 mod restore;
+mod saves;
 mod state;
 #[cfg(test)]
 mod tests;

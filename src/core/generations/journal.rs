@@ -196,6 +196,10 @@ fn parents(path: &Path, game: &Game) -> Result<()> {
 }
 
 impl Journal {
+    pub(super) fn has_saves(&self) -> bool {
+        self.saves.is_some()
+    }
+
     pub(super) fn validate_request(
         &self,
         game: &Game,

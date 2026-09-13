@@ -1010,3 +1010,45 @@ path = "tests/generations/activation.rs"
 name = "coordinator_rejects_another_profile_and_unavailable_engine_participants"
 variant = "both"
 interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/saves.rs"
+name = "restored_save_preparation_reseeds_until_the_first_committed_activation"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/saves.rs"
+name = "ordinary_save_banks_switch_only_when_the_prepared_activation_commits"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/saves.rs"
+name = "unchanged_save_ownership_does_not_create_banks_or_backups"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/saves.rs"
+name = "save_preparation_rejects_stale_modes_and_uninitialized_ownership"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/saves.rs"
+name = "save_preparation_preserves_pending_legacy_recovery"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/saves.rs"
+name = "cancelled_save_preparation_preserves_live_saves_and_restored_initialization"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/saves.rs"
+name = "save_preparation_blocks_when_prefix_access_is_lost"
+variant = "both"
+interface_state = "not_applicable"
