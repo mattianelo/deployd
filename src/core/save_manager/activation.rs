@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 
+use crate::core::generations::content::Control;
 use crate::models::game::Game;
 
 use super::SaveSetId;
@@ -182,6 +183,7 @@ fn rename(source: &Path, destination: &Path) -> Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
 pub(crate) fn prepare_staged(
     operation: &str,
     source: SaveSetId,
@@ -189,8 +191,19 @@ pub(crate) fn prepare_staged(
     live: &Path,
     bank: &Path,
 ) -> Result<Transition> {
-    let before = tree::scan(live)?;
-    let after = tree::scan(bank)?
+    stage(operation, source, target, live, bank, &Control::default())
+}
+
+fn stage(
+    operation: &str,
+    source: SaveSetId,
+    target: SaveSetId,
+    live: &Path,
+    bank: &Path,
+    control: &Control,
+) -> Result<Transition> {
+    let before = tree::scan_with_control(live, control)?;
+    let after = tree::scan_with_control(bank, control)?
         .context("The target save bank is unavailable; initialize it before activation")?;
     let transition = Transition {
         version: 1,
@@ -208,13 +221,40 @@ pub(crate) fn prepare_staged(
     let temporary = tempfile::Builder::new()
         .prefix(".deployd-save-prepare-")
         .tempdir_in(live.parent().context("Save parent is missing")?)?;
-    tree::copy(bank, temporary.path(), &transition.after)?;
+    tree::copy(bank, temporary.path(), &transition.after, control)?;
     ensure!(
-        tree::scan(live)? == transition.before,
+        tree::scan_with_control(live, control)? == transition.before,
         "Live saves changed during preparation"
     );
+    control.check()?;
     rename(temporary.path(), &staged)?;
     Ok(transition)
+}
+
+struct Snapshot {
+    directory: tempfile::TempDir,
+    before: Option<tree::Tree>,
+}
+
+impl Snapshot {
+    fn capture(live: &Path, control: &Control) -> Result<Self> {
+        let before = tree::scan_with_control(live, control)?;
+        let directory = tempfile::Builder::new()
+            .prefix(".deployd-save-snapshot-")
+            .tempdir_in(live.parent().context("Save parent is missing")?)?;
+        if let Some(before) = &before {
+            tree::copy(live, directory.path(), before, control)?;
+        }
+        Ok(Self { directory, before })
+    }
+
+    fn verify(&self, live: &Path, control: &Control) -> Result<()> {
+        ensure!(
+            tree::scan_with_control(live, control)? == self.before,
+            "Live saves changed while preparing save banks; activation stopped"
+        );
+        Ok(())
+    }
 }
 
 pub(crate) async fn prepare(
@@ -224,6 +264,30 @@ pub(crate) async fn prepare(
     target: &SaveSetId,
     seed: bool,
     cap_bytes: u64,
+    control: Control,
+) -> Result<Transition> {
+    let runtime = tokio::runtime::Handle::current();
+    let operation = operation.to_owned();
+    let game = game.clone();
+    let source = source.clone();
+    let target = target.clone();
+    tokio::task::spawn_blocking(move || {
+        runtime.block_on(prepare_inner(
+            &operation, &game, &source, &target, seed, cap_bytes, control,
+        ))
+    })
+    .await
+    .context("Save preparation worker stopped")?
+}
+
+async fn prepare_inner(
+    operation: &str,
+    game: &Game,
+    source: &SaveSetId,
+    target: &SaveSetId,
+    seed: bool,
+    cap_bytes: u64,
+    control: Control,
 ) -> Result<Transition> {
     ensure!(
         source != target && source.game_id() == game.id && target.game_id() == game.id,
@@ -237,10 +301,20 @@ pub(crate) async fn prepare(
             .try_exists()?,
         "Finish the existing save transition before deploying"
     );
+    control.check()?;
+    let snapshot = Snapshot::capture(&live, &control)?;
     super::migrate_legacy_profile_bank(source).await?;
     super::migrate_legacy_profile_bank(target).await?;
-    super::create_backup_from_dir(source, &live, super::BackupTrigger::ProfileSwitch, None).await?;
-    super::replace_bank_from_dir(source, &live).await?;
+    control.check()?;
+    super::create_backup_from_dir(
+        source,
+        snapshot.directory.path(),
+        super::BackupTrigger::ProfileSwitch,
+        None,
+    )
+    .await?;
+    control.check()?;
+    super::replace_bank_from_dir(source, snapshot.directory.path()).await?;
     if seed {
         ensure!(
             target.profile_id().is_some(),
@@ -256,19 +330,26 @@ pub(crate) async fn prepare(
             )
             .await?;
         }
-        super::replace_bank_from_dir(target, &live).await?;
+        control.check()?;
+        super::replace_bank_from_dir(target, snapshot.directory.path()).await?;
     }
     let bank = super::bank_root(target)?;
     super::load_bank(target).await?;
     super::prune_automatic_backups(&game.id, cap_bytes).await?;
-    let operation = operation.to_owned();
-    let source = source.clone();
-    let target = target.clone();
-    tokio::task::spawn_blocking(move || {
-        prepare_staged(&operation, source, target, &live, &super::bank_data(&bank))
-    })
-    .await
-    .context("Save preparation worker stopped")?
+    snapshot.verify(&live, &control)?;
+    let transition = stage(
+        operation,
+        source.clone(),
+        target.clone(),
+        &live,
+        &super::bank_data(&bank),
+        &control,
+    )?;
+    if transition.before != snapshot.before {
+        transition.recover_at(&live, false)?;
+        anyhow::bail!("Live saves changed after save-bank preparation; activation stopped");
+    }
+    Ok(transition)
 }
 
 #[cfg(test)]
@@ -295,6 +376,65 @@ mod tests {
             &bank,
         )?;
         Ok((transition, live))
+    }
+
+    // @variants: both
+    #[test]
+    fn frozen_saves_remain_independent_and_reject_later_live_changes() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let live = temp.path().join("live");
+        fs::create_dir(&live)?;
+        fs::write(live.join("save.dat"), b"original progress")?;
+        let snapshot = Snapshot::capture(&live, &Control::default())?;
+        snapshot.verify(&live, &Control::default())?;
+        fs::write(live.join("save.dat"), b"later progress")?;
+        assert!(snapshot.verify(&live, &Control::default()).is_err());
+        assert_eq!(
+            fs::read(snapshot.directory.path().join("save.dat"))?,
+            b"original progress"
+        );
+        Ok(())
+    }
+
+    // @variants: both
+    #[test]
+    fn cancelled_staging_preserves_live_saves_and_removes_temporary_copies() -> Result<()> {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let temp = tempfile::tempdir()?;
+        let live = temp.path().join("live");
+        let bank = temp.path().join("bank");
+        fs::create_dir(&live)?;
+        fs::create_dir(&bank)?;
+        fs::write(live.join("save.dat"), b"live")?;
+        fs::write(bank.join("save.dat"), b"bank")?;
+        let mut control = Control::default();
+        let cancelled = control.cancelled.clone();
+        let hashed = AtomicUsize::new(0);
+        control.progress = Arc::new(move |_, _| {
+            if hashed.fetch_add(1, Ordering::AcqRel) == 2 {
+                cancelled.store(true, Ordering::Release);
+            }
+        });
+        assert!(
+            stage(
+                &uuid::Uuid::new_v4().to_string(),
+                SaveSetId::Global {
+                    game_id: "game".into()
+                },
+                SaveSetId::Profile {
+                    game_id: "game".into(),
+                    profile_id: "profile".into()
+                },
+                &live,
+                &bank,
+                &control,
+            )
+            .is_err()
+        );
+        assert_eq!(fs::read(live.join("save.dat"))?, b"live");
+        assert_eq!(fs::read_dir(temp.path())?.count(), 2);
+        Ok(())
     }
 
     // @variants: both

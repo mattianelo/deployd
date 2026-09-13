@@ -18,7 +18,10 @@ pub(super) struct Entry {
 
 pub(super) type Tree = BTreeMap<String, Entry>;
 
-pub(super) fn scan(root: &Path) -> Result<Option<Tree>> {
+type Stamp = (u64, u64, u32, u64, i64, i64, i64, i64);
+
+fn inventory(root: &Path, control: &Control) -> Result<Option<BTreeMap<String, Stamp>>> {
+    control.check()?;
     let metadata = match fs::symlink_metadata(root) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -28,12 +31,15 @@ pub(super) fn scan(root: &Path) -> Result<Option<Tree>> {
         metadata.is_dir(),
         "Save directory was replaced; recovery information was preserved"
     );
-    let mut tree = Tree::new();
+    let mut entries = BTreeMap::new();
     for entry in walkdir::WalkDir::new(root).follow_links(false) {
+        control.check()?;
         let entry = entry?;
+        let metadata = fs::symlink_metadata(entry.path())?;
         ensure!(
-            entry.file_type().is_dir() || entry.file_type().is_file(),
-            "Unsupported save entry was preserved: {}",
+            (entry.file_type().is_dir() && metadata.is_dir())
+                || (entry.file_type().is_file() && metadata.is_file()),
+            "Unsupported or changed save entry was preserved: {}",
             entry.path().display()
         );
         let path = entry
@@ -42,28 +48,65 @@ pub(super) fn scan(root: &Path) -> Result<Option<Tree>> {
             .to_str()
             .context("Save path is not UTF-8")?
             .to_owned();
-        let metadata = fs::symlink_metadata(entry.path())?;
-        tree.insert(
+        entries.insert(
             path,
+            (
+                metadata.dev(),
+                metadata.ino(),
+                metadata.mode(),
+                metadata.len(),
+                metadata.mtime(),
+                metadata.mtime_nsec(),
+                metadata.ctime(),
+                metadata.ctime_nsec(),
+            ),
+        );
+    }
+    Ok(Some(entries))
+}
+
+pub(super) fn scan(root: &Path) -> Result<Option<Tree>> {
+    scan_with_control(root, &Control::default())
+}
+
+pub(super) fn scan_with_control(root: &Path, control: &Control) -> Result<Option<Tree>> {
+    let Some(before) = inventory(root, control)? else {
+        return Ok(None);
+    };
+    let mut tree = Tree::new();
+    for (path, stamp) in &before {
+        control.check()?;
+        let file = stamp.2 & libc::S_IFMT == libc::S_IFREG;
+        tree.insert(
+            path.clone(),
             Entry {
-                content: if metadata.is_file() {
-                    Some(content::inspect(entry.path(), &Control::default())?)
+                content: if file {
+                    Some(content::inspect(&root.join(path), control)?)
                 } else {
                     None
                 },
-                mode: metadata.permissions().mode() & 0o777,
-                modified: metadata
-                    .is_file()
-                    .then(|| (metadata.mtime(), metadata.mtime_nsec())),
+                mode: stamp.2 & 0o777,
+                modified: file.then_some((stamp.4, stamp.5)),
             },
         );
     }
+    ensure!(
+        inventory(root, control)?.as_ref() == Some(&before),
+        "Save inventory changed during inspection; close games and tools before retrying"
+    );
+    validate(&tree)?;
     Ok(Some(tree))
 }
 
-pub(super) fn copy(source: &Path, destination: &Path, tree: &Tree) -> Result<()> {
+pub(super) fn copy(
+    source: &Path,
+    destination: &Path,
+    tree: &Tree,
+    control: &Control,
+) -> Result<()> {
     validate(tree)?;
     for (relative, entry) in tree {
+        control.check()?;
         let path = destination.join(relative);
         if let Some(identity) = &entry.content {
             content::copy(
@@ -71,7 +114,7 @@ pub(super) fn copy(source: &Path, destination: &Path, tree: &Tree) -> Result<()>
                 &path,
                 identity,
                 entry.mode | 0o200,
-                &Control::default(),
+                control,
             )?;
             let (seconds, nanos) = entry.modified.context("Save timestamp is missing")?;
             let duration = std::time::Duration::from_secs(seconds.unsigned_abs());
@@ -102,7 +145,8 @@ pub(super) fn copy(source: &Path, destination: &Path, tree: &Tree) -> Result<()>
         fs::File::open(path)?.sync_all()?;
     }
     ensure!(
-        scan(source)?.as_ref() == Some(tree) && scan(destination)?.as_ref() == Some(tree),
+        scan_with_control(source, control)?.as_ref() == Some(tree)
+            && scan_with_control(destination, control)?.as_ref() == Some(tree),
         "Save contents changed during preparation; live saves were not switched"
     );
     Ok(())
@@ -172,4 +216,66 @@ pub(super) fn remove(root: &Path, expected: &Tree) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use super::*;
+
+    // @variants: both
+    #[test]
+    fn rejects_files_added_while_hashing_the_save_inventory() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        fs::write(temp.path().join("save.dat"), b"progress")?;
+        let added = temp.path().join("new.dat");
+        let control = Control {
+            progress: Arc::new(move |_, _| {
+                fs::write(&added, b"new progress").unwrap();
+            }),
+            ..Control::default()
+        };
+        assert!(scan_with_control(temp.path(), &control).is_err());
+        assert_eq!(fs::read(temp.path().join("new.dat"))?, b"new progress");
+        Ok(())
+    }
+
+    // @variants: both
+    #[test]
+    fn rejects_replacement_of_an_already_hashed_save() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let first = temp.path().join("a.dat");
+        fs::write(&first, b"first")?;
+        fs::write(temp.path().join("b.dat"), b"second")?;
+        let seen = AtomicBool::new(false);
+        let control = Control {
+            progress: Arc::new(move |_, _| {
+                if seen.swap(true, Ordering::AcqRel) {
+                    fs::remove_file(&first).unwrap();
+                    fs::write(&first, b"changed").unwrap();
+                }
+            }),
+            ..Control::default()
+        };
+        assert!(scan_with_control(temp.path(), &control).is_err());
+        assert_eq!(fs::read(temp.path().join("a.dat"))?, b"changed");
+        Ok(())
+    }
+
+    // @variants: both
+    #[test]
+    fn cancellation_stops_save_inspection_and_copying() -> Result<()> {
+        let source = tempfile::tempdir()?;
+        let destination = tempfile::tempdir()?;
+        fs::write(source.path().join("save.dat"), b"progress")?;
+        let tree = scan(source.path())?.context("Missing tree")?;
+        let control = Control::default();
+        control.cancelled.store(true, Ordering::Release);
+        assert!(scan_with_control(source.path(), &control).is_err());
+        assert!(copy(source.path(), destination.path(), &tree, &control).is_err());
+        assert_eq!(fs::read_dir(destination.path())?.count(), 0);
+        Ok(())
+    }
 }

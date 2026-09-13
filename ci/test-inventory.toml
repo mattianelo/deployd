@@ -722,3 +722,33 @@ path = "src/core/save_manager/activation.rs"
 name = "staging_preserves_save_timestamps_and_read_only_permissions"
 variant = "both"
 interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation/tree.rs"
+name = "rejects_files_added_while_hashing_the_save_inventory"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation/tree.rs"
+name = "rejects_replacement_of_an_already_hashed_save"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation/tree.rs"
+name = "cancellation_stops_save_inspection_and_copying"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation.rs"
+name = "frozen_saves_remain_independent_and_reject_later_live_changes"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation.rs"
+name = "cancelled_staging_preserves_live_saves_and_removes_temporary_copies"
+variant = "both"
+interface_state = "not_applicable"
