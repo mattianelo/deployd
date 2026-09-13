@@ -752,3 +752,45 @@ path = "src/core/save_manager/activation.rs"
 name = "cancelled_staging_preserves_live_saves_and_removes_temporary_copies"
 variant = "both"
 interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation/bank.rs"
+name = "interrupted_bank_publication_finishes_at_every_rename_boundary"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation/bank.rs"
+name = "interrupted_old_bank_cleanup_resumes_without_losing_the_new_bank"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation/bank.rs"
+name = "external_bank_edits_block_recovery_and_preserve_all_copies"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation/bank.rs"
+name = "corrupt_staging_and_wrong_save_owners_block_publication"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation/bank.rs"
+name = "cancellation_before_publication_preserves_the_existing_bank"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation/bank.rs"
+name = "published_banks_preserve_read_only_saves_and_legacy_manifest_compatibility"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation/bank.rs"
+name = "first_bank_publication_recovers_after_storage_root_changes"
+variant = "both"
+interface_state = "not_applicable"

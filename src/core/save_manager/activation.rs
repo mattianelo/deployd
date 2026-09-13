@@ -9,6 +9,7 @@ use crate::models::game::Game;
 
 use super::SaveSetId;
 
+mod bank;
 mod tree;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -303,6 +304,8 @@ async fn prepare_inner(
     );
     control.check()?;
     let snapshot = Snapshot::capture(&live, &control)?;
+    bank::recover(&super::bank_root(source)?, source)?;
+    bank::recover(&super::bank_root(target)?, target)?;
     super::migrate_legacy_profile_bank(source).await?;
     super::migrate_legacy_profile_bank(target).await?;
     control.check()?;
@@ -314,7 +317,12 @@ async fn prepare_inner(
     )
     .await?;
     control.check()?;
-    super::replace_bank_from_dir(source, snapshot.directory.path()).await?;
+    bank::replace(
+        &super::bank_root(source)?,
+        source,
+        snapshot.directory.path(),
+        &control,
+    )?;
     if seed {
         ensure!(
             target.profile_id().is_some(),
@@ -331,7 +339,12 @@ async fn prepare_inner(
             .await?;
         }
         control.check()?;
-        super::replace_bank_from_dir(target, snapshot.directory.path()).await?;
+        bank::replace(
+            &super::bank_root(target)?,
+            target,
+            snapshot.directory.path(),
+            &control,
+        )?;
     }
     let bank = super::bank_root(target)?;
     super::load_bank(target).await?;

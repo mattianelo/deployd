@@ -193,6 +193,26 @@ pub(super) fn validate(tree: &Tree) -> Result<()> {
     Ok(())
 }
 
+pub(super) fn files(tree: &Tree) -> Result<Vec<super::super::SaveFileManifest>> {
+    validate(tree)?;
+    tree.iter()
+        .filter_map(|(path, entry)| {
+            entry.content.as_ref().map(|content| {
+                Ok(super::super::SaveFileManifest {
+                    path: path.clone(),
+                    size: content.size,
+                    sha256: content.sha256.clone(),
+                    modified_unix_seconds: entry
+                        .modified
+                        .context("Save timestamp is missing")?
+                        .0
+                        .max(0),
+                })
+            })
+        })
+        .collect()
+}
+
 pub(super) fn remove(root: &Path, expected: &Tree) -> Result<()> {
     validate(expected)?;
     let Some(current) = scan(root)? else {
