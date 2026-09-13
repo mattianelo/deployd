@@ -1,5 +1,6 @@
 mod catalog;
 pub(crate) mod content;
+mod coordinator;
 mod manifest;
 mod operation;
 mod records;

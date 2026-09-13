@@ -938,3 +938,75 @@ path = "src/core/generations/operation.rs"
 name = "abandoned_participant_retains_leases_for_its_nested_worker"
 variant = "both"
 interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/activation.rs"
+name = "coordinator_reuses_history_and_purge_preserves_retained_configuration"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/activation.rs"
+name = "coordinator_rolls_back_files_when_database_publication_fails"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/activation.rs"
+name = "coordinator_cancellation_after_file_replacement_restores_previous_content"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/activation.rs"
+name = "coordinator_preserves_external_edits_and_pending_recovery"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/activation.rs"
+name = "coordinator_reports_committed_cleanup_failure_without_rolling_back"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/activation.rs"
+name = "coordinator_refuses_stale_state_and_incomplete_target_coverage"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/activation.rs"
+name = "coordinator_blocks_changed_base_inputs_before_publishing_intent"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/activation.rs"
+name = "coordinator_preserves_another_pending_operation"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/activation.rs"
+name = "coordinator_uses_the_committed_decision_after_a_lost_acknowledgement"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/activation.rs"
+name = "coordinator_applies_or_rolls_back_files_and_live_saves_together"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/activation.rs"
+name = "coordinator_preserves_files_when_the_durable_decision_cannot_be_trusted"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/activation.rs"
+name = "coordinator_rejects_another_profile_and_unavailable_engine_participants"
+variant = "both"
+interface_state = "not_applicable"

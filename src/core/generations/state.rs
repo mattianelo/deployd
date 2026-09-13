@@ -66,28 +66,7 @@ pub(super) async fn publish(
         "Activation and save ownership belong to different games"
     );
     let (generation, profile, kind) = if let Some(deployment) = deployment {
-        ensure!(
-            deployment.manifest.engine == game.engine,
-            "Generation belongs to another engine"
-        );
-        let mode: String =
-            sqlx::query_scalar("SELECT save_mode FROM profiles WHERE game_id=? AND id=?")
-                .bind(&game.id)
-                .bind(deployment.profile)
-                .fetch_one(&mut **tx)
-                .await
-                .context("The activation profile no longer exists")?;
-        ensure!(
-            (mode == "profile") == saves.profile_id().is_some(),
-            "The profile save mode changed after activation preparation"
-        );
-        ensure!(
-            saves
-                .profile_id()
-                .is_none_or(|profile| profile == deployment.profile),
-            "Activation cannot assign another profile's save bank"
-        );
-        validate_files(history, game, deployment)?;
+        validate_deployment(tx, history, game, deployment, saves).await?;
         let generation = history.publish(tx, deployment.manifest).await?;
         (Some(generation), Some(deployment.profile), "deploy")
     } else {
@@ -124,6 +103,47 @@ pub(super) async fn publish(
     }
     sqlx::query("INSERT INTO generation_activations(id,game_id,generation_id,profile_id,created_at,kind) VALUES (?,?,?,?,strftime('%Y-%m-%dT%H:%M:%fZ','now'),?)")
         .bind(activation).bind(&game.id).bind(generation).bind(profile).bind(kind).execute(&mut **tx).await?;
+    Ok(())
+}
+
+pub(super) async fn validate_deployment(
+    tx: &mut Transaction<'_, Sqlite>,
+    history: &History,
+    game: &Game,
+    deployment: &Deployment<'_>,
+    saves: &SaveSetId,
+) -> Result<()> {
+    deployment.manifest.validate()?;
+    ensure!(
+        deployment.manifest.game_id == game.id,
+        "Generation belongs to another game"
+    );
+    ensure!(
+        deployment.manifest.profile()?.0 == deployment.profile,
+        "Prepared configuration belongs to a different profile"
+    );
+    ensure!(
+        deployment.manifest.engine == game.engine,
+        "Generation belongs to another engine"
+    );
+    let mode: String =
+        sqlx::query_scalar("SELECT save_mode FROM profiles WHERE game_id=? AND id=?")
+            .bind(&game.id)
+            .bind(deployment.profile)
+            .fetch_one(&mut **tx)
+            .await
+            .context("The activation profile no longer exists")?;
+    ensure!(
+        (mode == "profile") == saves.profile_id().is_some(),
+        "The profile save mode changed after activation preparation"
+    );
+    ensure!(
+        saves
+            .profile_id()
+            .is_none_or(|profile| profile == deployment.profile),
+        "Activation cannot assign another profile's save bank"
+    );
+    validate_files(history, game, deployment)?;
     Ok(())
 }
 

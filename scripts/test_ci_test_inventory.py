@@ -52,6 +52,23 @@ class TestInventoryTests(unittest.TestCase):
         expression = ci_test_inventory.filter_expression("variant:snap", data)
         self.assertIn("test(handles_snap)", expression)
 
+    def test_includes_integration_test_annotations(self) -> None:
+        directory = self.root / "tests" / "generations"
+        directory.mkdir(parents=True)
+        (directory / "activation.rs").write_text(
+            "// @variants: both\n#[tokio::test]\nasync fn recovers_activation() {}\n"
+        )
+        inventory = self.write_inventory()
+        with inventory.open("a") as stream:
+            stream.write(
+                '\n[[variant_tests]]\npath = "tests/generations/activation.rs"\n'
+                'name = "recovers_activation"\nvariant = "both"\n'
+                'interface_state = "not_applicable"\n'
+            )
+        data = ci_test_inventory.validate_inventory(self.root, inventory)
+        expression = ci_test_inventory.filter_expression("variant:snap", data)
+        self.assertIn("test(recovers_activation)", expression)
+
     def test_rejects_variant_annotation_drift(self) -> None:
         inventory = self.write_inventory("both")
         with self.assertRaisesRegex(ci_test_inventory.InventoryError, "inventory drift"):

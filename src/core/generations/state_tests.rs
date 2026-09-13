@@ -11,7 +11,7 @@ use super::journal::{Journal, Node};
 use super::manifest::{self, Manifest};
 use super::state::{self, Deployment};
 
-async fn unpublished(
+pub(super) async fn unpublished(
     history: &History,
     game: &crate::models::game::Game,
     profile: &str,

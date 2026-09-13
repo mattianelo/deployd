@@ -35,7 +35,8 @@ def test_exists(root: Path, relative_path: str, name: str) -> bool:
 
 def source_variant_tags(root: Path) -> dict[tuple[str, str], str]:
     tags: dict[tuple[str, str], str] = {}
-    for source in sorted((root / "src").rglob("*.rs")):
+    sources = [source for directory in ("src", "tests") for source in (root / directory).rglob("*.rs")]
+    for source in sorted(sources):
         lines = source.read_text().splitlines()
         for index, line in enumerate(lines):
             match = VARIANT_RE.search(line)

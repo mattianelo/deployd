@@ -74,46 +74,10 @@ impl Applied {
             self.game == game.id && self.game == history.game,
             "Activation belongs to another game"
         );
-        ensure!(
-            previous.is_some() || !crate::core::game::has_save_management(game),
-            "Initialize live save ownership before preparing activation"
-        );
         let journal: Journal = serde_json::from_str(&self.document)?;
+        journal.validate_request(game, previous, deployment, saves)?;
         if let Some(transition) = &journal.saves {
-            ensure!(
-                &transition.target == saves,
-                "Save participant targets a different save owner"
-            );
-            if let Some(previous) = previous {
-                ensure!(
-                    previous.saves == transition.source,
-                    "Save participant has stale source ownership"
-                );
-            }
             verify_saves(history, game, transition).await?;
-        } else if let Some(previous) = previous {
-            ensure!(
-                &previous.saves == saves,
-                "Changing save ownership requires an applied save participant"
-            );
-        }
-        if let Some(deployment) = deployment {
-            for output in &deployment.manifest.outputs {
-                let expected = match &output.content {
-                    Some(identity) => Node::File {
-                        identity: identity.clone(),
-                        mode: output.mode,
-                    },
-                    None => Node::Directory { mode: output.mode },
-                };
-                ensure!(
-                    journal
-                        .changes
-                        .iter()
-                        .any(|change| change.target == output.target && change.after == expected),
-                    "A generation output was not verified by this activation"
-                );
-            }
         }
         let mut tx = durable(&history.tracker).await?;
         ensure!(
@@ -232,6 +196,93 @@ fn parents(path: &Path, game: &Game) -> Result<()> {
 }
 
 impl Journal {
+    pub(super) fn validate_request(
+        &self,
+        game: &Game,
+        previous: Option<&super::state::State>,
+        deployment: Option<&super::state::Deployment<'_>>,
+        saves: &crate::core::save_manager::SaveSetId,
+    ) -> Result<()> {
+        self.validate(game)?;
+        ensure!(
+            saves.game_id() == game.id,
+            "Save ownership belongs to another game"
+        );
+        ensure!(
+            deployment.is_some() || self.saves.is_none(),
+            "Purge cannot switch live saves"
+        );
+        ensure!(
+            previous.is_some() || !crate::core::game::has_save_management(game),
+            "Initialize live save ownership before preparing activation"
+        );
+        if let Some(transition) = &self.saves {
+            ensure!(
+                &transition.target == saves,
+                "Save participant targets a different save owner"
+            );
+            if let Some(previous) = previous {
+                ensure!(
+                    previous.saves == transition.source,
+                    "Save participant has stale source ownership"
+                );
+            }
+        } else if let Some(previous) = previous {
+            ensure!(
+                &previous.saves == saves,
+                "Changing save ownership requires an applied save participant"
+            );
+        }
+        if let Some(deployment) = deployment {
+            for output in &deployment.manifest.outputs {
+                let expected = match &output.content {
+                    Some(identity) => Node::File {
+                        identity: identity.clone(),
+                        mode: output.mode,
+                    },
+                    None => Node::Directory { mode: output.mode },
+                };
+                ensure!(
+                    self.changes
+                        .iter()
+                        .any(|change| change.target == output.target && change.after == expected),
+                    "A generation output was not verified by this activation"
+                );
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) async fn verify_prepared(
+        &self,
+        history: &History,
+        game: &Game,
+        inputs: Vec<super::manifest::Output>,
+        control: Control,
+    ) -> Result<()> {
+        let journal = self.clone();
+        let game = game.clone();
+        history.lease.blocking(move || -> Result<()> {
+            journal.validate(&game)?;
+            for change in &journal.changes {
+                control.check()?;
+                let path = change.target.resolve(&game)?;
+                parents(&path, &game)?;
+                ensure!(inspect(&path, &control)? == change.before,
+                    "Managed files changed after preparation; prepare deployment again");
+            }
+            for input in inputs {
+                let actual = inspect(&input.target.resolve(&game)?, &control)?;
+                ensure!(match (input.content, actual) {
+                    (Some(expected), Node::File { identity, .. }) => expected == identity,
+                    (None, Node::Directory { .. }) => true,
+                    _ => false,
+                }, "Required base inputs changed; explicitly prepare a new generation against the current game");
+            }
+            Ok(())
+        }).await.context("Prepared activation verification worker stopped")?
+    }
+
     pub(super) fn from_record(version: i64, document: &str) -> Result<Self> {
         let journal: Self =
             serde_json::from_str(document).context("Invalid deployment recovery journal")?;
@@ -450,21 +501,32 @@ impl Journal {
         })
     }
 
-    async fn check_record(&self, history: &History, committed: bool) -> Result<()> {
+    pub(super) async fn decision(&self, history: &History) -> Result<bool> {
         ensure!(
             self.game == history.game,
             "Journal and history store target different games"
         );
-        let stored: Option<(String, bool)> = sqlx::query_as(
-            "SELECT document,committed FROM generation_journals WHERE id=? AND game_id=?",
+        let stored: Option<(String, bool, i64)> = sqlx::query_as(
+            "SELECT document,committed,document_version FROM generation_journals WHERE id=? AND game_id=?",
         )
         .bind(&self.id)
         .bind(&self.game)
         .fetch_optional(&history.tracker.pool)
         .await?;
+        let (document, committed, version) = stored.context(
+            "Durable activation decision is unavailable; dependent operations are blocked",
+        )?;
         ensure!(
-            stored == Some((serde_json::to_string(self)?, committed)),
-            "Durable recovery decision or intent differs; dependent operations are blocked"
+            document == serde_json::to_string(self)? && version == i64::from(self.version),
+            "Durable recovery intent differs; dependent operations are blocked"
+        );
+        Ok(committed)
+    }
+
+    async fn check_record(&self, history: &History, committed: bool) -> Result<()> {
+        ensure!(
+            self.decision(history).await? == committed,
+            "Durable recovery decision differs; dependent operations are blocked"
         );
         Ok(())
     }
