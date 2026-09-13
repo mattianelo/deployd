@@ -1,6 +1,7 @@
 mod catalog;
 pub(crate) mod content;
 mod manifest;
+mod operation;
 mod records;
 mod store;
 mod target;

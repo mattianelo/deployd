@@ -1,17 +1,15 @@
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use sqlx::{Sqlite, Transaction};
-use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use crate::core::tracker::Tracker;
 
 use super::content::{Control, Identity};
+use super::operation::Lease;
 use super::store::Store;
-
-static OPERATIONS: OnceLock<Arc<Mutex<()>>> = OnceLock::new();
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -24,7 +22,7 @@ pub(super) struct History {
     pub(super) game: String,
     pub(super) cache: PathBuf,
     pub(super) store: Arc<Store>,
-    _lease: OwnedMutexGuard<()>,
+    pub(super) lease: Arc<Lease>,
 }
 
 pub(super) async fn durable(tracker: &Tracker) -> Result<Transaction<'_, Sqlite>> {
@@ -47,11 +45,7 @@ impl History {
         create: bool,
     ) -> Result<Self> {
         crate::utils::paths::generation_store_in(cache, game)?;
-        let lease = OPERATIONS
-            .get_or_init(|| Arc::new(Mutex::new(())))
-            .clone()
-            .lock_owned()
-            .await;
+        let lease = Lease::acquire().await?;
         let mut tx = durable(tracker).await?;
         let pending_version: Option<(i64, String)> =
             sqlx::query_as("SELECT document_version,kind FROM generation_journals WHERE game_id=?")
@@ -103,15 +97,16 @@ impl History {
         let root = cache.to_owned();
         let game_id = game.to_owned();
         let initialize = initializing.is_some();
-        let store = tokio::task::spawn_blocking(move || {
-            if initialize {
-                Store::create(&root, &game_id, &id)
-            } else {
-                Store::open(&root, &game_id, &id)
-            }
-        })
-        .await
-        .context("History storage worker stopped")??;
+        let store = lease
+            .blocking(move || {
+                if initialize {
+                    Store::create(&root, &game_id, &id)
+                } else {
+                    Store::open(&root, &game_id, &id)
+                }
+            })
+            .await
+            .context("History storage worker stopped")??;
         if let Some(journal) = initializing {
             let mut tx = durable(tracker).await?;
             sqlx::query("DELETE FROM generation_journals WHERE id=? AND committed=0")
@@ -125,7 +120,7 @@ impl History {
             game: game.to_owned(),
             cache: cache.to_owned(),
             store: Arc::new(store),
-            _lease: lease,
+            lease,
         })
     }
 
@@ -162,7 +157,9 @@ impl History {
 
     pub(super) async fn retain(&self, source: PathBuf, control: Control) -> Result<Identity> {
         let store = self.store.clone();
-        let identity = tokio::task::spawn_blocking(move || store.retain(&source, &control))
+        let identity = self
+            .lease
+            .blocking(move || store.retain(&source, &control))
             .await
             .context("Retained copy worker stopped")??;
         let mut tx = durable(&self.tracker).await?;
@@ -272,14 +269,15 @@ impl History {
             "Historical content references are incomplete; restoration is unavailable"
         );
         let store = self.store.clone();
-        tokio::task::spawn_blocking(move || -> Result<()> {
-            for (sha256, size) in objects {
-                store.verify(&Identity { sha256, size }, &control)?;
-            }
-            Ok(())
-        })
-        .await
-        .context("History verification worker stopped")??;
+        self.lease
+            .blocking(move || -> Result<()> {
+                for (sha256, size) in objects {
+                    store.verify(&Identity { sha256, size }, &control)?;
+                }
+                Ok(())
+            })
+            .await
+            .context("History verification worker stopped")??;
         Ok(manifest)
     }
 
@@ -290,11 +288,10 @@ impl History {
         control: Control,
     ) -> Result<()> {
         let store = self.store.clone();
-        tokio::task::spawn_blocking(move || {
-            store.materialize(&identity, &destination, 0o600, &control)
-        })
-        .await
-        .context("Restoration worker stopped")?
+        self.lease
+            .blocking(move || store.materialize(&identity, &destination, 0o600, &control))
+            .await
+            .context("Restoration worker stopped")?
     }
 
     pub(super) async fn finish_deletions(&self) -> Result<()> {
@@ -305,7 +302,8 @@ impl History {
                 sha256: hash.clone(),
                 size: size.try_into()?,
             };
-            tokio::task::spawn_blocking(move || store.remove(&identity))
+            self.lease
+                .blocking(move || store.remove(&identity))
                 .await
                 .context("History deletion worker stopped")??;
             let mut tx = durable(&self.tracker).await?;

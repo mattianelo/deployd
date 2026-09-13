@@ -180,130 +180,132 @@ pub(super) async fn capture(
     let cache = history.cache.clone();
     let game = game.clone();
     let store = history.store.clone();
-    let manifest = tokio::task::spawn_blocking(move || -> Result<Manifest> {
-        let mut manifest = Manifest {
-            version: 1,
-            game_id: game.id.clone(),
-            engine: game.engine.clone(),
-            records,
-            sources: Vec::new(),
-            outputs: Vec::new(),
-            base_inputs: Vec::new(),
-            shared_revision: None,
-        };
-        let mut roots = BTreeMap::new();
-        for rows in &manifest.records {
-            if rows.table == Table::Mods && game.engine != GameEngine::MassEffect {
-                for row in &rows.rows {
-                    let id = records::text(row, "id")?;
-                    ensure!(!id.contains('/'), "Invalid historical mod identity");
-                    relative(id)?;
-                    roots.insert(format!("cache/{id}"), cache.join(id));
-                }
-            }
-            if rows.table == Table::MelePackages {
-                for row in &rows.rows {
-                    let record: crate::core::game::mass_effect::library::Record =
-                        serde_json::from_str(records::text(row, "document")?)?;
-                    record.validate()?;
-                    let hash = record.package.source_sha256;
-                    Identity {
-                        size: 0,
-                        sha256: hash.clone(),
-                    }
-                    .validate()?;
-                    roots.insert(
-                        format!("mele-sources/{hash}"),
-                        data.join("mele-sources").join(hash),
-                    );
-                }
-            }
-        }
-        let inventory = |roots: &BTreeMap<String, PathBuf>| -> Result<Inventory> {
-            let mut sources = BTreeMap::new();
-            for (logical, root) in roots {
-                ensure!(
-                    root.is_dir(),
-                    "Mod source '{}' is unavailable; restore access before deploying",
-                    root.display()
-                );
-                for entry in walkdir::WalkDir::new(root)
-                    .follow_links(false)
-                    .sort_by_file_name()
-                {
-                    control.check()?;
-                    let entry = entry.context("Cannot inventory complete mod version")?;
-                    ensure!(
-                        entry.file_type().is_file() || entry.file_type().is_dir(),
-                        "Mod inventory contains a symbolic link or special file: {}",
-                        entry.path().display()
-                    );
-                    let suffix = entry.path().strip_prefix(root)?;
-                    let key = if suffix.as_os_str().is_empty() {
-                        logical.clone()
-                    } else {
-                        format!(
-                            "{logical}/{}",
-                            suffix.to_str().context("Mod path is not UTF-8")?
-                        )
-                    };
-                    relative(&key)?;
-                    let m = fs::symlink_metadata(entry.path())?;
-                    sources.insert(
-                        key,
-                        (
-                            entry.path().to_owned(),
-                            (m.dev(), m.ino(), m.len(), m.ctime(), m.ctime_nsec()),
-                        ),
-                    );
-                }
-            }
-            Ok(sources)
-        };
-        let sources = inventory(&roots)?;
-        for (logical, (source, _)) in &sources {
-            control.check()?;
-            let metadata = fs::symlink_metadata(source)?;
-            let content = if metadata.is_dir() {
-                None
-            } else {
-                Some(store.retain(source, &control)?)
+    let manifest = history
+        .lease
+        .blocking(move || -> Result<Manifest> {
+            let mut manifest = Manifest {
+                version: 1,
+                game_id: game.id.clone(),
+                engine: game.engine.clone(),
+                records,
+                sources: Vec::new(),
+                outputs: Vec::new(),
+                base_inputs: Vec::new(),
+                shared_revision: None,
             };
-            manifest.sources.push(Source {
-                path: logical.clone(),
-                content,
-                mode: metadata.permissions().mode() & 0o777,
-            });
-        }
-        ensure!(
-            sources == inventory(&roots)?,
-            "Mod inventory changed during preparation; close tools and retry"
-        );
-        for rows in &mut manifest.records {
-            if rows.table != Table::Files {
-                continue;
+            let mut roots = BTreeMap::new();
+            for rows in &manifest.records {
+                if rows.table == Table::Mods && game.engine != GameEngine::MassEffect {
+                    for row in &rows.rows {
+                        let id = records::text(row, "id")?;
+                        ensure!(!id.contains('/'), "Invalid historical mod identity");
+                        relative(id)?;
+                        roots.insert(format!("cache/{id}"), cache.join(id));
+                    }
+                }
+                if rows.table == Table::MelePackages {
+                    for row in &rows.rows {
+                        let record: crate::core::game::mass_effect::library::Record =
+                            serde_json::from_str(records::text(row, "document")?)?;
+                        record.validate()?;
+                        let hash = record.package.source_sha256;
+                        Identity {
+                            size: 0,
+                            sha256: hash.clone(),
+                        }
+                        .validate()?;
+                        roots.insert(
+                            format!("mele-sources/{hash}"),
+                            data.join("mele-sources").join(hash),
+                        );
+                    }
+                }
             }
-            for row in &mut rows.rows {
-                Target::file(&game.engine, records::text(row, "game_rel_original")?)?;
-                let source = Path::new(records::text(row, "cache_path")?);
-                let logical = sources
-                    .iter()
-                    .find(|(_, (path, _))| path.as_path() == source)
-                    .map(|(logical, _)| logical.clone())
-                    .with_context(|| {
-                        format!(
-                            "Tracked file '{}' is missing from its complete mod inventory",
-                            source.display()
-                        )
-                    })?;
-                row.insert("cache_path".into(), Value::String(logical));
+            let inventory = |roots: &BTreeMap<String, PathBuf>| -> Result<Inventory> {
+                let mut sources = BTreeMap::new();
+                for (logical, root) in roots {
+                    ensure!(
+                        root.is_dir(),
+                        "Mod source '{}' is unavailable; restore access before deploying",
+                        root.display()
+                    );
+                    for entry in walkdir::WalkDir::new(root)
+                        .follow_links(false)
+                        .sort_by_file_name()
+                    {
+                        control.check()?;
+                        let entry = entry.context("Cannot inventory complete mod version")?;
+                        ensure!(
+                            entry.file_type().is_file() || entry.file_type().is_dir(),
+                            "Mod inventory contains a symbolic link or special file: {}",
+                            entry.path().display()
+                        );
+                        let suffix = entry.path().strip_prefix(root)?;
+                        let key = if suffix.as_os_str().is_empty() {
+                            logical.clone()
+                        } else {
+                            format!(
+                                "{logical}/{}",
+                                suffix.to_str().context("Mod path is not UTF-8")?
+                            )
+                        };
+                        relative(&key)?;
+                        let m = fs::symlink_metadata(entry.path())?;
+                        sources.insert(
+                            key,
+                            (
+                                entry.path().to_owned(),
+                                (m.dev(), m.ino(), m.len(), m.ctime(), m.ctime_nsec()),
+                            ),
+                        );
+                    }
+                }
+                Ok(sources)
+            };
+            let sources = inventory(&roots)?;
+            for (logical, (source, _)) in &sources {
+                control.check()?;
+                let metadata = fs::symlink_metadata(source)?;
+                let content = if metadata.is_dir() {
+                    None
+                } else {
+                    Some(store.retain(source, &control)?)
+                };
+                manifest.sources.push(Source {
+                    path: logical.clone(),
+                    content,
+                    mode: metadata.permissions().mode() & 0o777,
+                });
             }
-        }
-        manifest.validate()?;
-        Ok(manifest)
-    })
-    .await
-    .context("Complete mod inventory worker stopped")??;
+            ensure!(
+                sources == inventory(&roots)?,
+                "Mod inventory changed during preparation; close tools and retry"
+            );
+            for rows in &mut manifest.records {
+                if rows.table != Table::Files {
+                    continue;
+                }
+                for row in &mut rows.rows {
+                    Target::file(&game.engine, records::text(row, "game_rel_original")?)?;
+                    let source = Path::new(records::text(row, "cache_path")?);
+                    let logical = sources
+                        .iter()
+                        .find(|(_, (path, _))| path.as_path() == source)
+                        .map(|(logical, _)| logical.clone())
+                        .with_context(|| {
+                            format!(
+                                "Tracked file '{}' is missing from its complete mod inventory",
+                                source.display()
+                            )
+                        })?;
+                    row.insert("cache_path".into(), Value::String(logical));
+                }
+            }
+            manifest.validate()?;
+            Ok(manifest)
+        })
+        .await
+        .context("Complete mod inventory worker stopped")??;
     history.register(&manifest.objects()).await?;
     Ok(manifest)
 }

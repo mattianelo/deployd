@@ -908,3 +908,33 @@ path = "src/core/generations/recovery.rs"
 name = "unsupported_and_inconsistent_journals_remain_pending"
 variant = "both"
 interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/operation.rs"
+name = "location_recovery_blocks_history_before_storage_initialization"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/operation.rs"
+name = "history_excludes_folder_recovery_until_it_is_closed"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/operation.rs"
+name = "abandoned_retained_copy_keeps_both_leases_until_the_worker_finishes"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/operation.rs"
+name = "abandoned_activation_finishes_under_lease_before_journal_recovery"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/operation.rs"
+name = "abandoned_participant_retains_leases_for_its_nested_worker"
+variant = "both"
+interface_state = "not_applicable"

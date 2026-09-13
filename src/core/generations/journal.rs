@@ -90,7 +90,7 @@ impl Applied {
                     "Save participant has stale source ownership"
                 );
             }
-            transition.verify(game).await?;
+            verify_saves(history, game, transition).await?;
         } else if let Some(previous) = previous {
             ensure!(
                 &previous.saves == saves,
@@ -147,7 +147,7 @@ impl Applied {
         let base_inputs = deployment
             .map(|deployment| deployment.manifest.base_inputs.clone())
             .unwrap_or_default();
-        tokio::task::spawn_blocking(move || -> Result<()> {
+        history.lease.blocking(move || -> Result<()> {
             journal.validate(&verified_game)?;
             for input in &base_inputs {
                 let actual = if let Some(change) = journal.changes.iter().find(|change| change.target == input.target) {
@@ -170,7 +170,7 @@ impl Applied {
         }).await.context("Final activation verification worker stopped")??;
         super::state::publish(&mut tx, history, game, &self.id, deployment, saves).await?;
         if let Some(saves) = saves_to_verify {
-            saves.verify(game).await?;
+            verify_saves(history, game, &saves).await?;
         }
         self.decide(&mut tx).await?;
         tx.commit()
@@ -259,7 +259,9 @@ impl Journal {
             let path = target.resolve(game)?;
             let read = path.clone();
             let read_control = control.clone();
-            let before = tokio::task::spawn_blocking(move || inspect(&read, &read_control))
+            let before = history
+                .lease
+                .blocking(move || inspect(&read, &read_control))
                 .await
                 .context("Activation inspection worker stopped")??;
             ensure!(
@@ -360,14 +362,16 @@ impl Journal {
         }
         let store = history.store.clone();
         let verify = objects.clone();
-        tokio::task::spawn_blocking(move || -> Result<()> {
-            for (sha256, size) in verify {
-                store.verify(&Identity { sha256, size }, &Control::default())?;
-            }
-            Ok(())
-        })
-        .await
-        .context("Journal content verification worker stopped")??;
+        history
+            .lease
+            .blocking(move || -> Result<()> {
+                for (sha256, size) in verify {
+                    store.verify(&Identity { sha256, size }, &Control::default())?;
+                }
+                Ok(())
+            })
+            .await
+            .context("Journal content verification worker stopped")??;
         history.register(&objects).await?;
         let mut tx = durable(&history.tracker).await?;
         ensure!(
@@ -392,43 +396,53 @@ impl Journal {
         self.validate(game)?;
         self.check_record(history, false).await?;
         if let Some(saves) = &self.saves {
-            saves.adopt_preparation(game).await?;
-            saves.apply(game).await?;
+            let saves = saves.clone();
+            let game = game.clone();
+            history
+                .lease
+                .participant(async move {
+                    saves.adopt_preparation(&game).await?;
+                    saves.apply(&game).await
+                })
+                .await
+                .context("Save activation participant stopped")??;
         }
         let journal = self.clone();
         let store = history.store.clone();
         let game = game.clone();
-        tokio::task::spawn_blocking(move || -> Result<()> {
-            for change in &journal.changes {
-                control.check()?;
-                let path = change.target.resolve(&game)?;
-                parents(&path, &game)?;
-                ensure!(
-                    inspect(&path, &control)? == change.before,
-                    "Managed file changed since preparation; activation stopped: {}",
-                    path.display()
-                );
-                if change.before != change.after {
-                    apply_node(&store, &path, &change.after, &control)?;
+        history
+            .lease
+            .blocking(move || -> Result<()> {
+                for change in &journal.changes {
+                    control.check()?;
+                    let path = change.target.resolve(&game)?;
+                    parents(&path, &game)?;
+                    ensure!(
+                        inspect(&path, &control)? == change.before,
+                        "Managed file changed since preparation; activation stopped: {}",
+                        path.display()
+                    );
+                    if change.before != change.after {
+                        apply_node(&store, &path, &change.after, &control)?;
+                    }
+                    ensure!(
+                        inspect(&path, &control)? == change.after,
+                        "Activation verification failed: {}",
+                        path.display()
+                    );
                 }
-                ensure!(
-                    inspect(&path, &control)? == change.after,
-                    "Activation verification failed: {}",
-                    path.display()
-                );
-            }
-            for change in &journal.changes {
-                let path = change.target.resolve(&game)?;
-                ensure!(
-                    inspect(&path, &control)? == change.after,
-                    "Managed state changed before activation commitment: {}",
-                    path.display()
-                );
-            }
-            Ok(())
-        })
-        .await
-        .context("Activation worker stopped")??;
+                for change in &journal.changes {
+                    let path = change.target.resolve(&game)?;
+                    ensure!(
+                        inspect(&path, &control)? == change.after,
+                        "Managed state changed before activation commitment: {}",
+                        path.display()
+                    );
+                }
+                Ok(())
+            })
+            .await
+            .context("Activation worker stopped")??;
         Ok(Applied {
             id: self.id.clone(),
             game: self.game.clone(),
@@ -464,13 +478,21 @@ impl Journal {
         self.validate(game)?;
         self.check_record(history, committed).await?;
         if let Some(saves) = &self.saves {
-            saves.adopt_preparation(game).await?;
-            saves.recover(game, committed).await?;
+            let saves = saves.clone();
+            let game = game.clone();
+            history
+                .lease
+                .participant(async move {
+                    saves.adopt_preparation(&game).await?;
+                    saves.recover(&game, committed).await
+                })
+                .await
+                .context("Save recovery participant stopped")??;
         }
         let journal = self.clone();
         let store = history.store.clone();
         let game = game.clone();
-        tokio::task::spawn_blocking(move || -> Result<()> {
+        history.lease.blocking(move || -> Result<()> {
             let control = Control::default();
             for change in journal.changes.iter().rev() {
                 let path = change.target.resolve(&game)?;
@@ -554,5 +576,27 @@ pub(super) async fn discard_save_preparation(
         pending == 0,
         "Finish activation recovery before discarding save preparation"
     );
-    crate::core::save_manager::activation::discard_preparation(game, operation).await
+    let game = game.clone();
+    let operation = operation.to_owned();
+    history
+        .lease
+        .participant(async move {
+            crate::core::save_manager::activation::discard_preparation(&game, &operation).await
+        })
+        .await
+        .context("Save preparation cleanup participant stopped")?
+}
+
+async fn verify_saves(
+    history: &History,
+    game: &Game,
+    saves: &crate::core::save_manager::activation::Transition,
+) -> Result<()> {
+    let game = game.clone();
+    let saves = saves.clone();
+    history
+        .lease
+        .participant(async move { saves.verify(&game).await })
+        .await
+        .context("Save verification participant stopped")?
 }

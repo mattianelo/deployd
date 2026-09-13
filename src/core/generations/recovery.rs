@@ -1,4 +1,4 @@
-use anyhow::{Result, bail, ensure};
+use anyhow::{Context, Result, bail, ensure};
 
 use crate::models::game::Game;
 
@@ -7,7 +7,14 @@ use super::journal::Journal;
 
 pub(super) async fn recover(history: &History, game: &Game) -> Result<()> {
     recover_journal(history, game).await?;
-    crate::core::save_manager::activation::recovery::recover(game).await?;
+    let game = game.clone();
+    history
+        .lease
+        .participant(async move {
+            crate::core::save_manager::activation::recovery::recover(&game).await
+        })
+        .await
+        .context("Save preparation recovery participant stopped")??;
     history.finish_deletions().await
 }
 

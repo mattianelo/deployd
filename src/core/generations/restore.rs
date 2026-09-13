@@ -145,55 +145,57 @@ async fn restore_inner(
     let document = serde_json::to_string(intent)?;
     let sources = manifest.sources.clone();
     let worker_control = control.clone();
-    tokio::task::spawn_blocking(move || -> Result<()> {
-        let control = worker_control;
-        let intent: Intent = serde_json::from_str(&document)?;
-        intent.validate()?;
-        for id in intent.mods.values() {
-            control.check()?;
-            let root = cache.join(id);
-            ensure!(
-                !root.try_exists()?,
-                "Restoration destination '{}' is occupied",
-                root.display()
-            );
-            let temporary = tempfile::Builder::new()
-                .prefix(".restore-profile-")
-                .tempdir_in(&cache)?;
-            fs::write(temporary.path().join(intent.marker()), &intent.id)?;
-            fs::File::open(temporary.path().join(intent.marker()))?.sync_all()?;
-            fs::File::open(temporary.path())?.sync_all()?;
-            fs::rename(temporary.path(), &root)?;
-            fs::File::open(&cache)?.sync_all()?;
-        }
-        for source in sources {
-            control.check()?;
-            let (new, suffix) = intent.suffix(&source.path)?;
-            ensure!(
-                suffix != Path::new(&intent.marker()),
-                "Restored content conflicts with operation metadata"
-            );
-            let destination = cache.join(new).join(suffix);
-            if let Some(identity) = source.content {
-                fs::create_dir_all(
-                    destination
-                        .parent()
-                        .context("Restored file has no parent")?,
-                )?;
-                store.materialize(&identity, &destination, source.mode | 0o200, &control)?;
-            } else {
-                fs::create_dir_all(&destination)?;
-                fs::set_permissions(
-                    &destination,
-                    fs::Permissions::from_mode(source.mode | 0o700),
-                )?;
-                fs::File::open(&destination)?.sync_all()?;
+    history
+        .lease
+        .blocking(move || -> Result<()> {
+            let control = worker_control;
+            let intent: Intent = serde_json::from_str(&document)?;
+            intent.validate()?;
+            for id in intent.mods.values() {
+                control.check()?;
+                let root = cache.join(id);
+                ensure!(
+                    !root.try_exists()?,
+                    "Restoration destination '{}' is occupied",
+                    root.display()
+                );
+                let temporary = tempfile::Builder::new()
+                    .prefix(".restore-profile-")
+                    .tempdir_in(&cache)?;
+                fs::write(temporary.path().join(intent.marker()), &intent.id)?;
+                fs::File::open(temporary.path().join(intent.marker()))?.sync_all()?;
+                fs::File::open(temporary.path())?.sync_all()?;
+                fs::rename(temporary.path(), &root)?;
+                fs::File::open(&cache)?.sync_all()?;
             }
-        }
-        Ok(())
-    })
-    .await
-    .context("Profile materialization worker stopped")??;
+            for source in sources {
+                control.check()?;
+                let (new, suffix) = intent.suffix(&source.path)?;
+                ensure!(
+                    suffix != Path::new(&intent.marker()),
+                    "Restored content conflicts with operation metadata"
+                );
+                let destination = cache.join(new).join(suffix);
+                if let Some(identity) = source.content {
+                    fs::create_dir_all(
+                        destination
+                            .parent()
+                            .context("Restored file has no parent")?,
+                    )?;
+                    store.materialize(&identity, &destination, source.mode | 0o200, &control)?;
+                } else {
+                    fs::create_dir_all(&destination)?;
+                    fs::set_permissions(
+                        &destination,
+                        fs::Permissions::from_mode(source.mode | 0o700),
+                    )?;
+                    fs::File::open(&destination)?.sync_all()?;
+                }
+            }
+            Ok(())
+        })
+        .await
+        .context("Profile materialization worker stopped")??;
     control.check()?;
     let mut tx = durable(&history.tracker).await?;
     for rows in &manifest.records {
@@ -356,95 +358,97 @@ async fn finish(
     let cache = history.cache.clone();
     let sources = manifest.sources.clone();
     let document = serde_json::to_string(intent)?;
-    tokio::task::spawn_blocking(move || -> Result<()> {
-        let intent: Intent = serde_json::from_str(&document)?;
-        for id in intent.mods.values() {
-            let root = cache.join(id);
-            if !root.try_exists()? {
-                ensure!(!committed, "A restored mod is missing before cleanup");
-                continue;
-            }
-            ensure!(
-                fs::symlink_metadata(&root)?.is_dir(),
-                "Restoration destination changed; recovery stopped"
-            );
-            let marker = root.join(intent.marker());
-            if committed && !marker.try_exists()? {
-                continue;
-            }
-            ensure!(
-                fs::read_to_string(&marker)? == intent.id,
-                "Restoration ownership marker changed; files were preserved"
-            );
-            if committed {
-                fs::remove_file(marker)?;
-                fs::File::open(&root)?.sync_all()?;
-                continue;
-            }
-            let mut expected = BTreeMap::new();
-            for source in &sources {
-                let (new, suffix) = intent.suffix(&source.path)?;
-                if new == id && !suffix.as_os_str().is_empty() {
-                    expected.insert(suffix.to_owned(), source);
-                }
-            }
-            let mut directories = BTreeSet::new();
-            for path in expected.keys() {
-                let mut parent = path.parent();
-                while let Some(path) = parent {
-                    directories.insert(path.to_owned());
-                    parent = path.parent();
-                }
-            }
-            let mut entries = Vec::new();
-            for entry in walkdir::WalkDir::new(&root)
-                .min_depth(1)
-                .follow_links(false)
-                .contents_first(true)
-            {
-                let entry = entry?;
-                let suffix = entry.path().strip_prefix(&root)?;
-                if suffix == Path::new(&intent.marker()) {
+    history
+        .lease
+        .blocking(move || -> Result<()> {
+            let intent: Intent = serde_json::from_str(&document)?;
+            for id in intent.mods.values() {
+                let root = cache.join(id);
+                if !root.try_exists()? {
+                    ensure!(!committed, "A restored mod is missing before cleanup");
                     continue;
                 }
-                if entry.file_type().is_dir() {
-                    ensure!(
-                        directories.contains(suffix)
-                            || expected
-                                .get(suffix)
-                                .is_some_and(|source| source.content.is_none()),
-                        "Unrecognized restored directory was preserved"
-                    );
-                } else {
-                    let source = expected
-                        .get(suffix)
-                        .context("Unrecognized restored file was preserved")?;
-                    let identity = source
-                        .content
-                        .as_ref()
-                        .context("Restored directory was replaced by a file")?;
-                    ensure!(
-                        &content::inspect(entry.path(), &Control::default())? == identity,
-                        "External edits to a restored mod were preserved; recovery is blocked"
-                    );
+                ensure!(
+                    fs::symlink_metadata(&root)?.is_dir(),
+                    "Restoration destination changed; recovery stopped"
+                );
+                let marker = root.join(intent.marker());
+                if committed && !marker.try_exists()? {
+                    continue;
                 }
-                entries.push((entry.path().to_owned(), entry.file_type().is_dir()));
-            }
-            for (path, directory) in entries {
-                if directory {
-                    fs::remove_dir(path)?;
-                } else {
-                    fs::remove_file(path)?;
+                ensure!(
+                    fs::read_to_string(&marker)? == intent.id,
+                    "Restoration ownership marker changed; files were preserved"
+                );
+                if committed {
+                    fs::remove_file(marker)?;
+                    fs::File::open(&root)?.sync_all()?;
+                    continue;
                 }
+                let mut expected = BTreeMap::new();
+                for source in &sources {
+                    let (new, suffix) = intent.suffix(&source.path)?;
+                    if new == id && !suffix.as_os_str().is_empty() {
+                        expected.insert(suffix.to_owned(), source);
+                    }
+                }
+                let mut directories = BTreeSet::new();
+                for path in expected.keys() {
+                    let mut parent = path.parent();
+                    while let Some(path) = parent {
+                        directories.insert(path.to_owned());
+                        parent = path.parent();
+                    }
+                }
+                let mut entries = Vec::new();
+                for entry in walkdir::WalkDir::new(&root)
+                    .min_depth(1)
+                    .follow_links(false)
+                    .contents_first(true)
+                {
+                    let entry = entry?;
+                    let suffix = entry.path().strip_prefix(&root)?;
+                    if suffix == Path::new(&intent.marker()) {
+                        continue;
+                    }
+                    if entry.file_type().is_dir() {
+                        ensure!(
+                            directories.contains(suffix)
+                                || expected
+                                    .get(suffix)
+                                    .is_some_and(|source| source.content.is_none()),
+                            "Unrecognized restored directory was preserved"
+                        );
+                    } else {
+                        let source = expected
+                            .get(suffix)
+                            .context("Unrecognized restored file was preserved")?;
+                        let identity = source
+                            .content
+                            .as_ref()
+                            .context("Restored directory was replaced by a file")?;
+                        ensure!(
+                            &content::inspect(entry.path(), &Control::default())? == identity,
+                            "External edits to a restored mod were preserved; recovery is blocked"
+                        );
+                    }
+                    entries.push((entry.path().to_owned(), entry.file_type().is_dir()));
+                }
+                for (path, directory) in entries {
+                    if directory {
+                        fs::remove_dir(path)?;
+                    } else {
+                        fs::remove_file(path)?;
+                    }
+                }
+                fs::remove_file(marker)?;
+                fs::remove_dir(root)?;
+                fs::File::open(&cache)?.sync_all()?;
             }
-            fs::remove_file(marker)?;
-            fs::remove_dir(root)?;
-            fs::File::open(&cache)?.sync_all()?;
-        }
-        Ok(())
-    })
-    .await
-    .context("Restoration cleanup worker stopped")??;
+            Ok(())
+        })
+        .await
+        .context("Restoration cleanup worker stopped")??;
     let mut tx = durable(&history.tracker).await?;
     sqlx::query("DELETE FROM generation_journals WHERE id=? AND committed=?")
         .bind(&intent.id)
