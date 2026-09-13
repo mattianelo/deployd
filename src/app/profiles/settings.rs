@@ -3,9 +3,7 @@ use std::path::PathBuf;
 use gtk::prelude::*;
 use relm4::prelude::*;
 
-use crate::core::game;
 use crate::ui::settings_dialog::{SettingsDialog, SettingsDialogOutput};
-use crate::utils;
 
 use super::super::App;
 use super::super::messages::{AppCmdMsg, AppMsg};
@@ -28,7 +26,6 @@ impl App {
                     tracker,
                     self.shell.nexus_username.is_some(),
                     self.shell.color_scheme_idx,
-                    game::is_snap() && utils::experimental_enabled(),
                 ))
                 .forward(sender.input_sender(), |output| match output {
                     SettingsDialogOutput::Closed => {
@@ -39,9 +36,6 @@ impl App {
                     }
                     SettingsDialogOutput::ManageGames => {
                         AppMsg::Games(crate::app::messages::GamesMsg::ManageGamesClicked)
-                    }
-                    SettingsDialogOutput::PreviewAppImageExport => {
-                        AppMsg::Migration(crate::app::messages::MigrationMsg::PreviewAppImageExport)
                     }
                     SettingsDialogOutput::ColorSchemeChanged(idx) => {
                         AppMsg::Shell(crate::app::messages::ShellMsg::SetColorScheme(idx))

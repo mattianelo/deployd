@@ -119,8 +119,7 @@
     </release>
     <release version="2.3.2" date="2026-07-03" type="stable">
       <description>
-        <p>Improves Snap build reproducibility and AppStream metadata, and preserves installed-mod
-        source metadata and deployed profile state during AppImage-to-Snap migration.</p>
+        <p>Improves Snap build reproducibility and AppStream metadata.</p>
       </description>
     </release>
     <release version="2.3.1" date="2026-06-27" type="stable">

@@ -424,7 +424,6 @@ pub(super) fn build_model(
             game_setup_dialog: None,
             welcome_wizard: None,
             settings_dialog: None,
-            pending_migration_import: None,
             mod_properties_dialog: None,
             absorb_dialog: None,
             profile_rename_entry: profile_rename_entry.clone(),

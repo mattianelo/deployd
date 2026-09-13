@@ -781,8 +781,6 @@ mod tests {
         );
         game.path = new_root.join("Game/ME2");
         assert!(root(&tracker, &game, location.id).await.is_err());
-        crate::core::migration_export::prune_export_database(&tracker.pool, &game).await?;
-        assert!(tracker.mele_family(location.id).await?.is_none());
         Ok(())
     }
 }

@@ -3,7 +3,6 @@ use gtk::prelude::*;
 use relm4::prelude::*;
 
 use crate::ui::game_setup_dialog::{GameSetupDialog, GameSetupOutput};
-use crate::utils;
 
 use super::super::App;
 use super::super::messages::{AppCmdMsg, AppMsg};
@@ -70,14 +69,11 @@ impl App {
     ) {
         let detected: Vec<crate::models::game::Game> = self.session.games.clone();
         let cache_dirs = self.session.game_cache_dirs.clone();
-        let can_export_for_snap = self.shell.running_as_appimage
-            && std::env::var_os("SNAP").is_none()
-            && utils::experimental_enabled();
 
         self.ui.game_setup_dialog = Some(
             GameSetupDialog::builder()
                 .transient_for(root)
-                .launch((detected, vec![], cache_dirs, can_export_for_snap))
+                .launch((detected, vec![], cache_dirs))
                 .forward(sender.input_sender(), |output| match output {
                     GameSetupOutput::RestoreAccessRequested {
                         game_id,
@@ -110,9 +106,6 @@ impl App {
                             game_id,
                         })
                     }
-                    GameSetupOutput::ExportForSnapRequested { game_id } => AppMsg::Migration(
-                        crate::app::messages::MigrationMsg::ExportGameForSnap(game_id),
-                    ),
                 }),
         );
     }

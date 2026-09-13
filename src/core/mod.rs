@@ -7,9 +7,6 @@ pub mod installer;
 pub(crate) mod location_recovery;
 #[cfg(feature = "loot")]
 pub mod loot_sort;
-pub mod migration_bundle;
-pub mod migration_export;
-pub mod migration_import;
 pub mod mod_folders;
 pub mod nexus_api;
 pub(crate) mod nexus_identity;

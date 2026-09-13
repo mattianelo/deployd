@@ -751,7 +751,7 @@ async fn public_entry_points_honor_cancellation_before_publishing() -> Result<()
 
 // @variants: both
 #[tokio::test]
-async fn profile_recipes_survive_switching_restart_and_export() -> Result<()> {
+async fn profile_recipes_survive_switching_and_restart() -> Result<()> {
     let fixture = Fixture::new(Target::Le1).await?;
     let (_, package) = fixture.retain(b"payload", "").await?;
     let first = fixture.recipe(vec![package]);
@@ -796,20 +796,6 @@ async fn profile_recipes_survive_switching_restart_and_export() -> Result<()> {
     assert_eq!(
         reopened.mele_recipe(&fixture.game.id, &other).await?,
         Some(second)
-    );
-    crate::core::migration_export::prune_export_database(&reopened.pool, &fixture.game).await?;
-    assert!(reopened.mele_deployment(&fixture.game.id).await?.is_none());
-    assert!(
-        reopened
-            .load_mele_baseline(&fixture.game.id)
-            .await?
-            .is_none()
-    );
-    assert_eq!(
-        reopened
-            .mele_recipe(&fixture.game.id, &fixture.profile)
-            .await?,
-        Some(first)
     );
     Ok(())
 }

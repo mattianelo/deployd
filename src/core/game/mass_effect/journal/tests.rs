@@ -698,7 +698,7 @@ async fn rejects_unsafe_destinations_links_and_case_collisions() -> Result<()> {
 
 // @variants: both
 #[tokio::test]
-async fn unknown_journal_versions_block_recovery_and_exports_omit_local_state() -> Result<()> {
+async fn unknown_journal_versions_block_recovery() -> Result<()> {
     let fixture = Fixture::new().await?;
     let (mut journal, _) = fixture.pending().await?;
     journal.version = 99;
@@ -710,22 +710,6 @@ async fn unknown_journal_versions_block_recovery_and_exports_omit_local_state() 
     assert_eq!(
         fs::read(fixture.game.path.join(ENGINE))?,
         b"original package"
-    );
-    crate::core::migration_export::prune_export_database(&fixture.tracker.pool, &fixture.game)
-        .await?;
-    assert!(
-        fixture
-            .tracker
-            .mele_journal(&fixture.game.id)
-            .await?
-            .is_none()
-    );
-    assert!(
-        fixture
-            .tracker
-            .mele_deployment(&fixture.game.id)
-            .await?
-            .is_none()
     );
     Ok(())
 }

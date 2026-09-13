@@ -211,42 +211,6 @@ variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/migration_export.rs"
-name = "prunes_database_to_selected_game"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/migration_export.rs"
-name = "manifest_marks_appimage_source"
-variant = "appimage"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/migration_import.rs"
-name = "detects_existing_game_without_writing_snap_state"
-variant = "snap"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/migration_import.rs"
-name = "imports_new_game_into_snap_owned_state"
-variant = "snap"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/migration_import.rs"
-name = "skips_stale_last_deployed_profile"
-variant = "snap"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/migration_import.rs"
-name = "refuses_existing_game_import_without_writing_snap_state"
-variant = "snap"
-interface_state = "not_applicable"
-
-[[variant_tests]]
 path = "src/core/tool_launcher.rs"
 name = "umu_command_does_not_reference_shared_steam_runtime"
 variant = "appimage"

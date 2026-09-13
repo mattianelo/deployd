@@ -33,7 +33,6 @@ pub(crate) enum AppMsg {
     Downloads(DownloadsMsg),
     Install(InstallMsg),
     Tools(ToolsMsg),
-    Migration(MigrationMsg),
 }
 
 #[derive(Debug)]
@@ -351,23 +350,6 @@ pub(crate) enum ToolsMsg {
     ToolManagerClosed,
 }
 
-#[derive(Debug)]
-pub(crate) enum MigrationMsg {
-    /// User requested an AppImage-to-Snap export for a managed game.
-    ExportGameForSnap(String),
-    /// User chose the destination for the AppImage-to-Snap export bundle.
-    ExportGameForSnapChosen {
-        game_id: String,
-        output_path: std::path::PathBuf,
-    },
-    /// User wants to preview an AppImage export bundle from the Snap.
-    PreviewAppImageExport,
-    /// User selected an AppImage export bundle to preview.
-    PreviewAppImageExportChosen(std::path::PathBuf),
-    /// User chose to import a previewed AppImage export bundle.
-    ImportAppImageExport(std::path::PathBuf),
-}
-
 pub(crate) enum PrepareResultMsg {
     Normal {
         mele: Option<Box<crate::core::game::mass_effect::package::PackagePlan>>,
@@ -438,7 +420,6 @@ pub(crate) enum AppCmdMsg {
     Downloads(DownloadsCmdMsg),
     Install(InstallCmdMsg),
     Tools(ToolsCmdMsg),
-    Migration(MigrationCmdMsg),
 }
 
 #[derive(Debug)]
@@ -637,18 +618,4 @@ pub(crate) enum ToolsCmdMsg {
     WorkingDirSaved(Result<(), String>),
     Launched(Result<String, crate::core::tool_launcher::ToolPrepareError>),
     LaunchCancelled(String),
-}
-
-#[derive(Debug)]
-pub(crate) enum MigrationCmdMsg {
-    ImportFolderSelected(
-        crate::utils::location::FolderRole,
-        Result<Option<crate::utils::location::SelectedLocation>, String>,
-    ),
-    /// Result of writing an AppImage-to-Snap export bundle.
-    GameExportedForSnap(Result<crate::core::migration_export::ExportGameResult, String>),
-    /// Result of reading an AppImage-to-Snap export bundle without importing it.
-    AppImageExportPreviewed(Result<crate::core::migration_import::PreviewImportResult, String>),
-    /// Result of importing an AppImage-to-Snap export bundle into Snap state.
-    AppImageExportImported(Result<crate::core::migration_import::ImportBundleResult, String>),
 }

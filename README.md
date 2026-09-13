@@ -162,7 +162,7 @@ launched without it and Deployd retries setup on a later launch. Game settings, 
 discovery continue to use the configured game prefix.
 
 Strict Snap confinement still controls which folders the app can see. Deployd validates selected
-game, Wine prefix, downloads, cache, and migration-import folders before saving them, and explains
+game, Wine prefix, downloads, and cache folders before saving them, and explains
 blocked hidden-home paths, ungranted removable media, or read/write access failures immediately.
 Folders selected through the desktop portal remain available across restarts, including folders on
 external drives. The downloads folder picker always requests this portal access instead of relying
@@ -189,10 +189,6 @@ interrupted save references. Repairs resume after restart. Modified links are pr
 affected game operations stay blocked until recovery finishes. Changing to a different installation
 uses the separate Change folder action. Downloads and custom-cache recovery are unchanged, including
 the manual removable-media connection needed when the external-drive Downloads portal route fails.
-
-AppImage-to-Snap game migration preserves installed-mod source metadata, download metadata, and
-the profile associated with currently deployed files. AppImage archive paths are cleared because
-they are not valid inside the Snap; rescanning the Snap downloads folder reattaches those archives.
 
 If a required data upgrade fails at startup, Deployd explains the problem. Recoverable
 metadata problems appear as warnings and are retried on a later launch.

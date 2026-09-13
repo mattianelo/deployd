@@ -37,7 +37,6 @@ if [ "${DEPLOYD_BUILD_CONTAINER:-0}" != "1" ]; then
         --env DEPLOYD_BUILD_CONTAINER=1 \
         --env "DEPLOYD_DEPENDENCY_MAINTENANCE=${DEPLOYD_DEPENDENCY_MAINTENANCE:-0}" \
         --env "DEPLOYD_CI_FRESHNESS=${DEPLOYD_CI_FRESHNESS:-0}" \
-        --env "DEPLOYD_EXPERIMENTAL=${DEPLOYD_EXPERIMENTAL:-0}" \
         --env APPIMAGE_EXTRACT_AND_RUN=1 \
         --env CARGO_TARGET_DIR=/build/target \
         -- bash /workspace/check.sh "$CMD" "$@"

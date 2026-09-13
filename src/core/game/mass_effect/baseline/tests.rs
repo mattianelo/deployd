@@ -305,28 +305,6 @@ async fn other_engines_keep_their_existing_setup_without_mele_scans() -> Result<
     Ok(())
 }
 
-// @variants: both
-#[tokio::test]
-async fn portable_exports_exclude_local_restoration_baselines() -> Result<()> {
-    let temp = tempdir()?;
-    let tracker = Tracker::open("sqlite::memory:").await?.tracker;
-    let config = config(game(temp.path(), 1)?);
-    configure(
-        &tracker,
-        std::slice::from_ref(&config),
-        &[],
-        Arc::new(|_| {}),
-    )
-    .await?;
-    crate::core::migration_export::prune_export_database(&tracker.pool, &config.game).await?;
-    assert!(tracker.load_mele_baseline(&config.game.id).await?.is_none());
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM mele_baseline_files")
-        .fetch_one(&tracker.pool)
-        .await?;
-    assert_eq!(count, 0);
-    Ok(())
-}
-
 // @variants: snap
 #[tokio::test]
 async fn refuses_capture_during_location_repair_without_waiting_on_a_nested_lease() -> Result<()> {

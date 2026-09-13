@@ -39,21 +39,10 @@ pub(crate) enum WorkKind {
     PreparingSetup,
     Installing,
     ScanningDownloads,
-    ExportingMigration,
-    PreviewingMigration,
-    ImportingMigration,
     Deploying,
     Purging,
     SettingUpRuntime,
     LaunchingTool,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct PendingMigrationImport {
-    pub(crate) locations: Vec<crate::utils::location::FolderSelection>,
-    pub(crate) bundle_path: PathBuf,
-    pub(crate) confirmed_game_path: Option<PathBuf>,
-    pub(crate) confirmed_wine_prefix: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]

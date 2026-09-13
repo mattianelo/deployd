@@ -35,7 +35,6 @@ impl App {
             AppMsg::Downloads(msg) => self.dispatch_downloads_input(msg, sender, root),
             AppMsg::Install(msg) => self.dispatch_install_input(msg, sender, root),
             AppMsg::Tools(msg) => self.dispatch_tools_input(msg, sender, root),
-            AppMsg::Migration(msg) => self.dispatch_migration_input(msg, sender, root),
         }
     }
 
@@ -434,34 +433,6 @@ impl App {
         }
     }
 
-    fn dispatch_migration_input(
-        &mut self,
-        msg: crate::app::messages::MigrationMsg,
-        sender: ComponentSender<Self>,
-        root: &adw::ApplicationWindow,
-    ) {
-        use crate::app::messages::MigrationMsg;
-
-        match msg {
-            MigrationMsg::ExportGameForSnap(game_id) => {
-                self.handle_export_game_for_snap(game_id, root, &sender)
-            }
-            MigrationMsg::ExportGameForSnapChosen {
-                game_id,
-                output_path,
-            } => self.handle_export_game_for_snap_chosen(game_id, output_path, &sender),
-            MigrationMsg::PreviewAppImageExport => {
-                self.handle_preview_appimage_export(root, &sender)
-            }
-            MigrationMsg::PreviewAppImageExportChosen(bundle_path) => {
-                self.handle_preview_appimage_export_chosen(bundle_path, &sender)
-            }
-            MigrationMsg::ImportAppImageExport(bundle_path) => {
-                self.handle_import_appimage_export(bundle_path, root, &sender)
-            }
-        }
-    }
-
     pub(crate) fn dispatch_command(
         &mut self,
         msg: AppCmdMsg,
@@ -482,7 +453,6 @@ impl App {
             AppCmdMsg::Downloads(msg) => self.dispatch_downloads_command(msg, sender, root),
             AppCmdMsg::Install(msg) => self.dispatch_install_command(msg, sender, root),
             AppCmdMsg::Tools(msg) => self.dispatch_tools_command(msg, sender, root),
-            AppCmdMsg::Migration(msg) => self.dispatch_migration_command(msg, sender, root),
         }
     }
 
@@ -751,30 +721,6 @@ impl App {
             ToolsCmdMsg::LaunchCancelled(name) => self.handle_cmd_tool_launch_cancelled(name),
         }
     }
-
-    fn dispatch_migration_command(
-        &mut self,
-        msg: crate::app::messages::MigrationCmdMsg,
-        sender: ComponentSender<Self>,
-        root: &adw::ApplicationWindow,
-    ) {
-        use crate::app::messages::MigrationCmdMsg;
-
-        match msg {
-            MigrationCmdMsg::ImportFolderSelected(role, result) => {
-                self.handle_import_folder_selected(role, result, root, &sender)
-            }
-            MigrationCmdMsg::GameExportedForSnap(result) => {
-                self.handle_cmd_game_exported_for_snap(result)
-            }
-            MigrationCmdMsg::AppImageExportPreviewed(result) => {
-                self.handle_cmd_appimage_export_previewed(result, root, &sender)
-            }
-            MigrationCmdMsg::AppImageExportImported(result) => {
-                self.handle_cmd_appimage_export_imported(result, &sender)
-            }
-        }
-    }
 }
 
 fn requires_game_access(msg: &AppMsg) -> bool {
@@ -820,16 +766,14 @@ fn changes_folder_context(msg: &AppMsg) -> bool {
     use crate::app::messages::{GamesMsg, ShellMsg};
     matches!(
         msg,
-        AppMsg::Migration(_)
-            | AppMsg::Games(
-                GamesMsg::GameSelected(_)
-                    | GamesMsg::GamesConfigured(_, _)
-                    | GamesMsg::WelcomeWizardConfirmed(_, _)
-                    | GamesMsg::ManageGamesClicked
-                    | GamesMsg::RemoveCurrentGame
-                    | GamesMsg::RemoveGameConfirmed { .. }
-            )
-            | AppMsg::Shell(ShellMsg::GrantGameFolderAccess | ShellMsg::GameFolderGranted(_))
+        AppMsg::Games(
+            GamesMsg::GameSelected(_)
+                | GamesMsg::GamesConfigured(_, _)
+                | GamesMsg::WelcomeWizardConfirmed(_, _)
+                | GamesMsg::ManageGamesClicked
+                | GamesMsg::RemoveCurrentGame
+                | GamesMsg::RemoveGameConfirmed { .. }
+        ) | AppMsg::Shell(ShellMsg::GrantGameFolderAccess | ShellMsg::GameFolderGranted(_))
     )
 }
 

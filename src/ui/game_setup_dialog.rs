@@ -42,8 +42,6 @@ pub struct GameSetupDialog {
     add_btn: gtk::Button,
     /// Filtered list of known game options shown in the "Add Game" dropdown.
     known_opts: Vec<game::KnownGameOption>,
-    /// Export bundles are only exposed from the AppImage package.
-    can_export_for_snap: bool,
 }
 
 #[derive(Debug)]
@@ -61,8 +59,6 @@ pub enum GameSetupMsg {
     CacheDirChosen(usize, PathBuf),
     /// Reset the custom cache dir for the game at index back to the default.
     ResetCacheDir(usize),
-    /// Export the game into an AppImage-to-Snap migration bundle.
-    ExportForSnap(usize),
     /// Remove a game entry.
     RemoveGame(usize),
     /// Switch to the "Add Game" form.
@@ -109,10 +105,6 @@ pub enum GameSetupOutput {
     CacheDirResetRequested {
         game_id: String,
     },
-    /// User requested an AppImage-to-Snap export for this game.
-    ExportForSnapRequested {
-        game_id: String,
-    },
 }
 
 impl GameSetupDialog {
@@ -126,13 +118,8 @@ impl GameSetupDialog {
 
         for (idx, entry) in self.entries.iter().enumerate() {
             let cache_dir = self.game_cache_dirs.get(&entry.game.id).cloned();
-            self.games_list.append(&Self::build_entry_row(
-                idx,
-                entry,
-                cache_dir,
-                self.can_export_for_snap,
-                sender,
-            ));
+            self.games_list
+                .append(&Self::build_entry_row(idx, entry, cache_dir, sender));
         }
     }
 
@@ -141,7 +128,6 @@ impl GameSetupDialog {
         idx: usize,
         entry: &GameEntry,
         cache_dir: Option<PathBuf>,
-        can_export_for_snap: bool,
         sender: &ComponentSender<Self>,
     ) -> adw::ExpanderRow {
         let row = adw::ExpanderRow::new();
@@ -277,25 +263,6 @@ impl GameSetupDialog {
 
         row.add_row(&cache_row);
 
-        if can_export_for_snap && entry.enabled {
-            let export_row = adw::ActionRow::new();
-            export_row.set_title("Export for Snap");
-            export_row.set_subtitle("Create a migration bundle for this game");
-
-            let export_btn = gtk::Button::from_icon_name("document-save-symbolic");
-            export_btn.set_valign(gtk::Align::Center);
-            export_btn.add_css_class("flat");
-            export_btn.set_tooltip_text(Some("Export for Snap"));
-            {
-                let input = sender.input_sender().clone();
-                export_btn.connect_clicked(move |_| {
-                    input.send(GameSetupMsg::ExportForSnap(idx)).ok();
-                });
-            }
-            export_row.add_suffix(&export_btn);
-            row.add_row(&export_row);
-        }
-
         row
     }
 
@@ -334,13 +301,7 @@ fn display_cache_root(custom: Option<&PathBuf>) -> String {
 
 #[relm4::component(pub)]
 impl Component for GameSetupDialog {
-    /// (detected games — always empty, persisted games, custom cache dirs, can export for Snap)
-    type Init = (
-        Vec<Game>,
-        Vec<PersistedGame>,
-        HashMap<String, PathBuf>,
-        bool,
-    );
+    type Init = (Vec<Game>, Vec<PersistedGame>, HashMap<String, PathBuf>);
     type Input = GameSetupMsg;
     type Output = GameSetupOutput;
     type CommandOutput = ();
@@ -365,7 +326,7 @@ impl Component for GameSetupDialog {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let (detected_games, persisted_custom, game_cache_dirs, can_export_for_snap) = init;
+        let (detected_games, persisted_custom, game_cache_dirs) = init;
 
         let mut entries: Vec<GameEntry> = detected_games
             .into_iter()
@@ -584,7 +545,6 @@ impl Component for GameSetupDialog {
             new_prefix_entry,
             add_btn,
             known_opts,
-            can_export_for_snap,
         };
 
         let navigation_view = &model.navigation_view;
@@ -788,18 +748,6 @@ impl Component for GameSetupDialog {
                 self.game_cache_dirs.remove(&game_id);
                 self.rebuild_games(&sender);
                 let _ = sender.output(GameSetupOutput::CacheDirResetRequested { game_id });
-            }
-
-            GameSetupMsg::ExportForSnap(idx) => {
-                if !self.can_export_for_snap {
-                    return;
-                }
-                let Some(entry) = self.entries.get(idx) else {
-                    return;
-                };
-                let _ = sender.output(GameSetupOutput::ExportForSnapRequested {
-                    game_id: entry.game.id.clone(),
-                });
             }
 
             GameSetupMsg::RemoveGame(idx) => {

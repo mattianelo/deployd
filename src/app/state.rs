@@ -6,9 +6,7 @@ use gtk::glib;
 use relm4::factory::FactoryVecDeque;
 use relm4::prelude::*;
 
-use super::types::{
-    ModFilter, PendingInstall, PendingMigrationImport, SearchScope, ToolLaunchSession, WorkStatus,
-};
+use super::types::{ModFilter, PendingInstall, SearchScope, ToolLaunchSession, WorkStatus};
 use crate::core::detector::ExternalFile;
 use crate::core::tracker::Tracker;
 use crate::models::download::{DownloadEntry, DownloadFilter, DownloadSort};
@@ -94,7 +92,6 @@ pub(crate) struct UiState {
     pub(crate) game_setup_dialog: Option<Controller<GameSetupDialog>>,
     pub(crate) welcome_wizard: Option<Controller<WelcomeWizard>>,
     pub(crate) settings_dialog: Option<Controller<SettingsDialog>>,
-    pub(crate) pending_migration_import: Option<PendingMigrationImport>,
     pub(crate) mod_properties_dialog: Option<Controller<ModPropertiesDialog>>,
     pub(crate) absorb_dialog: Option<Controller<AbsorbDialog>>,
     pub(crate) profile_rename_entry: gtk::Entry,

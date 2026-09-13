@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- Removed AppImage-to-Snap migration export, preview and import.
+
 ## [2.5.0]
 
 - Added experimental Mass Effect Legendary Edition support for LE1, LE2 and LE3,
@@ -268,17 +272,8 @@
 
 ### Added
 
-- AppImage-to-Snap migration export creates a per-game `.deployd-export.zip` bundle from Manage
-  Games with that game's database slice, cached mod files, vanilla backups, and profile save
-  snapshots. The migration UI is available only when experimental features are enabled.
-- Snap builds can preview AppImage migration bundles from Settings without importing them, showing
-  the exported game, content counts, warnings, existing-game conflicts, and required later path/tool
-  confirmations. The migration UI is available only when experimental features are enabled.
-- Snap builds can now import a previewed AppImage migration bundle for a new game after confirming
-  Snap-visible game, Wine prefix, and downloads folders. Import copies cache, vanilla backups, and
-  save snapshots into Snap-owned storage, skips AppImage external tools, clears stale download
-  archive paths, and refuses existing-game bundles without overwriting Snap state. The migration UI
-  is available only when experimental features are enabled.
+- Added AppImage-to-Snap migration export, preview, and import. This experimental
+  workflow was removed in the unreleased version.
 - Performance feedback is more cohesive during long-running work: install, extraction, caching,
   deploy, purge, downloads-folder scan, and first-run runtime setup now share the same header busy
   status language.

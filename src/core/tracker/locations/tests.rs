@@ -139,27 +139,6 @@ async fn rebases_tool_configuration_without_rewriting_sibling_paths() -> Result<
 
 // @variants: both
 #[tokio::test]
-async fn excludes_location_permissions_and_pending_repairs_from_exports() -> Result<()> {
-    let tracker = Tracker::open("sqlite::memory:").await?.tracker;
-    let previous = family(&tracker).await?;
-    tracker
-        .commit_location_recovery(&previous, &replacement(), true)
-        .await?;
-    let game = crate::core::location_recovery::persisted_game(
-        tracker.load_persisted_games().await?.remove(0),
-    );
-    crate::core::migration_export::prune_export_database(&tracker.pool, &game).await?;
-    for table in ["location_repairs", "game_locations", "folder_locations"] {
-        let count: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table}"))
-            .fetch_one(&tracker.pool)
-            .await?;
-        assert_eq!(count, 0);
-    }
-    Ok(())
-}
-
-// @variants: both
-#[tokio::test]
 async fn preserves_shared_relative_bindings_during_routine_saves() -> Result<()> {
     let tracker = Tracker::open("sqlite::memory:").await?.tracker;
     let root = family(&tracker).await?;

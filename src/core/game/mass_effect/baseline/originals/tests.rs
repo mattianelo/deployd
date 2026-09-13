@@ -361,24 +361,6 @@ async fn complete_progress_requires_durable_ownership() -> Result<()> {
 
 // @variants: both
 #[tokio::test]
-async fn exports_discard_original_ownership_and_retain_local_copies() -> Result<()> {
-    let fixture = Fixture::new().await?;
-    fixture.preserve(&[ENGINE]).await?;
-    crate::core::migration_export::prune_export_database(&fixture.tracker.pool, &fixture.game)
-        .await?;
-    assert!(
-        fixture
-            .tracker
-            .mele_originals(&fixture.game.id)
-            .await?
-            .is_empty()
-    );
-    assert_eq!(fs::read(fixture.stored(ENGINE))?, b"original package");
-    Ok(())
-}
-
-// @variants: both
-#[tokio::test]
 async fn rejects_other_engines_through_the_application_storage_entry_point() -> Result<()> {
     let fixture = Fixture::new().await?;
     for engine in [
