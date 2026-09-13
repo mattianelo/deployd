@@ -626,3 +626,51 @@ path = "src/core/generations/tests.rs"
 name = "cancellation_during_historical_verification_creates_no_restored_profile"
 variant = "both"
 interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/state_tests.rs"
+name = "failed_activation_commit_preserves_previous_state_and_recovers_files"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/state_tests.rs"
+name = "unchanged_generation_records_separate_activations_and_purge_retains_history_and_saves"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/state_tests.rs"
+name = "external_changes_after_application_block_the_commit_decision"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/state_tests.rs"
+name = "incomplete_deployment_records_cannot_commit_a_generation"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/state_tests.rs"
+name = "changed_required_base_inputs_block_historical_commit"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/state_tests.rs"
+name = "deployment_records_cannot_assign_a_winner_to_another_mod"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/state_tests.rs"
+name = "changed_save_ownership_blocks_a_stale_activation"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/state_tests.rs"
+name = "consumed_base_inputs_are_validated_against_the_retained_before_state"
+variant = "both"
+interface_state = "not_applicable"

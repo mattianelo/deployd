@@ -60,7 +60,97 @@ pub(super) struct Applied {
 }
 
 impl Applied {
-    pub(super) async fn decide(self, tx: &mut Transaction<'_, Sqlite>) -> Result<()> {
+    pub(super) async fn commit(
+        self,
+        history: &History,
+        game: &Game,
+        previous: Option<&super::state::State>,
+        deployment: Option<&super::state::Deployment<'_>>,
+        saves: &crate::core::save_manager::SaveSetId,
+    ) -> Result<()> {
+        ensure!(
+            self.game == game.id && self.game == history.game,
+            "Activation belongs to another game"
+        );
+        let journal: Journal = serde_json::from_str(&self.document)?;
+        if let Some(deployment) = deployment {
+            for output in &deployment.manifest.outputs {
+                let expected = match &output.content {
+                    Some(identity) => Node::File {
+                        identity: identity.clone(),
+                        mode: output.mode,
+                    },
+                    None => Node::Directory { mode: output.mode },
+                };
+                ensure!(
+                    journal
+                        .changes
+                        .iter()
+                        .any(|change| change.target == output.target && change.after == expected),
+                    "A generation output was not verified by this activation"
+                );
+            }
+        }
+        let mut tx = durable(&history.tracker).await?;
+        ensure!(
+            super::state::read(&mut tx, &game.id).await?.as_ref() == previous,
+            "Deployed state or live save ownership changed after preparation"
+        );
+        if deployment.is_none()
+            && let Some(previous) = previous
+        {
+            ensure!(
+                &previous.saves == saves,
+                "Purge must preserve live save ownership"
+            );
+        }
+        let kind: String =
+            sqlx::query_scalar("SELECT kind FROM generation_journals WHERE id=? AND game_id=?")
+                .bind(&self.id)
+                .bind(&self.game)
+                .fetch_one(&mut *tx)
+                .await?;
+        ensure!(
+            kind == if deployment.is_some() {
+                "deploy"
+            } else {
+                "purge"
+            },
+            "Activation operation differs from its durable intent"
+        );
+        let verified_game = game.clone();
+        let base_inputs = deployment
+            .map(|deployment| deployment.manifest.base_inputs.clone())
+            .unwrap_or_default();
+        tokio::task::spawn_blocking(move || -> Result<()> {
+            journal.validate(&verified_game)?;
+            for input in &base_inputs {
+                let actual = if let Some(change) = journal.changes.iter().find(|change| change.target == input.target) {
+                    change.before.clone()
+                } else {
+                    inspect(&input.target.resolve(&verified_game)?, &Control::default())?
+                };
+                ensure!(match (&input.content, actual) {
+                    (Some(expected), Node::File {identity, ..}) => expected == &identity,
+                    (None, Node::Directory {..}) => true,
+                    _ => false,
+                }, "Required base inputs changed; explicitly prepare a new generation against the current game");
+            }
+            for change in &journal.changes {
+                let path = change.target.resolve(&verified_game)?;
+                parents(&path, &verified_game)?;
+                ensure!(inspect(&path, &Control::default())? == change.after, "Managed files changed before commitment; recovery information was preserved");
+            }
+            Ok(())
+        }).await.context("Final activation verification worker stopped")??;
+        super::state::publish(&mut tx, history, game, &self.id, deployment, saves).await?;
+        self.decide(&mut tx).await?;
+        tx.commit()
+            .await
+            .context("Activation commitment failed; recover its durable decision before retrying")
+    }
+
+    async fn decide(self, tx: &mut Transaction<'_, Sqlite>) -> Result<()> {
         let changed = sqlx::query("UPDATE generation_journals SET committed=1 WHERE id=? AND game_id=? AND document=? AND committed=0").bind(self.id).bind(self.game).bind(self.document).execute(&mut **tx).await?;
         ensure!(
             changed.rows_affected() == 1,

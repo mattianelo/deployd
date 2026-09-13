@@ -172,7 +172,7 @@ async fn store_initialization_recovers_its_durable_intent() -> Result<()> {
     Ok(())
 }
 
-async fn snapshot_fixture(cache: &Path) -> Result<(Tracker, Game, String)> {
+pub(super) async fn snapshot_fixture(cache: &Path) -> Result<(Tracker, Game, String)> {
     let tracker = Tracker::open("sqlite::memory:").await?.tracker;
     let game = Game {
         id: "game".into(),
@@ -455,10 +455,10 @@ async fn committed_activation_cannot_be_rolled_back_and_finishes_cleanup() -> Re
     let temp = tempfile::tempdir()?;
     let (tracker, game, profile) = snapshot_fixture(temp.path()).await?;
     fs::create_dir_all(game.data_dir())?;
-    let live = game.data_dir().join("file.txt");
+    let live = game.data_dir().join("File.txt");
     fs::write(&live, b"original")?;
     let history = History::open(&tracker, &game.id, temp.path(), true).await?;
-    let manifest = manifest::capture(
+    let mut manifest = manifest::capture(
         &history,
         &game,
         &profile,
@@ -473,10 +473,10 @@ async fn committed_activation_cannot_be_rolled_back_and_finishes_cleanup() -> Re
         &history,
         &game,
         vec![(
-            Target::file(&game.engine, "file.txt")?,
+            Target::file(&game.engine, "File.txt")?,
             Node::File {
                 identity,
-                mode: 0o600,
+                mode: 0o644,
             },
         )],
         Control::default(),
@@ -486,10 +486,32 @@ async fn committed_activation_cannot_be_rolled_back_and_finishes_cleanup() -> Re
         .persist(&history, &game, "deploy", manifest.objects())
         .await?;
     let applied = journal.apply(&history, &game, Control::default()).await?;
-    let mut tx = durable(&tracker).await?;
-    history.publish(&mut tx, &manifest).await?;
-    applied.decide(&mut tx).await?;
-    tx.commit().await?;
+    manifest.outputs = super::prepared::files(&manifest)?;
+    let files = vec![crate::models::manifest::ModFile {
+        mod_id: "winner".into(),
+        game_rel_lowercase: "file.txt".into(),
+        game_rel_original: "File.txt".into(),
+        cache_path: temp
+            .path()
+            .join("winner/file.txt")
+            .to_string_lossy()
+            .into_owned(),
+    }];
+    applied
+        .commit(
+            &history,
+            &game,
+            None,
+            Some(&super::state::Deployment {
+                manifest: &manifest,
+                profile: &profile,
+                files: &files,
+            }),
+            &crate::core::save_manager::SaveSetId::Global {
+                game_id: game.id.clone(),
+            },
+        )
+        .await?;
     assert!(journal.recover(&history, &game, false).await.is_err());
     assert_eq!(fs::read(&live)?, b"winner");
     journal.recover(&history, &game, true).await?;

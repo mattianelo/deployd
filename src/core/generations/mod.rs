@@ -9,6 +9,10 @@ mod history;
 mod journal;
 mod prepared;
 mod restore;
+mod state;
 #[cfg(test)]
 mod tests;
 mod validation;
+
+#[cfg(test)]
+mod state_tests;
