@@ -512,6 +512,11 @@ async fn saves_and_deployed_files_recover_from_the_same_commit_decision() -> Res
         journal
             .persist(&history, &game, "deploy", manifest.objects())
             .await?;
+        assert!(
+            super::journal::discard_save_preparation(&history, &game, &journal.id)
+                .await
+                .is_err()
+        );
         let applied = journal.apply(&history, &game, Control::default()).await?;
         if !committed {
             sqlx::query("CREATE TRIGGER reject_activation BEFORE INSERT ON generation_activations BEGIN SELECT RAISE(ABORT,'injected commit failure'); END").execute(&tracker.pool).await?;

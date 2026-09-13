@@ -214,6 +214,14 @@ pub(super) fn files(tree: &Tree) -> Result<Vec<super::super::SaveFileManifest>> 
 }
 
 pub(super) fn remove(root: &Path, expected: &Tree) -> Result<()> {
+    remove_matching(root, expected, false)
+}
+
+pub(super) fn remove_preparation(root: &Path, expected: &Tree) -> Result<()> {
+    remove_matching(root, expected, true)
+}
+
+fn remove_matching(root: &Path, expected: &Tree, preparing: bool) -> Result<()> {
     validate(expected)?;
     let Some(current) = scan(root)? else {
         return Ok(());
@@ -221,7 +229,10 @@ pub(super) fn remove(root: &Path, expected: &Tree) -> Result<()> {
     ensure!(
         current
             .iter()
-            .all(|(path, entry)| expected.get(path) == Some(entry)),
+            .all(|(path, entry)| expected.get(path).is_some_and(|expected| {
+                entry == expected
+                    || (preparing && entry.content.is_none() && expected.content.is_none())
+            })),
         "External changes in temporary saves were preserved; recovery is blocked"
     );
     for (relative, entry) in current.iter().rev() {

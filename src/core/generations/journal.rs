@@ -382,6 +382,7 @@ impl Journal {
         self.validate(game)?;
         self.check_record(history, false).await?;
         if let Some(saves) = &self.saves {
+            saves.adopt_preparation(game).await?;
             saves.apply(game).await?;
         }
         let journal = self.clone();
@@ -453,6 +454,7 @@ impl Journal {
         self.validate(game)?;
         self.check_record(history, committed).await?;
         if let Some(saves) = &self.saves {
+            saves.adopt_preparation(game).await?;
             saves.recover(game, committed).await?;
         }
         let journal = self.clone();
@@ -522,4 +524,25 @@ fn apply_node(
         fs::File::open(parent)?.sync_all()?;
     }
     Ok(())
+}
+
+pub(super) async fn discard_save_preparation(
+    history: &History,
+    game: &Game,
+    operation: &str,
+) -> Result<()> {
+    ensure!(
+        history.game == game.id,
+        "Save preparation belongs to another game"
+    );
+    let pending: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM generation_journals WHERE game_id=?")
+            .bind(&game.id)
+            .fetch_one(&history.tracker.pool)
+            .await?;
+    ensure!(
+        pending == 0,
+        "Finish activation recovery before discarding save preparation"
+    );
+    crate::core::save_manager::activation::discard_preparation(game, operation).await
 }

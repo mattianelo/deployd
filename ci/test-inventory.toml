@@ -794,3 +794,33 @@ path = "src/core/save_manager/activation/bank.rs"
 name = "first_bank_publication_recovers_after_storage_root_changes"
 variant = "both"
 interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation/preparation.rs"
+name = "abandoned_preparation_cleanup_preserves_new_live_saves_after_relocation"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation/preparation.rs"
+name = "cleanup_resumes_for_a_partially_copied_recorded_inventory"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation/preparation.rs"
+name = "unknown_staging_contents_block_cleanup_and_preserve_the_record"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation/preparation.rs"
+name = "activation_adopts_only_its_matching_preparation_without_deleting_staging"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation/preparation.rs"
+name = "a_missing_preparation_record_never_authorizes_staging_deletion"
+variant = "both"
+interface_state = "not_applicable"

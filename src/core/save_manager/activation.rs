@@ -10,9 +10,10 @@ use crate::models::game::Game;
 use super::SaveSetId;
 
 mod bank;
+mod preparation;
 mod tree;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Transition {
     version: u32,
@@ -59,6 +60,17 @@ impl Transition {
         );
         self.paths(&super::validate_live_save_access(game)?)?;
         Ok(())
+    }
+
+    pub(crate) async fn adopt_preparation(&self, game: &Game) -> Result<()> {
+        let transition = self.clone();
+        let game = game.clone();
+        tokio::task::spawn_blocking(move || {
+            let live = super::validate_live_save_access(&game)?;
+            preparation::adopt(&live, &transition)
+        })
+        .await
+        .context("Save preparation recovery worker stopped")?
     }
 
     pub(crate) async fn apply(&self, game: &Game) -> Result<()> {
@@ -219,16 +231,22 @@ fn stage(
         !staged.try_exists()? && !rollback.try_exists()?,
         "A save operation already occupies its staging locations"
     );
-    let temporary = tempfile::Builder::new()
-        .prefix(".deployd-save-prepare-")
-        .tempdir_in(live.parent().context("Save parent is missing")?)?;
-    tree::copy(bank, temporary.path(), &transition.after, control)?;
-    ensure!(
-        tree::scan_with_control(live, control)? == transition.before,
-        "Live saves changed during preparation"
-    );
-    control.check()?;
-    rename(temporary.path(), &staged)?;
+    preparation::persist(live, &transition)?;
+    let result = (|| -> Result<()> {
+        tree::copy(bank, &staged, &transition.after, control)?;
+        ensure!(
+            tree::scan_with_control(live, control)? == transition.before,
+            "Live saves changed during preparation"
+        );
+        control.check()?;
+        fs::File::open(live.parent().context("Save parent is missing")?)?.sync_all()?;
+        Ok(())
+    })();
+    if let Err(error) = result {
+        preparation::discard(live, operation, transition.source.game_id())
+            .with_context(|| format!("{error:#}; save preparation cleanup also failed"))?;
+        return Err(error);
+    }
     Ok(transition)
 }
 
@@ -256,6 +274,17 @@ impl Snapshot {
         );
         Ok(())
     }
+}
+
+pub(crate) async fn discard_preparation(game: &Game, operation: &str) -> Result<()> {
+    let game = game.clone();
+    let operation = operation.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let live = super::validate_live_save_access(&game)?;
+        preparation::discard(&live, &operation, &game.id)
+    })
+    .await
+    .context("Save preparation cleanup worker stopped")?
 }
 
 pub(crate) async fn prepare(
@@ -359,7 +388,7 @@ async fn prepare_inner(
         &control,
     )?;
     if transition.before != snapshot.before {
-        transition.recover_at(&live, false)?;
+        preparation::discard(&live, operation, source.game_id())?;
         anyhow::bail!("Live saves changed after save-bank preparation; activation stopped");
     }
     Ok(transition)
