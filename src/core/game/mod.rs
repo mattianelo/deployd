@@ -20,6 +20,7 @@ use crate::models::game::{Game, GameEngine};
 pub(crate) use engine_handler::handler_for;
 
 pub use detection::detect_games;
+pub(crate) use ini::custom_ini_paths;
 pub(crate) use ini::repair_ini_links;
 pub(crate) use ini::repair_registered_game_path;
 pub use ini::{ensure_ini_symlinks, missing_bethesda_reg_key, plugins_txt_paths};

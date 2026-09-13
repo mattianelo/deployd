@@ -3,6 +3,7 @@ pub(crate) mod cache;
 pub mod deployer;
 pub mod detector;
 pub mod game;
+pub(crate) mod generations;
 pub mod installer;
 pub(crate) mod location_recovery;
 #[cfg(feature = "loot")]

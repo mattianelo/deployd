@@ -458,3 +458,171 @@ path = "src/core/tracker/generations/tests.rs"
 name = "replacement_statements_cannot_bypass_immutable_records"
 variant = "both"
 interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "retained_bytes_are_independent_and_deduplicated"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "cancelled_or_changed_reads_never_publish_objects"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "corruption_and_missing_objects_preserve_restore_destinations"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "replacement_preserves_existing_hardlink_bytes"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "rejects_symlinked_stores_and_sources"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "missing_cache_access_never_creates_a_replacement_store"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "store_initialization_recovers_its_durable_intent"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "complete_snapshots_retain_disabled_and_losing_versions_after_library_deletion"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "incomplete_inventory_does_not_publish_a_generation"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "logical_targets_preserve_engine_anchors_and_reject_other_engines"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "published_metadata_is_reproducible_and_only_commits_with_its_caller"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "uncommitted_activation_recovers_previous_files_and_permissions"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "external_edits_block_rollback_without_destroying_recovery_records"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "committed_activation_cannot_be_rolled_back_and_finishes_cleanup"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "interrupted_payload_deletion_replays_without_reusing_the_object"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "history_materializes_a_new_editable_profile_with_independent_identities"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "failed_profile_commit_removes_only_its_materialized_copies"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "history_deletion_reclaims_only_unshared_bytes"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "deployed_restored_and_pending_generations_cannot_be_deleted"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "deleting_game_history_preserves_shared_launcher_payloads"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "frozen_outputs_ignore_later_draft_edits_and_compare_content"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "frozen_aurora_outputs_resolve_filename_conflicts"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "damaged_manifests_cannot_reinterpret_sources_or_engine_targets"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "unchanged_managed_files_are_verified_without_replacing_their_hardlinks"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "aliased_engine_targets_cannot_write_the_same_destination_twice"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "restored_history_preserves_hidden_files_after_the_original_profile_is_deleted"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "unknown_recovery_versions_preserve_the_bound_store_and_journal"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "cancellation_during_historical_verification_creates_no_restored_profile"
+variant = "both"
+interface_state = "not_applicable"

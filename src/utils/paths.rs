@@ -123,6 +123,17 @@ pub fn default_downloads_dir() -> PathBuf {
     })
 }
 
+pub(crate) fn generation_store_in(cache: &Path, game_id: &str) -> Result<PathBuf> {
+    anyhow::ensure!(
+        !game_id.is_empty()
+            && game_id
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || b"-_".contains(&c)),
+        "Invalid game identity for deployment history"
+    );
+    Ok(cache.join("deployd-history").join(game_id))
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
