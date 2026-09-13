@@ -12,6 +12,7 @@ use crate::models::game::Game;
 use crate::models::profile::SaveMode;
 use crate::utils::{paths, snap};
 
+pub(crate) mod activation;
 mod location_recovery;
 pub(crate) use location_recovery::rebase_location_journal;
 

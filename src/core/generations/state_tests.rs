@@ -11,7 +11,7 @@ use super::journal::{Journal, Node};
 use super::manifest::{self, Manifest};
 use super::state::{self, Deployment};
 
-async fn prepared(
+async fn unpublished(
     history: &History,
     game: &crate::models::game::Game,
     profile: &str,
@@ -45,6 +45,15 @@ async fn prepared(
         });
     }
     let journal = Journal::prepare(history, game, desired, Control::default()).await?;
+    Ok((manifest, files, journal))
+}
+
+async fn prepared(
+    history: &History,
+    game: &crate::models::game::Game,
+    profile: &str,
+) -> Result<(Manifest, Vec<ModFile>, Journal)> {
+    let (manifest, files, journal) = unpublished(history, game, profile).await?;
     journal
         .persist(history, game, "deploy", manifest.objects())
         .await?;
@@ -445,5 +454,115 @@ async fn consumed_base_inputs_are_validated_against_the_retained_before_state() 
     journal.recover(&history, &game, true).await?;
     assert_eq!(fs::read(base)?, b"winner");
     assert_eq!(history.load(&manifest.id()?).await?, manifest);
+    Ok(())
+}
+
+// @variants: both
+#[tokio::test]
+async fn saves_and_deployed_files_recover_from_the_same_commit_decision() -> Result<()> {
+    for committed in [false, true] {
+        let temp = tempfile::tempdir()?;
+        let (tracker, mut game, profile) = super::tests::snapshot_fixture(temp.path()).await?;
+        game.id = "skyrim-se".into();
+        sqlx::query("UPDATE profiles SET game_id=?,save_mode='profile'")
+            .bind(&game.id)
+            .execute(&tracker.pool)
+            .await?;
+        sqlx::query("UPDATE mods SET game_id=?")
+            .bind(&game.id)
+            .execute(&tracker.pool)
+            .await?;
+        let prefix = temp.path().join("prefix");
+        game.wine_prefix = Some(prefix.clone());
+        let live =
+            prefix.join("drive_c/users/test/Documents/My Games/Skyrim Special Edition/Saves");
+        fs::create_dir_all(&live)?;
+        fs::create_dir_all(game.data_dir())?;
+        fs::write(live.join("save.dat"), b"original progress")?;
+        fs::write(game.data_dir().join("File.txt"), b"original file")?;
+        let bank = temp.path().join("target-bank");
+        fs::create_dir(&bank)?;
+        fs::write(bank.join("save.dat"), b"target progress")?;
+        let source = SaveSetId::Global {
+            game_id: game.id.clone(),
+        };
+        let target = SaveSetId::Profile {
+            game_id: game.id.clone(),
+            profile_id: profile.clone(),
+        };
+        sqlx::query(
+            "INSERT INTO generation_game_state(game_id,live_save_mode) VALUES (?,'global')",
+        )
+        .bind(&game.id)
+        .execute(&tracker.pool)
+        .await?;
+        let history = History::open(&tracker, &game.id, temp.path(), true).await?;
+        let mut tx = durable(&tracker).await?;
+        let previous = state::read(&mut tx, &game.id).await?;
+        tx.rollback().await?;
+        let (manifest, files, mut journal) = unpublished(&history, &game, &profile).await?;
+        let saves = crate::core::save_manager::activation::prepare_staged(
+            &journal.id,
+            source.clone(),
+            target.clone(),
+            &live,
+            &bank,
+        )?;
+        journal.attach_saves(&game, saves)?;
+        journal
+            .persist(&history, &game, "deploy", manifest.objects())
+            .await?;
+        let applied = journal.apply(&history, &game, Control::default()).await?;
+        if !committed {
+            sqlx::query("CREATE TRIGGER reject_activation BEFORE INSERT ON generation_activations BEGIN SELECT RAISE(ABORT,'injected commit failure'); END").execute(&tracker.pool).await?;
+        }
+        let result = applied
+            .commit(
+                &history,
+                &game,
+                previous.as_ref(),
+                Some(&Deployment {
+                    manifest: &manifest,
+                    profile: &profile,
+                    files: &files,
+                }),
+                &target,
+            )
+            .await;
+        assert_eq!(result.is_ok(), committed);
+        let document: String =
+            sqlx::query_scalar("SELECT document FROM generation_journals WHERE id=?")
+                .bind(&journal.id)
+                .fetch_one(&tracker.pool)
+                .await?;
+        drop(history);
+        let history = History::open(&tracker, &game.id, temp.path(), false).await?;
+        let recovered: Journal = serde_json::from_str(&document)?;
+        let new_prefix = temp.path().join("reselected-prefix");
+        fs::rename(&prefix, &new_prefix)?;
+        game.wine_prefix = Some(new_prefix);
+        recovered.recover(&history, &game, committed).await?;
+        let current_live = crate::core::game::detect_save_dir(&game).expect("known save location");
+        assert_eq!(
+            fs::read(current_live.join("save.dat"))?,
+            if committed {
+                b"target progress".as_slice()
+            } else {
+                b"original progress".as_slice()
+            }
+        );
+        assert_eq!(
+            fs::read(game.data_dir().join("File.txt"))?,
+            if committed {
+                b"winner".as_slice()
+            } else {
+                b"original file".as_slice()
+            }
+        );
+        let mut tx = durable(&tracker).await?;
+        let state = state::read(&mut tx, &game.id).await?.expect("ownership");
+        tx.rollback().await?;
+        assert_eq!(state.saves, if committed { target } else { source });
+    }
     Ok(())
 }

@@ -51,6 +51,8 @@ pub(super) struct Journal {
     pub(super) id: String,
     pub(super) game: String,
     pub(super) changes: Vec<Change>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    saves: Option<crate::core::save_manager::activation::Transition>,
 }
 
 pub(super) struct Applied {
@@ -72,7 +74,29 @@ impl Applied {
             self.game == game.id && self.game == history.game,
             "Activation belongs to another game"
         );
+        ensure!(
+            previous.is_some() || !crate::core::game::has_save_management(game),
+            "Initialize live save ownership before preparing activation"
+        );
         let journal: Journal = serde_json::from_str(&self.document)?;
+        if let Some(transition) = &journal.saves {
+            ensure!(
+                &transition.target == saves,
+                "Save participant targets a different save owner"
+            );
+            if let Some(previous) = previous {
+                ensure!(
+                    previous.saves == transition.source,
+                    "Save participant has stale source ownership"
+                );
+            }
+            transition.verify(game).await?;
+        } else if let Some(previous) = previous {
+            ensure!(
+                &previous.saves == saves,
+                "Changing save ownership requires an applied save participant"
+            );
+        }
         if let Some(deployment) = deployment {
             for output in &deployment.manifest.outputs {
                 let expected = match &output.content {
@@ -118,6 +142,7 @@ impl Applied {
             },
             "Activation operation differs from its durable intent"
         );
+        let saves_to_verify = journal.saves.clone();
         let verified_game = game.clone();
         let base_inputs = deployment
             .map(|deployment| deployment.manifest.base_inputs.clone())
@@ -144,6 +169,9 @@ impl Applied {
             Ok(())
         }).await.context("Final activation verification worker stopped")??;
         super::state::publish(&mut tx, history, game, &self.id, deployment, saves).await?;
+        if let Some(saves) = saves_to_verify {
+            saves.verify(game).await?;
+        }
         self.decide(&mut tx).await?;
         tx.commit()
             .await
@@ -249,14 +277,40 @@ impl Journal {
             id: uuid::Uuid::new_v4().to_string(),
             game: game.id.clone(),
             changes,
+            saves: None,
         })
+    }
+
+    pub(super) fn attach_saves(
+        &mut self,
+        game: &Game,
+        transition: crate::core::save_manager::activation::Transition,
+    ) -> Result<()> {
+        ensure!(
+            self.saves.is_none(),
+            "Activation already has a save participant"
+        );
+        self.validate(game)?;
+        transition.validate(&self.id, game)?;
+        self.saves = Some(transition);
+        self.version = 2;
+        Ok(())
     }
 
     pub(super) fn validate(&self, game: &Game) -> Result<()> {
         ensure!(
-            self.version == 1 && self.game == game.id && uuid::Uuid::parse_str(&self.id).is_ok(),
+            matches!(self.version, 1 | 2)
+                && self.game == game.id
+                && uuid::Uuid::parse_str(&self.id).is_ok(),
             "Unsupported or invalid activation journal"
         );
+        if let Some(saves) = &self.saves {
+            ensure!(
+                self.version == 2,
+                "Save participant requires its versioned recovery format"
+            );
+            saves.validate(&self.id, game)?;
+        }
         let mut seen = std::collections::BTreeSet::new();
         for change in &self.changes {
             let destination = change.target.resolve(game)?;
@@ -306,7 +360,11 @@ impl Journal {
         .context("Journal content verification worker stopped")??;
         history.register(&objects).await?;
         let mut tx = durable(&history.tracker).await?;
-        sqlx::query("INSERT INTO generation_journals(id,game_id,kind,document_version,document) VALUES (?,?,?,1,?)").bind(&self.id).bind(&self.game).bind(kind).bind(serde_json::to_string(self)?).execute(&mut *tx).await.context("Another operation needs recovery before activation")?;
+        ensure!(
+            kind != "purge" || self.saves.is_none(),
+            "Purge cannot switch live saves"
+        );
+        sqlx::query("INSERT INTO generation_journals(id,game_id,kind,document_version,document) VALUES (?,?,?,?,?)").bind(&self.id).bind(&self.game).bind(kind).bind(self.version).bind(serde_json::to_string(self)?).execute(&mut *tx).await.context("Another operation needs recovery before activation")?;
         for (hash, _) in objects {
             sqlx::query("INSERT INTO generation_pending_objects(operation_id,game_id,sha256) VALUES (?,?,?)").bind(&self.id).bind(&self.game).bind(hash).execute(&mut *tx).await?;
         }
@@ -323,6 +381,9 @@ impl Journal {
     ) -> Result<Applied> {
         self.validate(game)?;
         self.check_record(history, false).await?;
+        if let Some(saves) = &self.saves {
+            saves.apply(game).await?;
+        }
         let journal = self.clone();
         let store = history.store.clone();
         let game = game.clone();
@@ -391,6 +452,9 @@ impl Journal {
     ) -> Result<()> {
         self.validate(game)?;
         self.check_record(history, committed).await?;
+        if let Some(saves) = &self.saves {
+            saves.recover(game, committed).await?;
+        }
         let journal = self.clone();
         let store = history.store.clone();
         let game = game.clone();

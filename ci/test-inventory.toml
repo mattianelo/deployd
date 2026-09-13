@@ -674,3 +674,51 @@ path = "src/core/generations/state_tests.rs"
 name = "consumed_base_inputs_are_validated_against_the_retained_before_state"
 variant = "both"
 interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation.rs"
+name = "preparation_leaves_live_saves_untouched_and_rollback_is_repeatable"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation.rs"
+name = "interrupted_save_rename_restores_the_original_directory"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation.rs"
+name = "committed_cleanup_resumes_after_partial_rollback_deletion"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation.rs"
+name = "external_save_edits_block_both_rollback_and_committed_cleanup"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation.rs"
+name = "symbolic_links_and_changes_to_staged_saves_block_application"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/state_tests.rs"
+name = "saves_and_deployed_files_recover_from_the_same_commit_decision"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation.rs"
+name = "missing_live_saves_return_to_absence_after_rollback"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation.rs"
+name = "staging_preserves_save_timestamps_and_read_only_permissions"
+variant = "both"
+interface_state = "not_applicable"

@@ -53,13 +53,14 @@ impl History {
             .lock_owned()
             .await;
         let mut tx = durable(tracker).await?;
-        let pending_version: Option<i64> =
-            sqlx::query_scalar("SELECT document_version FROM generation_journals WHERE game_id=?")
+        let pending_version: Option<(i64, String)> =
+            sqlx::query_as("SELECT document_version,kind FROM generation_journals WHERE game_id=?")
                 .bind(game)
                 .fetch_optional(&mut *tx)
                 .await?;
         ensure!(
-            pending_version.is_none_or(|version| version == 1),
+            pending_version.is_none_or(|(version, kind)| version == 1
+                || (version == 2 && matches!(kind.as_str(), "deploy" | "purge"))),
             "A newer recovery journal requires a compatible Deployd version; the pending operation was preserved"
         );
         let binding: Option<(String, String)> =
