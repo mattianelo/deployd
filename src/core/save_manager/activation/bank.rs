@@ -1,6 +1,6 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
-use std::os::unix::fs::OpenOptionsExt;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, ensure};
@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::core::generations::content::Control;
 use crate::core::save_manager::{SAVE_SCHEMA_VERSION, SaveBankManifest, SaveSetId};
 
+use super::staging::{self, Purpose, Staging};
 use super::tree::{self, Tree};
 
 #[derive(Serialize, Deserialize)]
@@ -21,7 +22,7 @@ struct Publication {
     after: Tree,
 }
 
-fn journal(root: &Path) -> Result<PathBuf> {
+pub(super) fn journal(root: &Path) -> Result<PathBuf> {
     let name = root
         .file_name()
         .and_then(|name| name.to_str())
@@ -78,6 +79,7 @@ impl Publication {
 
     fn finish(&self, root: &Path, save_set: &SaveSetId) -> Result<()> {
         let (staged, old) = self.paths(root, save_set)?;
+        staging::adopt_bank(&staged, save_set, &self.after)?;
         let current = tree::scan(root)?;
         if current.as_ref() != Some(&self.after) {
             ensure!(
@@ -161,47 +163,70 @@ fn prepare(
     let before = tree::scan_with_control(root, control)?;
     let inventory = tree::scan_with_control(source, control)?
         .context("Prepared live-save snapshot is missing")?;
-    let temporary = tempfile::Builder::new()
-        .prefix(".generation-bank-")
-        .tempdir_in(parent)?;
-    tree::copy(source, &temporary.path().join("data"), &inventory, control)?;
     let manifest = SaveBankManifest {
         schema_version: SAVE_SCHEMA_VERSION,
         save_set: save_set.clone(),
         captured_at: chrono::Utc::now().to_rfc3339(),
         files: tree::files(&inventory)?,
     };
-    let mut file = File::create(temporary.path().join("manifest.json"))?;
-    file.write_all(&serde_json::to_vec_pretty(&manifest)?)?;
-    file.sync_all()?;
-    File::open(temporary.path())?.sync_all()?;
+    let bytes = serde_json::to_vec_pretty(&manifest)?;
+    let ownership = Staging::new(
+        save_set,
+        Purpose::Bank,
+        tree::bank_inventory(&inventory, &bytes)?,
+    );
+    control.check()?;
+    let staged = ownership.persist(parent)?;
     let publication = Publication {
         version: 1,
         save_set: save_set.clone(),
-        staged: temporary
-            .path()
+        staged: staged
             .file_name()
             .and_then(|name| name.to_str())
-            .context("Invalid staging directory")?
+            .context("Invalid bank staging path")?
             .to_owned(),
         before,
-        after: tree::scan_with_control(temporary.path(), control)?
-            .context("Prepared save bank is missing")?,
+        after: ownership.inventory.clone(),
     };
-    ensure!(
-        tree::scan_with_control(root, control)? == publication.before,
-        "Save bank changed during preparation"
-    );
-    let mut record = tempfile::NamedTempFile::new_in(parent)?;
-    record.write_all(&serde_json::to_vec(&publication)?)?;
-    record.as_file().sync_all()?;
-    control.check()?;
-    let staged = temporary.keep();
-    sync_parent(&staged)?;
-    record
-        .persist_noclobber(journal(root)?)
-        .context("Cannot publish save-bank recovery record; prepared data was preserved")?;
-    sync_parent(root)?;
+    let result = (|| -> Result<()> {
+        fs::create_dir(&staged)?;
+        fs::set_permissions(&staged, fs::Permissions::from_mode(0o700))?;
+        tree::copy(source, &staged.join("data"), &inventory, control)?;
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(staged.join("manifest.json"))?;
+        file.set_permissions(fs::Permissions::from_mode(0o600))?;
+        file.write_all(&bytes)?;
+        file.set_modified(std::time::UNIX_EPOCH)?;
+        file.sync_all()?;
+        File::open(&staged)?.sync_all()?;
+        sync_parent(&staged)?;
+        ensure!(
+            tree::scan_with_control(&staged, control)?.as_ref() == Some(&publication.after),
+            "Prepared save bank failed verification"
+        );
+        ensure!(
+            tree::scan_with_control(root, control)? == publication.before,
+            "Save bank changed during preparation"
+        );
+        let mut record = tempfile::NamedTempFile::new_in(parent)?;
+        record.write_all(&serde_json::to_vec(&publication)?)?;
+        record.as_file().sync_all()?;
+        control.check()?;
+        record
+            .persist_noclobber(journal(root)?)
+            .context("Cannot publish save-bank recovery record; prepared data was preserved")?;
+        sync_parent(root)
+    })();
+    if let Err(error) = result {
+        if !journal(root)?.try_exists()? {
+            ownership
+                .discard(parent)
+                .with_context(|| format!("{error:#}; bank staging cleanup also failed"))?;
+        }
+        return Err(error);
+    }
     Ok(publication)
 }
 

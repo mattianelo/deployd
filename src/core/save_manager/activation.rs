@@ -11,6 +11,7 @@ use super::SaveSetId;
 
 mod bank;
 mod preparation;
+mod staging;
 mod tree;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -251,20 +252,51 @@ fn stage(
 }
 
 struct Snapshot {
-    directory: tempfile::TempDir,
+    directory: PathBuf,
+    ownership: staging::Staging,
     before: Option<tree::Tree>,
 }
 
 impl Snapshot {
-    fn capture(live: &Path, control: &Control) -> Result<Self> {
+    fn capture(live: &Path, save_set: &SaveSetId, control: &Control) -> Result<Self> {
         let before = tree::scan_with_control(live, control)?;
-        let directory = tempfile::Builder::new()
-            .prefix(".deployd-save-snapshot-")
-            .tempdir_in(live.parent().context("Save parent is missing")?)?;
-        if let Some(before) = &before {
-            tree::copy(live, directory.path(), before, control)?;
+        let inventory = before.clone().unwrap_or_else(tree::empty);
+        let parent = live.parent().context("Save parent is missing")?;
+        let ownership = staging::Staging::new(save_set, staging::Purpose::Snapshot, inventory);
+        control.check()?;
+        let directory = ownership.persist(parent)?;
+        let result = (|| -> Result<()> {
+            if let Some(before) = &before {
+                tree::copy(live, &directory, before, control)?;
+            } else {
+                use std::os::unix::fs::PermissionsExt;
+                fs::create_dir(&directory)?;
+                fs::set_permissions(&directory, fs::Permissions::from_mode(0o700))?;
+                fs::File::open(&directory)?.sync_all()?;
+            }
+            control.check()?;
+            fs::File::open(parent)?.sync_all()?;
+            Ok(())
+        })();
+        if let Err(error) = result {
+            ownership
+                .discard(parent)
+                .with_context(|| format!("{error:#}; snapshot cleanup also failed"))?;
+            return Err(error);
         }
-        Ok(Self { directory, before })
+        Ok(Self {
+            directory,
+            ownership,
+            before,
+        })
+    }
+
+    fn discard(&self) -> Result<()> {
+        self.ownership.discard(
+            self.directory
+                .parent()
+                .context("Snapshot parent is missing")?,
+        )
     }
 
     fn verify(&self, live: &Path, control: &Control) -> Result<()> {
@@ -332,66 +364,74 @@ async fn prepare_inner(
         "Finish the existing save transition before deploying"
     );
     control.check()?;
-    let snapshot = Snapshot::capture(&live, &control)?;
-    bank::recover(&super::bank_root(source)?, source)?;
-    bank::recover(&super::bank_root(target)?, target)?;
-    super::migrate_legacy_profile_bank(source).await?;
-    super::migrate_legacy_profile_bank(target).await?;
-    control.check()?;
-    super::create_backup_from_dir(
-        source,
-        snapshot.directory.path(),
-        super::BackupTrigger::ProfileSwitch,
-        None,
-    )
-    .await?;
-    control.check()?;
-    bank::replace(
-        &super::bank_root(source)?,
-        source,
-        snapshot.directory.path(),
-        &control,
-    )?;
-    if seed {
-        ensure!(
-            target.profile_id().is_some(),
-            "Only a restored profile can seed an isolated save bank"
-        );
-        let bank = super::bank_root(target)?;
-        if super::bank_manifest(&bank).try_exists()? {
-            super::create_backup_from_dir(
-                target,
-                &super::bank_data(&bank),
-                super::BackupTrigger::ProfileSwitch,
-                None,
-            )
-            .await?;
-        }
+    let snapshot = Snapshot::capture(&live, source, &control)?;
+    let result = async {
+        bank::recover(&super::bank_root(source)?, source)?;
+        bank::recover(&super::bank_root(target)?, target)?;
+        super::migrate_legacy_profile_bank(source).await?;
+        super::migrate_legacy_profile_bank(target).await?;
+        control.check()?;
+        super::create_backup_from_dir(
+            source,
+            snapshot.directory.as_path(),
+            super::BackupTrigger::ProfileSwitch,
+            None,
+        )
+        .await?;
         control.check()?;
         bank::replace(
-            &super::bank_root(target)?,
-            target,
-            snapshot.directory.path(),
+            &super::bank_root(source)?,
+            source,
+            snapshot.directory.as_path(),
             &control,
         )?;
+        if seed {
+            ensure!(
+                target.profile_id().is_some(),
+                "Only a restored profile can seed an isolated save bank"
+            );
+            let bank = super::bank_root(target)?;
+            if super::bank_manifest(&bank).try_exists()? {
+                super::create_backup_from_dir(
+                    target,
+                    &super::bank_data(&bank),
+                    super::BackupTrigger::ProfileSwitch,
+                    None,
+                )
+                .await?;
+            }
+            control.check()?;
+            bank::replace(
+                &super::bank_root(target)?,
+                target,
+                snapshot.directory.as_path(),
+                &control,
+            )?;
+        }
+        let bank = super::bank_root(target)?;
+        super::load_bank(target).await?;
+        super::prune_automatic_backups(&game.id, cap_bytes).await?;
+        snapshot.verify(&live, &control)?;
+        let transition = stage(
+            operation,
+            source.clone(),
+            target.clone(),
+            &live,
+            &super::bank_data(&bank),
+            &control,
+        )?;
+        if transition.before != snapshot.before {
+            preparation::discard(&live, operation, source.game_id())?;
+            anyhow::bail!("Live saves changed after save-bank preparation; activation stopped");
+        }
+        Ok(transition)
     }
-    let bank = super::bank_root(target)?;
-    super::load_bank(target).await?;
-    super::prune_automatic_backups(&game.id, cap_bytes).await?;
-    snapshot.verify(&live, &control)?;
-    let transition = stage(
-        operation,
-        source.clone(),
-        target.clone(),
-        &live,
-        &super::bank_data(&bank),
-        &control,
-    )?;
-    if transition.before != snapshot.before {
-        preparation::discard(&live, operation, source.game_id())?;
-        anyhow::bail!("Live saves changed after save-bank preparation; activation stopped");
-    }
-    Ok(transition)
+    .await;
+    snapshot.discard().with_context(|| match &result {
+        Ok(_) => "Snapshot cleanup failed; preparation was preserved".to_owned(),
+        Err(error) => format!("{error:#}; snapshot cleanup also failed"),
+    })?;
+    result
 }
 
 #[cfg(test)]
@@ -422,17 +462,65 @@ mod tests {
 
     // @variants: both
     #[test]
+    fn missing_live_saves_produce_an_owned_empty_snapshot() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let live = temp.path().join("missing");
+        let snapshot = Snapshot::capture(
+            &live,
+            &SaveSetId::Global {
+                game_id: "game".into(),
+            },
+            &Control::default(),
+        )?;
+        assert!(snapshot.before.is_none());
+        assert_eq!(fs::read_dir(&snapshot.directory)?.count(), 0);
+        snapshot.verify(&live, &Control::default())?;
+        snapshot.discard()?;
+        assert_eq!(fs::read_dir(temp.path())?.count(), 0);
+        Ok(())
+    }
+
+    // @variants: both
+    #[test]
+    fn snapshot_cleanup_preserves_external_changes_and_ownership() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let live = temp.path().join("live");
+        fs::create_dir(&live)?;
+        fs::write(live.join("save.dat"), b"current")?;
+        let snapshot = Snapshot::capture(
+            &live,
+            &SaveSetId::Global {
+                game_id: "game".into(),
+            },
+            &Control::default(),
+        )?;
+        fs::write(snapshot.directory.join("save.dat"), b"external")?;
+        assert!(snapshot.discard().is_err());
+        assert!(staging::read(&snapshot.directory)?.is_some());
+        assert_eq!(fs::read(live.join("save.dat"))?, b"current");
+        assert_eq!(fs::read(snapshot.directory.join("save.dat"))?, b"external");
+        Ok(())
+    }
+
+    // @variants: both
+    #[test]
     fn frozen_saves_remain_independent_and_reject_later_live_changes() -> Result<()> {
         let temp = tempfile::tempdir()?;
         let live = temp.path().join("live");
         fs::create_dir(&live)?;
         fs::write(live.join("save.dat"), b"original progress")?;
-        let snapshot = Snapshot::capture(&live, &Control::default())?;
+        let snapshot = Snapshot::capture(
+            &live,
+            &SaveSetId::Global {
+                game_id: "game".into(),
+            },
+            &Control::default(),
+        )?;
         snapshot.verify(&live, &Control::default())?;
         fs::write(live.join("save.dat"), b"later progress")?;
         assert!(snapshot.verify(&live, &Control::default()).is_err());
         assert_eq!(
-            fs::read(snapshot.directory.path().join("save.dat"))?,
+            fs::read(snapshot.directory.as_path().join("save.dat"))?,
             b"original progress"
         );
         Ok(())

@@ -824,3 +824,39 @@ path = "src/core/save_manager/activation/preparation.rs"
 name = "a_missing_preparation_record_never_authorizes_staging_deletion"
 variant = "both"
 interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation/staging.rs"
+name = "staging_ownership_precedes_creation_and_survives_parent_relocation"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation/staging.rs"
+name = "bank_adoption_rejects_another_owner_and_snapshot_intents"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation/staging.rs"
+name = "changed_or_missing_staging_records_never_authorize_deletion"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation.rs"
+name = "missing_live_saves_produce_an_owned_empty_snapshot"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation.rs"
+name = "snapshot_cleanup_preserves_external_changes_and_ownership"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation/staging.rs"
+name = "pending_bank_publication_protects_its_staging_record"
+variant = "both"
+interface_state = "not_applicable"

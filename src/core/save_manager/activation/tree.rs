@@ -5,6 +5,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::core::generations::content::{self, Control, Identity};
 
@@ -17,6 +18,43 @@ pub(super) struct Entry {
 }
 
 pub(super) type Tree = BTreeMap<String, Entry>;
+
+pub(super) fn empty() -> Tree {
+    Tree::from([(
+        String::new(),
+        Entry {
+            content: None,
+            mode: 0o700,
+            modified: None,
+        },
+    )])
+}
+
+pub(super) fn bank_inventory(data: &Tree, manifest: &[u8]) -> Result<Tree> {
+    validate(data)?;
+    let mut tree = empty();
+    for (path, entry) in data {
+        let path = if path.is_empty() {
+            "data".to_owned()
+        } else {
+            format!("data/{path}")
+        };
+        tree.insert(path, entry.clone());
+    }
+    tree.insert(
+        "manifest.json".to_owned(),
+        Entry {
+            content: Some(Identity {
+                size: manifest.len().try_into()?,
+                sha256: format!("{:x}", Sha256::digest(manifest)),
+            }),
+            mode: 0o600,
+            modified: Some((0, 0)),
+        },
+    );
+    validate(&tree)?;
+    Ok(tree)
+}
 
 type Stamp = (u64, u64, u32, u64, i64, i64, i64, i64);
 
