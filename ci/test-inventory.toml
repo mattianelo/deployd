@@ -1052,3 +1052,57 @@ path = "tests/generations/saves.rs"
 name = "save_preparation_blocks_when_prefix_access_is_lost"
 variant = "both"
 interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/ownership/tests.rs"
+name = "imports_selected_save_owner_separately_from_legacy_deployment"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/ownership/tests.rs"
+name = "existing_ownership_survives_draft_and_legacy_setting_changes"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/ownership/tests.rs"
+name = "global_ownership_does_not_adopt_stale_or_other_game_deployment_markers"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/ownership/tests.rs"
+name = "ambiguous_or_unsupported_selection_does_not_create_ownership"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/ownership/tests.rs"
+name = "failed_ownership_commit_can_be_retried_without_losing_legacy_state"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/saves.rs"
+name = "legacy_ownership_initialization_preserves_live_saves_and_pending_recovery"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/ownership/tests.rs"
+name = "pending_recovery_blocks_initialization_without_replacing_existing_ownership"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/saves.rs"
+name = "restored_drafts_cannot_invent_legacy_live_save_ownership"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/ownership/tests.rs"
+name = "imported_ownership_survives_restart_without_following_the_selected_draft"
+variant = "both"
+interface_state = "not_applicable"

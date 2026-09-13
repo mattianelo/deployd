@@ -3,6 +3,7 @@ pub(crate) mod content;
 mod coordinator;
 mod manifest;
 mod operation;
+mod ownership;
 mod records;
 mod store;
 mod target;

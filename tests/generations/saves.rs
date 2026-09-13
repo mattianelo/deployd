@@ -68,7 +68,7 @@ struct Fixture {
 }
 
 impl Fixture {
-    async fn new(root: PathBuf) -> Result<Self> {
+    async fn legacy(root: PathBuf) -> Result<Self> {
         let cache = root.join("cache");
         fs::create_dir(&cache)?;
         let (tracker, mut game, profile) = super::super::tests::snapshot_fixture(&cache).await?;
@@ -82,24 +82,27 @@ impl Fixture {
             .bind(&game.id)
             .execute(&tracker.pool)
             .await?;
-        sqlx::query(
-            "INSERT INTO generation_game_state(game_id,live_save_mode) VALUES (?,'global')",
-        )
-        .bind(&game.id)
-        .execute(&tracker.pool)
-        .await?;
+        sqlx::query("UPDATE profiles SET is_active=1 WHERE game_id=?")
+            .bind(&game.id)
+            .execute(&tracker.pool)
+            .await?;
         let live =
             root.join("prefix/drive_c/users/test/Documents/My Games/Skyrim Special Edition/Saves");
         fs::create_dir_all(&live)?;
         fs::write(live.join("save.dat"), b"current progress")?;
         fs::create_dir_all(game.data_dir())?;
         let history = History::open(&tracker, &game.id, &cache, true).await?;
-        let fixture = Self {
+        Ok(Self {
             history,
             game,
             profile,
             live,
-        };
+        })
+    }
+
+    async fn new(root: PathBuf) -> Result<Self> {
+        let fixture = Self::legacy(root).await?;
+        super::super::ownership::initialize(&fixture.history).await?;
         let (manifest, files, journal) = fixture.capture().await?;
         let prepared = prepare(
             &fixture.history,
@@ -553,6 +556,107 @@ fn save_preparation_blocks_when_prefix_access_is_lost() -> Result<()> {
                 b"current progress"
             );
             assert!(!paths::saves_root()?.exists());
+            Ok(())
+        },
+    )
+}
+
+// @variants: both
+#[test]
+fn legacy_ownership_initialization_preserves_live_saves_and_pending_recovery() -> Result<()> {
+    isolated(
+        "legacy_ownership_initialization_preserves_live_saves_and_pending_recovery",
+        async |root| {
+            let fixture = Fixture::legacy(root).await?;
+            let legacy = paths::saves_root()?
+                .join(&fixture.game.id)
+                .join("transition.json");
+            fs::create_dir_all(legacy.parent().context("Recovery parent")?)?;
+            fs::write(&legacy, b"pending legacy recovery")?;
+            assert!(
+                super::super::ownership::initialize(&fixture.history)
+                    .await
+                    .is_err()
+            );
+            assert_eq!(fs::read(&legacy)?, b"pending legacy recovery");
+            assert_eq!(
+                fs::read(fixture.live.join("save.dat"))?,
+                b"current progress"
+            );
+            let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM generation_game_state")
+                .fetch_one(&fixture.history.tracker.pool)
+                .await?;
+            assert_eq!(count, 0);
+            fs::remove_file(&legacy)?;
+            let state = super::super::ownership::initialize(&fixture.history).await?;
+            assert_eq!(state.generation, None);
+            assert_eq!(
+                state.saves,
+                SaveSetId::Global {
+                    game_id: fixture.game.id.clone()
+                }
+            );
+            assert_eq!(
+                fs::read(fixture.live.join("save.dat"))?,
+                b"current progress"
+            );
+            assert!(!fixture.bank(&state.saves)?.exists());
+            assert!(
+                save_manager::list_backups(&fixture.game.id)
+                    .await?
+                    .is_empty()
+            );
+            Ok(())
+        },
+    )
+}
+
+// @variants: both
+#[test]
+fn restored_drafts_cannot_invent_legacy_live_save_ownership() -> Result<()> {
+    isolated(
+        "restored_drafts_cannot_invent_legacy_live_save_ownership",
+        async |root| {
+            let fixture = Fixture::new(root).await?;
+            let previous = fixture.state().await?;
+            let restored = super::super::restore::restore(
+                &fixture.history,
+                previous.generation.as_deref().context("Generation")?,
+                "Restored",
+                Control::default(),
+            )
+            .await?;
+            sqlx::query("UPDATE profiles SET is_active=(id=?)")
+                .bind(&restored)
+                .execute(&fixture.history.tracker.pool)
+                .await?;
+            assert_eq!(
+                super::super::ownership::initialize(&fixture.history).await?,
+                previous
+            );
+            sqlx::query("DELETE FROM generation_game_state")
+                .execute(&fixture.history.tracker.pool)
+                .await?;
+            assert!(
+                super::super::ownership::initialize(&fixture.history)
+                    .await
+                    .is_err()
+            );
+            let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM generation_game_state")
+                .fetch_one(&fixture.history.tracker.pool)
+                .await?;
+            assert_eq!(count, 0);
+            assert_eq!(
+                fs::read(fixture.live.join("save.dat"))?,
+                b"current progress"
+            );
+            let seed: bool = sqlx::query_scalar(
+                "SELECT seed_live_saves FROM generation_drafts WHERE profile_id=?",
+            )
+            .bind(restored)
+            .fetch_one(&fixture.history.tracker.pool)
+            .await?;
+            assert!(seed);
             Ok(())
         },
     )

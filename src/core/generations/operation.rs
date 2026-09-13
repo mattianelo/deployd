@@ -6,8 +6,9 @@ use tokio::sync::{Mutex, OwnedMutexGuard, OwnedRwLockReadGuard};
 use tokio::task::JoinHandle;
 
 pub(super) struct Lease {
-    _history: OwnedMutexGuard<()>,
+    // Field drop order keeps the next history operation behind location release.
     _location: OwnedRwLockReadGuard<()>,
+    _history: OwnedMutexGuard<()>,
 }
 
 impl Lease {
