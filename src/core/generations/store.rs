@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use super::content::{self, Control, Identity};
 
@@ -150,6 +151,47 @@ impl Store {
             .create_new(true)
             .open(&path)?;
         let identity = content::transfer(source, &mut file, control)?;
+        self.publish(temporary, file, identity, control)
+    }
+
+    pub(super) fn retain_generated(&self, bytes: &[u8], control: &Control) -> Result<Identity> {
+        self.check()?;
+        control.check()?;
+        let staging = self.root.join("staging");
+        directory(&staging)?;
+        let temporary = tempfile::Builder::new()
+            .prefix(".prepare-")
+            .tempdir_in(staging)?;
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(temporary.path().join("content"))?;
+        let mut hash = Sha256::new();
+        let mut size = 0;
+        for chunk in bytes.chunks(128 * 1024) {
+            control.check()?;
+            file.write_all(chunk)?;
+            hash.update(chunk);
+            size += chunk.len() as u64;
+            (control.progress)(size, bytes.len() as u64);
+        }
+        control.check()?;
+        let identity = Identity {
+            size,
+            sha256: format!("{:x}", hash.finalize()),
+        };
+        identity.validate()?;
+        self.publish(temporary, file, identity, control)
+    }
+
+    fn publish(
+        &self,
+        temporary: tempfile::TempDir,
+        file: File,
+        identity: Identity,
+        control: &Control,
+    ) -> Result<Identity> {
+        let path = temporary.path().join("content");
         file.set_permissions(fs::Permissions::from_mode(0o400))?;
         file.sync_all()?;
         ensure!(

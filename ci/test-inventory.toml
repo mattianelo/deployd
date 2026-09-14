@@ -1166,3 +1166,63 @@ path = "tests/generations/divergence.rs"
 name = "concurrent_deployed_state_changes_prevent_stale_inspection_publication"
 variant = "both"
 interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "generated_objects_deduplicate_with_sources_and_survive_writable_materialization"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "cancelled_generated_content_leaves_no_published_or_staged_object"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "generated_content_registration_failures_remain_retryable"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/generated.rs"
+name = "retained_generated_configuration_commits_or_rolls_back_with_mod_files"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/bethesda.rs"
+name = "frozen_plugin_configuration_follows_the_deployed_file_winner"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/bethesda.rs"
+name = "disabled_plugins_remain_recorded_in_the_frozen_load_order"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/bethesda.rs"
+name = "generated_plugin_outputs_are_retained_without_writing_live_configuration"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/bethesda.rs"
+name = "missing_winner_metadata_and_unsafe_plugin_names_block_preparation"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/bethesda.rs"
+name = "plugin_preparation_rejects_other_engines_and_lost_prefix_access"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/bethesda.rs"
+name = "activates_plugin_files_and_frozen_order_from_the_same_prepared_generation"
+variant = "both"
+interface_state = "not_applicable"

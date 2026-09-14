@@ -1123,3 +1123,90 @@ async fn cancellation_during_historical_verification_creates_no_restored_profile
     );
     Ok(())
 }
+
+// @variants: both
+#[test]
+fn generated_objects_deduplicate_with_sources_and_survive_writable_materialization() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let source = temp.path().join("source");
+    let bytes = b"# This file is managed by Deployd\n*Example.esp\n";
+    fs::write(&source, bytes)?;
+    let store = Store::create(temp.path(), "game", "store")?;
+    let control = Control::default();
+    let identity = store.retain_generated(bytes, &control)?;
+    assert_eq!(store.retain(&source, &control)?, identity);
+    assert_eq!(store.retain_generated(bytes, &control)?, identity);
+    let restored = temp.path().join("Plugins.txt");
+    store.materialize(&identity, &restored, 0o600, &control)?;
+    fs::write(&restored, b"tool changes")?;
+    assert_eq!(fs::read(store.source(&identity)?)?, bytes);
+    assert_eq!(fs::metadata(store.source(&identity)?)?.nlink(), 1);
+    assert_eq!(
+        fs::metadata(store.source(&identity)?)?.permissions().mode() & 0o777,
+        0o400
+    );
+    assert_eq!(
+        fs::read_dir(temp.path().join("deployd-history/game/objects"))?.count(),
+        1
+    );
+    Ok(())
+}
+
+// @variants: both
+#[test]
+fn cancelled_generated_content_leaves_no_published_or_staged_object() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let store = Store::create(temp.path(), "game", "store")?;
+    let mut control = Control::default();
+    let cancelled = control.cancelled.clone();
+    control.progress = Arc::new(move |_, _| cancelled.store(true, Ordering::Release));
+    assert!(
+        store
+            .retain_generated(&vec![42; 256 * 1024], &control)
+            .is_err()
+    );
+    assert_eq!(
+        fs::read_dir(temp.path().join("deployd-history/game/objects"))?.count(),
+        0
+    );
+    assert_eq!(
+        fs::read_dir(temp.path().join("deployd-history/game/staging"))?.count(),
+        0
+    );
+    let empty = store.retain_generated(b"", &Control::default())?;
+    assert_eq!(empty.size, 0);
+    store.verify(&empty, &Control::default())?;
+    Ok(())
+}
+
+// @variants: both
+#[tokio::test]
+async fn generated_content_registration_failures_remain_retryable() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let tracker = Tracker::open("sqlite::memory:").await?.tracker;
+    let history = History::open(&tracker, "game", temp.path(), true).await?;
+    sqlx::query("CREATE TRIGGER reject_generated BEFORE INSERT ON generation_objects BEGIN SELECT RAISE(ABORT,'injected failure'); END")
+        .execute(&tracker.pool).await?;
+    assert!(
+        history
+            .retain_generated(b"generated output".to_vec(), Control::default())
+            .await
+            .is_err()
+    );
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM generation_objects")
+        .fetch_one(&tracker.pool)
+        .await?;
+    assert_eq!(count, 0);
+    sqlx::query("DROP TRIGGER reject_generated")
+        .execute(&tracker.pool)
+        .await?;
+    let identity = history
+        .retain_generated(b"generated output".to_vec(), Control::default())
+        .await?;
+    history.store.verify(&identity, &Control::default())?;
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM generation_objects")
+        .fetch_one(&tracker.pool)
+        .await?;
+    assert_eq!(count, 1);
+    Ok(())
+}

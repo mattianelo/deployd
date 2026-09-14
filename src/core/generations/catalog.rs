@@ -186,6 +186,25 @@ impl History {
         Ok(identity)
     }
 
+    pub(super) async fn retain_generated(
+        &self,
+        bytes: Vec<u8>,
+        control: Control,
+    ) -> Result<Identity> {
+        let store = self.store.clone();
+        let identity = self
+            .lease
+            .blocking(move || store.retain_generated(&bytes, &control))
+            .await
+            .context("Generated content retention worker stopped")??;
+        self.register(&std::collections::BTreeMap::from([(
+            identity.sha256.clone(),
+            identity.size,
+        )]))
+        .await?;
+        Ok(identity)
+    }
+
     pub(super) async fn publish(
         &self,
         tx: &mut Transaction<'_, Sqlite>,
