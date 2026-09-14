@@ -242,6 +242,16 @@ async fn activates_plugin_files_and_frozen_order_from_the_same_prepared_generati
         .collect::<Result<Vec<_>>>()?;
     let journal =
         Journal::prepare(&fixture.history, &fixture.game, desired, Control::default()).await?;
+    for path in game::custom_ini_paths(&fixture.game) {
+        fs::create_dir_all(path.parent().context("INI parent")?)?;
+        fs::write(
+            path,
+            b"[Display]\nWidth=1920\n[Archive]\nbInvalidateOlderFiles=0\n",
+        )?;
+    }
+    let ini = inis(&fixture.history, &fixture.game, journal, Control::default()).await?;
+    manifest.outputs.extend(ini.outputs);
+    let journal = ini.journal;
     let previous = State {
         generation: None,
         profile: None,
@@ -292,6 +302,232 @@ async fn activates_plugin_files_and_frozen_order_from_the_same_prepared_generati
             b"# This file is managed by Deployd\n*Test.esp\n"
         );
     }
+    for path in game::custom_ini_paths(&fixture.game) {
+        assert_eq!(
+            fs::read(path)?,
+            b"[Display]\nWidth=1920\n[Archive]\nbInvalidateOlderFiles=1\nsResourceDataDirsFinal=\n"
+        );
+    }
     assert_eq!(fixture.history.load(&manifest.id()?).await?, manifest);
+    Ok(())
+}
+
+// @variants: both
+#[tokio::test]
+async fn prepared_ini_changes_restore_original_files_and_absence_during_recovery() -> Result<()> {
+    let fixture = Fixture::new().await?;
+    let paths = game::custom_ini_paths(&fixture.game);
+    for path in &paths {
+        fs::create_dir_all(path.parent().context("INI parent")?)?;
+    }
+    let original = b"[Display]\nWidth=1280\n[Archive]\nbInvalidateOlderFiles=0\n";
+    fs::write(&paths[0], original)?;
+    let journal =
+        Journal::prepare(&fixture.history, &fixture.game, vec![], Control::default()).await?;
+    let prepared = inis(&fixture.history, &fixture.game, journal, Control::default()).await?;
+    assert_eq!(prepared.outputs.len(), paths.len());
+    assert_eq!(fs::read(&paths[0])?, original);
+    assert!(!paths[1].exists());
+    assert_eq!(prepared.journal.changes[1].before, Node::Absent);
+    prepared
+        .journal
+        .persist(&fixture.history, &fixture.game, "deploy", BTreeMap::new())
+        .await?;
+    prepared
+        .journal
+        .apply(&fixture.history, &fixture.game, Control::default())
+        .await?;
+    assert!(
+        fs::read(&paths[0])?
+            .windows(b"bInvalidateOlderFiles=1".len())
+            .any(|text| text == b"bInvalidateOlderFiles=1")
+    );
+    assert!(paths[1].exists());
+    prepared
+        .journal
+        .recover(&fixture.history, &fixture.game, false)
+        .await?;
+    assert_eq!(fs::read(&paths[0])?, original);
+    assert!(!paths[1].exists());
+    Ok(())
+}
+
+// @variants: both
+#[tokio::test]
+async fn ini_edits_after_preparation_are_preserved_and_block_activation() -> Result<()> {
+    let fixture = Fixture::new().await?;
+    let paths = game::custom_ini_paths(&fixture.game);
+    for path in &paths {
+        fs::create_dir_all(path.parent().context("INI parent")?)?;
+        fs::write(path, b"[Display]\nWidth=1280\n")?;
+    }
+    let journal =
+        Journal::prepare(&fixture.history, &fixture.game, vec![], Control::default()).await?;
+    let prepared = inis(&fixture.history, &fixture.game, journal, Control::default()).await?;
+    fs::write(&paths[0], b"[Display]\nWidth=2560\n")?;
+    assert!(
+        prepared
+            .journal
+            .verify_prepared(&fixture.history, &fixture.game, vec![], Control::default())
+            .await
+            .is_err()
+    );
+    assert_eq!(fs::read(&paths[0])?, b"[Display]\nWidth=2560\n");
+    assert!(
+        inis(
+            &fixture.history,
+            &fixture.game,
+            prepared.journal,
+            Control::default()
+        )
+        .await
+        .is_err()
+    );
+    Ok(())
+}
+
+// @variants: both
+#[tokio::test]
+async fn ini_preparation_preserves_previously_frozen_mod_inputs() -> Result<()> {
+    let fixture = Fixture::new().await?;
+    fs::create_dir_all(fixture.game.data_dir())?;
+    let (manifest, _, journal) =
+        super::super::state_tests::unpublished(&fixture.history, &fixture.game, &fixture.profile)
+            .await?;
+    let original_changes = journal.changes.clone();
+    let path = manifest.outputs[0].target.resolve(&fixture.game)?;
+    fs::write(&path, b"external mod change")?;
+    let prepared = inis(&fixture.history, &fixture.game, journal, Control::default()).await?;
+    assert_eq!(
+        &prepared.journal.changes[..original_changes.len()],
+        original_changes.as_slice()
+    );
+    assert_eq!(fs::read(path)?, b"external mod change");
+    for path in game::custom_ini_paths(&fixture.game) {
+        assert!(!path.exists());
+    }
+    assert!(
+        prepared
+            .journal
+            .verify_prepared(&fixture.history, &fixture.game, vec![], Control::default())
+            .await
+            .is_err()
+    );
+    Ok(())
+}
+
+// @variants: both
+#[tokio::test]
+async fn ini_preparation_blocks_redirected_paths_missing_access_and_other_engines() -> Result<()> {
+    use std::os::unix::fs::symlink;
+
+    let fixture = Fixture::new().await?;
+    let journal =
+        Journal::prepare(&fixture.history, &fixture.game, vec![], Control::default()).await?;
+    for engine in [
+        GameEngine::Aurora,
+        GameEngine::Eclipse,
+        GameEngine::REDEngine,
+        GameEngine::MassEffect,
+    ] {
+        let mut game = fixture.game.clone();
+        game.engine = engine;
+        assert!(
+            inis(&fixture.history, &game, journal.clone(), Control::default())
+                .await
+                .is_err()
+        );
+    }
+    for prefix in [None, Some(fixture.history.cache.join("missing-prefix"))] {
+        let mut game = fixture.game.clone();
+        game.wine_prefix = prefix;
+        assert!(
+            inis(&fixture.history, &game, journal.clone(), Control::default())
+                .await
+                .is_err()
+        );
+    }
+    let prepared = inis(
+        &fixture.history,
+        &fixture.game,
+        journal.clone(),
+        Control::default(),
+    )
+    .await?;
+    assert!(
+        prepared
+            .journal
+            .verify_prepared(&fixture.history, &fixture.game, vec![], Control::default())
+            .await
+            .is_err()
+    );
+    for path in game::custom_ini_paths(&fixture.game) {
+        assert!(!path.parent().context("INI parent")?.exists());
+    }
+    let outside = fixture.history.cache.join("user.ini");
+    fs::write(&outside, b"user configuration")?;
+    let path = game::custom_ini_paths(&fixture.game)[0].clone();
+    fs::create_dir_all(path.parent().context("INI parent")?)?;
+    symlink(&outside, &path)?;
+    assert!(
+        inis(&fixture.history, &fixture.game, journal, Control::default())
+            .await
+            .is_err()
+    );
+    assert_eq!(fs::read(outside)?, b"user configuration");
+    assert!(fs::symlink_metadata(path)?.is_symlink());
+    Ok(())
+}
+
+// @variants: both
+#[tokio::test]
+async fn failed_or_cancelled_ini_preparation_keeps_live_bytes_and_can_retry() -> Result<()> {
+    let fixture = Fixture::new().await?;
+    let paths = game::custom_ini_paths(&fixture.game);
+    for path in &paths {
+        fs::create_dir_all(path.parent().context("INI parent")?)?;
+        fs::write(path, b"[Display]\nWidth=1920\n")?;
+    }
+    let journal =
+        Journal::prepare(&fixture.history, &fixture.game, vec![], Control::default()).await?;
+    let mut control = Control::default();
+    let cancelled = control.cancelled.clone();
+    control.progress = std::sync::Arc::new(move |_, _| {
+        cancelled.store(true, std::sync::atomic::Ordering::Release)
+    });
+    assert!(
+        inis(&fixture.history, &fixture.game, journal.clone(), control)
+            .await
+            .is_err()
+    );
+    sqlx::query("CREATE TRIGGER reject_ini BEFORE INSERT ON generation_objects BEGIN SELECT RAISE(ABORT,'injected failure'); END")
+        .execute(&fixture.history.tracker.pool).await?;
+    assert!(
+        inis(
+            &fixture.history,
+            &fixture.game,
+            journal.clone(),
+            Control::default()
+        )
+        .await
+        .is_err()
+    );
+    for path in &paths {
+        assert_eq!(fs::read(path)?, b"[Display]\nWidth=1920\n");
+    }
+    let pending: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM generation_journals")
+        .fetch_one(&fixture.history.tracker.pool)
+        .await?;
+    assert_eq!(pending, 0);
+    sqlx::query("DROP TRIGGER reject_ini")
+        .execute(&fixture.history.tracker.pool)
+        .await?;
+    assert_eq!(
+        inis(&fixture.history, &fixture.game, journal, Control::default())
+            .await?
+            .outputs
+            .len(),
+        paths.len()
+    );
     Ok(())
 }

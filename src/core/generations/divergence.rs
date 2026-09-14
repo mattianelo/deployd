@@ -122,7 +122,7 @@ fn scan(game: &Game, outputs: &[Output], control: &Control) -> Result<Vec<Differ
     Ok(differences)
 }
 
-fn live(game: &Game, target: &Target, control: &Control) -> Result<Node> {
+pub(super) fn live(game: &Game, target: &Target, control: &Control) -> Result<Node> {
     target.validate(&game.engine)?;
     let (root, kind) = match target {
         Target::Eclipse { .. } | Target::PluginControl { .. } | Target::CustomIni { .. } => (

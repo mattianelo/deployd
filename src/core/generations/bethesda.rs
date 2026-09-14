@@ -7,10 +7,115 @@ use crate::models::game::{Game, GameEngine};
 use crate::utils::snap::{self, SelectedFolderKind};
 
 use super::catalog::History;
-use super::content::Control;
+use super::content::{self, Control};
+use super::journal::{Change, Journal, Node};
 use super::manifest::{Manifest, Output};
 use super::records::{Record, Table, text};
 use super::target::{Target, relative};
+
+mod ini;
+
+pub(super) struct PreparedIni {
+    pub(super) outputs: Vec<Output>,
+    pub(super) journal: Journal,
+}
+
+pub(super) async fn inis(
+    history: &History,
+    game: &Game,
+    journal: Journal,
+    control: Control,
+) -> Result<PreparedIni> {
+    ensure!(
+        history.game == game.id && journal.game == game.id,
+        "INI preparation belongs to another game"
+    );
+    ensure!(
+        game.engine == GameEngine::Bethesda,
+        "Managed INI preparation belongs to Bethesda"
+    );
+    ensure!(
+        !journal.has_saves(),
+        "Prepare managed INIs before preparing save transitions"
+    );
+    control.check()?;
+    history.tracker.ensure_location_ready(&game.id).await?;
+    let store = history.store.clone();
+    let game = game.clone();
+    let preparing = control.clone();
+    let (prepared, objects) = history
+        .lease
+        .blocking(move || -> Result<_> {
+            let mut journal = journal;
+            journal.validate(&game)?;
+            let slots = game::custom_ini_paths(&game).len();
+            ensure!(
+                slots > 0,
+                "Managed INI locations are unavailable; restore Wine-prefix access"
+            );
+            let mut outputs = Vec::new();
+            let mut objects = BTreeMap::new();
+            for slot in 0..slots {
+                preparing.check()?;
+                let target = Target::CustomIni { slot };
+                ensure!(
+                    !journal.changes.iter().any(|change| change.target == target),
+                    "This activation already contains a prepared managed INI"
+                );
+                let before = super::divergence::live(&game, &target, &preparing)?;
+                let mut bytes = Vec::new();
+                let mode = match &before {
+                    Node::File { identity, mode } => {
+                        ensure!(
+                            store.retain(&target.resolve(&game)?, &preparing)? == *identity,
+                            "Managed INI changed while capturing its original content"
+                        );
+                        ensure!(
+                            content::transfer(&store.source(identity)?, &mut bytes, &preparing)?
+                                == *identity,
+                            "Retained INI input changed during preparation"
+                        );
+                        *mode
+                    }
+                    Node::Absent => 0o644,
+                    Node::Directory { .. } => {
+                        anyhow::bail!("Managed INI location is a directory; it was preserved")
+                    }
+                };
+                let content = store.retain_generated(&ini::render(&bytes)?, &preparing)?;
+                ensure!(
+                    super::divergence::live(&game, &target, &preparing)? == before,
+                    "Managed INI changed during preparation; prepare deployment again"
+                );
+                if let Node::File { identity, .. } = &before {
+                    objects.insert(identity.sha256.clone(), identity.size);
+                }
+                objects.insert(content.sha256.clone(), content.size);
+                outputs.push(Output {
+                    target: target.clone(),
+                    content: Some(content.clone()),
+                    mode,
+                    mod_id: None,
+                });
+                journal.changes.push(Change {
+                    target,
+                    before,
+                    after: Node::File {
+                        identity: content,
+                        mode,
+                    },
+                });
+            }
+            journal.validate(&game)?;
+            preparing.check()?;
+            Ok((PreparedIni { outputs, journal }, objects))
+        })
+        .await
+        .context("Managed INI preparation worker stopped")??;
+    control.check()?;
+    history.register(&objects).await?;
+    Ok(prepared)
+}
 
 pub(super) async fn plugins(
     history: &History,

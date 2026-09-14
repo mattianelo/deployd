@@ -1226,3 +1226,33 @@ path = "tests/generations/bethesda.rs"
 name = "activates_plugin_files_and_frozen_order_from_the_same_prepared_generation"
 variant = "both"
 interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/bethesda.rs"
+name = "prepared_ini_changes_restore_original_files_and_absence_during_recovery"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/bethesda.rs"
+name = "ini_edits_after_preparation_are_preserved_and_block_activation"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/bethesda.rs"
+name = "ini_preparation_preserves_previously_frozen_mod_inputs"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/bethesda.rs"
+name = "ini_preparation_blocks_redirected_paths_missing_access_and_other_engines"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/bethesda.rs"
+name = "failed_or_cancelled_ini_preparation_keeps_live_bytes_and_can_retry"
+variant = "both"
+interface_state = "not_applicable"
