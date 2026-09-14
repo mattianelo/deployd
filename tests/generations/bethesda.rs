@@ -2,19 +2,20 @@ use std::fs;
 
 use super::*;
 
-struct Fixture {
-    history: History,
-    game: Game,
-    profile: String,
+pub(super) struct Fixture {
+    pub(super) history: History,
+    pub(super) game: Game,
+    pub(super) profile: String,
     _temp: tempfile::TempDir,
 }
 
 impl Fixture {
-    async fn new() -> Result<Self> {
+    pub(super) async fn new() -> Result<Self> {
         let temp = tempfile::tempdir()?;
         let (tracker, mut game, profile) =
             super::super::tests::snapshot_fixture(temp.path()).await?;
         game.id = "skyrim-se".into();
+        fs::create_dir_all(&game.path)?;
         game.wine_prefix = Some(temp.path().join("prefix"));
         fs::create_dir_all(temp.path().join("prefix/drive_c/users/player"))?;
         sqlx::query("UPDATE profiles SET game_id=?")
@@ -165,6 +166,13 @@ async fn missing_winner_metadata_and_unsafe_plugin_names_block_preparation() -> 
         .execute(&fixture.history.tracker.pool)
         .await?;
     sqlx::query("DELETE FROM plugins WHERE id='winner'")
+        .execute(&fixture.history.tracker.pool)
+        .await?;
+    assert!(render(&fixture.capture().await?).is_err());
+    sqlx::query("DELETE FROM profile_plugins")
+        .execute(&fixture.history.tracker.pool)
+        .await?;
+    sqlx::query("DELETE FROM plugins")
         .execute(&fixture.history.tracker.pool)
         .await?;
     assert!(render(&fixture.capture().await?).is_err());
@@ -459,7 +467,7 @@ async fn ini_preparation_blocks_redirected_paths_missing_access_and_other_engine
             .journal
             .verify_prepared(&fixture.history, &fixture.game, vec![], Control::default())
             .await
-            .is_err()
+            .is_ok()
     );
     for path in game::custom_ini_paths(&fixture.game) {
         assert!(!path.parent().context("INI parent")?.exists());

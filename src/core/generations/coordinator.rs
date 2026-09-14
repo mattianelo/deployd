@@ -114,7 +114,7 @@ async fn validate(
         .collect::<Result<std::collections::BTreeSet<_>>>()?;
     for target in targets {
         ensure!(
-            changes.contains(&target.resolve(game)?),
+            changes.contains(&journal.physical(&target).resolve(game)?),
             "Prepared activation omits a previously managed target"
         );
     }

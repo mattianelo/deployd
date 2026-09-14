@@ -172,6 +172,17 @@ pub(super) fn live(game: &Game, target: &Target, control: &Control) -> Result<No
             }
         }
     }
+    if *target == (Target::CustomIni { slot: 0 })
+        && let Ok(destination) = fs::read_link(&path)
+    {
+        let slots = crate::core::game::custom_ini_paths(game);
+        let slot = slots
+            .iter()
+            .position(|path| *path == destination)
+            .filter(|slot| *slot > 0)
+            .context("Unrecognized managed INI redirect was preserved")?;
+        return live(game, &Target::CustomIni { slot }, control);
+    }
     journal::inspect(&path, control)
 }
 

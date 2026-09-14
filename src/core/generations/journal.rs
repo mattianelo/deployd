@@ -13,6 +13,8 @@ use super::catalog::{History, durable};
 use super::content::{self, Control, Identity};
 use super::target::Target;
 
+mod layout;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) enum Node {
@@ -53,6 +55,10 @@ pub(super) struct Journal {
     pub(super) changes: Vec<Change>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     saves: Option<crate::core::save_manager::activation::Transition>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    directories: Vec<layout::Directory>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    links: Vec<layout::Link>,
 }
 
 pub(super) struct Applied {
@@ -113,10 +119,13 @@ impl Applied {
             .unwrap_or_default();
         history.lease.blocking(move || -> Result<()> {
             journal.validate(&verified_game)?;
+            journal.verify_links(&verified_game)?;
+            journal.verify_directories(&verified_game, true)?;
             for input in &base_inputs {
                 let actual = if let Some(change) = journal.changes.iter().find(|change| change.target == input.target) {
                     change.before.clone()
                 } else {
+                    layout::accessible(&verified_game, &input.target, &input.target.resolve(&verified_game)?, false)?;
                     inspect(&input.target.resolve(&verified_game)?, &Control::default())?
                 };
                 ensure!(match (&input.content, actual) {
@@ -127,6 +136,7 @@ impl Applied {
             }
             for change in &journal.changes {
                 let path = change.target.resolve(&verified_game)?;
+                layout::accessible(&verified_game, &change.target, &path, false)?;
                 parents(&path, &verified_game)?;
                 ensure!(inspect(&path, &Control::default())? == change.after, "Managed files changed before commitment; recovery information was preserved");
             }
@@ -249,7 +259,8 @@ impl Journal {
                 ensure!(
                     self.changes
                         .iter()
-                        .any(|change| change.target == output.target && change.after == expected),
+                        .any(|change| change.target == self.physical(&output.target)
+                            && change.after == expected),
                     "A generation output was not verified by this activation"
                 );
             }
@@ -268,14 +279,17 @@ impl Journal {
         let game = game.clone();
         history.lease.blocking(move || -> Result<()> {
             journal.validate(&game)?;
+            journal.verify_links(&game)?;
+            journal.verify_directories(&game, false)?;
             for change in &journal.changes {
                 control.check()?;
                 let path = change.target.resolve(&game)?;
-                parents(&path, &game)?;
+                journal.prepared_parents(&game, &change.target)?;
                 ensure!(inspect(&path, &control)? == change.before,
                     "Managed files changed after preparation; prepare deployment again");
             }
             for input in inputs {
+                layout::accessible(&game, &input.target, &input.target.resolve(&game)?, false)?;
                 let actual = inspect(&input.target.resolve(&game)?, &control)?;
                 ensure!(match (input.content, actual) {
                     (Some(expected), Node::File { identity, .. }) => expected == identity,
@@ -303,49 +317,124 @@ impl Journal {
         desired: Vec<(Target, Node)>,
         control: Control,
     ) -> Result<Self> {
-        let mut changes = Vec::new();
-        let mut seen = std::collections::BTreeSet::new();
-        for (target, after) in desired {
-            ensure!(
-                seen.insert(target.resolve(game)?.to_string_lossy().to_lowercase()),
-                "Duplicate activation destination"
-            );
-            after.validate()?;
-            let path = target.resolve(game)?;
-            let read = path.clone();
-            let read_control = control.clone();
-            let before = history
-                .lease
-                .blocking(move || inspect(&read, &read_control))
-                .await
-                .context("Activation inspection worker stopped")??;
-            ensure!(
-                !matches!(
-                    (&before, &after),
-                    (Node::Directory { .. }, Node::File { .. })
-                        | (Node::File { .. }, Node::Directory { .. })
-                ),
-                "A file/directory conflict blocks activation; resolve it before retrying"
-            );
-            if let Node::File { identity, .. } = &before {
-                ensure!(
-                    &history.retain(path, control.clone()).await? == identity,
-                    "Managed file changed during preparation"
-                );
+        ensure!(
+            history.game == game.id,
+            "Activation preparation belongs to another game"
+        );
+        control.check()?;
+        let store = history.store.clone();
+        let game = game.clone();
+        let preparing = control.clone();
+        let (journal, objects) = history
+            .lease
+            .blocking(move || -> Result<_> {
+                let mut journal = Self {
+                    version: 1,
+                    id: uuid::Uuid::new_v4().to_string(),
+                    game: game.id.clone(),
+                    changes: Vec::new(),
+                    saves: None,
+                    directories: Vec::new(),
+                    links: Vec::new(),
+                };
+                if desired
+                    .iter()
+                    .any(|(target, _)| matches!(target, Target::CustomIni { .. }))
+                {
+                    journal.capture_links(&game)?;
+                }
+                let mut objects = BTreeMap::new();
+                let mut seen = std::collections::BTreeSet::new();
+                for (target, after) in desired {
+                    preparing.check()?;
+                    let physical = journal.physical(&target);
+                    if let Some(change) = journal
+                        .changes
+                        .iter()
+                        .find(|change| change.target == physical)
+                    {
+                        ensure!(
+                            journal.links.iter().any(|link| physical
+                                == (Target::CustomIni {
+                                    slot: link.destination
+                                }))
+                                && change.after == after,
+                            "Duplicate or conflicting activation destination"
+                        );
+                        continue;
+                    }
+                    let target = physical;
+                    let path = target.resolve(&game)?;
+                    ensure!(
+                        seen.insert(path.to_string_lossy().to_lowercase()),
+                        "Duplicate activation destination"
+                    );
+                    after.validate()?;
+                    layout::accessible(&game, &target, &path, true)?;
+                    let before = inspect(&path, &preparing)?;
+                    ensure!(
+                        !matches!(
+                            (&before, &after),
+                            (Node::Directory { .. }, Node::File { .. })
+                                | (Node::File { .. }, Node::Directory { .. })
+                        ),
+                        "A file/directory conflict blocks activation; resolve it before retrying"
+                    );
+                    if let Node::File { identity, .. } = &before {
+                        ensure!(
+                            store.retain(&path, &preparing)? == *identity,
+                            "Managed file changed during preparation"
+                        );
+                        objects.insert(identity.sha256.clone(), identity.size);
+                    }
+                    journal.changes.push(Change {
+                        target,
+                        before,
+                        after,
+                    });
+                }
+                journal.capture_directories(&game)?;
+                journal.validate(&game)?;
+                journal.verify_links(&game)?;
+                preparing.check()?;
+                Ok((journal, objects))
+            })
+            .await
+            .context("Activation preparation worker stopped")??;
+        control.check()?;
+        history.register(&objects).await?;
+        Ok(journal)
+    }
+
+    pub(super) async fn extend(
+        &mut self,
+        history: &History,
+        game: &Game,
+        desired: Vec<(Target, Node)>,
+        control: Control,
+    ) -> Result<()> {
+        ensure!(!self.has_saves(), "Prepare files before save transitions");
+        let addition = Self::prepare(history, game, desired, control).await?;
+        let mut merged = self.clone();
+        merged.version = merged.version.max(addition.version);
+        merged.changes.extend(addition.changes);
+        for link in addition.links {
+            if !merged.links.contains(&link) {
+                merged.links.push(link);
             }
-            changes.push(Change {
-                target,
-                before,
-                after,
-            });
         }
-        Ok(Self {
-            version: 1,
-            id: uuid::Uuid::new_v4().to_string(),
-            game: game.id.clone(),
-            changes,
-            saves: None,
-        })
+        let game = game.clone();
+        *self = history
+            .lease
+            .blocking(move || -> Result<Self> {
+                merged.capture_directories(&game)?;
+                merged.validate(&game)?;
+                merged.verify_links(&game)?;
+                Ok(merged)
+            })
+            .await
+            .context("Configuration preparation worker stopped")??;
+        Ok(())
     }
 
     pub(super) fn attach_saves(
@@ -360,24 +449,25 @@ impl Journal {
         self.validate(game)?;
         transition.validate(&self.id, game)?;
         self.saves = Some(transition);
-        self.version = 2;
+        self.version = self.version.max(2);
         Ok(())
     }
 
     pub(super) fn validate(&self, game: &Game) -> Result<()> {
         ensure!(
-            matches!(self.version, 1 | 2)
+            matches!(self.version, 1..=3)
                 && self.game == game.id
                 && uuid::Uuid::parse_str(&self.id).is_ok(),
             "Unsupported or invalid activation journal"
         );
         if let Some(saves) = &self.saves {
             ensure!(
-                self.version == 2,
+                self.version >= 2,
                 "Save participant requires its versioned recovery format"
             );
             saves.validate(&self.id, game)?;
         }
+        self.validate_layout(game)?;
         let mut seen = std::collections::BTreeSet::new();
         for change in &self.changes {
             let destination = change.target.resolve(game)?;
@@ -468,9 +558,12 @@ impl Journal {
         history
             .lease
             .blocking(move || -> Result<()> {
-                for change in &journal.changes {
+                journal.verify_links(&game)?;
+                for change in journal.operations(&game)? {
                     control.check()?;
-                    let path = change.target.resolve(&game)?;
+                    let path = change.path;
+                    journal.verify_links(&game)?;
+                    layout::accessible(&game, &change.target, &path, false)?;
                     parents(&path, &game)?;
                     ensure!(
                         inspect(&path, &control)? == change.before,
@@ -560,8 +653,10 @@ impl Journal {
         let game = game.clone();
         history.lease.blocking(move || -> Result<()> {
             let control = Control::default();
-            for change in journal.changes.iter().rev() {
-                let path = change.target.resolve(&game)?;
+            journal.verify_links(&game)?;
+            for change in journal.operations(&game)?.into_iter().rev() {
+                let path = change.path;
+                layout::accessible(&game, &change.target, &path, !committed)?;
                 let current = inspect(&path, &control)?;
                 if committed {
                     ensure!(current == change.after, "Committed files changed before recovery finished; recovery information was preserved: {}", path.display());

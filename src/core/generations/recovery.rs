@@ -28,7 +28,7 @@ pub(super) async fn recover_journal(history: &History, game: &Game) -> Result<()
     .await?;
     if let Some((kind, version, document, committed)) = pending {
         match (kind.as_str(), version) {
-            ("deploy" | "purge", 1 | 2) => {
+            ("deploy" | "purge", 1..=3) => {
                 let journal = Journal::from_record(version, &document)?;
                 journal.recover(history, game, committed).await?;
             }
@@ -116,7 +116,7 @@ mod tests {
     // @variants: both
     #[tokio::test]
     async fn unsupported_and_inconsistent_journals_remain_pending() -> Result<()> {
-        for (kind, version) in [("shared", 1), ("deploy", 3), ("deploy", 2)] {
+        for (kind, version) in [("shared", 1), ("deploy", 4), ("deploy", 2)] {
             let temp = tempfile::tempdir()?;
             let (tracker, game, _) = super::super::tests::snapshot_fixture(temp.path()).await?;
             let history = History::open(&tracker, &game.id, temp.path(), true).await?;

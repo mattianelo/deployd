@@ -14,6 +14,7 @@ use super::records::{Record, Table, text};
 use super::target::{Target, relative};
 
 mod ini;
+pub(super) mod preparation;
 
 pub(super) struct PreparedIni {
     pub(super) outputs: Vec<Output>,
@@ -24,6 +25,16 @@ pub(super) async fn inis(
     history: &History,
     game: &Game,
     journal: Journal,
+    control: Control,
+) -> Result<PreparedIni> {
+    prepare_inis(history, game, journal, None, control).await
+}
+
+async fn prepare_inis(
+    history: &History,
+    game: &Game,
+    journal: Journal,
+    retained: Option<Vec<Output>>,
     control: Control,
 ) -> Result<PreparedIni> {
     ensure!(
@@ -48,6 +59,7 @@ pub(super) async fn inis(
         .blocking(move || -> Result<_> {
             let mut journal = journal;
             journal.validate(&game)?;
+            journal.capture_links(&game)?;
             let slots = game::custom_ini_paths(&game).len();
             ensure!(
                 slots > 0,
@@ -58,6 +70,9 @@ pub(super) async fn inis(
             for slot in 0..slots {
                 preparing.check()?;
                 let target = Target::CustomIni { slot };
+                if journal.physical(&target) != target {
+                    continue;
+                }
                 ensure!(
                     !journal.changes.iter().any(|change| change.target == target),
                     "This activation already contains a prepared managed INI"
@@ -82,7 +97,24 @@ pub(super) async fn inis(
                         anyhow::bail!("Managed INI location is a directory; it was preserved")
                     }
                 };
-                let content = store.retain_generated(&ini::render(&bytes)?, &preparing)?;
+                let rendered = if let Some(retained) = &retained {
+                    let identity = retained.iter().find(|output| output.target == target)
+                        .and_then(|output| output.content.as_ref()).context("Retained managed INI settings are missing")?;
+                    let mut historical = Vec::new();
+                    ensure!(content::transfer(&store.source(identity)?, &mut historical, &preparing)? == *identity,
+                        "Retained managed INI content is corrupt");
+                    let rendered = ini::restore(&bytes, &historical)?;
+                    for alias in retained.iter().filter(|output| output.target != target && journal.physical(&output.target) == target) {
+                        let identity = alias.content.as_ref().context("Retained INI bridge settings are missing")?;
+                        let mut historical = Vec::new();
+                        ensure!(content::transfer(&store.source(identity)?, &mut historical, &preparing)? == *identity,
+                            "Retained INI bridge content is corrupt");
+                        ensure!(ini::restore(&bytes, &historical)? == rendered,
+                            "Linked historical INI settings disagree; explicitly prepare the current configuration");
+                    }
+                    rendered
+                } else { ini::render(&bytes)? };
+                let content = store.retain_generated(&rendered, &preparing)?;
                 ensure!(
                     super::divergence::live(&game, &target, &preparing)? == before,
                     "Managed INI changed during preparation; prepare deployment again"
@@ -106,6 +138,21 @@ pub(super) async fn inis(
                     },
                 });
             }
+            for slot in 0..slots {
+                let target = Target::CustomIni { slot };
+                let physical = journal.physical(&target);
+                if physical != target {
+                    let mut output = outputs
+                        .iter()
+                        .find(|output| output.target == physical)
+                        .context("INI bridge has no prepared backing file")?
+                        .clone();
+                    output.target = target;
+                    outputs.push(output);
+                }
+            }
+            outputs.sort_by(|left, right| left.target.cmp(&right.target));
+            journal.capture_directories(&game)?;
             journal.validate(&game)?;
             preparing.check()?;
             Ok((PreparedIni { outputs, journal }, objects))
@@ -222,6 +269,16 @@ fn render(manifest: &Manifest) -> Result<Vec<u8>> {
         );
         groups.entry(filename.to_lowercase()).or_default().push(row);
     }
+    for filename in winners.keys().filter(|filename| {
+        [".esp", ".esm", ".esl"]
+            .iter()
+            .any(|extension| filename.ends_with(extension))
+    }) {
+        ensure!(
+            groups.contains_key(filename),
+            "A deployed plugin is missing its frozen load-order metadata"
+        );
+    }
     let mut entries = Vec::new();
     for (filename, candidates) in groups {
         let winner = winners.get(&filename);
@@ -268,3 +325,7 @@ fn render(manifest: &Manifest) -> Result<Vec<u8>> {
 #[cfg(test)]
 #[path = "../../../tests/generations/bethesda.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../../tests/generations/bethesda_workflow.rs"]
+mod workflow_tests;

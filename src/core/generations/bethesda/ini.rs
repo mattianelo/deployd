@@ -6,6 +6,81 @@ const SETTINGS: [(&[u8], &[u8]); 2] = [
 ];
 
 pub(super) fn render(bytes: &[u8]) -> Result<Vec<u8>> {
+    render_with(bytes, &SETTINGS)
+}
+
+pub(super) fn restore(current: &[u8], historical: &[u8]) -> Result<Vec<u8>> {
+    render(historical)?;
+    let decoded;
+    let historical =
+        if historical.starts_with(&[0xff, 0xfe]) || historical.starts_with(&[0xfe, 0xff]) {
+            let little = historical[0] == 0xff;
+            let units = historical[2..]
+                .chunks_exact(2)
+                .map(|pair| {
+                    if little {
+                        u16::from_le_bytes([pair[0], pair[1]])
+                    } else {
+                        u16::from_be_bytes([pair[0], pair[1]])
+                    }
+                })
+                .collect::<Vec<_>>();
+            decoded = String::from_utf16(&units)?.into_bytes();
+            decoded.as_slice()
+        } else {
+            historical
+                .strip_prefix(&[0xef, 0xbb, 0xbf])
+                .unwrap_or(historical)
+        };
+    let mut values: [Option<Vec<u8>>; 2] = [None, None];
+    let mut archive = false;
+    for line in historical.split(|byte| *byte == b'\n') {
+        let line = line.trim_ascii();
+        if let Some(section) = line.strip_prefix(b"[") {
+            let closing = section
+                .iter()
+                .position(|byte| *byte == b']')
+                .context("Incomplete retained INI section")?;
+            archive = section[..closing]
+                .trim_ascii()
+                .eq_ignore_ascii_case(b"Archive");
+        }
+        if !archive || line.starts_with(b";") || line.starts_with(b"#") {
+            continue;
+        }
+        if let Some(equals) = line.iter().position(|byte| *byte == b'=')
+            && let Some(index) = SETTINGS
+                .iter()
+                .position(|(key, _)| line[..equals].trim_ascii().eq_ignore_ascii_case(key))
+        {
+            let value = line[equals + 1..]
+                .split(|byte| matches!(byte, b';' | b'#'))
+                .next()
+                .unwrap_or_default()
+                .trim_ascii();
+            ensure!(
+                values[index]
+                    .as_deref()
+                    .is_none_or(|previous| previous == value),
+                "Retained managed INI values disagree; explicitly prepare a new generation"
+            );
+            values[index] = Some(value.to_vec());
+        }
+    }
+    let [first, second] = values;
+    let first = first.context(
+        "Retained archive-invalidation setting is missing; explicitly prepare a new generation",
+    )?;
+    let second = second.context(
+        "Retained resource-directory setting is missing; explicitly prepare a new generation",
+    )?;
+    render_with(
+        current,
+        &[(SETTINGS[0].0, &first), (SETTINGS[1].0, &second)],
+    )
+}
+
+fn render_with(bytes: &[u8], settings: &[(&[u8], &[u8]); 2]) -> Result<Vec<u8>> {
     if bytes.starts_with(&[0xff, 0xfe]) || bytes.starts_with(&[0xfe, 0xff]) {
         let little = bytes[0] == 0xff;
         ensure!(
@@ -24,7 +99,7 @@ pub(super) fn render(bytes: &[u8]) -> Result<Vec<u8>> {
             .collect::<Vec<_>>();
         let decoded =
             String::from_utf16(&units).context("Managed INI contains invalid UTF-16 text")?;
-        let merged = merge(decoded.as_bytes())?;
+        let merged = merge(decoded.as_bytes(), settings)?;
         let text =
             std::str::from_utf8(&merged).context("Managed INI encoding could not be preserved")?;
         let mut encoded = bytes[..2].to_vec();
@@ -39,13 +114,13 @@ pub(super) fn render(bytes: &[u8]) -> Result<Vec<u8>> {
     }
     if let Some(content) = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]) {
         let mut output = bytes[..3].to_vec();
-        output.extend(merge(content)?);
+        output.extend(merge(content, settings)?);
         return Ok(output);
     }
-    merge(bytes)
+    merge(bytes, settings)
 }
 
-fn merge(bytes: &[u8]) -> Result<Vec<u8>> {
+fn merge(bytes: &[u8], settings: &[(&[u8], &[u8]); 2]) -> Result<Vec<u8>> {
     ensure!(
         !bytes.contains(&0),
         "Managed INI contains unsupported binary text; it was preserved"
@@ -89,7 +164,7 @@ fn merge(bytes: &[u8]) -> Result<Vec<u8>> {
             && !trimmed.starts_with(b"#")
             && let Some(equals) = body.iter().position(|byte| *byte == b'=')
         {
-            SETTINGS
+            settings
                 .iter()
                 .position(|(key, _)| body[..equals].trim_ascii().eq_ignore_ascii_case(key))
                 .map(|index| (equals, index))
@@ -112,7 +187,7 @@ fn merge(bytes: &[u8]) -> Result<Vec<u8>> {
                 tail -= 1;
             }
             output.extend_from_slice(&value[..leading]);
-            output.extend_from_slice(SETTINGS[index].1);
+            output.extend_from_slice(settings[index].1);
             output.extend_from_slice(&value[tail..]);
             output.extend_from_slice(&line[body.len()..]);
         } else {
@@ -134,7 +209,7 @@ fn merge(bytes: &[u8]) -> Result<Vec<u8>> {
         missing.extend_from_slice(b"[Archive]");
         missing.extend_from_slice(newline);
     }
-    for (index, (key, value)) in SETTINGS.iter().enumerate() {
+    for (index, (key, value)) in settings.iter().enumerate() {
         if !seen[index] {
             missing.extend_from_slice(key);
             missing.push(b'=');
@@ -213,6 +288,25 @@ mod tests {
             &[0xff, 0xfe, 0x00, 0xd8],
         ] {
             assert!(render(bytes).is_err());
+        }
+    }
+    #[test]
+    fn restores_only_managed_values_into_current_configuration() -> Result<()> {
+        let historical = b"[Display]\nWidth=1280\n[Archive]\nbInvalidateOlderFiles=0\nsResourceDataDirsFinal=Historical\n";
+        let current = b"; current comment\r\n[Display]\r\nWidth=3840\r\n[Archive]\r\nbInvalidateOlderFiles=1 ; keep\r\nsResourceDataDirsFinal=Current\r\nOther=current\r\n";
+        assert_eq!(restore(current, historical)?, b"; current comment\r\n[Display]\r\nWidth=3840\r\n[Archive]\r\nbInvalidateOlderFiles=0 ; keep\r\nsResourceDataDirsFinal=Historical\r\nOther=current\r\n");
+        let mut utf16 = vec![0xff, 0xfe];
+        for unit in std::str::from_utf8(historical)?.encode_utf16() {
+            utf16.extend_from_slice(&unit.to_le_bytes());
+        }
+        assert_eq!(restore(current, &utf16)?, restore(current, historical)?);
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_incomplete_or_conflicting_retained_managed_settings() {
+        for historical in [b"[Archive]\nbInvalidateOlderFiles=1\n".as_slice(), b"[Archive]\nbInvalidateOlderFiles=1\nbInvalidateOlderFiles=0\nsResourceDataDirsFinal=\n"] {
+            assert!(restore(b"[Display]\nWidth=3840\n", historical).is_err());
         }
     }
 }

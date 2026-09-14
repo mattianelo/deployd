@@ -1256,3 +1256,87 @@ path = "tests/generations/bethesda.rs"
 name = "failed_or_cancelled_ini_preparation_keeps_live_bytes_and_can_retry"
 variant = "both"
 interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/bethesda_workflow.rs"
+name = "creates_missing_configuration_and_mod_directories_and_rolls_them_back"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/bethesda_workflow.rs"
+name = "directory_recovery_preserves_external_files_and_resumes_after_resolution"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/bethesda_workflow.rs"
+name = "ini_bridges_preserve_links_and_restore_their_backing_files"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/bethesda_workflow.rs"
+name = "changed_ini_bridges_block_application_and_recovery_without_following_them"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/bethesda_workflow.rs"
+name = "complete_bethesda_configuration_commits_and_purge_retains_history"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/bethesda_workflow.rs"
+name = "restored_bethesda_drafts_reuse_retained_configuration_after_library_deletion"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/bethesda_workflow.rs"
+name = "changed_historical_base_inputs_require_explicit_fresh_preparation"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/bethesda_workflow.rs"
+name = "redirected_or_newly_occupied_parent_directories_block_prepared_activation"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/bethesda_workflow.rs"
+name = "cancelled_file_application_rolls_back_created_directories"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/bethesda_workflow.rs"
+name = "layout_recovery_resolves_reauthorized_game_and_prefix_roots"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/bethesda_workflow.rs"
+name = "malformed_layout_journals_cannot_claim_roots_or_other_engine_anchors"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/bethesda_workflow.rs"
+name = "explicit_directory_outputs_and_missing_nested_parents_recover_together"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/bethesda_workflow.rs"
+name = "committed_ini_bridge_recovery_preserves_external_edits_and_retained_history"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/bethesda_workflow.rs"
+name = "bethesda_state_commit_failure_restores_files_links_and_new_directories"
+variant = "both"
+interface_state = "not_applicable"
