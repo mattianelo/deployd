@@ -135,6 +135,7 @@ pub(crate) mod baseline;
 pub(crate) mod binary;
 pub(crate) mod components;
 pub(crate) mod family;
+pub(crate) mod generations;
 pub(crate) mod journal;
 pub(crate) mod launcher;
 pub(crate) mod library;

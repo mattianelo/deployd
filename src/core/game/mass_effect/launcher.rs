@@ -206,7 +206,7 @@ fn retain(data: &Path, source: &Path, entry: &Entry, control: &Control) -> Resul
     files::sync(&cache)
 }
 
-fn verify_source(root: &Path, entry: &Entry, control: &Control) -> Result<()> {
+pub(super) fn verify_source(root: &Path, entry: &Entry, control: &Control) -> Result<()> {
     control.check()?;
     ensure!(
         super::package::scan(root)? == entry.sources,

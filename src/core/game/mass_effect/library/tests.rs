@@ -677,3 +677,27 @@ async fn binary_consent_survives_restart_and_requires_reapproval_for_changed_sou
     );
     Ok(())
 }
+
+// @variants: both
+#[test]
+fn restored_source_bindings_are_explicit_and_legacy_records_remain_readable() -> Result<()> {
+    let mut record: Record = serde_json::from_value(serde_json::json!({
+        "version":1,"target":"LE1","package":{"id":uuid::Uuid::new_v4().to_string(),
+        "source_sha256":"a".repeat(64),"archive_sha256":null,"manifest_version":"9.1",
+        "mod_version":"1","enabled":false,"options":[]}
+    }))?;
+    record.validate()?;
+    assert!(!record.writable_cache);
+    assert!(
+        serde_json::to_value(&record)?
+            .get("writable_cache")
+            .is_none()
+    );
+    record.bind_writable_cache();
+    record.validate()?;
+    assert_eq!(record.version, 3);
+    assert!(serde_json::from_str::<Record>(&serde_json::to_string(&record)?)?.writable_cache);
+    record.version = 2;
+    assert!(record.validate().is_err());
+    Ok(())
+}

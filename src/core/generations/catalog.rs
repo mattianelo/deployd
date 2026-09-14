@@ -44,8 +44,17 @@ impl History {
         cache: &Path,
         create: bool,
     ) -> Result<Self> {
+        Self::bind(tracker, game, cache, create, Lease::acquire().await?).await
+    }
+
+    pub(super) async fn bind(
+        tracker: &Tracker,
+        game: &str,
+        cache: &Path,
+        create: bool,
+        lease: Arc<Lease>,
+    ) -> Result<Self> {
         crate::utils::paths::generation_store_in(cache, game)?;
-        let lease = Lease::acquire().await?;
         let mut tx = durable(tracker).await?;
         let pending_version: Option<(i64, String)> =
             sqlx::query_as("SELECT document_version,kind FROM generation_journals WHERE game_id=?")
@@ -54,7 +63,8 @@ impl History {
                 .await?;
         ensure!(
             pending_version.is_none_or(|(version, kind)| version == 1
-                || (matches!(version, 2 | 3) && matches!(kind.as_str(), "deploy" | "purge"))),
+                || (matches!(version, 2..=4)
+                    && matches!(kind.as_str(), "deploy" | "purge" | "shared"))),
             "A newer recovery journal requires a compatible Deployd version; the pending operation was preserved"
         );
         let binding: Option<(String, String)> =
@@ -243,7 +253,11 @@ impl History {
             return Ok(id);
         }
         let (profile, name) = manifest.profile()?;
-        sqlx::query("INSERT INTO generations(game_id,id,created_at,originating_profile_id,originating_profile_name,manifest_version,manifest) VALUES (?,?,strftime('%Y-%m-%dT%H:%M:%fZ','now'),?,?,1,?)").bind(&self.game).bind(&id).bind(profile).bind(name).bind(document).execute(&mut **tx).await?;
+        sqlx::query("INSERT INTO generations(game_id,id,created_at,originating_profile_id,originating_profile_name,manifest_version,manifest) VALUES (?,?,strftime('%Y-%m-%dT%H:%M:%fZ','now'),?,?,?,?)").bind(&self.game).bind(&id).bind(profile).bind(name).bind(manifest.version).bind(document).execute(&mut **tx).await?;
+        if let Some((family, revision)) = &manifest.shared_revision {
+            sqlx::query("INSERT INTO generation_shared_dependencies(game_id,generation_id,family_id,revision_id) VALUES (?,?,?,?)")
+                .bind(&self.game).bind(&id).bind(family).bind(revision).execute(&mut **tx).await?;
+        }
         for (hash, _) in manifest.objects() {
             sqlx::query("INSERT INTO generation_object_references(game_id,generation_id,sha256) VALUES (?,?,?)").bind(&self.game).bind(&id).bind(hash).execute(&mut **tx).await?;
         }
@@ -269,12 +283,14 @@ impl History {
         .await
         .context("Deployment generation is unavailable")?;
         ensure!(
-            version == 1,
+            matches!(version, 1..=2),
             "This generation requires a compatible Deployd version"
         );
         let manifest: super::manifest::Manifest = serde_json::from_str(&document)?;
         ensure!(
-            manifest.game_id == self.game && manifest.id()? == id,
+            manifest.game_id == self.game
+                && i64::from(manifest.version) == version
+                && manifest.id()? == id,
             "Historical manifest is damaged"
         );
         let objects = manifest.objects();
@@ -287,6 +303,15 @@ impl History {
             references == objects,
             "Historical content references are incomplete; restoration is unavailable"
         );
+        let dependency: Option<(String,String)> = sqlx::query_as("SELECT family_id,revision_id FROM generation_shared_dependencies WHERE game_id=? AND generation_id=?")
+            .bind(&self.game).bind(id).fetch_optional(&self.tracker.pool).await?;
+        ensure!(
+            dependency == manifest.shared_revision,
+            "Historical shared references are incomplete"
+        );
+        if let Some((family, revision)) = &dependency {
+            super::shared::load(self, family, revision, control.clone()).await?;
+        }
         let store = self.store.clone();
         self.lease
             .blocking(move || -> Result<()> {

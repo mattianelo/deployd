@@ -74,6 +74,10 @@ impl Link {
 pub(super) fn root<'a>(game: &'a Game, target: &Target) -> Result<&'a Path> {
     target.validate(&game.engine)?;
     match target {
+        Target::MeleLauncher { .. } => game
+            .path
+            .parent()
+            .context("Shared launcher root is unavailable"),
         Target::CustomIni { .. } | Target::PluginControl { .. } | Target::Eclipse { .. } => game
             .wine_prefix
             .as_deref()

@@ -121,7 +121,11 @@ pub(super) fn metadata(manifest: &Manifest) -> Result<()> {
                 packages.insert(record.package.id),
                 "Duplicate historical MELE package"
             );
-            roots.insert(format!("mele-sources/{}", record.package.source_sha256));
+            roots.insert(if manifest.version >= 2 {
+                format!("cache/{}", text(row, "mod_id")?)
+            } else {
+                format!("mele-sources/{}", record.package.source_sha256)
+            });
         }
         ensure!(
             packages == mods,
@@ -181,7 +185,7 @@ pub(super) fn metadata(manifest: &Manifest) -> Result<()> {
             source.content.is_none() == original.ends_with('/'),
             "Historical file and directory routing disagree"
         );
-        if manifest.engine != GameEngine::MassEffect {
+        if manifest.engine != GameEngine::MassEffect || manifest.version >= 2 {
             let root = format!("cache/{mod_id}");
             ensure!(
                 logical == root || logical.starts_with(&format!("{root}/")),

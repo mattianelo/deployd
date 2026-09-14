@@ -281,6 +281,26 @@ pub(in crate::core::game::mass_effect) async fn inspect(
     cancelled: Arc<AtomicBool>,
     progress: Progress,
 ) -> Result<ValidatedRecipe> {
+    inspect_sources(
+        tracker,
+        destination,
+        recipe,
+        (data.clone(), data),
+        cancelled,
+        progress,
+    )
+    .await
+}
+
+pub(in crate::core::game::mass_effect) async fn inspect_sources(
+    tracker: Tracker,
+    destination: Destination,
+    recipe: Recipe,
+    roots: (PathBuf, PathBuf),
+    cancelled: Arc<AtomicBool>,
+    progress: Progress,
+) -> Result<ValidatedRecipe> {
+    let (data, sources) = roots;
     let abandoned = Arc::new(AtomicBool::new(false));
     let _abandoned = Abandoned(abandoned.clone());
     let control = Control::new(cancelled, abandoned);
@@ -336,7 +356,7 @@ pub(in crate::core::game::mass_effect) async fn inspect(
                 .count()
                 .max(1),
         };
-        let mut plan = validate(recipe, baseline, data, &control, Some(&mut session))?;
+        let mut plan = validate(recipe, baseline, sources, &control, Some(&mut session))?;
         let mut prepared = session
             .prepared
             .take()

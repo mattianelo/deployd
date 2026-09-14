@@ -73,7 +73,7 @@ impl Tracker {
 
     pub(crate) async fn ensure_no_mele_journal(&self, game_id: &str) -> Result<()> {
         let pending: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM mele_journals WHERE game_id = ? OR json_extract(document, '$.family') IS NOT NULL)")
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM mele_journals WHERE game_id = ? OR json_extract(document, '$.family') IS NOT NULL) OR EXISTS(SELECT 1 FROM generation_journals WHERE json_extract(document, '$.mele') IS NOT NULL OR json_extract(document, '$.shared') IS NOT NULL)")
                 .bind(game_id)
                 .fetch_one(&self.pool)
                 .await?;
@@ -112,6 +112,11 @@ impl Tracker {
 
     pub(crate) async fn begin_mele_journal(&self, journal: &Journal) -> Result<()> {
         let mut tx = self.mele_durable_transaction().await?;
+        let generations: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM generation_journals WHERE json_extract(document, '$.mele') IS NOT NULL OR json_extract(document, '$.shared') IS NOT NULL)").fetch_one(&mut *tx).await?;
+        ensure!(
+            !generations,
+            "Finish generation activation recovery before MELE deployment"
+        );
         let pending_family: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM mele_journals WHERE json_extract(document, '$.family') IS NOT NULL)")
             .fetch_one(&mut *tx).await?;
         ensure!(

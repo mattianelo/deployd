@@ -18,6 +18,7 @@ use super::operation::Lease;
 use super::package::{SourceFile, validate_payload_name};
 
 pub(super) mod files;
+mod generation;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -143,7 +144,7 @@ pub(super) fn destination(path: &str) -> Result<()> {
     Ok(())
 }
 
-fn state_files(
+pub(super) fn state_files(
     state: &State,
     baseline: &Baseline,
     target: Target,
@@ -605,18 +606,17 @@ async fn publish_worker(
     publish_with_lease(tracker, game, deployment, data, control, progress, lease).await
 }
 
-pub(super) async fn publish_with_lease(
+pub(super) async fn prepare_with_lease(
     tracker: Tracker,
     game: Game,
     deployment: Deployment,
     data: PathBuf,
     control: Control,
-    progress: Progress,
     lease: Arc<Lease>,
-) -> Result<State> {
+    shared: bool,
+) -> Result<Journal> {
     target(&game)?;
     tracker.ensure_location_ready(&game.id).await?;
-    recover_locked(&tracker, &game, &data).await?;
     tracker.ensure_no_mele_journal(&game.id).await?;
     control.check()?;
     let baseline = tracker
@@ -652,21 +652,30 @@ pub(super) async fn publish_with_lease(
         files: deployment.files,
         recipe: deployment.recipe,
     };
-    let family = super::family::inspect(
-        &tracker,
-        &game,
-        &desired,
-        deployment.repair_components,
-        control.clone(),
-    )
-    .await?;
-    ensure!(
-        deployment
-            .family
-            .as_ref()
-            .is_none_or(|expected| family.as_ref() == Some(expected)),
-        "Shared launcher files changed after preflight; inspect deployment again"
-    );
+    let family = if shared {
+        let family = super::family::inspect(
+            &tracker,
+            &game,
+            &desired,
+            deployment.repair_components,
+            control.clone(),
+        )
+        .await?;
+        ensure!(
+            deployment
+                .family
+                .as_ref()
+                .is_none_or(|expected| family.as_ref() == Some(expected)),
+            "Shared launcher files changed after preflight; inspect deployment again"
+        );
+        family
+    } else {
+        ensure!(
+            deployment.family.is_none(),
+            "Shared launcher changes require separate application"
+        );
+        None
+    };
     if let Some(plan) = &family {
         plan.preserve(&tracker, &data, control.clone()).await?;
     }
@@ -764,11 +773,6 @@ pub(super) async fn publish_with_lease(
         directories: Vec::new(),
     };
     let root = storage(&data, &game.id, &journal.id);
-    let launcher_root = family.as_ref().map(|plan| plan.root.clone());
-    let launcher_stage = journal
-        .family
-        .as_ref()
-        .map(|change| change.storage(&data, &journal.id));
     let staged = {
         let data = data.clone();
         let mut journal = journal.clone();
@@ -816,6 +820,39 @@ pub(super) async fn publish_with_lease(
         discard(&root, &journal, &data).await?;
         return Err(error);
     }
+    Ok(journal)
+}
+
+pub(super) async fn publish_with_lease(
+    tracker: Tracker,
+    game: Game,
+    deployment: Deployment,
+    data: PathBuf,
+    control: Control,
+    progress: Progress,
+    lease: Arc<Lease>,
+) -> Result<State> {
+    recover_locked(&tracker, &game, &data).await?;
+    let journal = prepare_with_lease(
+        tracker.clone(),
+        game.clone(),
+        deployment,
+        data.clone(),
+        control.clone(),
+        lease.clone(),
+        true,
+    )
+    .await?;
+    let root = storage(&data, &game.id, &journal.id);
+    let launcher_root = if let Some(change) = &journal.family {
+        Some(super::family::root(&tracker, &game, change.location_id).await?)
+    } else {
+        None
+    };
+    let launcher_stage = journal
+        .family
+        .as_ref()
+        .map(|change| change.storage(&data, &journal.id));
     if let Err(error) = tracker.begin_mele_journal(&journal).await {
         if let Some((pending, _)) = tracker.mele_journal(&game.id).await? {
             ensure!(

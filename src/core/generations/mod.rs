@@ -4,6 +4,7 @@ pub(crate) mod content;
 mod coordinator;
 mod divergence;
 mod manifest;
+mod mele;
 mod operation;
 mod ownership;
 mod records;
@@ -16,6 +17,7 @@ mod prepared;
 mod recovery;
 mod restore;
 mod saves;
+mod shared;
 mod state;
 #[cfg(test)]
 mod tests;
@@ -27,3 +29,7 @@ mod state_tests;
 #[cfg(test)]
 #[path = "../../../tests/generations/generated.rs"]
 mod generated_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/generations/mele.rs"]
+mod mele_tests;

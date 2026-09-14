@@ -66,19 +66,41 @@ async fn validate(
         "Activation belongs to another game"
     );
     ensure!(
-        game.engine != GameEngine::MassEffect,
+        game.engine != GameEngine::MassEffect || journal.mele.is_some(),
         "MELE activation requires its coordinated engine participant"
     );
     history.tracker.ensure_location_ready(&game.id).await?;
+    ensure!(
+        journal.shared.is_none(),
+        "Shared changes require their separate Apply action"
+    );
     journal.validate_request(game, previous, deployment, saves)?;
+    if let Some(snapshot) = deployment.and_then(|deployment| deployment.manifest.mele.clone()) {
+        let tracker = history.tracker.clone();
+        let game = game.clone();
+        let current = journal.mele.as_ref().and_then(|mele| mele.previous.clone());
+        history
+            .lease
+            .participant(async move {
+                snapshot
+                    .verify_inputs(&tracker, &game, current.as_ref())
+                    .await
+            })
+            .await
+            .context("MELE base verification participant stopped")??;
+    }
     let mut tx = durable(&history.tracker).await?;
     let pending: bool =
         sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM generation_journals WHERE game_id=?)")
             .bind(&game.id)
             .fetch_one(&mut *tx)
             .await?;
+    let shared_pending: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM generation_journals WHERE kind='shared')")
+            .fetch_one(&mut *tx)
+            .await?;
     ensure!(
-        !pending,
+        !(pending || game.engine == GameEngine::MassEffect && shared_pending),
         "Finish the pending operation before activating another configuration"
     );
     ensure!(
@@ -86,10 +108,6 @@ async fn validate(
         "Deployed state or live save ownership changed after preparation"
     );
     if let Some(deployment) = deployment {
-        ensure!(
-            deployment.manifest.shared_revision.is_none(),
-            "Shared launcher history requires its coordinated engine participant"
-        );
         state::validate_deployment(&mut tx, history, game, deployment, saves).await?;
     }
     tx.rollback().await?;
@@ -121,7 +139,7 @@ async fn validate(
     Ok(())
 }
 
-async fn finish(
+pub(super) async fn finish(
     history: &History,
     game: &Game,
     journal: &Journal,

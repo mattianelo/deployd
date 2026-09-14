@@ -276,3 +276,44 @@ async fn apply_rechecks_condition_inputs_outside_the_deployed_files() -> Result<
     );
     Ok(())
 }
+
+// @variants: both
+#[tokio::test]
+async fn final_preparation_keeps_live_files_and_deployment_state_unchanged() -> Result<()> {
+    for target in [Target::Le1, Target::Le2, Target::Le3] {
+        let fixture = Fixture::new(target).await?;
+        let (_, package) = fixture.retain(b"prepared", "").await?;
+        let plan = fixture
+            .prepare(fixture.recipe(vec![package]), None, None)
+            .await?;
+        let built = super::super::super::generations::prepare(
+            fixture.tracker.clone(),
+            fixture.destination(None, None),
+            plan,
+            fixture.data.clone(),
+            crate::core::generations::content::Control::default(),
+        )
+        .await?;
+        assert_eq!(fs::read(built.source(ENGINE))?, b"prepared");
+        assert_eq!(fs::read(fixture.game.path.join(ENGINE))?, b"original");
+        assert!(!fixture.game.path.join(DLC).exists());
+        assert!(
+            fixture
+                .tracker
+                .mele_deployment(&fixture.game.id)
+                .await?
+                .is_none()
+        );
+        assert!(
+            fixture
+                .tracker
+                .mele_journal(&fixture.game.id)
+                .await?
+                .is_none()
+        );
+        assert!(super::super::super::mutation_lock().try_lock().is_err());
+        built.discard().await?;
+        assert!(super::super::super::mutation_lock().try_lock().is_ok());
+    }
+    Ok(())
+}

@@ -315,6 +315,30 @@ fn logical_targets_preserve_engine_anchors_and_reject_other_engines() -> Result<
         );
         assert!(target.resolve(&game(GameEngine::REDEngine)).is_err());
     }
+    let launcher = Target::MeleLauncher {
+        path: "Content/Intro.bik".into(),
+    };
+    let mut mele = game(GameEngine::MassEffect);
+    mele.path = "grant/Game/ME1".into();
+    assert_eq!(
+        launcher.resolve(&mele)?,
+        Path::new("grant/Game/Launcher/Content/Intro.bik")
+    );
+    for engine in [
+        GameEngine::Bethesda,
+        GameEngine::Aurora,
+        GameEngine::Eclipse,
+        GameEngine::REDEngine,
+    ] {
+        assert!(launcher.resolve(&game(engine)).is_err());
+    }
+    for path in ["../system/escape", "../launcher/escape", "~docs~/file.ini"] {
+        assert!(
+            Target::MeleLauncher { path: path.into() }
+                .resolve(&mele)
+                .is_err()
+        );
+    }
     assert!(Target::file(&GameEngine::Bethesda, "../../escape").is_err());
     Ok(())
 }
@@ -1066,7 +1090,7 @@ async fn unknown_recovery_versions_preserve_the_bound_store_and_journal() -> Res
     let temp = tempfile::tempdir()?;
     let tracker = Tracker::open("sqlite::memory:").await?.tracker;
     drop(History::open(&tracker, "game", temp.path(), true).await?);
-    sqlx::query("INSERT INTO generation_journals(id,game_id,kind,document_version,document) VALUES ('future','game','deploy',4,'{}')").execute(&tracker.pool).await?;
+    sqlx::query("INSERT INTO generation_journals(id,game_id,kind,document_version,document) VALUES ('future','game','deploy',5,'{}')").execute(&tracker.pool).await?;
     assert!(
         History::open(&tracker, "game", temp.path(), true)
             .await

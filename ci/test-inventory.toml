@@ -1340,3 +1340,141 @@ path = "tests/generations/bethesda_workflow.rs"
 name = "bethesda_state_commit_failure_restores_files_links_and_new_directories"
 variant = "both"
 interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/preparation.rs"
+name = "final_preparation_keeps_live_files_and_deployment_state_unchanged"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/mele.rs"
+name = "mele_activation_commits_engine_state_with_history_and_recovers_external_edits"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/mele.rs"
+name = "mele_history_restores_complete_sources_and_reuses_outputs_without_a_helper"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/generations.rs"
+name = "historical_outputs_require_the_recorded_vanilla_inputs"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/generations.rs"
+name = "historical_mele_outputs_reject_foreign_anchors_saves_and_unapproved_binaries"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/family/generations.rs"
+name = "historical_launcher_restoration_preserves_current_game_ownership"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/family/generations.rs"
+name = "shared_restore_rejects_foreign_owners_and_changed_original_protection"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/library/tests.rs"
+name = "removal_only_mods_retain_sources_and_preview_their_effect"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/library/tests.rs"
+name = "library_import_replacement_and_profiles_retain_package_identity"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/library/tests.rs"
+name = "library_registration_failure_and_changed_staging_publish_no_mod"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/library/tests.rs"
+name = "application_import_preview_deploy_disable_and_purge_use_the_same_recipe"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/library/tests.rs"
+name = "library_removal_is_atomic_and_preserves_sources_and_game_files"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/library/tests.rs"
+name = "profile_clone_preserves_mele_language_without_claiming_a_deployment"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/library/tests.rs"
+name = "preview_checks_resolved_texture_runtime_ownership"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/library/tests.rs"
+name = "binary_consent_survives_restart_and_requires_reapproval_for_changed_sources"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/library/tests.rs"
+name = "restored_source_bindings_are_explicit_and_legacy_records_remain_readable"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/shared.rs"
+name = "shared_history_retains_every_game_and_restores_without_original_sources"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/shared.rs"
+name = "shared_recovery_preserves_external_edits_on_both_sides_of_commit"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/shared.rs"
+name = "shared_payload_activation_restores_files_and_recovers_failed_commit"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/shared.rs"
+name = "game_generations_protect_shared_dependencies_and_block_mismatched_restoration"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/shared.rs"
+name = "shared_recovery_uses_reauthorized_bindings_and_rejects_unrelated_roots"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/shared.rs"
+name = "shared_apply_blocks_missing_affected_caches_and_corrupt_retained_objects"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/family/generations.rs"
+name = "abandoned_shared_preparation_cleans_staging_before_releasing_its_lease"
+variant = "both"
+interface_state = "not_applicable"

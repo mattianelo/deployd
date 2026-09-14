@@ -16,6 +16,8 @@ use super::components::{self, Component};
 use super::journal::{Identity, Operation, State, files};
 use super::operation::Control;
 
+pub(crate) mod generations;
+
 const BINK: &str = "bink2w64.dll";
 const ORIGINAL: &str = "bink2w64_original.dll";
 const EXE: &str = "MassEffectLauncher.exe";

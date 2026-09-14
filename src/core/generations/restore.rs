@@ -105,8 +105,9 @@ pub(super) async fn restore(
         .load_with_control(generation, control.clone())
         .await?;
     ensure!(
-        manifest.engine != GameEngine::MassEffect,
-        "MELE restoration is unavailable until retained-output activation is connected"
+        manifest.engine != GameEngine::MassEffect
+            || (manifest.version >= 2 && manifest.mele.is_some()),
+        "This MELE record lacks a complete retained-output snapshot"
     );
     let intent = Intent::create(&manifest, name)?;
     let mut tx = durable(&history.tracker).await?;
@@ -268,6 +269,35 @@ async fn restore_inner(
                         ),
                     );
                 }
+                Table::MelePackages => {
+                    let mut record: crate::core::game::mass_effect::library::Record =
+                        serde_json::from_str(records::text(original, "document")?)?;
+                    record.bind_writable_cache();
+                    record.package.id = intent
+                        .mods
+                        .get(&record.package.id)
+                        .context("Historical MELE package identity is missing")?
+                        .clone();
+                    row.insert(
+                        "document".into(),
+                        Value::String(serde_json::to_string(&record)?),
+                    );
+                }
+                Table::MeleRecipes => {
+                    let mut recipe: crate::core::game::mass_effect::recipe::Recipe =
+                        serde_json::from_str(records::text(original, "document")?)?;
+                    for package in &mut recipe.packages {
+                        package.id = intent
+                            .mods
+                            .get(&package.id)
+                            .context("Historical MELE recipe identity is missing")?
+                            .clone();
+                    }
+                    row.insert(
+                        "document".into(),
+                        Value::String(serde_json::to_string(&recipe)?),
+                    );
+                }
                 Table::Files => {
                     let (id, suffix) = intent.suffix(records::text(original, "cache_path")?)?;
                     row.insert(
@@ -287,6 +317,17 @@ async fn restore_inner(
             }
             records::insert(&mut tx, rows.table, &row).await?;
         }
+    }
+    if let Some(snapshot) = &manifest.mele {
+        let mut recipe = snapshot.recipe.clone();
+        for package in &mut recipe.packages {
+            package.id = intent
+                .mods
+                .get(&package.id)
+                .context("Historical MELE recipe identity is missing")?
+                .clone();
+        }
+        sqlx::query("INSERT INTO mele_recipes(game_id,profile_id,document) VALUES (?,?,?) ON CONFLICT(game_id,profile_id) DO UPDATE SET document=excluded.document").bind(&history.game).bind(&intent.profile).bind(serde_json::to_string(&recipe)?).execute(&mut *tx).await?;
     }
     let mut restored = manifest.clone();
     restored.records = records::capture(&mut tx, &history.game, &intent.profile).await?;

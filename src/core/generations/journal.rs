@@ -14,6 +14,8 @@ use super::content::{self, Control, Identity};
 use super::target::Target;
 
 mod layout;
+mod mele;
+mod shared;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -59,6 +61,12 @@ pub(super) struct Journal {
     directories: Vec<layout::Directory>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     links: Vec<layout::Link>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) mele: Option<crate::core::game::mass_effect::journal::Journal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) shared: Option<super::shared::Intent>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) dependency: Option<crate::core::game::mass_effect::family::generations::Revision>,
 }
 
 pub(super) struct Applied {
@@ -112,6 +120,17 @@ impl Applied {
             },
             "Activation operation differs from its durable intent"
         );
+        journal.verify_mele(history, game, true).await?;
+        journal.verify_dependency(history, game).await?;
+        mele::verify_inputs(
+            history,
+            game,
+            deployment,
+            journal.mele.as_ref().map(|mele| &mele.desired),
+        )
+        .await?;
+        let mele = journal.mele.clone();
+        let dependency = journal.dependency.clone();
         let saves_to_verify = journal.saves.clone();
         let verified_game = game.clone();
         let base_inputs = deployment
@@ -142,6 +161,14 @@ impl Applied {
             }
             Ok(())
         }).await.context("Final activation verification worker stopped")??;
+        if let Some(mele) = mele {
+            mele.generation_commit(&mut tx).await?;
+        }
+        if deployment.is_some()
+            && let Some(dependency) = dependency
+        {
+            super::shared::commit_dependency(&mut tx, &game.id, &dependency).await?;
+        }
         super::state::publish(&mut tx, history, game, &self.id, deployment, saves).await?;
         if let Some(saves) = saves_to_verify {
             verify_saves(history, game, &saves).await?;
@@ -218,6 +245,18 @@ impl Journal {
         saves: &crate::core::save_manager::SaveSetId,
     ) -> Result<()> {
         self.validate(game)?;
+        self.validate_mele_request(deployment)?;
+        ensure!(
+            self.shared.is_none(),
+            "Game activation cannot publish shared changes"
+        );
+        if let Some(deployment) = deployment {
+            ensure!(
+                super::shared::identity(self.dependency.as_ref())?
+                    == deployment.manifest.shared_revision,
+                "Game activation differs from its recorded shared dependency"
+            );
+        }
         ensure!(
             saves.game_id() == game.id,
             "Save ownership belongs to another game"
@@ -275,6 +314,9 @@ impl Journal {
         inputs: Vec<super::manifest::Output>,
         control: Control,
     ) -> Result<()> {
+        self.verify_mele(history, game, false).await?;
+        self.verify_dependency(history, game).await?;
+        self.verify_shared(history, game, false).await?;
         let journal = self.clone();
         let game = game.clone();
         history.lease.blocking(move || -> Result<()> {
@@ -336,6 +378,9 @@ impl Journal {
                     saves: None,
                     directories: Vec::new(),
                     links: Vec::new(),
+                    mele: None,
+                    shared: None,
+                    dependency: None,
                 };
                 if desired
                     .iter()
@@ -455,7 +500,7 @@ impl Journal {
 
     pub(super) fn validate(&self, game: &Game) -> Result<()> {
         ensure!(
-            matches!(self.version, 1..=3)
+            matches!(self.version, 1..=4)
                 && self.game == game.id
                 && uuid::Uuid::parse_str(&self.id).is_ok(),
             "Unsupported or invalid activation journal"
@@ -468,6 +513,15 @@ impl Journal {
             saves.validate(&self.id, game)?;
         }
         self.validate_layout(game)?;
+        self.validate_mele(game)?;
+        self.validate_shared(game)?;
+        if let Some(dependency) = &self.dependency {
+            ensure!(
+                self.version >= 4 && self.mele.is_some() && self.shared.is_none(),
+                "Unsupported shared dependency participant"
+            );
+            dependency.validate()?;
+        }
         let mut seen = std::collections::BTreeSet::new();
         for change in &self.changes {
             let destination = change.target.resolve(game)?;
@@ -494,8 +548,20 @@ impl Journal {
             "Journal and history store target different games"
         );
         ensure!(
-            kind == "deploy" || kind == "purge",
+            matches!(kind, "deploy" | "purge" | "shared"),
             "Unsupported activation operation"
+        );
+        ensure!(
+            (kind == "shared") == self.shared.is_some(),
+            "Shared Apply requires its separate journal kind"
+        );
+        ensure!(
+            self.shared.is_some()
+                || !self
+                    .changes
+                    .iter()
+                    .any(|change| matches!(change.target, Target::MeleLauncher { .. })),
+            "Launcher targets require a separate shared participant"
         );
         let mut objects = protected;
         for change in &self.changes {
@@ -503,6 +569,11 @@ impl Journal {
                 if let Node::File { identity, .. } = node {
                     objects.insert(identity.sha256.clone(), identity.size);
                 }
+            }
+        }
+        if let Some(dependency) = &self.dependency {
+            for identity in dependency.payloads()?.values() {
+                objects.insert(identity.sha256.clone(), identity.size);
             }
         }
         let store = history.store.clone();
@@ -523,9 +594,18 @@ impl Journal {
             kind != "purge" || self.saves.is_none(),
             "Purge cannot switch live saves"
         );
+        if let Some(mele) = &self.mele {
+            mele.generation_check(&mut tx, false).await?;
+        }
+        if let Some(shared) = &self.shared {
+            shared.check(&mut tx, game, false).await?;
+        }
         sqlx::query("INSERT INTO generation_journals(id,game_id,kind,document_version,document) VALUES (?,?,?,?,?)").bind(&self.id).bind(&self.game).bind(kind).bind(self.version).bind(serde_json::to_string(self)?).execute(&mut *tx).await.context("Another operation needs recovery before activation")?;
         for (hash, _) in objects {
             sqlx::query("INSERT INTO generation_pending_objects(operation_id,game_id,sha256) VALUES (?,?,?)").bind(&self.id).bind(&self.game).bind(hash).execute(&mut *tx).await?;
+        }
+        if let Some(shared) = &self.shared {
+            shared.protect(&mut tx, &self.id).await?;
         }
         tx.commit()
             .await
@@ -540,6 +620,9 @@ impl Journal {
     ) -> Result<Applied> {
         self.validate(game)?;
         self.check_record(history, false).await?;
+        self.verify_mele(history, game, false).await?;
+        self.verify_dependency(history, game).await?;
+        self.verify_shared(history, game, false).await?;
         if let Some(saves) = &self.saves {
             let saves = saves.clone();
             let game = game.clone();
@@ -636,6 +719,21 @@ impl Journal {
     ) -> Result<()> {
         self.validate(game)?;
         self.check_record(history, committed).await?;
+        if let Some(shared) = &self.shared {
+            shared
+                .change
+                .generation_root(&history.tracker, game)
+                .await?;
+            let mut tx = durable(&history.tracker).await?;
+            shared.check(&mut tx, game, committed).await?;
+            tx.rollback().await?;
+        }
+        if let Some(mele) = &self.mele {
+            mele.generation_validate(&history.tracker, game).await?;
+            let mut tx = durable(&history.tracker).await?;
+            mele.generation_check(&mut tx, committed).await?;
+            tx.rollback().await?;
+        }
         if let Some(saves) = &self.saves {
             let saves = saves.clone();
             let game = game.clone();
@@ -650,8 +748,9 @@ impl Journal {
         }
         let journal = self.clone();
         let store = history.store.clone();
-        let game = game.clone();
+        let recovery_game = game.clone();
         history.lease.blocking(move || -> Result<()> {
+            let game = recovery_game;
             let control = Control::default();
             journal.verify_links(&game)?;
             for change in journal.operations(&game)?.into_iter().rev() {
@@ -669,6 +768,8 @@ impl Journal {
             }
             Ok(())
         }).await.context("Activation recovery worker stopped")??;
+        self.verify_mele(history, game, committed).await?;
+        self.verify_shared(history, game, committed).await?;
         let mut tx = durable(&history.tracker).await?;
         sqlx::query("DELETE FROM generation_journals WHERE id=? AND game_id=? AND committed=?")
             .bind(&self.id)

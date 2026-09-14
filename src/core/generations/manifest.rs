@@ -43,12 +43,14 @@ pub(super) struct Manifest {
     pub(super) outputs: Vec<Output>,
     pub(super) base_inputs: Vec<Output>,
     pub(super) shared_revision: Option<(String, String)>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) mele: Option<crate::core::game::mass_effect::generations::Snapshot>,
 }
 
 impl Manifest {
     pub(super) fn validate(&self) -> Result<()> {
         ensure!(
-            self.version == 1 && self.records.len() == Table::ALL.len(),
+            matches!(self.version, 1..=2) && self.records.len() == Table::ALL.len(),
             "Unsupported or incomplete deployment generation"
         );
         for (rows, table) in self.records.iter().zip(Table::ALL) {
@@ -64,6 +66,48 @@ impl Manifest {
             "Historical profile belongs to another game"
         );
         crate::utils::paths::generation_store_in(Path::new("."), &self.game_id)?;
+        if let Some(snapshot) = &self.mele {
+            ensure!(
+                self.version >= 2 && self.engine == GameEngine::MassEffect,
+                "MELE snapshot requires its versioned engine manifest"
+            );
+            snapshot.validate(&self.game_id)?;
+            ensure!(
+                self.base_inputs.is_empty(),
+                "MELE vanilla inputs must use its engine snapshot"
+            );
+            ensure!(
+                self.outputs.len() == snapshot.files.len(),
+                "Historical MELE output inventory is incomplete"
+            );
+            for file in &snapshot.files {
+                ensure!(
+                    self.outputs.iter().any(|output| output.target
+                        == (Target::MassEffect {
+                            path: file.relative.clone()
+                        })
+                        && output
+                            .content
+                            .as_ref()
+                            .is_some_and(|identity| identity.sha256 == file.sha256
+                                && identity.size == file.size)
+                        && output.mod_id.is_none()),
+                    "Historical MELE output differs from its recipe result"
+                );
+            }
+        }
+        if let Some((family, revision)) = &self.shared_revision {
+            ensure!(
+                self.engine == GameEngine::MassEffect
+                    && family.parse::<i64>().is_ok_and(|id| id > 0),
+                "Invalid shared launcher dependency"
+            );
+            Identity {
+                size: 0,
+                sha256: revision.clone(),
+            }
+            .validate()?;
+        }
         let mut objects = BTreeMap::new();
         let mut paths = BTreeMap::new();
         for file in &self.sources {
@@ -184,7 +228,11 @@ pub(super) async fn capture(
         .lease
         .blocking(move || -> Result<Manifest> {
             let mut manifest = Manifest {
-                version: 1,
+                version: if game.engine == GameEngine::MassEffect {
+                    2
+                } else {
+                    1
+                },
                 game_id: game.id.clone(),
                 engine: game.engine.clone(),
                 records,
@@ -192,6 +240,7 @@ pub(super) async fn capture(
                 outputs: Vec::new(),
                 base_inputs: Vec::new(),
                 shared_revision: None,
+                mele: None,
             };
             let mut roots = BTreeMap::new();
             for rows in &manifest.records {
@@ -214,9 +263,17 @@ pub(super) async fn capture(
                             sha256: hash.clone(),
                         }
                         .validate()?;
+                        let id = records::text(row, "mod_id")?;
+                        relative(id)?;
+                        ensure!(!id.contains('/'), "Invalid MELE mod identity");
+                        let writable = cache.join(id);
                         roots.insert(
-                            format!("mele-sources/{hash}"),
-                            data.join("mele-sources").join(hash),
+                            format!("cache/{id}"),
+                            if record.writable_cache {
+                                writable
+                            } else {
+                                data.join("mele-sources").join(hash)
+                            },
                         );
                     }
                 }
@@ -288,9 +345,14 @@ pub(super) async fn capture(
                 for row in &mut rows.rows {
                     Target::file(&game.engine, records::text(row, "game_rel_original")?)?;
                     let source = Path::new(records::text(row, "cache_path")?);
+                    let mod_root = format!("cache/{}", records::text(row, "mod_id")?);
                     let logical = sources
                         .iter()
-                        .find(|(_, (path, _))| path.as_path() == source)
+                        .find(|(logical, (path, _))| {
+                            path.as_path() == source
+                                && (logical.as_str() == mod_root
+                                    || logical.starts_with(&format!("{mod_root}/")))
+                        })
                         .map(|(logical, _)| logical.clone())
                         .with_context(|| {
                             format!(

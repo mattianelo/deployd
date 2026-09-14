@@ -25,7 +25,7 @@ mod merges;
 mod pipeline;
 mod preparation;
 mod squad_ui;
-pub(super) use preparation::inspect as inspect_prepared_in;
+pub(super) use preparation::{inspect as inspect_prepared_in, inspect_sources};
 pub(crate) mod sources;
 
 use sources::StoredPackage;
@@ -468,11 +468,60 @@ pub(crate) async fn deploy(
 pub(super) async fn deploy_in(
     tracker: Tracker,
     destination: Destination,
-    mut plan: ValidatedRecipe,
+    plan: ValidatedRecipe,
     data: PathBuf,
     cancelled: Arc<AtomicBool>,
     progress: Progress,
 ) -> Result<journal::State> {
+    let abandoned = Arc::new(AtomicBool::new(false));
+    let _abandoned = Abandoned(abandoned.clone());
+    let control = Control::new(cancelled, abandoned);
+    tokio::spawn(async move {
+        let game = destination.game.clone();
+        let built = prepare_with_control(
+            tracker.clone(),
+            destination,
+            plan,
+            data.clone(),
+            control.clone(),
+            progress.clone(),
+            true,
+        )
+        .await?;
+        let result = journal::publish_with_lease(
+            tracker,
+            game,
+            built.deployment,
+            data,
+            control,
+            built.progress,
+            built.lease,
+        )
+        .await;
+        drop(built.directory);
+        result
+    })
+    .await
+    .context("MELE recipe deployment worker failed")?
+}
+
+pub(super) struct Built {
+    pub(super) deployment: journal::Deployment,
+    pub(super) directory: TempDir,
+    pub(super) lease: Arc<Lease>,
+    pub(super) progress: Progress,
+    pub(super) required: Vec<SourceFile>,
+}
+
+pub(super) async fn prepare_with_control(
+    tracker: Tracker,
+    destination: Destination,
+    mut plan: ValidatedRecipe,
+    data: PathBuf,
+    control: Control,
+    progress: Progress,
+    shared: bool,
+) -> Result<Built> {
     let Destination {
         repair_components,
         backend,
@@ -480,79 +529,70 @@ pub(super) async fn deploy_in(
         profile,
         previous,
     } = destination;
-    let abandoned = Arc::new(AtomicBool::new(false));
-    let _abandoned = Abandoned(abandoned.clone());
-    let control = Control::new(cancelled.clone(), abandoned);
-    tokio::spawn(async move {
-        let lease = Lease::acquire(&control).await?;
-        control.check()?;
-        tracker.ensure_location_ready(&game.id).await?;
-        tracker.ensure_no_mele_journal(&game.id).await?;
-        let deployed = tracker.mele_deployment(&game.id).await?;
-        ensure!(
-            deployed.as_ref().map(|state| &state.generation) == previous.as_ref(),
-            "MELE deployment changed; rebuild the installation plan"
-        );
-        ensure!(
-            game.engine == crate::models::game::GameEngine::MassEffect
-                && game.id == plan.recipe.target.game_id(),
-            "MELE recipe targets another game"
-        );
-        let baseline = tracker
-            .load_mele_baseline(&game.id)
-            .await?
-            .context("MELE has no restoration baseline")?;
-        ensure!(
-            baseline.sha256 == plan.baseline,
-            "MELE baseline changed after recipe inspection"
-        );
-        ensure!(
-            plan.transformations.iter().all(|kind| kind.supported()),
-            "This recipe requires transformation coordination before deployment: {}",
-            plan.transformations
-                .iter()
-                .map(|kind| kind.label())
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-        {
-            let game = game.clone();
-            let deployed = deployed.clone();
-            let baseline = baseline.clone();
-            let component_plan = super::components::Plan::inspect(
-                &plan.recipe.components,
+    let lease = Lease::acquire(&control).await?;
+    control.check()?;
+    tracker.ensure_location_ready(&game.id).await?;
+    tracker.ensure_no_mele_journal(&game.id).await?;
+    let deployed = tracker.mele_deployment(&game.id).await?;
+    ensure!(
+        deployed.as_ref().map(|state| &state.generation) == previous.as_ref(),
+        "MELE deployment changed; rebuild the installation plan"
+    );
+    ensure!(
+        game.engine == crate::models::game::GameEngine::MassEffect
+            && game.id == plan.recipe.target.game_id(),
+        "MELE recipe targets another game"
+    );
+    let baseline = tracker
+        .load_mele_baseline(&game.id)
+        .await?
+        .context("MELE has no restoration baseline")?;
+    ensure!(
+        baseline.sha256 == plan.baseline,
+        "MELE baseline changed after recipe inspection"
+    );
+    ensure!(
+        plan.transformations.iter().all(|kind| kind.supported()),
+        "This recipe requires transformation coordination before deployment: {}",
+        plan.transformations
+            .iter()
+            .map(|kind| kind.label())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    {
+        let game = game.clone();
+        let deployed = deployed.clone();
+        let baseline = baseline.clone();
+        let component_plan = super::components::Plan::inspect(
+            &plan.recipe.components,
+            &baseline,
+            plan.recipe.target,
+        )?;
+        let control = control.clone();
+        let target = plan.recipe.target;
+        let scopes = deployed
+            .as_ref()
+            .into_iter()
+            .flat_map(|state| &state.removals.dlc)
+            .chain(&plan.installation.removals.dlc)
+            .cloned()
+            .collect();
+        tokio::task::spawn_blocking(move || {
+            super::removal::verify(&game.path, &baseline, deployed.as_ref(), &scopes, &control)?;
+            super::components::preflight(
+                &game.path,
+                &component_plan,
+                deployed.as_ref(),
                 &baseline,
-                plan.recipe.target,
-            )?;
-            let control = control.clone();
-            let target = plan.recipe.target;
-            let scopes = deployed
-                .as_ref()
-                .into_iter()
-                .flat_map(|state| &state.removals.dlc)
-                .chain(&plan.installation.removals.dlc)
-                .cloned()
-                .collect();
-            tokio::task::spawn_blocking(move || {
-                super::removal::verify(
-                    &game.path,
-                    &baseline,
-                    deployed.as_ref(),
-                    &scopes,
-                    &control,
-                )?;
-                super::components::preflight(
-                    &game.path,
-                    &component_plan,
-                    deployed.as_ref(),
-                    &baseline,
-                    target,
-                    repair_components,
-                    &control,
-                )
-            })
-            .await??;
-        }
+                target,
+                repair_components,
+                &control,
+            )
+        })
+        .await??;
+    }
+    let family = if shared {
         let family = super::family::inspect_recipe(
             &tracker,
             &game,
@@ -567,207 +607,229 @@ pub(super) async fn deploy_in(
                 .is_none_or(|expected| family.as_ref() == Some(expected)),
             "Shared launcher files changed after preview; inspect deployment again"
         );
-        let game_inputs: Vec<_> = plan
-            .merges
-            .originals
-            .values()
-            .map(|file| {
-                let relative = format!("BioGame/{}", file.path);
-                deployed
-                    .as_ref()
-                    .and_then(|state| state.files.iter().find(|file| file.relative == relative))
-                    .cloned()
-                    .unwrap_or_else(|| SourceFile {
-                        relative,
-                        size: file.size,
-                        sha256: file.sha256.clone(),
-                    })
-            })
-            .collect();
-        pipeline::verify_game_inputs(game.path.clone(), game_inputs.clone(), control.clone())
-            .await?;
-        let condition_inputs = plan
-            .prepared
-            .as_ref()
-            .map(|cached| cached.inputs.clone())
-            .unwrap_or_default();
-        preparation::verify_inputs(game.path.clone(), condition_inputs.clone(), control.clone())
-            .await?;
-        let has_pipeline = !plan.merges.generated.is_empty() || plan.installation.has_raw_m3to();
-        if has_pipeline {
-            ensure!(
-                plan.recipe.helper_version.as_deref() == Some(helper::protocol::VERSION),
-                "The MELE recipe must pin its transformation helper version before deployment"
-            );
-            backend
+        family
+    } else {
+        ensure!(
+            plan.family.is_none(),
+            "Shared launcher changes require their separate Apply action"
+        );
+        None
+    };
+    let required_paths: BTreeSet<_> = plan
+        .merges
+        .originals
+        .keys()
+        .chain(plan.installation.originals.keys())
+        .map(|path| format!("BioGame/{path}"))
+        .chain(
+            plan.prepared
                 .as_ref()
-                .context("This MELE recipe requires the packaged transformation helper")?;
-        }
-        let component_originals = if plan.components.needs_original() {
-            Some(
-                super::baseline::originals::preserve_with_lease(
-                    tracker.clone(),
-                    game.clone(),
-                    vec![super::components::BINK.into()],
-                    data.clone(),
-                    control.clone(),
-                    Arc::new(|_, _| {}),
-                    lease.clone(),
-                )
-                .await?,
-            )
-        } else {
-            None
-        };
-        let component_plan = super::components::Plan::inspect(
-            &plan.recipe.components,
-            &baseline,
-            plan.recipe.target,
-        )?;
-        let runtime = if component_plan.files.is_empty() {
-            None
-        } else {
-            let report = progress.clone();
-            Some(
-                super::components::prepare(
-                    component_plan,
-                    component_originals,
-                    data.clone(),
-                    control.clone(),
-                    Arc::new(move |done, _| report(done, 6000)),
-                    lease.clone(),
-                )
-                .await?,
-            )
-        };
-        let progress: Progress = if runtime.is_some() {
-            progress(1000, 6000);
-            Arc::new(move |done, total| progress(1000 + done * 5000 / total, 6000))
-        } else {
-            progress
-        };
-        let originals = if plan.merges.originals.is_empty() {
-            None
-        } else {
-            Some(
-                super::baseline::originals::preserve_with_lease(
-                    tracker.clone(),
-                    game.clone(),
-                    plan.merges
-                        .originals
-                        .keys()
-                        .map(|path| format!("BioGame/{path}"))
-                        .collect(),
-                    data.clone(),
-                    control.clone(),
-                    Arc::new(|_, _| {}),
-                    lease.clone(),
-                )
-                .await?,
-            )
-        };
-        let (prepared, plan) = if let Some(cached) = plan.prepared.take() {
-            cached.validate(&game, previous.as_deref())?;
-            let control = control.clone();
-            tokio::task::spawn_blocking(move || {
-                for stored in plan.packages.values() {
-                    sources::verify(stored, &control)?;
-                }
-                cached.verify_outputs(&control)?;
-                plan.installation.steps.clear();
-                Ok::<_, anyhow::Error>((cached.prepared, plan))
-            })
-            .await
-            .context("Prepared MELE output verification failed")??
-        } else {
-            let control = control.clone();
-            let data = data.clone();
-            tokio::task::spawn_blocking(move || {
-                let prepared = stage(&plan, &data, &control)?;
-                Ok::<_, anyhow::Error>((prepared, plan))
-            })
-            .await
-            .context("MELE recipe staging worker failed")??
-        };
-        let prepared = if has_pipeline {
-            pipeline::run(
-                pipeline::Work {
-                    prepared,
-                    merges: plan.merges,
-                    originals,
-                    installation: plan.installation,
-                    packages: plan.packages,
-                    backend: backend.context("Missing MELE transformation helper")?,
-                    game: game.path.clone(),
-                    data: data.clone(),
-                },
+                .into_iter()
+                .flat_map(|cached| cached.inputs.keys().cloned()),
+        )
+        .chain(
+            plan.components
+                .needs_original()
+                .then(|| super::components::BINK.to_owned()),
+        )
+        .collect();
+    let required = baseline
+        .files
+        .iter()
+        .filter(|file| required_paths.contains(&file.relative))
+        .map(|file| SourceFile {
+            relative: file.relative.clone(),
+            size: file.size,
+            sha256: file.sha256.clone(),
+        })
+        .collect();
+    let game_inputs: Vec<_> = plan
+        .merges
+        .originals
+        .values()
+        .map(|file| {
+            let relative = format!("BioGame/{}", file.path);
+            deployed
+                .as_ref()
+                .and_then(|state| state.files.iter().find(|file| file.relative == relative))
+                .cloned()
+                .unwrap_or_else(|| SourceFile {
+                    relative,
+                    size: file.size,
+                    sha256: file.sha256.clone(),
+                })
+        })
+        .collect();
+    pipeline::verify_game_inputs(game.path.clone(), game_inputs.clone(), control.clone()).await?;
+    let condition_inputs = plan
+        .prepared
+        .as_ref()
+        .map(|cached| cached.inputs.clone())
+        .unwrap_or_default();
+    preparation::verify_inputs(game.path.clone(), condition_inputs.clone(), control.clone())
+        .await?;
+    let has_pipeline = !plan.merges.generated.is_empty() || plan.installation.has_raw_m3to();
+    if has_pipeline {
+        ensure!(
+            plan.recipe.helper_version.as_deref() == Some(helper::protocol::VERSION),
+            "The MELE recipe must pin its transformation helper version before deployment"
+        );
+        backend
+            .as_ref()
+            .context("This MELE recipe requires the packaged transformation helper")?;
+    }
+    let component_originals = if plan.components.needs_original() {
+        Some(
+            super::baseline::originals::preserve_with_lease(
+                tracker.clone(),
+                game.clone(),
+                vec![super::components::BINK.into()],
+                data.clone(),
                 control.clone(),
-                progress.clone(),
+                Arc::new(|_, _| {}),
                 lease.clone(),
             )
-            .await?
-        } else {
-            prepared
-        };
-        let prepared = if let Some(runtime) = runtime {
-            let control = control.clone();
-            tokio::task::spawn_blocking(move || {
-                let mut prepared = prepared;
-                runtime.append(prepared.directory.path(), &mut prepared.files, &control)?;
-                Ok::<_, anyhow::Error>(prepared)
-            })
-            .await??
-        } else {
-            prepared
-        };
-        let prepared = {
-            let control = control.clone();
-            tokio::task::spawn_blocking(move || {
-                super::m3to::validate_staged(
-                    prepared.directory.path(),
-                    &prepared.files,
-                    prepared.recipe.target,
-                    &control,
-                )?;
-                Ok::<_, anyhow::Error>(prepared)
-            })
-            .await
-            .context("MELE texture validation worker failed")??
-        };
-        control.check()?;
-        pipeline::verify_game_inputs(game.path.clone(), game_inputs, control.clone()).await?;
-        let progress: Progress = if has_pipeline {
-            Arc::new(move |done, total| {
-                progress(4000 + done * 1000 / total, pipeline::PROGRESS_TOTAL)
-            })
-        } else {
-            progress
-        };
-        preparation::verify_inputs(game.path.clone(), condition_inputs, control.clone()).await?;
-        let result = journal::publish_with_lease(
-            tracker,
-            game,
-            journal::Deployment {
-                removals: prepared.removals,
-                family,
-                repair_components,
-                previous,
-                profile,
-                source: prepared.directory.path().to_path_buf(),
-                files: prepared.files,
-                recipe: Some(prepared.recipe),
+            .await?,
+        )
+    } else {
+        None
+    };
+    let component_plan =
+        super::components::Plan::inspect(&plan.recipe.components, &baseline, plan.recipe.target)?;
+    let runtime = if component_plan.files.is_empty() {
+        None
+    } else {
+        let report = progress.clone();
+        Some(
+            super::components::prepare(
+                component_plan,
+                component_originals,
+                data.clone(),
+                control.clone(),
+                Arc::new(move |done, _| report(done, 6000)),
+                lease.clone(),
+            )
+            .await?,
+        )
+    };
+    let progress: Progress = if runtime.is_some() {
+        progress(1000, 6000);
+        Arc::new(move |done, total| progress(1000 + done * 5000 / total, 6000))
+    } else {
+        progress
+    };
+    let originals = if plan.merges.originals.is_empty() {
+        None
+    } else {
+        Some(
+            super::baseline::originals::preserve_with_lease(
+                tracker.clone(),
+                game.clone(),
+                plan.merges
+                    .originals
+                    .keys()
+                    .map(|path| format!("BioGame/{path}"))
+                    .collect(),
+                data.clone(),
+                control.clone(),
+                Arc::new(|_, _| {}),
+                lease.clone(),
+            )
+            .await?,
+        )
+    };
+    let (prepared, plan) = if let Some(cached) = plan.prepared.take() {
+        cached.validate(&game, previous.as_deref())?;
+        let control = control.clone();
+        tokio::task::spawn_blocking(move || {
+            for stored in plan.packages.values() {
+                sources::verify(stored, &control)?;
+            }
+            cached.verify_outputs(&control)?;
+            plan.installation.steps.clear();
+            Ok::<_, anyhow::Error>((cached.prepared, plan))
+        })
+        .await
+        .context("Prepared MELE output verification failed")??
+    } else {
+        let control = control.clone();
+        let data = data.clone();
+        tokio::task::spawn_blocking(move || {
+            let prepared = stage(&plan, &data, &control)?;
+            Ok::<_, anyhow::Error>((prepared, plan))
+        })
+        .await
+        .context("MELE recipe staging worker failed")??
+    };
+    let prepared = if has_pipeline {
+        pipeline::run(
+            pipeline::Work {
+                prepared,
+                merges: plan.merges,
+                originals,
+                installation: plan.installation,
+                packages: plan.packages,
+                backend: backend.context("Missing MELE transformation helper")?,
+                game: game.path.clone(),
+                data: data.clone(),
             },
-            data,
-            control,
-            progress,
+            control.clone(),
+            progress.clone(),
             lease.clone(),
         )
-        .await;
-        drop(prepared.directory);
-        result
+        .await?
+    } else {
+        prepared
+    };
+    let prepared = if let Some(runtime) = runtime {
+        let control = control.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut prepared = prepared;
+            runtime.append(prepared.directory.path(), &mut prepared.files, &control)?;
+            Ok::<_, anyhow::Error>(prepared)
+        })
+        .await??
+    } else {
+        prepared
+    };
+    let prepared = {
+        let control = control.clone();
+        tokio::task::spawn_blocking(move || {
+            super::m3to::validate_staged(
+                prepared.directory.path(),
+                &prepared.files,
+                prepared.recipe.target,
+                &control,
+            )?;
+            Ok::<_, anyhow::Error>(prepared)
+        })
+        .await
+        .context("MELE texture validation worker failed")??
+    };
+    control.check()?;
+    pipeline::verify_game_inputs(game.path.clone(), game_inputs, control.clone()).await?;
+    let progress: Progress = if has_pipeline {
+        Arc::new(move |done, total| progress(4000 + done * 1000 / total, pipeline::PROGRESS_TOTAL))
+    } else {
+        progress
+    };
+    preparation::verify_inputs(game.path.clone(), condition_inputs, control.clone()).await?;
+    Ok(Built {
+        deployment: journal::Deployment {
+            removals: prepared.removals,
+            family,
+            repair_components,
+            previous,
+            profile,
+            source: prepared.directory.path().to_path_buf(),
+            files: prepared.files,
+            recipe: Some(prepared.recipe),
+        },
+        directory: prepared.directory,
+        lease,
+        progress,
+        required,
     })
-    .await
-    .context("MELE recipe deployment worker failed")?
 }
 
 struct Prepared {

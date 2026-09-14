@@ -33,6 +33,7 @@ pub(crate) enum Target {
     Eclipse { documents: bool, path: String },
     Redengine { root: bool, path: String },
     MassEffect { path: String },
+    MeleLauncher { path: String },
     PluginControl { slot: usize },
     CustomIni { slot: usize },
 }
@@ -44,7 +45,8 @@ impl Target {
             | (Self::Aurora { path, .. }, GameEngine::Aurora)
             | (Self::Eclipse { path, .. }, GameEngine::Eclipse)
             | (Self::Redengine { path, .. }, GameEngine::REDEngine)
-            | (Self::MassEffect { path }, GameEngine::MassEffect) => path,
+            | (Self::MassEffect { path }, GameEngine::MassEffect)
+            | (Self::MeleLauncher { path }, GameEngine::MassEffect) => path,
             (Self::PluginControl { .. } | Self::CustomIni { .. }, GameEngine::Bethesda) => {
                 return Ok(());
             }
@@ -107,6 +109,7 @@ impl Target {
                 (base, path)
             },
             Self::MassEffect { path } if game.engine == GameEngine::MassEffect => (game.path.clone(), path),
+            Self::MeleLauncher { path } if game.engine == GameEngine::MassEffect => (game.path.parent().ok_or_else(|| anyhow::anyhow!("Shared launcher root is unavailable"))?.join("Launcher"),path),
             Self::PluginControl { slot } if game.engine == GameEngine::Bethesda => return game::plugins_txt_paths(game).get(*slot).cloned().ok_or_else(|| anyhow::anyhow!("Plugin configuration location is unavailable; restore Wine prefix access")),
             Self::CustomIni { slot } if game.engine == GameEngine::Bethesda => return game::custom_ini_paths(game).get(*slot).cloned().ok_or_else(|| anyhow::anyhow!("Managed INI location is unavailable; restore Wine prefix access")),
             _ => bail!("Historical target belongs to a different engine"),

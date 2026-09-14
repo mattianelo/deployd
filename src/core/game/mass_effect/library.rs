@@ -25,14 +25,22 @@ use super::{
 #[serde(deny_unknown_fields)]
 pub(crate) struct Record {
     version: u32,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) writable_cache: bool,
     pub(crate) target: Target,
     pub(crate) package: Package,
 }
 
 impl Record {
+    pub(crate) fn bind_writable_cache(&mut self) {
+        self.version = self.version.max(3);
+        self.writable_cache = true;
+    }
+
     pub(crate) fn validate(&self) -> Result<()> {
         ensure!(
-            (1..=2).contains(&self.version)
+            (1..=3).contains(&self.version)
+                && (!self.writable_cache || self.version >= 3)
                 && (self.package.binary_approval.is_none() || self.version >= 2),
             "Unsupported MELE library record version"
         );
@@ -192,6 +200,7 @@ async fn import_in(
         .register_mele_package(
             &entry,
             &Record {
+                writable_cache: false,
                 version: if package.binary_approval.is_some() {
                     2
                 } else {
