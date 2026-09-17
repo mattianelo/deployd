@@ -18,6 +18,8 @@
 - MELE imports now select the appropriate component from archives that bundle game and
   shared-launcher mods, install both through one game-mod workflow, and accept declared
   custom-DLC display names used by LE2 packages.
+- LE2 installers now apply selected M3CD configuration options to their custom DLC
+  without requiring the LE1-only `AutoLoad.ini` file.
 - MELE setup and deployment show progress and support Snap parallel installations.
 - MEM textures, raw M3TO source packages, headmorphs, portable MELE profile transfers,
   launcher installer choices and launcher executable replacements are not supported.

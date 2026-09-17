@@ -60,7 +60,9 @@ impl Merges {
                     && file.destination.relative == format!("BioGame/{}", plan.destination)
             });
             let table = plan.m3da.iter().find(|plan| plan.manifest == file.source);
-            let config = plan.m3cd.iter().find(|plan| plan.manifest == file.source);
+            let config = (plan.manifest.target == Target::Le1)
+                .then(|| plan.m3cd.iter().find(|plan| plan.manifest == file.source))
+                .flatten();
             let plot = plan
                 .plot
                 .iter()

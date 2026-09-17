@@ -5,9 +5,10 @@ use sha2::{Digest, Sha256};
 
 use super::super::baseline::Baseline;
 use super::super::helper::{FileIdentity, protocol::TlkChange};
+use super::super::m3cd::M3cdPlan;
 use super::super::m3m::{M3mPlan, Operation};
 use super::super::package::SourceFile;
-use super::{Control, PlannedFile, Recipe, StoredPackage};
+use super::{Control, PlannedFile, Recipe, StoredPackage, Target};
 
 #[derive(Clone)]
 pub(super) struct Step {
@@ -17,6 +18,7 @@ pub(super) struct Step {
     pub(super) m3m: Vec<M3mPlan>,
     pub(super) m3m_inputs: BTreeSet<String>,
     pub(super) tlk: Vec<TlkChange>,
+    pub(super) dlc_config: Vec<M3cdPlan>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,6 +98,11 @@ impl Installation {
                 m3m: stored.plan.m3m.clone(),
                 m3m_inputs: BTreeSet::new(),
                 tlk: Vec::new(),
+                dlc_config: if recipe.target == Target::Le2 {
+                    stored.plan.m3cd.clone()
+                } else {
+                    Vec::new()
+                },
             };
             for mapping in &stored.plan.files {
                 let source = stored

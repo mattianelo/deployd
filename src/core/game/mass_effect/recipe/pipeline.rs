@@ -97,6 +97,7 @@ pub(super) async fn run(
                 (prepared, current),
                 step.files,
                 source.clone(),
+                step.dlc_config,
                 control.clone(),
             )
             .await?;
@@ -296,6 +297,7 @@ pub(super) async fn copy_step(
     candidate: Candidate,
     files: Vec<PlannedFile>,
     source: PathBuf,
+    dlc_config: Vec<super::super::m3cd::M3cdPlan>,
     control: Control,
 ) -> Result<Candidate> {
     tokio::task::spawn_blocking(move || {
@@ -352,6 +354,13 @@ pub(super) async fn copy_step(
             }
             managed.insert(file.destination.relative.clone(), file.destination);
         }
+        super::super::m3cd::apply_dlc_config(
+            prepared.directory.path(),
+            &dlc_config,
+            &mut managed,
+            &mut current,
+            &control,
+        )?;
         prepared.files = managed.into_values().collect();
         Ok((prepared, current))
     })

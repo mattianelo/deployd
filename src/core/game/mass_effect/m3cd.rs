@@ -1,9 +1,14 @@
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
+use super::Target;
+use super::helper::FileIdentity;
+use super::journal::Control;
 use super::m3da::{mount, read_text};
 use super::package::{FileMapping, SourceFile};
 
@@ -93,6 +98,7 @@ pub(super) fn inspect(
     root: &Path,
     sources: &[SourceFile],
     files: &[FileMapping],
+    target: Target,
 ) -> Result<Vec<M3cdPlan>> {
     let index: BTreeMap<_, _> = sources
         .iter()
@@ -121,20 +127,29 @@ pub(super) fn inspect(
             "M3CD requires ConfigDelta-<name>.m3cd directly in a custom DLC's CookedPCConsole directory"
         );
         let dlc = parts[1];
-        let autoload = files
-            .iter()
-            .find(|file| {
-                file.destination
-                    .eq_ignore_ascii_case(&format!("DLC/{dlc}/AutoLoad.ini"))
-            })
-            .context("M3CD DLC is missing AutoLoad.ini")?;
-        let mount = mount(&read_text(root, source(autoload)?)?)?;
-        ensure!(
-            mounts
-                .insert(mount, dlc.to_ascii_lowercase())
-                .is_none_or(|owner| owner.eq_ignore_ascii_case(dlc)),
-            "Multiple DLCs have the same M3CD mount priority"
-        );
+        let mount = if target == Target::Le1 {
+            let autoload = files
+                .iter()
+                .find(|file| {
+                    file.destination
+                        .eq_ignore_ascii_case(&format!("DLC/{dlc}/AutoLoad.ini"))
+                })
+                .context("M3CD DLC is missing AutoLoad.ini")?;
+            let mount = mount(&read_text(root, source(autoload)?)?)?;
+            ensure!(
+                mounts
+                    .insert(mount, dlc.to_ascii_lowercase())
+                    .is_none_or(|owner| owner.eq_ignore_ascii_case(dlc)),
+                "Multiple DLCs have the same M3CD mount priority"
+            );
+            mount
+        } else {
+            ensure!(
+                target == Target::Le2,
+                "M3CD installation currently supports LE1 and LE2"
+            );
+            0
+        };
         plans.push(M3cdPlan {
             manifest: file.source.clone(),
             dlc: dlc.to_owned(),
@@ -144,6 +159,165 @@ pub(super) fn inspect(
     }
     plans.sort_by_key(|plan| (plan.mount, plan.manifest.to_ascii_lowercase()));
     Ok(plans)
+}
+
+pub(super) fn apply_dlc_config(
+    root: &Path,
+    plans: &[M3cdPlan],
+    managed: &mut BTreeMap<String, SourceFile>,
+    current: &mut BTreeMap<String, FileIdentity>,
+    control: &Control,
+) -> Result<()> {
+    for plan in plans {
+        for edit in &plan.edits {
+            control.check()?;
+            let expected = format!("BioGame/DLC/{}/CookedPCConsole/{}", plan.dlc, edit.file);
+            let relative = managed
+                .keys()
+                .find(|path| path.eq_ignore_ascii_case(&expected))
+                .cloned()
+                .with_context(|| {
+                    format!(
+                        "M3CD target '{}' is missing from custom DLC '{}'",
+                        edit.file, plan.dlc
+                    )
+                })?;
+            let path = root.join(&relative);
+            let text = fs::read_to_string(&path)
+                .with_context(|| format!("Cannot read M3CD target '{relative}'"))?;
+            let updated = apply_edit(&text, edit)?;
+            fs::write(&path, updated.as_bytes())
+                .with_context(|| format!("Cannot update M3CD target '{relative}'"))?;
+            fs::File::open(&path)?.sync_all()?;
+            let identity = SourceFile {
+                relative: relative.clone(),
+                size: updated.len() as u64,
+                sha256: format!("{:x}", Sha256::digest(updated.as_bytes())),
+            };
+            let game_path = relative
+                .strip_prefix("BioGame/")
+                .context("M3CD target is outside BioGame")?
+                .to_owned();
+            managed.insert(relative.clone(), identity.clone());
+            current.insert(
+                game_path.clone(),
+                FileIdentity {
+                    path: game_path,
+                    size: identity.size,
+                    sha256: identity.sha256,
+                },
+            );
+        }
+    }
+    Ok(())
+}
+
+fn apply_edit(text: &str, edit: &ConfigEdit) -> Result<String> {
+    let newline = if text.contains("\r\n") { "\r\n" } else { "\n" };
+    let trailing_newline = text.ends_with('\n');
+    let mut lines: Vec<String> = text.lines().map(str::to_owned).collect();
+    let header = format!("[{}]", edit.section);
+    let sections: Vec<_> = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, line)| line.trim().eq_ignore_ascii_case(&header))
+        .map(|(index, _)| index)
+        .collect();
+    ensure!(sections.len() <= 1, "M3CD target section is ambiguous");
+    let start = match sections.first() {
+        Some(index) => index + 1,
+        None => {
+            if !lines.is_empty() && !lines.last().is_some_and(String::is_empty) {
+                lines.push(String::new());
+            }
+            lines.push(header);
+            lines.len()
+        }
+    };
+    let end = lines[start..]
+        .iter()
+        .position(|line| {
+            let line = line.trim();
+            line.starts_with('[') && line.ends_with(']')
+        })
+        .map_or(lines.len(), |offset| start + offset);
+    let matches = |line: &str| {
+        let line = line.trim();
+        if line.starts_with(';') {
+            return None;
+        }
+        let (key, value) = line.split_once('=')?;
+        let key = key.trim();
+        let key = key
+            .chars()
+            .next()
+            .filter(|prefix| "+-.!>".contains(*prefix))
+            .map_or(key, |prefix| &key[prefix.len_utf8()..]);
+        if key.eq_ignore_ascii_case(&edit.key) {
+            Some(value.trim().to_owned())
+        } else {
+            None
+        }
+    };
+    let insertion = |lines: &[String], mut end: usize| {
+        while end > start && lines[end - 1].trim().is_empty() {
+            end -= 1;
+        }
+        end
+    };
+    match edit.action {
+        '-' => {
+            let mut index = start;
+            let mut current_end = end;
+            while index < current_end {
+                if matches(&lines[index]).is_some_and(|value| value == edit.value) {
+                    lines.remove(index);
+                    current_end -= 1;
+                } else {
+                    index += 1;
+                }
+            }
+        }
+        '!' | '>' => {
+            let mut index = start;
+            let mut current_end = end;
+            while index < current_end {
+                if matches(&lines[index]).is_some() {
+                    lines.remove(index);
+                    current_end -= 1;
+                } else {
+                    index += 1;
+                }
+            }
+            if edit.action == '>' {
+                lines.insert(
+                    insertion(&lines, current_end),
+                    format!("{}={}", edit.key, edit.value),
+                );
+            }
+        }
+        '+' => {
+            if !lines[start..end]
+                .iter()
+                .any(|line| matches(line).is_some_and(|value| value == edit.value))
+            {
+                lines.insert(
+                    insertion(&lines, end),
+                    format!("+{}={}", edit.key, edit.value),
+                );
+            }
+        }
+        '.' => lines.insert(
+            insertion(&lines, end),
+            format!(".{}={}", edit.key, edit.value),
+        ),
+        _ => anyhow::bail!("Unknown M3CD operation"),
+    }
+    let mut result = lines.join(newline);
+    if trailing_newline {
+        result.push_str(newline);
+    }
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -185,5 +359,23 @@ mod tests {
         ] {
             assert!(parse(text).is_err(), "accepted: {text:?}");
         }
+    }
+
+    // @variants: both
+    #[test]
+    fn applies_dlc_config_edits_without_requiring_optional_targets() -> Result<()> {
+        let original = "[SFXGame.BioGlobalVariableTable]\r\n+TimedPlotUnlocks=Old\r\n\r\n[Other]\r\nKey=Value\r\n";
+        let edit = ConfigEdit {
+            file: "BioGame.ini".into(),
+            section: "SFXGame.BioGlobalVariableTable".into(),
+            key: "TimedPlotUnlocks".into(),
+            action: '>',
+            value: "New".into(),
+        };
+        assert_eq!(
+            apply_edit(original, &edit)?,
+            "[SFXGame.BioGlobalVariableTable]\r\nTimedPlotUnlocks=New\r\n\r\n[Other]\r\nKey=Value\r\n"
+        );
+        Ok(())
     }
 }

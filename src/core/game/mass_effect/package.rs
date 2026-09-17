@@ -212,8 +212,8 @@ impl PackagePlan {
                     "Transformation inputs cannot be renamed to another file format"
                 );
             }
-            if let Some(kind) =
-                transformation(&destination).or_else(|| transformation(&source.relative))
+            if let Some(kind) = transformation_for_target(&destination, manifest.target)
+                .or_else(|| transformation_for_target(&source.relative, manifest.target))
             {
                 jobs.push(TransformJob {
                     kind,
@@ -332,11 +332,7 @@ impl PackagePlan {
             m3da.is_empty() || manifest.target == Target::Le1,
             "M3DA only supports LE1"
         );
-        let m3cd = m3cd::inspect(root, &sources, &files)?;
-        ensure!(
-            m3cd.is_empty() || manifest.target == Target::Le1,
-            "M3CD inspection currently supports LE1 only"
-        );
+        let m3cd = m3cd::inspect(root, &sources, &files, manifest.target)?;
         let source_sha256 = tree_digest(&sources);
         super::merge_dlc::archive(&files)?;
         let mut plan = Self {
@@ -621,8 +617,8 @@ impl PackagePlan {
                     "Transformation inputs cannot be renamed to another file format"
                 );
             }
-            if let Some(kind) =
-                transformation(&file.destination).or_else(|| transformation(&file.source))
+            if let Some(kind) = transformation_for_target(&file.destination, self.manifest.target)
+                .or_else(|| transformation_for_target(&file.source, self.manifest.target))
             {
                 self.jobs.push(TransformJob {
                     kind,
@@ -638,10 +634,10 @@ impl PackagePlan {
             &self.manifest.format,
         )?;
         self.m3da = m3da::inspect(root, &self.sources, &self.files)?;
-        self.m3cd = m3cd::inspect(root, &self.sources, &self.files)?;
+        self.m3cd = m3cd::inspect(root, &self.sources, &self.files, self.manifest.target)?;
         ensure!(
-            (self.m3da.is_empty() && self.m3cd.is_empty()) || self.manifest.target == Target::Le1,
-            "M3DA and M3CD require LE1"
+            self.m3da.is_empty() || self.manifest.target == Target::Le1,
+            "M3DA requires LE1"
         );
         self.plot = plot::inspect(
             root,
@@ -732,6 +728,11 @@ pub(super) fn transformation(path: &str) -> Option<Transformation> {
         "mem" => Some(Transformation::MemTexture),
         _ => None,
     }
+}
+
+fn transformation_for_target(path: &str, target: Target) -> Option<Transformation> {
+    transformation(path)
+        .filter(|kind| !matches!(kind, Transformation::ConfigDelta) || target == Target::Le1)
 }
 
 pub(super) fn scan(root: &Path) -> Result<Vec<SourceFile>> {
@@ -1229,7 +1230,7 @@ mod tests {
 
     // @variants: both
     #[test]
-    fn rejects_m3cd_without_mount_with_wrong_layout_or_for_other_games() -> Result<()> {
+    fn validates_m3cd_mounts_for_le1_but_accepts_le2_dlc_config_patches() -> Result<()> {
         let (root, package) = fixture("")?;
         let cooked = package.join("DLC_MOD_EXAMPLE/CookedPCConsole");
         let delta = cooked.join("ConfigDelta-options.m3cd");
@@ -1243,13 +1244,11 @@ mod tests {
         assert_eq!(plan.m3cd[0].edits[0].key, "Key");
         let manifest = package.join("moddesc.ini");
         let original = fs::read_to_string(&manifest)?;
-        for game in ["LE2", "LE3"] {
-            fs::write(
-                &manifest,
-                original.replace("game=LE1", &format!("game={game}")),
-            )?;
-            assert!(PackagePlan::inspect(root.path(), None).is_err());
-        }
+        fs::write(&manifest, original.replace("game=LE1", "game=LE2"))?;
+        let le2 = PackagePlan::inspect(root.path(), None)?;
+        assert_eq!(le2.m3cd[0].edits[0].value, "Value");
+        fs::write(&manifest, original.replace("game=LE1", "game=LE3"))?;
+        assert!(PackagePlan::inspect(root.path(), None).is_err());
         fs::write(&manifest, original)?;
         let wrong = cooked.join("unknown.m3cd");
         fs::rename(&delta, &wrong)?;

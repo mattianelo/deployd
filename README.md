@@ -44,7 +44,8 @@ The Nexus Mods page remains available for users who prefer that distribution cha
 
 Manage LE1, LE2 and LE3 with separate mod libraries and profiles. Supported mods
 include Community Patch, cosmetic and content mods, precompiled M3TO textures
-(such as ALOT + ISL), shader mods, squadmate outfits and LE2 email additions.
+(such as ALOT + ISL), shader mods, squadmate outfits, LE2 DLC configuration
+options and LE2 email additions.
 Deployd reports unsupported packages before installation.
 
 1. Add a **clean installation** containing all three games and select its Wine prefix

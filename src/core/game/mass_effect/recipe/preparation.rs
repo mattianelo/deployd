@@ -153,6 +153,7 @@ impl Session {
                     (prepared, current),
                     step.files.clone(),
                     source,
+                    step.dlc_config.clone(),
                     self.control.clone(),
                 )
                 .await?;

@@ -635,6 +635,81 @@ async fn transformation_inputs_cannot_be_deployed_as_ordinary_content() -> Resul
 
 // @variants: both
 #[tokio::test]
+async fn le2_alternate_config_delta_updates_its_custom_dlc_ini() -> Result<()> {
+    let fixture = Fixture::new(Target::Le2).await?;
+    let (source, _) = fixture.package(b"payload", "")?;
+    let cooked = source.join("DLC_MOD_Test/CookedPCConsole");
+    fs::write(
+        cooked.join("BIOGame.ini"),
+        "[SFXGame.BioGlobalVariableTable]\r\n+TimedPlotUnlocks=Base\r\n",
+    )?;
+    let alternate = source.join("Alternates/Choice");
+    fs::create_dir_all(&alternate)?;
+    fs::write(
+        alternate.join("ConfigDelta-choice.m3cd"),
+        "[BioGame.ini SFXGame.BioGlobalVariableTable]\n+TimedPlotUnlocks=Selected",
+    )?;
+    let descriptor = source.join("moddesc.ini");
+    let text = fs::read_to_string(&descriptor)?.replace(
+        "destdirs=DLC_MOD_Test\n",
+        "destdirs=DLC_MOD_Test\naltdlc=((FriendlyName=Choice,Condition=COND_MANUAL,CheckedByDefault=true,ModOperation=OP_ADD_FOLDERFILES_TO_CUSTOMDLC,ModAltDLC=Alternates\\Choice,ModDestDLC=DLC_MOD_Test\\CookedPCConsole))\n",
+    );
+    fs::write(descriptor, text)?;
+    let plan = PackagePlan::inspect(&source, None)?;
+    let options = plan.option_keys();
+    let stored = sources::retain_in(
+        source,
+        plan,
+        None,
+        fixture.data.clone(),
+        cancel(),
+        Arc::new(|_, _| {}),
+    )
+    .await?;
+    let mut package = stored.selection();
+    package.options = options;
+    let recipe = fixture.recipe(vec![package]);
+    let destination = || Destination {
+        repair_components: false,
+        backend: None,
+        game: fixture.game.clone(),
+        profile: fixture.profile.clone(),
+        previous: None,
+    };
+    let plan = inspect_prepared_in(
+        fixture.tracker.clone(),
+        destination(),
+        recipe,
+        fixture.data.clone(),
+        cancel(),
+        Arc::new(|_, _| {}),
+    )
+    .await?;
+    deploy_in(
+        fixture.tracker.clone(),
+        destination(),
+        plan,
+        fixture.data.clone(),
+        cancel(),
+        Arc::new(|_, _| {}),
+    )
+    .await?;
+    let installed = fs::read_to_string(
+        fixture
+            .game
+            .path
+            .join("BioGame/DLC/DLC_MOD_Test/CookedPCConsole/BIOGame.ini"),
+    )?;
+    assert!(installed.contains("+TimedPlotUnlocks=Base"));
+    assert!(
+        installed.contains("+TimedPlotUnlocks=Selected"),
+        "{installed}"
+    );
+    Ok(())
+}
+
+// @variants: both
+#[tokio::test]
 async fn public_entry_points_honor_cancellation_before_publishing() -> Result<()> {
     let fixture = Fixture::new(Target::Le1).await?;
     let (source, package) = fixture.package(b"payload", "")?;
