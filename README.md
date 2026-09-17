@@ -77,6 +77,8 @@ Required launcher support remains active while a deployed game needs it.
 When one archive contains both a game mod and a launcher mod, add it once from the
 game's mod list and again from **Shared launcher mods**. Deployd identifies the
 appropriate component for each library and prompts you when the second import is needed.
+In the Snap, select the archive through each dialog so its granted access remains active
+for that import.
 
 **Limitations:** MEM textures, raw M3TO source packages, headmorphs and portable
 MELE profile transfers are not supported. Launcher executable replacements and

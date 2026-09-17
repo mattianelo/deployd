@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, atomic::AtomicBool};
 
@@ -17,7 +16,7 @@ use super::super::{
 #[derive(Debug)]
 pub(crate) enum Msg {
     Open,
-    Inspect(Snapshot, PathBuf),
+    Inspect(Snapshot, gio::File),
     Apply(Snapshot, Action),
 }
 
@@ -62,15 +61,20 @@ impl App {
                     ))
                 });
             }
-            Msg::Inspect(snapshot, path) => {
+            Msg::Inspect(snapshot, file) => {
+                let Some(path) = file.path() else {
+                    self.push_notification("The selected launcher archive has no local path");
+                    return;
+                };
                 self.begin_work(WorkKind::Installing, "Inspecting launcher archive...");
                 self.location_command(sender, async move {
-                    command(Command::Inspected(
-                        snapshot,
-                        launcher::inspect(path)
-                            .await
-                            .map_err(|error| format!("{error:#}")),
-                    ))
+                    // Keep the portal-backed GFile alive until extraction finishes. Some
+                    // desktops revoke the transient document route when its last GFile drops.
+                    let result = launcher::inspect(path)
+                        .await
+                        .map_err(|error| format!("{error:#}"));
+                    drop(file);
+                    command(Command::Inspected(snapshot, result))
                 });
             }
             Msg::Apply(snapshot, action) => {
@@ -259,10 +263,8 @@ fn show(root: &adw::ApplicationWindow, input: relm4::Sender<AppMsg>, snapshot: S
         let input = input.clone();
         let snapshot = snapshot.clone();
         picker.open(Some(&root), None::<&gio::Cancellable>, move |result| {
-            if let Ok(file) = result
-                && let Some(path) = file.path()
-            {
-                let _ = input.send(message(Msg::Inspect((*snapshot).clone(), path)));
+            if let Ok(file) = result {
+                let _ = input.send(message(Msg::Inspect((*snapshot).clone(), file)));
             }
         });
     });

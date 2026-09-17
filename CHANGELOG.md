@@ -17,7 +17,8 @@
   list independent of game profiles. Game Purge leaves shared launcher mods installed.
 - MELE imports now select the appropriate component from archives that bundle game and
   shared-launcher mods, prompt for the separate launcher import, and accept declared
-  custom-DLC display names used by LE2 packages.
+  custom-DLC display names used by LE2 packages. Portal-granted archive access remains
+  active while the shared-launcher component is inspected.
 - MELE setup and deployment show progress and support Snap parallel installations.
 - MEM textures, raw M3TO source packages, headmorphs, portable MELE profile transfers,
   launcher installer choices and launcher executable replacements are not supported.
