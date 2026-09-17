@@ -100,6 +100,13 @@ impl Manifest {
                 );
             }
         }
+        let custom_dlc_labels = get("customdlc", "destdirs")
+            .into_iter()
+            .flat_map(|value| value.split(';'))
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_ascii_lowercase)
+            .collect::<BTreeSet<_>>();
         let mut unsupported = BTreeSet::new();
         for (section, values) in &sections {
             let allowed: &[&str] = match section.as_str() {
@@ -177,6 +184,7 @@ impl Manifest {
             };
             for key in values.keys() {
                 if !(allowed.contains(&key.as_str())
+                    || section == "customdlc" && custom_dlc_labels.contains(key)
                     || matches!(section.as_str(), "customdlc" | "basegame")
                         && key.strip_prefix("multilist").is_some_and(|id| {
                             !id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit())
@@ -712,6 +720,14 @@ mod tests {
         for feature in ["futureoperation", "asimods"] {
             assert!(error.contains(feature));
         }
+    }
+
+    #[test]
+    fn accepts_declared_custom_dlc_display_names_only() -> Result<()> {
+        let manifest = Manifest::parse(&(basic() + "dlc_mod_example=Example DLC\n"))?;
+        assert_eq!(manifest.dlc[0].1, "DLC_MOD_EXAMPLE");
+        assert!(Manifest::parse(&(basic() + "dlc_mod_other=Other DLC\n")).is_err());
+        Ok(())
     }
 
     #[test]

@@ -111,15 +111,22 @@ pub(crate) fn install(
     plan: &PackagePlan,
     name: &str,
     selected: &BTreeSet<String>,
+    bundled_launcher: bool,
     binary_approved: bool,
     respond: impl Fn(Option<Selection>) + 'static,
 ) {
+    let launcher_notice = if bundled_launcher {
+        "\n\nThis archive also contains a shared launcher component. Install the same archive separately from Deploy options → Shared launcher mods if you want that component."
+    } else {
+        ""
+    };
     let dialog = adw::AlertDialog::builder()
         .heading("Install MELE Mod")
         .body(format!(
-            "{} — {}\nAdd this mod to your library, then use Deploy to apply it to the game.",
+            "{} — {}\nAdd this mod to your library, then use Deploy to apply it to the game.{}",
             plan.manifest.name,
-            plan.manifest.target.label()
+            plan.manifest.target.label(),
+            launcher_notice
         ))
         .build();
     dialog.add_responses(&[("cancel", "Cancel"), ("install", "Install")]);

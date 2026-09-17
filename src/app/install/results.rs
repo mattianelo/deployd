@@ -25,6 +25,7 @@ impl App {
         match result {
             Ok(PrepareResultMsg::Normal {
                 mele,
+                mele_bundled_launcher,
                 file_list,
                 stripped_wrapper,
                 tmp_dir,
@@ -53,6 +54,7 @@ impl App {
                 }
                 self.install.pending = Some(PendingInstall {
                     mele,
+                    mele_bundled_launcher,
                     tmp_dir,
                     mod_name: mod_name.clone(),
                     game,
@@ -151,6 +153,7 @@ impl App {
                 };
                 self.install.pending = Some(PendingInstall {
                     mele: None,
+                    mele_bundled_launcher: false,
                     tmp_dir,
                     mod_name: mod_name.clone(),
                     game,

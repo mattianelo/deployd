@@ -407,6 +407,7 @@ impl App {
         self.mods.external_changes_count = 0;
         self.install.pending = Some(PendingInstall {
             mele: None,
+            mele_bundled_launcher: false,
             tmp_dir,
             mod_name: mod_name.clone(),
             game,

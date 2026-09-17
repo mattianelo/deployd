@@ -18,24 +18,32 @@ pub(crate) async fn inspect(archive: PathBuf) -> Result<Inspected> {
 }
 
 pub(in crate::core::game::mass_effect) fn parse(root: &Path, fallback: &str) -> Result<Entry> {
-    let sources = super::super::package::scan(root)?;
-    let manifests: Vec<_> = sources
-        .iter()
-        .filter(|source| {
-            source
-                .relative
-                .rsplit('/')
-                .next()
-                .is_some_and(|name| name.eq_ignore_ascii_case("moddesc.ini"))
-        })
-        .collect();
+    let all_sources = super::super::package::scan(root)?;
+    let manifests = super::super::package::manifest_sources(&all_sources);
+    let mut launcher_manifests = Vec::new();
+    for manifest in &manifests {
+        if super::super::package::manifest_game(root, manifest)?.eq_ignore_ascii_case("LELAUNCHER")
+        {
+            launcher_manifests.push(*manifest);
+        }
+    }
     ensure!(
-        manifests.len() <= 1,
+        launcher_manifests.len() <= 1,
         "Select an archive containing one launcher mod"
     );
+    let has_manifests = !manifests.is_empty();
+    let sources = if let Some(manifest) = launcher_manifests.first() {
+        super::super::package::package_sources(&all_sources, manifest)?
+    } else {
+        all_sources.clone()
+    };
     let mut files = Vec::new();
     let mut name = fallback.to_owned();
-    if let Some(manifest) = manifests.first() {
+    ensure!(
+        !has_manifests || !launcher_manifests.is_empty(),
+        "This archive does not target the shared MELE launcher"
+    );
+    if let Some(manifest) = launcher_manifests.first() {
         let bytes = super::super::m3za::read_input(root, manifest, 1024 * 1024)?;
         let text = std::str::from_utf8(&bytes).context("Launcher manifest must be UTF-8")?;
         let sections = super::super::manifest::sections(text)?;
@@ -63,7 +71,8 @@ pub(in crate::core::game::mass_effect) fn parse(root: &Path, fallback: &str) -> 
         );
         for (section, values) in &sections {
             ensure!(
-                ["modmanager", "modinfo", "updates", "basegame"].contains(&section.as_str()),
+                ["modmanager", "modinfo", "updates", "basegame", "lelauncher",]
+                    .contains(&section.as_str()),
                 "Unsupported launcher manifest section '{section}'"
             );
             let metadata: &[&str] = match section.as_str() {
@@ -110,17 +119,31 @@ pub(in crate::core::game::mass_effect) fn parse(root: &Path, fallback: &str) -> 
                     "Unsupported launcher installer operation"
                 );
             }
+            if section == "lelauncher" {
+                ensure!(
+                    values.keys().all(|key| key == "moddir"),
+                    "Unsupported launcher installer operation"
+                );
+            }
         }
         name = field("modinfo", "modname")
             .context("Launcher mod has no name")?
             .into();
+        let launcher_layout = sections.contains_key("lelauncher");
+        ensure!(
+            !launcher_layout || !sections.contains_key("basegame"),
+            "Launcher manifest cannot combine LELAUNCHER and BASEGAME layouts"
+        );
         let wrapper = manifest
             .relative
             .rsplit_once('/')
             .map(|(parent, _)| format!("{parent}/"))
             .unwrap_or_default();
-        let directory =
-            super::super::manifest::relative_directory(field("basegame", "moddir").unwrap_or("."))?;
+        let directory = super::super::manifest::relative_directory(
+            field("lelauncher", "moddir")
+                .or_else(|| field("basegame", "moddir"))
+                .unwrap_or("."),
+        )?;
         if directory != "." {
             super::super::baseline::relative(&directory)?;
         }
@@ -132,17 +155,22 @@ pub(in crate::core::game::mass_effect) fn parse(root: &Path, fallback: &str) -> 
                 format!("{directory}/")
             }
         );
-        let structured = field("basegame", "gamedirectorystructure").unwrap_or("false");
+        let structured = field("basegame", "gamedirectorystructure")
+            .unwrap_or(if launcher_layout { "true" } else { "false" });
         ensure!(
             ["true", "false"].contains(&structured.to_ascii_lowercase().as_str()),
             "Invalid launcher structured layout"
         );
         let structured = structured.eq_ignore_ascii_case("true");
-        let replacements = super::super::manifest::file_pairs(
-            field("basegame", "newfiles"),
-            field("basegame", "replacefiles"),
-            structured,
-        )?;
+        let replacements = if launcher_layout {
+            vec![(".".into(), ".".into())]
+        } else {
+            super::super::manifest::file_pairs(
+                field("basegame", "newfiles"),
+                field("basegame", "replacefiles"),
+                structured,
+            )?
+        };
         let additions = super::super::manifest::file_pairs(
             field("basegame", "addfiles"),
             field("basegame", "addfilestargets"),

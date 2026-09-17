@@ -225,10 +225,15 @@ impl App {
                     None,
                 );
                 match prepare {
-                    PrepareResult::MassEffect { plan, tmp_dir } => Ok(PrepareResultMsg::Normal {
+                    PrepareResult::MassEffect {
+                        plan,
+                        bundled_launcher,
+                        tmp_dir,
+                    } => Ok(PrepareResultMsg::Normal {
                         file_list: Vec::new(),
                         stripped_wrapper: None,
                         mele: Some(plan),
+                        mele_bundled_launcher: bundled_launcher,
                         tmp_dir,
                         mod_name,
                         archive_hash,
@@ -240,6 +245,7 @@ impl App {
                         tmp_dir,
                     } => Ok(PrepareResultMsg::Normal {
                         mele: None,
+                        mele_bundled_launcher: false,
                         file_list,
                         stripped_wrapper,
                         tmp_dir,

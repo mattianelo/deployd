@@ -111,18 +111,10 @@ pub(crate) struct PackagePlan {
 
 impl PackagePlan {
     pub(crate) fn inspect(root: &Path, selected: Option<Target>) -> Result<Self> {
-        let sources = scan(root)?;
-        super::binary::inspect(root, &sources)?;
-        let manifests: Vec<_> = sources
-            .iter()
-            .filter(|file| {
-                file.relative
-                    .rsplit('/')
-                    .next()
-                    .is_some_and(|name| name.eq_ignore_ascii_case("moddesc.ini"))
-            })
-            .collect();
+        let mut sources = scan(root)?;
+        let manifests = manifest_sources(&sources);
         if manifests.is_empty() {
+            super::binary::inspect(root, &sources)?;
             let plan = Self::manual(
                 sources,
                 selected.context("Select LE1, LE2, or LE3 explicitly for a manual MELE archive")?,
@@ -130,20 +122,16 @@ impl PackagePlan {
             super::binary::inspect_mappings(root, &plan)?;
             return Ok(plan);
         }
+        let manifest_source = select_game_manifest(root, &manifests, selected)?.clone();
+        if manifests.len() > 1 {
+            sources = package_sources(&sources, &manifest_source)?;
+        }
+        super::binary::inspect(root, &sources)?;
         ensure!(
-            manifests.len() == 1,
-            "Expected exactly one moddesc.ini; found {}",
-            manifests.len()
-        );
-        ensure!(
-            manifests[0].size <= 1024 * 1024,
+            manifest_source.size <= 1024 * 1024,
             "moddesc.ini exceeds the 1 MiB limit"
         );
-        let manifest_path = &manifests[0].relative;
-        ensure!(
-            manifest_path.split('/').count() <= 2,
-            "moddesc.ini must be at the archive root or beneath one wrapper directory"
-        );
+        let manifest_path = &manifest_source.relative;
         let package_dir = manifest_path
             .rsplit_once('/')
             .map(|(parent, _)| format!("{parent}/"))
@@ -691,8 +679,14 @@ impl PackagePlan {
     }
 
     pub(crate) fn verify_sources(&self, root: &Path) -> Result<()> {
+        let mut sources = scan(root)?;
+        let manifests = manifest_sources(&sources);
+        if manifests.len() > 1 && self.manifest.format != "manual-1" {
+            let manifest = select_game_manifest(root, &manifests, Some(self.manifest.target))?;
+            sources = package_sources(&sources, manifest)?;
+        }
         ensure!(
-            scan(root)? == self.sources,
+            sources == self.sources,
             "Package contents changed after inspection; inspect the package again before installing"
         );
         Ok(())
@@ -865,6 +859,123 @@ pub(crate) fn discover_manifest(root: &Path) -> Result<Option<PathBuf>> {
     Ok(found)
 }
 
+pub(crate) fn contains_launcher_manifest(root: &Path) -> Result<bool> {
+    for entry in WalkDir::new(root).follow_links(false).min_depth(1) {
+        let entry = entry.context("Cannot inspect archive structure")?;
+        if !entry.file_type().is_file()
+            || !entry
+                .file_name()
+                .to_string_lossy()
+                .eq_ignore_ascii_case("moddesc.ini")
+        {
+            continue;
+        }
+        let metadata = entry.metadata()?;
+        ensure!(
+            metadata.len() <= 1024 * 1024,
+            "moddesc.ini exceeds the 1 MiB limit"
+        );
+        let mut text = String::new();
+        File::open(entry.path())?
+            .take(1024 * 1024 + 1)
+            .read_to_string(&mut text)
+            .context("Cannot read moddesc.ini as UTF-8")?;
+        if super::manifest::sections(&text)?
+            .get("modinfo")
+            .and_then(|values| values.get("game"))
+            .is_some_and(|game| game.eq_ignore_ascii_case("LELAUNCHER"))
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+pub(super) fn manifest_sources(sources: &[SourceFile]) -> Vec<&SourceFile> {
+    sources
+        .iter()
+        .filter(|source| {
+            source
+                .relative
+                .rsplit('/')
+                .next()
+                .is_some_and(|name| name.eq_ignore_ascii_case("moddesc.ini"))
+        })
+        .collect()
+}
+
+pub(super) fn manifest_game(root: &Path, source: &SourceFile) -> Result<String> {
+    ensure!(
+        source.size <= 1024 * 1024,
+        "moddesc.ini exceeds the 1 MiB limit"
+    );
+    let mut text = String::new();
+    File::open(root.join(&source.relative))?
+        .take(1024 * 1024 + 1)
+        .read_to_string(&mut text)
+        .context("Cannot read moddesc.ini as UTF-8")?;
+    super::manifest::sections(&text)?
+        .get("modinfo")
+        .and_then(|values| values.get("game"))
+        .filter(|game| !game.trim().is_empty())
+        .cloned()
+        .context("moddesc.ini is missing [modinfo] game")
+}
+
+pub(super) fn package_sources(
+    sources: &[SourceFile],
+    manifest: &SourceFile,
+) -> Result<Vec<SourceFile>> {
+    let Some((parent, _)) = manifest.relative.rsplit_once('/') else {
+        ensure!(
+            manifest_sources(sources).len() == 1,
+            "A root moddesc.ini cannot select one package from a multi-package archive"
+        );
+        return Ok(sources.to_vec());
+    };
+    let prefix = format!("{parent}/");
+    let selected = sources
+        .iter()
+        .filter(|source| source.relative.starts_with(&prefix))
+        .cloned()
+        .collect::<Vec<_>>();
+    ensure!(
+        manifest_sources(&selected).len() == 1,
+        "Selected package contains another moddesc.ini"
+    );
+    Ok(selected)
+}
+
+fn select_game_manifest<'a>(
+    root: &Path,
+    manifests: &[&'a SourceFile],
+    selected: Option<Target>,
+) -> Result<&'a SourceFile> {
+    if manifests.len() == 1 {
+        return Ok(manifests[0]);
+    }
+    let target = selected
+        .context("Archive contains multiple moddesc.ini files; select LE1, LE2, or LE3 first")?;
+    let game = match target {
+        Target::Le1 => "LE1",
+        Target::Le2 => "LE2",
+        Target::Le3 => "LE3",
+    };
+    let mut matches = Vec::new();
+    for manifest in manifests {
+        if manifest_game(root, manifest)?.eq_ignore_ascii_case(game) {
+            matches.push(*manifest);
+        }
+    }
+    ensure!(
+        matches.len() == 1,
+        "Expected exactly one {} moddesc.ini; found {}",
+        game,
+        matches.len()
+    );
+    Ok(matches[0])
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -1011,6 +1122,42 @@ mod tests {
         let (root, package) = fixture("Wrapper")?;
         fs::copy(package.join("moddesc.ini"), root.path().join("moddesc.ini"))?;
         assert!(discover_manifest(root.path()).is_err());
+        assert!(PackagePlan::inspect(root.path(), None).is_err());
+        Ok(())
+    }
+
+    // @variants: both
+    #[test]
+    fn selects_the_requested_game_from_a_launcher_bundle() -> Result<()> {
+        let root = tempdir()?;
+        let game = root.path().join("LE2/Game Mod");
+        fs::create_dir_all(game.join("DLC_MOD_EXAMPLE/CookedPCConsole"))?;
+        fs::write(
+            game.join("moddesc.ini"),
+            "[ModManager]\ncmmver=9.1\n[ModInfo]\ngame=LE2\nmodname=Game\nmoddesc=Game\nmodver=1\nmoddev=Author\n[CUSTOMDLC]\nsourcedirs=DLC_MOD_EXAMPLE\ndestdirs=DLC_MOD_EXAMPLE\nDLC_MOD_EXAMPLE=Example DLC\n",
+        )?;
+        fs::write(
+            game.join("DLC_MOD_EXAMPLE/CookedPCConsole/Test.pcc"),
+            b"game",
+        )?;
+        let launcher = root.path().join("LELauncher/Launcher Mod");
+        fs::create_dir_all(launcher.join("LELAUNCHER"))?;
+        fs::write(
+            launcher.join("moddesc.ini"),
+            "[ModManager]\ncmmver=8\n[ModInfo]\ngame=LELAUNCHER\nmodname=Launcher\n[LELAUNCHER]\nmoddir=LELAUNCHER\n",
+        )?;
+        fs::write(launcher.join("LELAUNCHER/ME2.bik"), b"launcher")?;
+
+        let plan = PackagePlan::inspect(root.path(), Some(Target::Le2))?;
+        assert_eq!(plan.manifest.name, "Game");
+        assert_eq!(plan.sources.len(), 2);
+        assert!(
+            plan.sources
+                .iter()
+                .all(|source| source.relative.starts_with("LE2/Game Mod/"))
+        );
+        assert!(contains_launcher_manifest(root.path())?);
+        plan.verify_sources(root.path())?;
         assert!(PackagePlan::inspect(root.path(), None).is_err());
         Ok(())
     }
@@ -1444,6 +1591,35 @@ mod tests {
                 Transformation::ConfigDelta,
                 Transformation::PlotManager,
             ])
+        );
+        plan.verify_sources(root)?;
+        Ok(())
+    }
+
+    // @variants: both
+    #[test]
+    #[ignore = "requires the maintainer-supplied DLC Timings directory"]
+    fn inspects_supplied_dlc_timings_mod() -> Result<()> {
+        let root = Path::new("modTesting/DLC Timings Mod");
+        let plan = PackagePlan::inspect(root, Some(Target::Le2))?;
+        assert_eq!(plan.manifest.name, "DLC Timings Mod");
+        assert_eq!(plan.manifest.dlc[0].1, "DLC_MOD_Timings");
+        plan.verify_sources(root)?;
+        Ok(())
+    }
+
+    // @variants: both
+    #[test]
+    #[ignore = "requires the maintainer-supplied Unofficial LE2 Patch directory"]
+    fn inspects_supplied_le2_patch_bundle() -> Result<()> {
+        let root = Path::new("modTesting/Unofficial Mass Effect 2 Legendary Edition Patch");
+        let plan = PackagePlan::inspect(root, Some(Target::Le2))?;
+        assert_eq!(plan.manifest.name, "Unofficial LE2 Patch");
+        assert!(contains_launcher_manifest(root)?);
+        assert!(
+            plan.sources
+                .iter()
+                .all(|source| source.relative.starts_with("LE2/Unofficial LE2 Patch/"))
         );
         plan.verify_sources(root)?;
         Ok(())

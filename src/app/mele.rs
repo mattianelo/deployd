@@ -377,6 +377,7 @@ impl App {
                             plan,
                             &pending.mod_name,
                             &options,
+                            pending.mele_bundled_launcher,
                             approval
                                 .as_ref()
                                 .is_some_and(|approval| approval.matches(plan)),

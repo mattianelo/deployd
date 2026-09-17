@@ -97,3 +97,51 @@ fn structured_launcher_manifests_expand_declared_folders() -> Result<()> {
     assert_eq!(entry.files[0].destination, "Content/Intro.bik");
     Ok(())
 }
+
+// @variants: both
+#[test]
+fn launcher_import_selects_its_component_from_a_game_bundle() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let game = root.path().join("LE2/Game Mod");
+    fs::create_dir_all(&game)?;
+    fs::write(
+        game.join("moddesc.ini"),
+        "[ModManager]\ncmmver=9.1\n[ModInfo]\ngame=LE2\nmodname=Game\n",
+    )?;
+    let launcher = root.path().join("LELauncher/Launcher Mod");
+    fs::create_dir_all(launcher.join("LELAUNCHER"))?;
+    fs::write(
+        launcher.join("moddesc.ini"),
+        "[ModManager]\ncmmver=8\n[ModInfo]\ngame=LELAUNCHER\nmodname=Launcher\n[LELAUNCHER]\nmoddir=LELAUNCHER\n",
+    )?;
+    fs::write(launcher.join("LELAUNCHER/ME2.bik"), b"launcher")?;
+
+    let entry = parse(root.path(), "ignored")?;
+    assert_eq!(entry.name, "Launcher");
+    assert_eq!(entry.files[0].destination, "ME2.bik");
+    assert!(
+        entry
+            .sources
+            .iter()
+            .all(|source| source.relative.starts_with("LELauncher/Launcher Mod/"))
+    );
+    Ok(())
+}
+
+// @variants: both
+#[test]
+#[ignore = "requires the maintainer-supplied Unofficial LE2 Patch directory"]
+fn imports_launcher_component_from_supplied_le2_patch_bundle() -> Result<()> {
+    let root = Path::new("modTesting/Unofficial Mass Effect 2 Legendary Edition Patch");
+    let entry = parse(root, "ignored")?;
+    assert_eq!(entry.name, "Unofficial LE2 Patch Launcher Video Fix");
+    assert_eq!(entry.files.len(), 1);
+    assert_eq!(entry.files[0].destination, "ME2.bik");
+    assert!(
+        entry
+            .sources
+            .iter()
+            .all(|source| source.relative.starts_with("LELauncher/"))
+    );
+    Ok(())
+}

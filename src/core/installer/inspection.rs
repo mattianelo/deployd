@@ -12,6 +12,7 @@ use super::{dazip, file_list};
 pub(crate) enum PrepareResult {
     MassEffect {
         plan: Box<crate::core::game::mass_effect::package::PackagePlan>,
+        bundled_launcher: bool,
         tmp_dir: TempDir,
     },
     Normal {
@@ -74,8 +75,13 @@ pub(crate) async fn prepare_mod(
                 manual_target,
             )?;
             plan.verify_sources(extracted_root)?;
+            let bundled_launcher =
+                crate::core::game::mass_effect::package::contains_launcher_manifest(
+                    extracted_root,
+                )?;
             return Ok(PrepareResult::MassEffect {
                 plan: Box::new(plan),
+                bundled_launcher,
                 tmp_dir,
             });
         }
@@ -157,7 +163,7 @@ mod tests {
         zip.write_all(b"package")?;
         zip.finish()?;
         let prepared = prepare_mod(&archive, Some(Target::Le1), None, None).await?;
-        let PrepareResult::MassEffect { plan, tmp_dir } = prepared else {
+        let PrepareResult::MassEffect { plan, tmp_dir, .. } = prepared else {
             anyhow::bail!("MELE bypassed structured inspection")
         };
         assert_eq!(plan.files[0].destination, "CookedPCConsole/Engine.pcc");
