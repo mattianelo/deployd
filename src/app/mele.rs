@@ -4,7 +4,7 @@ use std::sync::{Arc, atomic::AtomicBool};
 use adw::prelude::*;
 use relm4::prelude::*;
 
-use crate::core::game::mass_effect::{application, library};
+use crate::core::game::mass_effect::{application, launcher as launcher_core, library};
 use crate::ui::mele_dialog;
 
 use super::{
@@ -293,6 +293,10 @@ impl App {
             );
             return;
         };
+        let bundled_launcher = pending.mele_bundled_launcher.take();
+        let extracted_root = pending.tmp_dir.path().to_path_buf();
+        let launcher_tracker = tracker.clone();
+        let launcher_game = pending.game.clone();
         let replacement = self.install.replacement.take();
         let request = library::Import {
             binary_approved: selection.binary_approved,
@@ -307,6 +311,7 @@ impl App {
             replace: replacement.as_ref().map(|item| item.mod_id.clone()),
         };
         let cancelled = Arc::new(AtomicBool::new(false));
+        let launcher_cancelled = cancelled.clone();
         self.ui.mele_operation = Some(mele_dialog::progress(
             root,
             "Installing MELE Mod",
@@ -320,9 +325,23 @@ impl App {
             "Retaining sources",
         );
         self.location_command(sender, async move {
-            let result = library::import(tracker, request, cancelled, Arc::new(report))
+            let mut result = library::import(tracker, request, cancelled, Arc::new(report))
                 .await
                 .map_err(|error| format!("{error:#}"));
+            if let (Ok(added), Some(launcher)) = (&mut result, bundled_launcher)
+                && let Err(error) = launcher_core::add_bundled(
+                    launcher_tracker,
+                    launcher_game,
+                    launcher,
+                    extracted_root,
+                    launcher_cancelled,
+                )
+                .await
+            {
+                added.warnings.push(format!(
+                    "The game mod was installed, but its launcher component failed: {error:#}"
+                ));
+            }
             drop(pending.tmp_dir);
             AppCmdMsg::Install(super::messages::InstallCmdMsg::ModAdded(
                 identity,
@@ -377,7 +396,7 @@ impl App {
                             plan,
                             &pending.mod_name,
                             &options,
-                            pending.mele_bundled_launcher,
+                            pending.mele_bundled_launcher.is_some(),
                             approval
                                 .as_ref()
                                 .is_some_and(|approval| approval.matches(plan)),

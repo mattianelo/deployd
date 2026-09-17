@@ -15,7 +15,12 @@ pub(crate) struct Snapshot {
 
 #[derive(Debug)]
 pub(crate) enum Action {
+    #[cfg(test)]
     Add(Inspected),
+    AddBundled {
+        entry: Entry,
+        source: PathBuf,
+    },
     Enable(String, bool),
     Move(String, i32),
     Remove(String),
@@ -53,6 +58,26 @@ pub(crate) async fn apply(
     apply_in(tracker, snapshot, action, data, cancelled).await
 }
 
+pub(crate) async fn add_bundled(
+    tracker: Tracker,
+    game: Game,
+    bundled: Bundled,
+    extracted_root: PathBuf,
+    cancelled: Arc<AtomicBool>,
+) -> Result<()> {
+    let snapshot = load(&tracker, &game).await?;
+    apply(
+        tracker,
+        snapshot,
+        Action::AddBundled {
+            entry: bundled.entry,
+            source: extracted_root.join(bundled.source),
+        },
+        cancelled,
+    )
+    .await
+}
+
 pub(in crate::core::game::mass_effect) async fn apply_in(
     tracker: Tracker,
     snapshot: Snapshot,
@@ -84,6 +109,7 @@ pub(in crate::core::game::mass_effect) async fn apply_in(
         );
         let mut entries = snapshot.entries;
         match action {
+            #[cfg(test)]
             Action::Add(mut inspected) => {
                 inspected.entry.approval = inspected.entry.source_sha256.clone();
                 let entry = inspected.entry.clone();
@@ -95,7 +121,30 @@ pub(in crate::core::game::mass_effect) async fn apply_in(
                 );
                 let data = data.clone();
                 let control = control.clone();
-                tokio::task::spawn_blocking(move || retain(&data, &inspected, &control)).await??;
+                let retained = entry.clone();
+                let source = inspected
+                    .source
+                    .as_ref()
+                    .context("Launcher archive was already released")?
+                    .path()
+                    .to_path_buf();
+                tokio::task::spawn_blocking(move || retain(&data, &source, &retained, &control))
+                    .await??;
+                entries.push(entry);
+            }
+            Action::AddBundled { mut entry, source } => {
+                entry.approval = entry.source_sha256.clone();
+                if entries
+                    .iter()
+                    .any(|old| old.source_sha256 == entry.source_sha256)
+                {
+                    return Ok(());
+                }
+                let data = data.clone();
+                let control = control.clone();
+                let retained = entry.clone();
+                tokio::task::spawn_blocking(move || retain(&data, &source, &retained, &control))
+                    .await??;
                 entries.push(entry);
             }
             Action::Enable(id, enabled) => {

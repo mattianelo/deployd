@@ -245,7 +245,7 @@ impl App {
                         tmp_dir,
                     } => Ok(PrepareResultMsg::Normal {
                         mele: None,
-                        mele_bundled_launcher: false,
+                        mele_bundled_launcher: None,
                         file_list,
                         stripped_wrapper,
                         tmp_dir,

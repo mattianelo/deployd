@@ -116,7 +116,7 @@ pub(crate) fn install(
     respond: impl Fn(Option<Selection>) + 'static,
 ) {
     let launcher_notice = if bundled_launcher {
-        "\n\nThis archive also contains a shared launcher component. Install the same archive separately from Deploy options → Shared launcher mods if you want that component."
+        "\n\nThis multipack also includes a shared launcher component. Both components will be installed together."
     } else {
         ""
     };

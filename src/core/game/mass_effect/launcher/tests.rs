@@ -116,14 +116,16 @@ fn launcher_import_selects_its_component_from_a_game_bundle() -> Result<()> {
     )?;
     fs::write(launcher.join("LELAUNCHER/ME2.bik"), b"launcher")?;
 
-    let entry = parse(root.path(), "ignored")?;
-    assert_eq!(entry.name, "Launcher");
-    assert_eq!(entry.files[0].destination, "ME2.bik");
+    let bundled = inspect_bundle(root.path())?.context("missing launcher component")?;
+    assert_eq!(bundled.entry.name, "Launcher");
+    assert_eq!(bundled.entry.files[0].destination, "ME2.bik");
+    assert_eq!(bundled.source, Path::new("LELauncher/Launcher Mod"));
     assert!(
-        entry
+        bundled
+            .entry
             .sources
             .iter()
-            .all(|source| source.relative.starts_with("LELauncher/Launcher Mod/"))
+            .all(|source| !source.relative.starts_with("LELauncher/"))
     );
     Ok(())
 }
@@ -133,15 +135,19 @@ fn launcher_import_selects_its_component_from_a_game_bundle() -> Result<()> {
 #[ignore = "requires the maintainer-supplied Unofficial LE2 Patch directory"]
 fn imports_launcher_component_from_supplied_le2_patch_bundle() -> Result<()> {
     let root = Path::new("modTesting/Unofficial Mass Effect 2 Legendary Edition Patch");
-    let entry = parse(root, "ignored")?;
-    assert_eq!(entry.name, "Unofficial LE2 Patch Launcher Video Fix");
-    assert_eq!(entry.files.len(), 1);
-    assert_eq!(entry.files[0].destination, "ME2.bik");
+    let bundled = inspect_bundle(root)?.context("missing launcher component")?;
+    assert_eq!(
+        bundled.entry.name,
+        "Unofficial LE2 Patch Launcher Video Fix"
+    );
+    assert_eq!(bundled.entry.files.len(), 1);
+    assert_eq!(bundled.entry.files[0].destination, "ME2.bik");
     assert!(
-        entry
+        bundled
+            .entry
             .sources
             .iter()
-            .all(|source| source.relative.starts_with("LELauncher/"))
+            .all(|source| !source.relative.starts_with("LELauncher/"))
     );
     Ok(())
 }

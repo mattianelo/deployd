@@ -859,7 +859,8 @@ pub(crate) fn discover_manifest(root: &Path) -> Result<Option<PathBuf>> {
     Ok(found)
 }
 
-pub(crate) fn contains_launcher_manifest(root: &Path) -> Result<bool> {
+pub(crate) fn launcher_manifest(root: &Path) -> Result<Option<PathBuf>> {
+    let mut found = None;
     for entry in WalkDir::new(root).follow_links(false).min_depth(1) {
         let entry = entry.context("Cannot inspect archive structure")?;
         if !entry.file_type().is_file()
@@ -885,10 +886,19 @@ pub(crate) fn contains_launcher_manifest(root: &Path) -> Result<bool> {
             .and_then(|values| values.get("game"))
             .is_some_and(|game| game.eq_ignore_ascii_case("LELAUNCHER"))
         {
-            return Ok(true);
+            ensure!(
+                found.is_none(),
+                "Archive contains multiple LELAUNCHER moddesc.ini files"
+            );
+            found = Some(entry.path().to_path_buf());
         }
     }
-    Ok(false)
+    Ok(found)
+}
+
+#[cfg(test)]
+pub(crate) fn contains_launcher_manifest(root: &Path) -> Result<bool> {
+    Ok(launcher_manifest(root)?.is_some())
 }
 
 pub(super) fn manifest_sources(sources: &[SourceFile]) -> Vec<&SourceFile> {

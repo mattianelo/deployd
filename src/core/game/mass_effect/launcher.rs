@@ -11,8 +11,14 @@ use super::package::SourceFile;
 
 mod package;
 mod service;
-pub(crate) use package::inspect;
-pub(crate) use service::{Action, Snapshot, apply, load};
+pub(crate) use package::inspect_bundle;
+pub(crate) use service::{Action, Snapshot, add_bundled, apply, load};
+
+#[derive(Debug)]
+pub(crate) struct Bundled {
+    pub(crate) entry: Entry,
+    pub(crate) source: PathBuf,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -34,12 +40,14 @@ pub(super) struct Mapping {
     pub(super) identity: Identity,
 }
 
+#[cfg(test)]
 #[derive(Debug)]
 pub(crate) struct Inspected {
     pub(crate) entry: Entry,
     pub(crate) source: Option<tempfile::TempDir>,
 }
 
+#[cfg(test)]
 impl Drop for Inspected {
     fn drop(&mut self) {
         if let Some(source) = self.source.take() {
@@ -167,9 +175,8 @@ pub(super) fn source_root(data: &Path, hash: &str) -> PathBuf {
     data.join("mele-launcher-sources").join(hash)
 }
 
-fn retain(data: &Path, inspected: &Inspected, control: &Control) -> Result<()> {
-    validate_entries(std::slice::from_ref(&inspected.entry))?;
-    let entry = &inspected.entry;
+fn retain(data: &Path, source: &Path, entry: &Entry, control: &Control) -> Result<()> {
+    validate_entries(std::slice::from_ref(entry))?;
     let cache = data.join("mele-launcher-sources");
     files::create_directory(&cache)?;
     let destination = source_root(data, &entry.source_sha256);
@@ -182,11 +189,7 @@ fn retain(data: &Path, inspected: &Inspected, control: &Control) -> Result<()> {
     for file in &entry.sources {
         control.check()?;
         files::copy(
-            inspected
-                .source
-                .as_ref()
-                .context("Launcher archive was already released")?
-                .path(),
+            source,
             &file.relative,
             temp.path(),
             &file.relative,

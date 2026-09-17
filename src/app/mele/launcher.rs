@@ -4,7 +4,7 @@ use std::sync::{Arc, atomic::AtomicBool};
 use adw::prelude::*;
 use relm4::prelude::*;
 
-use crate::core::game::mass_effect::launcher::{self, Action, Inspected, Snapshot};
+use crate::core::game::mass_effect::launcher::{self, Action, Snapshot};
 use crate::ui::mele_dialog;
 
 use super::super::{
@@ -16,14 +16,12 @@ use super::super::{
 #[derive(Debug)]
 pub(crate) enum Msg {
     Open,
-    Inspect(Snapshot, gio::File),
-    Apply(Snapshot, Action),
+    Apply(Box<Snapshot>, Action),
 }
 
 #[derive(Debug)]
 pub(crate) enum Command {
-    Loaded(Result<Snapshot, String>),
-    Inspected(Snapshot, Result<Inspected, String>),
+    Loaded(Result<Box<Snapshot>, String>),
     Applied(Result<(), String>),
 }
 
@@ -57,24 +55,9 @@ impl App {
                     command(Command::Loaded(
                         launcher::load(&tracker, &game)
                             .await
+                            .map(Box::new)
                             .map_err(|error| format!("{error:#}")),
                     ))
-                });
-            }
-            Msg::Inspect(snapshot, file) => {
-                let Some(path) = file.path() else {
-                    self.push_notification("The selected launcher archive has no local path");
-                    return;
-                };
-                self.begin_work(WorkKind::Installing, "Inspecting launcher archive...");
-                self.location_command(sender, async move {
-                    // Keep the portal-backed GFile alive until extraction finishes. Some
-                    // desktops revoke the transient document route when its last GFile drops.
-                    let result = launcher::inspect(path)
-                        .await
-                        .map_err(|error| format!("{error:#}"));
-                    drop(file);
-                    command(Command::Inspected(snapshot, result))
                 });
             }
             Msg::Apply(snapshot, action) => {
@@ -87,7 +70,7 @@ impl App {
                 ));
                 self.location_command(sender, async move {
                     command(Command::Applied(
-                        launcher::apply(tracker, snapshot, action, cancelled)
+                        launcher::apply(tracker, *snapshot, action, cancelled)
                             .await
                             .map_err(|error| format!("{error:#}")),
                     ))
@@ -106,36 +89,7 @@ impl App {
             Command::Loaded(result) => {
                 self.finish_work(WorkKind::Deploying);
                 match result {
-                    Ok(snapshot) => show(root, sender.input_sender().clone(), snapshot),
-                    Err(error) => self.push_notification(&error),
-                }
-            }
-            Command::Inspected(snapshot, result) => {
-                self.finish_work(WorkKind::Installing);
-                match result {
-                    Ok(inspected) => {
-                        let dialog = adw::AlertDialog::builder().heading(format!("Install {}?", inspected.entry.name)).body("This changes the shared launcher for LE1, LE2 and LE3. Game profiles and game Purge will leave it installed. Plugins run code when the launcher starts; install only mods you trust.").build();
-                        dialog.add_responses(&[
-                            ("cancel", "Cancel"),
-                            ("install", "Approve and Install"),
-                        ]);
-                        dialog
-                            .set_response_appearance("install", adw::ResponseAppearance::Suggested);
-                        dialog.set_close_response("cancel");
-                        let pending = std::cell::RefCell::new(Some(inspected));
-                        let input = sender.input_sender().clone();
-                        dialog.connect_response(None, move |_, response| {
-                            if response == "install"
-                                && let Some(inspected) = pending.borrow_mut().take()
-                            {
-                                let _ = input.send(message(Msg::Apply(
-                                    snapshot.clone(),
-                                    Action::Add(inspected),
-                                )));
-                            }
-                        });
-                        dialog.present(Some(root));
-                    }
+                    Ok(snapshot) => show(root, sender.input_sender().clone(), *snapshot),
                     Err(error) => self.push_notification(&error),
                 }
             }
@@ -156,9 +110,8 @@ impl App {
 
 fn show(root: &adw::ApplicationWindow, input: relm4::Sender<AppMsg>, snapshot: Snapshot) {
     let dialog = adw::AlertDialog::builder().heading("Shared Launcher Mods").body("These mods affect LE1, LE2 and LE3. They stay installed when you switch game profiles or purge a game. Later mods take priority.").build();
-    dialog.add_responses(&[("close", "Close"), ("add", "Add Archive")]);
+    dialog.add_response("close", "Close");
     dialog.set_close_response("close");
-    dialog.set_response_appearance("add", adw::ResponseAppearance::Suggested);
     let group = adw::PreferencesGroup::new();
     let snapshot = Rc::new(snapshot);
     for (index, entry) in snapshot.entries.iter().enumerate() {
@@ -215,7 +168,7 @@ fn show(root: &adw::ApplicationWindow, input: relm4::Sender<AppMsg>, snapshot: S
                     if let Some(dialog) = dialog.upgrade() {
                         dialog.close();
                     }
-                    let _ = input.send(message(Msg::Apply((*snapshot).clone(), action)));
+                    let _ = input.send(message(Msg::Apply(Box::new((*snapshot).clone()), action)));
                 }
             });
             row.add_suffix(&button);
@@ -237,7 +190,7 @@ fn show(root: &adw::ApplicationWindow, input: relm4::Sender<AppMsg>, snapshot: S
                 if let Some(dialog) = dialog.upgrade() {
                     dialog.close();
                 }
-                let _ = input.send(message(Msg::Apply((*snapshot).clone(), action)));
+                let _ = input.send(message(Msg::Apply(Box::new((*snapshot).clone()), action)));
             }
         });
         group.add(&button);
@@ -248,25 +201,5 @@ fn show(root: &adw::ApplicationWindow, input: relm4::Sender<AppMsg>, snapshot: S
         .child(&group)
         .build();
     dialog.set_extra_child(Some(&scroll));
-    let weak_root = root.downgrade();
-    dialog.connect_response(None, move |_, response| {
-        if response != "add" {
-            return;
-        }
-        let Some(root) = weak_root.upgrade() else {
-            return;
-        };
-        let picker = gtk::FileDialog::builder()
-            .title("Select Launcher Mod Archive")
-            .modal(true)
-            .build();
-        let input = input.clone();
-        let snapshot = snapshot.clone();
-        picker.open(Some(&root), None::<&gio::Cancellable>, move |result| {
-            if let Ok(file) = result {
-                let _ = input.send(message(Msg::Inspect((*snapshot).clone(), file)));
-            }
-        });
-    });
     dialog.present(Some(root));
 }

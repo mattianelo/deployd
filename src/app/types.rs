@@ -122,7 +122,7 @@ pub(crate) enum ManualMetadataResult {
 
 pub(crate) struct PendingInstall {
     pub(crate) mele: Option<Box<crate::core::game::mass_effect::package::PackagePlan>>,
-    pub(crate) mele_bundled_launcher: bool,
+    pub(crate) mele_bundled_launcher: Option<crate::core::game::mass_effect::launcher::Bundled>,
     pub(crate) tmp_dir: TempDir,
     pub(crate) mod_name: String,
     pub(crate) game: Game,

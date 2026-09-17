@@ -153,7 +153,7 @@ impl App {
                 };
                 self.install.pending = Some(PendingInstall {
                     mele: None,
-                    mele_bundled_launcher: false,
+                    mele_bundled_launcher: None,
                     tmp_dir,
                     mod_name: mod_name.clone(),
                     game,

@@ -1,20 +1,22 @@
 use super::*;
 
-pub(crate) async fn inspect(archive: PathBuf) -> Result<Inspected> {
-    tokio::task::spawn_blocking(move || {
-        let source = crate::core::archive::extract_archive(&archive, None)?;
-        let fallback = archive
-            .file_stem()
-            .and_then(|name| name.to_str())
-            .unwrap_or("Launcher mod");
-        let entry = parse(source.path(), fallback)?;
-        Ok(Inspected {
-            entry,
-            source: Some(source),
-        })
-    })
-    .await
-    .context("Launcher archive inspection worker failed")?
+pub(crate) fn inspect_bundle(root: &Path) -> Result<Option<Bundled>> {
+    let Some(manifest) = super::super::package::launcher_manifest(root)? else {
+        return Ok(None);
+    };
+    let source = manifest
+        .parent()
+        .context("Launcher manifest has no package directory")?;
+    let fallback = source
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("Launcher mod");
+    let entry = parse(source, fallback)?;
+    let source = source
+        .strip_prefix(root)
+        .context("Launcher package is outside the extracted archive")?
+        .to_path_buf();
+    Ok(Some(Bundled { entry, source }))
 }
 
 pub(in crate::core::game::mass_effect) fn parse(root: &Path, fallback: &str) -> Result<Entry> {

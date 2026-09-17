@@ -12,7 +12,7 @@ use super::{dazip, file_list};
 pub(crate) enum PrepareResult {
     MassEffect {
         plan: Box<crate::core::game::mass_effect::package::PackagePlan>,
-        bundled_launcher: bool,
+        bundled_launcher: Option<crate::core::game::mass_effect::launcher::Bundled>,
         tmp_dir: TempDir,
     },
     Normal {
@@ -76,9 +76,7 @@ pub(crate) async fn prepare_mod(
             )?;
             plan.verify_sources(extracted_root)?;
             let bundled_launcher =
-                crate::core::game::mass_effect::package::contains_launcher_manifest(
-                    extracted_root,
-                )?;
+                crate::core::game::mass_effect::launcher::inspect_bundle(extracted_root)?;
             return Ok(PrepareResult::MassEffect {
                 plan: Box::new(plan),
                 bundled_launcher,

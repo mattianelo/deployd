@@ -371,7 +371,7 @@ pub(crate) enum MigrationMsg {
 pub(crate) enum PrepareResultMsg {
     Normal {
         mele: Option<Box<crate::core::game::mass_effect::package::PackagePlan>>,
-        mele_bundled_launcher: bool,
+        mele_bundled_launcher: Option<crate::core::game::mass_effect::launcher::Bundled>,
         file_list: Vec<(PathBuf, PathBuf)>,
         stripped_wrapper: Option<String>,
         tmp_dir: TempDir,
