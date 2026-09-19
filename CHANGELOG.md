@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Replaced the Deploy confirmation's internal target dump with compact added, replaced and removed
+  file counts.
+- Reduced repeat Deploy preparation time by reusing retained content identities for mod files that
+  have not changed since their last complete inventory.
+
 ## [3.0.0]
 
 - Added retained deployment generations for Bethesda, Aurora, Eclipse, REDEngine and MELE. Each

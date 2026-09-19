@@ -2,7 +2,7 @@ use std::fs;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::Result;
 
@@ -383,6 +383,50 @@ async fn published_metadata_is_reproducible_and_only_commits_with_its_caller() -
         .expect("mod records")
         .rows;
     assert_eq!(records::text(&mods[0], "game_id")?, "game");
+    Ok(())
+}
+
+// @variants: both
+#[tokio::test]
+async fn unchanged_sources_reuse_retained_identities() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let (tracker, game, profile) = snapshot_fixture(temp.path()).await?;
+    let history = History::open(&tracker, &game.id, temp.path(), true).await?;
+    let first = manifest::capture(
+        &history,
+        &game,
+        &profile,
+        temp.path().to_owned(),
+        Control::default(),
+    )
+    .await?;
+
+    let transferred = Arc::new(AtomicU64::new(0));
+    let observed = transferred.clone();
+    let control = Control {
+        progress: Arc::new(move |bytes, _| {
+            observed.fetch_add(bytes, Ordering::Relaxed);
+        }),
+        ..Control::default()
+    };
+    let second = manifest::capture(
+        &history,
+        &game,
+        &profile,
+        temp.path().to_owned(),
+        control.clone(),
+    )
+    .await?;
+    assert_eq!(transferred.load(Ordering::Relaxed), 0);
+    assert_eq!(first.id()?, second.id()?);
+
+    let replacement = temp.path().join("replacement");
+    fs::write(&replacement, b"edited")?;
+    fs::rename(replacement, temp.path().join("winner/file.txt"))?;
+    let third =
+        manifest::capture(&history, &game, &profile, temp.path().to_owned(), control).await?;
+    assert!(transferred.load(Ordering::Relaxed) > 0);
+    assert_ne!(second.id()?, third.id()?);
     Ok(())
 }
 

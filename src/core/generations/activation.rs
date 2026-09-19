@@ -210,9 +210,13 @@ pub(crate) async fn prepare(
     let history = History::open(tracker, &game.id, cache, true).await?;
     recovery::recover(&history, game).await?;
     let previous = ownership::initialize(&history).await?;
-    let old = match previous.generation.as_deref() {
-        Some(id) => Some(history.load_with_control(id, control.clone()).await?),
-        None => None,
+    let old = if profile.is_none() && game.engine == GameEngine::Bethesda {
+        match previous.generation.as_deref() {
+            Some(id) => Some(history.load_with_control(id, control.clone()).await?),
+            None => None,
+        }
+    } else {
+        None
     };
     let mut manifest = match profile {
         Some(profile) => Some(

@@ -70,6 +70,7 @@ async fn upgrade_preserves_existing_state_without_inventing_history() -> Result<
     for table in [
         "generations",
         "generation_stores",
+        "generation_source_identities",
         "generation_game_state",
         "generation_journals",
         "generation_activations",
@@ -106,6 +107,27 @@ async fn history_survives_originating_profile_deletion() -> Result<()> {
     sqlx::query("DELETE FROM generation_objects")
         .execute(&pool)
         .await?;
+    Ok(())
+}
+
+// @variants: both
+#[tokio::test]
+async fn source_identity_cache_does_not_protect_retained_objects() -> Result<()> {
+    let pool = fixture().await?;
+    sqlx::query("INSERT INTO generation_source_identities(game_id,logical_path,device,inode,size,mtime_seconds,mtime_nanoseconds,ctime_seconds,ctime_nanoseconds,sha256) VALUES ('game','cache/mod/file',1,2,12,3,4,5,6,?)")
+        .bind(OBJECT)
+        .execute(&pool)
+        .await?;
+    sqlx::query("DELETE FROM generation_objects WHERE game_id='game' AND sha256=?")
+        .bind(OBJECT)
+        .execute(&pool)
+        .await?;
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM generation_source_identities")
+            .fetch_one(&pool)
+            .await?,
+        0
+    );
     Ok(())
 }
 

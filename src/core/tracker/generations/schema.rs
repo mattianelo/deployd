@@ -12,6 +12,20 @@ pub(super) const STATEMENTS: &[&str] = &[
     size INTEGER NOT NULL CHECK(typeof(size) = 'integer' AND size >= 0),
     PRIMARY KEY(game_id, sha256)
 );"#,
+    r#"CREATE TABLE IF NOT EXISTS generation_source_identities (
+    game_id TEXT NOT NULL REFERENCES generation_stores(game_id) ON DELETE CASCADE,
+    logical_path TEXT NOT NULL CHECK(length(logical_path) > 0),
+    device INTEGER NOT NULL CHECK(typeof(device) = 'integer' AND device >= 0),
+    inode INTEGER NOT NULL CHECK(typeof(inode) = 'integer' AND inode >= 0),
+    size INTEGER NOT NULL CHECK(typeof(size) = 'integer' AND size >= 0),
+    mtime_seconds INTEGER NOT NULL CHECK(typeof(mtime_seconds) = 'integer'),
+    mtime_nanoseconds INTEGER NOT NULL CHECK(typeof(mtime_nanoseconds) = 'integer'),
+    ctime_seconds INTEGER NOT NULL CHECK(typeof(ctime_seconds) = 'integer'),
+    ctime_nanoseconds INTEGER NOT NULL CHECK(typeof(ctime_nanoseconds) = 'integer'),
+    sha256 TEXT NOT NULL,
+    PRIMARY KEY(game_id, logical_path),
+    FOREIGN KEY(game_id, sha256) REFERENCES generation_objects(game_id, sha256) ON DELETE CASCADE
+);"#,
     r#"CREATE TABLE IF NOT EXISTS generations (
     game_id TEXT NOT NULL REFERENCES generation_stores(game_id) ON DELETE RESTRICT,
     id TEXT NOT NULL CHECK(length(id) = 64 AND id NOT GLOB '*[^0-9a-f]*'),

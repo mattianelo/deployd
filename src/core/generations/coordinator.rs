@@ -118,9 +118,8 @@ async fn validate(
     if let Some(generation) = previous.and_then(|state| state.generation.as_deref()) {
         targets.extend(
             history
-                .load(generation)
+                .outputs(generation)
                 .await?
-                .outputs
                 .into_iter()
                 .map(|output| output.target),
         );

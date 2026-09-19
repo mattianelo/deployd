@@ -216,7 +216,10 @@ restore a generation as a new profile, or delete an unprotected generation. Rest
 not change the game immediately. Live save banks switch only during Deploy, and saves are not part
 of deployment history. External tools require the selected profile to match the deployed
 configuration; after a tool exits, Deployd scans for changes without automatically sorting or
-deploying them.
+deploying them. The final Deploy confirmation summarizes file counts without listing internal
+deployment targets. After this version records source identities during a deployment, later
+deployments reuse the retained identities of unchanged mod files so that small library changes do
+not require copying the whole library again.
 
 **Hardlink filesystem constraint**
 

@@ -209,7 +209,112 @@ impl Manifest {
     }
 }
 
-type Inventory = BTreeMap<String, (PathBuf, (u64, u64, u64, i64, i64))>;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SourceStamp {
+    device: i64,
+    inode: i64,
+    size: i64,
+    mtime_seconds: i64,
+    mtime_nanoseconds: i64,
+    ctime_seconds: i64,
+    ctime_nanoseconds: i64,
+}
+
+impl SourceStamp {
+    fn read(metadata: &fs::Metadata) -> Result<Self> {
+        Ok(Self {
+            device: i64::try_from(metadata.dev())?,
+            inode: i64::try_from(metadata.ino())?,
+            size: i64::try_from(metadata.len())?,
+            mtime_seconds: metadata.mtime(),
+            mtime_nanoseconds: metadata.mtime_nsec(),
+            ctime_seconds: metadata.ctime(),
+            ctime_nanoseconds: metadata.ctime_nsec(),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CachedSource {
+    stamp: SourceStamp,
+    identity: Identity,
+}
+
+type CachedSourceRow = (String, i64, i64, i64, i64, i64, i64, i64, String);
+
+type Inventory = BTreeMap<String, (PathBuf, SourceStamp)>;
+type Capture = (Manifest, BTreeMap<String, CachedSource>);
+
+async fn cached_sources(history: &History) -> Result<BTreeMap<String, CachedSource>> {
+    let rows: Vec<CachedSourceRow> = sqlx::query_as(
+        "SELECT logical_path,device,inode,size,mtime_seconds,mtime_nanoseconds,ctime_seconds,ctime_nanoseconds,sha256 FROM generation_source_identities WHERE game_id=?",
+    )
+    .bind(&history.game)
+    .fetch_all(&history.tracker.pool)
+    .await?;
+    rows.into_iter()
+        .map(
+            |(
+                path,
+                device,
+                inode,
+                size,
+                mtime_seconds,
+                mtime_nanoseconds,
+                ctime_seconds,
+                ctime_nanoseconds,
+                sha256,
+            )| {
+                let size = u64::try_from(size)?;
+                Ok((
+                    path,
+                    CachedSource {
+                        stamp: SourceStamp {
+                            device,
+                            inode,
+                            size: i64::try_from(size)?,
+                            mtime_seconds,
+                            mtime_nanoseconds,
+                            ctime_seconds,
+                            ctime_nanoseconds,
+                        },
+                        identity: Identity { size, sha256 },
+                    },
+                ))
+            },
+        )
+        .collect()
+}
+
+async fn replace_cached_sources(
+    history: &History,
+    sources: &BTreeMap<String, CachedSource>,
+) -> Result<()> {
+    let mut tx = super::catalog::durable(&history.tracker).await?;
+    sqlx::query("DELETE FROM generation_source_identities WHERE game_id=?")
+        .bind(&history.game)
+        .execute(&mut *tx)
+        .await?;
+    for (path, source) in sources {
+        sqlx::query(
+            "INSERT INTO generation_source_identities(game_id,logical_path,device,inode,size,mtime_seconds,mtime_nanoseconds,ctime_seconds,ctime_nanoseconds,sha256) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        )
+        .bind(&history.game)
+        .bind(path)
+        .bind(source.stamp.device)
+        .bind(source.stamp.inode)
+        .bind(source.stamp.size)
+        .bind(source.stamp.mtime_seconds)
+        .bind(source.stamp.mtime_nanoseconds)
+        .bind(source.stamp.ctime_seconds)
+        .bind(source.stamp.ctime_nanoseconds)
+        .bind(&source.identity.sha256)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
 
 pub(super) async fn capture(
     history: &History,
@@ -221,12 +326,13 @@ pub(super) async fn capture(
     let mut tx = history.tracker.pool.begin().await?;
     let records = records::capture(&mut tx, &game.id, profile).await?;
     tx.commit().await?;
+    let cached = cached_sources(history).await?;
     let cache = history.cache.clone();
     let game = game.clone();
     let store = history.store.clone();
-    let manifest = history
+    let (manifest, retained_sources) = history
         .lease
-        .blocking(move || -> Result<Manifest> {
+        .blocking(move || -> Result<Capture> {
             let mut manifest = Manifest {
                 version: if game.engine == GameEngine::MassEffect {
                     2
@@ -308,25 +414,35 @@ pub(super) async fn capture(
                         };
                         relative(&key)?;
                         let m = fs::symlink_metadata(entry.path())?;
-                        sources.insert(
-                            key,
-                            (
-                                entry.path().to_owned(),
-                                (m.dev(), m.ino(), m.len(), m.ctime(), m.ctime_nsec()),
-                            ),
-                        );
+                        sources.insert(key, (entry.path().to_owned(), SourceStamp::read(&m)?));
                     }
                 }
                 Ok(sources)
             };
             let sources = inventory(&roots)?;
-            for (logical, (source, _)) in &sources {
+            let mut retained_sources = BTreeMap::new();
+            for (logical, (source, stamp)) in &sources {
                 control.check()?;
                 let metadata = fs::symlink_metadata(source)?;
                 let content = if metadata.is_dir() {
                     None
                 } else {
-                    Some(store.retain(source, &control)?)
+                    let identity = match cached.get(logical) {
+                        Some(cached)
+                            if cached.stamp == *stamp && store.contains(&cached.identity)? =>
+                        {
+                            cached.identity.clone()
+                        }
+                        _ => store.retain(source, &control)?,
+                    };
+                    retained_sources.insert(
+                        logical.clone(),
+                        CachedSource {
+                            stamp: *stamp,
+                            identity: identity.clone(),
+                        },
+                    );
+                    Some(identity)
                 };
                 manifest.sources.push(Source {
                     path: logical.clone(),
@@ -364,10 +480,11 @@ pub(super) async fn capture(
                 }
             }
             manifest.validate()?;
-            Ok(manifest)
+            Ok((manifest, retained_sources))
         })
         .await
         .context("Complete mod inventory worker stopped")??;
     history.register(&manifest.objects()).await?;
+    replace_cached_sources(history, &retained_sources).await?;
     Ok(manifest)
 }

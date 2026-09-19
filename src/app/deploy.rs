@@ -442,24 +442,14 @@ impl App {
             }
         };
         let purge = prepared.is_purge();
-        let details = if prepared.differences.is_empty() {
-            "No managed files differ. Applying still records this activation.".to_string()
+        let (added, removed, changed) = prepared.change_counts();
+        let details = if purge {
+            "Purge restores managed game content while retaining deployment history, the mod library, and saves."
+                .to_string()
+        } else if added == 0 && removed == 0 && changed == 0 {
+            "No managed files need to change. Deploy still records this activation.".to_string()
         } else {
-            let shown = prepared
-                .differences
-                .iter()
-                .take(50)
-                .cloned()
-                .collect::<Vec<_>>()
-                .join("\n");
-            if prepared.differences.len() > 50 {
-                format!(
-                    "{shown}\n… and {} more change(s)",
-                    prepared.differences.len() - 50
-                )
-            } else {
-                shown
-            }
+            format!("Prepared changes: {added} added, {changed} replaced, and {removed} removed.")
         };
         let dialog = adw::AlertDialog::builder()
             .heading(if purge {

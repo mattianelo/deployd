@@ -268,12 +268,7 @@ impl History {
         self.load_with_control(id, Control::default()).await
     }
 
-    pub(super) async fn load_with_control(
-        &self,
-        id: &str,
-        control: Control,
-    ) -> Result<super::manifest::Manifest> {
-        control.check()?;
+    async fn load_manifest(&self, id: &str) -> Result<super::manifest::Manifest> {
         let (version, document): (i64, String) = sqlx::query_as(
             "SELECT manifest_version,manifest FROM generations WHERE game_id=? AND id=?",
         )
@@ -303,13 +298,24 @@ impl History {
             references == objects,
             "Historical content references are incomplete; restoration is unavailable"
         );
-        let dependency: Option<(String,String)> = sqlx::query_as("SELECT family_id,revision_id FROM generation_shared_dependencies WHERE game_id=? AND generation_id=?")
+        let dependency: Option<(String, String)> = sqlx::query_as("SELECT family_id,revision_id FROM generation_shared_dependencies WHERE game_id=? AND generation_id=?")
             .bind(&self.game).bind(id).fetch_optional(&self.tracker.pool).await?;
         ensure!(
             dependency == manifest.shared_revision,
             "Historical shared references are incomplete"
         );
-        if let Some((family, revision)) = &dependency {
+        Ok(manifest)
+    }
+
+    pub(super) async fn load_with_control(
+        &self,
+        id: &str,
+        control: Control,
+    ) -> Result<super::manifest::Manifest> {
+        control.check()?;
+        let manifest = self.load_manifest(id).await?;
+        let objects = manifest.objects();
+        if let Some((family, revision)) = &manifest.shared_revision {
             super::shared::load(self, family, revision, control.clone()).await?;
         }
         let store = self.store.clone();
@@ -323,6 +329,10 @@ impl History {
             .await
             .context("History verification worker stopped")??;
         Ok(manifest)
+    }
+
+    pub(super) async fn outputs(&self, id: &str) -> Result<Vec<super::manifest::Output>> {
+        Ok(self.load_manifest(id).await?.outputs)
     }
 
     #[cfg_attr(not(test), allow(dead_code))]

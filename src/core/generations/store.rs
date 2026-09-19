@@ -138,6 +138,26 @@ impl Store {
         self.check()
     }
 
+    pub(super) fn contains(&self, identity: &Identity) -> Result<bool> {
+        identity.validate()?;
+        self.check()?;
+        directory(&self.root.join("objects"))?;
+        let object = self.root.join("objects").join(&identity.sha256);
+        let metadata = match fs::symlink_metadata(&object) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(error.into()),
+        };
+        ensure!(metadata.is_dir(), "Invalid retained content directory");
+        let content = object.join("content");
+        let metadata = match fs::symlink_metadata(content) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(error.into()),
+        };
+        Ok(metadata.is_file() && metadata.len() == identity.size)
+    }
+
     pub(super) fn retain(&self, source: &Path, control: &Control) -> Result<Identity> {
         self.check()?;
         let staging = self.root.join("staging");
