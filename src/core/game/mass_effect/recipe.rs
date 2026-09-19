@@ -398,8 +398,10 @@ fn validate(
         .values()
         .any(|stored| stored.plan.manifest.texture_runtime)
         || files.iter().any(|file| {
-            super::package::transformation(&file.destination.relative)
-                == Some(Transformation::PrecompiledTextureOverride)
+            matches!(
+                super::package::transformation(&file.destination.relative),
+                Some(Transformation::TextureOverride | Transformation::PrecompiledTextureOverride)
+            )
         });
     super::components::texture_runtime(&mut recipe.components, recipe.target, texture_runtime);
     super::components::binary_runtime(
@@ -591,8 +593,8 @@ pub(super) async fn deploy_in(
             .unwrap_or_default();
         preparation::verify_inputs(game.path.clone(), condition_inputs.clone(), control.clone())
             .await?;
-        let has_merges = !plan.merges.generated.is_empty();
-        if has_merges {
+        let has_pipeline = !plan.merges.generated.is_empty() || plan.installation.has_raw_m3to();
+        if has_pipeline {
             ensure!(
                 plan.recipe.helper_version.as_deref() == Some(helper::protocol::VERSION),
                 "The MELE recipe must pin its transformation helper version before deployment"
@@ -687,7 +689,7 @@ pub(super) async fn deploy_in(
             .await
             .context("MELE recipe staging worker failed")??
         };
-        let prepared = if has_merges {
+        let prepared = if has_pipeline {
             pipeline::run(
                 pipeline::Work {
                     prepared,
@@ -734,7 +736,7 @@ pub(super) async fn deploy_in(
         };
         control.check()?;
         pipeline::verify_game_inputs(game.path.clone(), game_inputs, control.clone()).await?;
-        let progress: Progress = if has_merges {
+        let progress: Progress = if has_pipeline {
             Arc::new(move |done, total| {
                 progress(4000 + done * 1000 / total, pipeline::PROGRESS_TOTAL)
             })

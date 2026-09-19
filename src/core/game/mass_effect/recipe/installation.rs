@@ -7,6 +7,7 @@ use super::super::baseline::Baseline;
 use super::super::helper::{FileIdentity, protocol::TlkChange};
 use super::super::m3cd::M3cdPlan;
 use super::super::m3m::{M3mPlan, Operation};
+use super::super::m3to::M3toPlan;
 use super::super::package::SourceFile;
 use super::{Control, PlannedFile, Recipe, StoredPackage, Target};
 
@@ -19,6 +20,7 @@ pub(super) struct Step {
     pub(super) m3m_inputs: BTreeSet<String>,
     pub(super) tlk: Vec<TlkChange>,
     pub(super) dlc_config: Vec<M3cdPlan>,
+    pub(super) m3to: Vec<M3toPlan>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,6 +43,13 @@ pub(super) struct Installation {
 }
 
 impl Installation {
+    pub(super) fn has_raw_m3to(&self) -> bool {
+        self.steps
+            .iter()
+            .flat_map(|step| &step.m3to)
+            .any(|plan| !plan.is_compiled())
+    }
+
     pub(super) fn inspect(
         recipe: &Recipe,
         packages: &mut BTreeMap<String, StoredPackage>,
@@ -103,6 +112,7 @@ impl Installation {
                 } else {
                     Vec::new()
                 },
+                m3to: stored.plan.m3to.clone(),
             };
             for mapping in &stored.plan.files {
                 let source = stored
@@ -257,6 +267,16 @@ impl Installation {
                 }
             }
             result.steps.push(step);
+        }
+        let mut texture_layouts = BTreeMap::new();
+        for plan in result.steps.iter().flat_map(|step| &step.m3to) {
+            let compiled = plan.is_compiled();
+            if let Some(previous) = texture_layouts.insert(plan.dlc().to_lowercase(), compiled) {
+                ensure!(
+                    previous == compiled,
+                    "Raw and precompiled M3TO packages cannot target the same DLC in one installation"
+                );
+            }
         }
         result.removals.validate(recipe.target)?;
         result.dlc = available

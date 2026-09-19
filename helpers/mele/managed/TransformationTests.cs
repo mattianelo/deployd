@@ -37,6 +37,7 @@ internal static class TransformationTests
             OrderedM3mTests.Run(root);
             TlkPlotTests.Run(root);
             ShaderMergeTests.Run(root);
+            TextureCompileTests.Run(root);
             if (args.Length == 2 && args[0] == "--shaders")
                 ShaderMergeTests.Corpus(args[1]);
             else if (args.Length == 2 && args[0] == "--merge-dlc")

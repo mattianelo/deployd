@@ -43,8 +43,8 @@ The Nexus Mods page remains available for users who prefer that distribution cha
 ### Mass Effect Legendary Edition (experimental)
 
 Manage LE1, LE2 and LE3 with separate mod libraries and profiles. Supported mods
-include Community Patch, cosmetic and content mods, precompiled M3TO textures
-(such as ALOT + ISL), shader mods, squadmate outfits, LE2 DLC configuration
+include Community Patch, cosmetic and content mods, raw and precompiled M3TO
+textures (such as No Headgear for Squadmates, ALOT and ISL), shader mods, squadmate outfits, LE2 DLC configuration
 options and LE2 email additions.
 Deployd reports unsupported packages before installation.
 
@@ -80,8 +80,8 @@ mod list. Deployd identifies and installs both components in the same workflow. 
 **Shared launcher mods** to enable, disable, reorder, repair or remove imported launcher
 components.
 
-**Limitations:** MEM textures, raw M3TO source packages, headmorphs and portable
-MELE profile transfers are not supported. Launcher executable replacements and
+**Limitations:** MEM textures, headmorphs and portable MELE profile transfers are
+not supported. Launcher executable replacements and
 launcher installer choices are also unsupported; add supported launcher archives
 through the shared launcher menu. Restore existing MEM textures to clean game
 content before adding the game. Mod deployment does not edit saves.

@@ -43,6 +43,7 @@ impl Transformation {
                 | Self::PlotManager
                 | Self::SquadmateOutfit
                 | Self::Email
+                | Self::TextureOverride
                 | Self::PrecompiledTextureOverride
                 | Self::GlobalShader
         )
@@ -355,6 +356,7 @@ impl PackagePlan {
         };
         plan.images = super::alternates::images::inspect(root, &plan)?;
         super::alternates::validate(&plan)?;
+        validate_inert_payloads(&plan.files)?;
         super::binary::inspect_mappings(root, &plan)?;
         Ok(plan)
     }
@@ -667,6 +669,7 @@ impl PackagePlan {
                 .all(|kind| kind.supported()),
             "Selected alternate requires an unsupported transformation"
         );
+        validate_inert_payloads(&self.files)?;
         Ok(())
     }
 
@@ -708,7 +711,8 @@ fn structured_extension(path: &str) -> bool {
     path.rsplit_once('.').is_some_and(|(_, extension)| {
         [
             "u", "upk", "sfm", "pcc", "bin", "tlk", "cnd", "ini", "afc", "tfc", "dlc", "sfar",
-            "txt", "bik", "bmp", "usf", "isb", "asi", "dll", "json", "toml", "xml", "cfg",
+            "txt", "bik", "bmp", "usf", "isb", "asi", "dll", "json", "toml", "xml", "cfg", "exe",
+            "bat", "cmd", "ps1", "sh",
         ]
         .iter()
         .any(|allowed| extension.eq_ignore_ascii_case(allowed))
@@ -813,13 +817,58 @@ pub(super) fn validate_payload_name(relative: &str) -> Result<()> {
         .and_then(|value| value.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
+    if matches!(extension.as_str(), "exe" | "bat" | "cmd" | "ps1" | "sh") {
+        let parts: Vec<_> = relative.split('/').collect();
+        ensure!(
+            parts.len() >= 5
+                && parts[0] == "BioGame"
+                && parts[1] == "DLC"
+                && parts[2].starts_with("DLC_MOD_")
+                && parts[2].len() > 8,
+            "Executable payload '{relative}' requires a declared custom-DLC destination"
+        );
+    }
+    ensure!(
+        !matches!(extension.as_str(), "dll" | "asi"),
+        "Executable payload '{relative}' requires the binary-mod installation workflow"
+    );
     ensure!(
         !matches!(
             extension.as_str(),
-            "exe" | "dll" | "asi" | "bat" | "cmd" | "ps1" | "sh"
+            "headmorph" | "me2headmorph" | "me3headmorph" | "ron"
         ),
-        "Executable payload '{relative}' requires the binary-mod installation workflow"
+        "Headmorph installation is deferred; this package must not be deployed as game files"
     );
+    Ok(())
+}
+
+pub(super) fn validate_mapped_inert_payload(relative: &str) -> Result<()> {
+    let extension = Path::new(relative)
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("");
+    if ["exe", "bat", "cmd", "ps1", "sh"]
+        .iter()
+        .any(|allowed| extension.eq_ignore_ascii_case(allowed))
+    {
+        validate_payload_name(relative)?;
+    }
+    Ok(())
+}
+
+fn validate_inert_payloads(files: &[FileMapping]) -> Result<()> {
+    for file in files {
+        validate_mapped_inert_payload(&super::binary::game_path(&file.destination)?)?;
+    }
+    Ok(())
+}
+
+pub(super) fn validate_source_name(relative: &str) -> Result<()> {
+    let extension = Path::new(relative)
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
     ensure!(
         !matches!(
             extension.as_str(),
@@ -1185,6 +1234,87 @@ mod tests {
         fs::remove_file(package.join("MODDESC.INI"))?;
         fs::write(package.join("payload.DLL"), b"executable")?;
         assert!(PackagePlan::inspect(root.path(), None).is_err());
+        Ok(())
+    }
+
+    // @variants: both
+    #[test]
+    fn permits_inert_scripts_only_inside_canonical_custom_dlc() -> Result<()> {
+        for extension in ["bat", "cmd", "ps1", "sh", "exe"] {
+            validate_payload_name(&format!(
+                "BioGame/DLC/DLC_MOD_LE2CR/CookedPCConsole/restore_backup.{extension}"
+            ))?;
+            assert!(validate_source_name(&format!("payload.{extension}")).is_ok());
+            assert!(
+                validate_payload_name(&format!("BioGame/CookedPCConsole/install.{extension}"))
+                    .is_err()
+            );
+            assert!(
+                validate_payload_name(&format!(
+                    "BioGame/DLC/DLC_EXP_Pack/CookedPCConsole/install.{extension}"
+                ))
+                .is_err()
+            );
+        }
+        for extension in ["dll", "asi"] {
+            assert!(
+                validate_payload_name(&format!(
+                    "BioGame/DLC/DLC_MOD_LE2CR/CookedPCConsole/plugin.{extension}"
+                ))
+                .is_err()
+            );
+        }
+        Ok(())
+    }
+
+    // @variants: both
+    #[test]
+    #[ignore = "requires the maintainer-supplied reported LE2 mod directories"]
+    fn inspects_supplied_esa_combat_and_no_headgear_packages() -> Result<()> {
+        let esa_root = Path::new("modTesting/Expanded Shepard Armory (ESA)");
+        let esa_original = PackagePlan::inspect(esa_root, None)?;
+        let mut esa = esa_original.clone();
+        esa.resolve(esa_root, &esa_original.default_options(), &BTreeSet::new())?;
+        assert!(esa.files.iter().any(|file| {
+            file.source.starts_with("Options/Armored Epilogue/")
+                && file
+                    .destination
+                    .starts_with("DLC/DLC_MOD_ESA/CookedPCConsole/")
+        }));
+
+        let combat = PackagePlan::inspect(Path::new("modTesting/ME2LE Combat Remastered"), None)?;
+        for name in ["create_backup.bat", "restore_backup.bat"] {
+            assert!(combat.files.iter().any(|file| {
+                file.destination == format!("DLC/DLC_MOD_LE2CR/CookedPCConsole/{name}")
+            }));
+        }
+
+        let headgear_root = Path::new("modTesting/No Headgear for Squadmates - LE2");
+        let headgear_original = PackagePlan::inspect(headgear_root, None)?;
+        let choice = headgear_original
+            .manifest
+            .alternates
+            .iter()
+            .find(|alternate| alternate.name == "Garrus No Mic")
+            .context("Missing representative No Headgear option")?;
+        let mut selected = headgear_original.default_options();
+        for alternate in &headgear_original.manifest.alternates {
+            if alternate.group == choice.group {
+                selected.remove(&alternate.key);
+            }
+        }
+        selected.insert(choice.key.clone());
+        let mut headgear = headgear_original.clone();
+        headgear.resolve(headgear_root, &selected, &BTreeSet::new())?;
+        assert!(
+            headgear
+                .required_transformations()
+                .contains(&Transformation::TextureOverride)
+        );
+        assert!(headgear.files.iter().any(|file| {
+            file.destination
+                .ends_with("TextureOverride-DLC_MOD_NoHeadgearSquad_GarrusNoMic.m3to")
+        }));
         Ok(())
     }
 

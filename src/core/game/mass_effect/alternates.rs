@@ -528,6 +528,47 @@ fn prefix(plan: &PackagePlan) -> Result<String> {
         .unwrap_or_default())
 }
 
+fn declared_dlc(plan: &PackagePlan, destination: &str) -> bool {
+    let Some(name) = destination.split('/').next() else {
+        return false;
+    };
+    plan.manifest
+        .dlc
+        .iter()
+        .any(|(_, dlc)| name.eq_ignore_ascii_case(dlc))
+        || plan.manifest.alternates.iter().any(|alternate| {
+            matches!(
+                &alternate.operation,
+                Operation::Folder {
+                    destination,
+                    new_dlc: true,
+                    ..
+                } if name.eq_ignore_ascii_case(destination)
+            )
+        })
+}
+
+fn selected_dlc(plan: &PackagePlan, selected: &BTreeSet<String>, destination: &str) -> bool {
+    let Some(name) = destination.split('/').next() else {
+        return false;
+    };
+    plan.manifest
+        .dlc
+        .iter()
+        .any(|(_, dlc)| name.eq_ignore_ascii_case(dlc))
+        || plan.manifest.alternates.iter().any(|alternate| {
+            selected.contains(&alternate.key)
+                && matches!(
+                    &alternate.operation,
+                    Operation::Folder {
+                        destination,
+                        new_dlc: true,
+                        ..
+                    } if name.eq_ignore_ascii_case(destination)
+                )
+        })
+}
+
 pub(super) fn mappings(plan: &PackagePlan, alternate: &Alternate) -> Result<Vec<FileMapping>> {
     let prefix = prefix(plan)?;
     let mut files = Vec::new();
@@ -564,11 +605,7 @@ pub(super) fn mappings(plan: &PackagePlan, alternate: &Alternate) -> Result<Vec<
         } => {
             let target = alternate.destination(destination)?;
             ensure!(
-                alternate.basegame
-                    || plan.manifest.dlc.iter().any(|(_, dlc)| destination
-                        .split('/')
-                        .next()
-                        .is_some_and(|name| name.eq_ignore_ascii_case(dlc))),
+                alternate.basegame || declared_dlc(plan, destination),
                 "Alternate file must target a declared custom DLC"
             );
             ensure!(
@@ -599,10 +636,7 @@ pub(super) fn mappings(plan: &PackagePlan, alternate: &Alternate) -> Result<Vec<
         } => {
             if !new_dlc {
                 ensure!(
-                    plan.manifest.dlc.iter().any(|(_, dlc)| destination
-                        .split('/')
-                        .next()
-                        .is_some_and(|name| name.eq_ignore_ascii_case(dlc))),
+                    declared_dlc(plan, destination),
                     "Alternate folder must target a declared custom DLC"
                 );
             }
@@ -644,7 +678,8 @@ pub(super) fn mappings(plan: &PackagePlan, alternate: &Alternate) -> Result<Vec<
                 .is_none_or(|kind| kind.supported()),
             "Alternate requires an unsupported transformation"
         );
-        super::binary::game_path(&file.destination)?;
+        let destination = super::binary::game_path(&file.destination)?;
+        super::package::validate_mapped_inert_payload(&destination)?;
     }
     Ok(files)
 }
@@ -710,6 +745,20 @@ pub(super) fn apply_with_context(
     {
         if !selected.contains(&alternate.key) {
             continue;
+        }
+        if !alternate.basegame {
+            match &alternate.operation {
+                Operation::File { destination, .. }
+                | Operation::Folder {
+                    destination,
+                    new_dlc: false,
+                    ..
+                } => ensure!(
+                    selected_dlc(&original, selected, destination),
+                    "Selected alternate must target an installed custom DLC"
+                ),
+                _ => {}
+            }
         }
         match &alternate.operation {
             Operation::Merges(names) => {

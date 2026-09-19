@@ -29,6 +29,10 @@
     <Compile Include="SquadUi.cs" />
     <Compile Include="M3cdMerge.cs" />
     <Compile Include="Le1Config.cs" />
+    <Compile Include="TextureCompile.cs" />
+    <Compile Include="TextureOverrideCompiler.cs" />
+    <Compile Include="TextureOverrideTextureEntry.cs" />
+    <Compile Include="BtpFormat.cs" />
     <!-- Pinned LEC supplies Unreal package serialization; its Linux Oodle port is built separately. -->
     <ProjectReference Include="../LegendaryExplorerCore/LegendaryExplorerCore.csproj" />
   </ItemGroup>

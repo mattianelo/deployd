@@ -23,14 +23,14 @@ internal static class Program
                 {
                     protocol = 1,
                     backend = "deployd-mele",
-                    version = "0.11.0",
+                    version = "0.12.0",
                     games = new[] { "LE1", "LE2", "LE3" },
-                    capabilities = new[] { "le1-m3da", "le1-m3cd", "le1-m3m-assets", "le1-m3m-scripts", "mele-m3m-ordered", "le1-tlk", "le1-plot", "mele-plot", "mele-merge-dlc", "le2-squad-ui", "mele-m3gs" },
+                    capabilities = new[] { "le1-m3da", "le1-m3cd", "le1-m3m-assets", "le1-m3m-scripts", "mele-m3m-ordered", "le1-tlk", "le1-plot", "mele-plot", "mele-merge-dlc", "le2-squad-ui", "mele-m3gs", "mele-m3to" },
                     validation = new[] { "package-roundtrip" },
                 }));
                 return 0;
             }
-            if (args.Length == 2 && args[0] is "transform" or "transform-assets" or "transform-scripts" or "transform-m3m" or "transform-tlk" or "transform-plot" or "transform-dlc" or "transform-squad-ui" or "transform-shaders")
+            if (args.Length == 2 && args[0] is "transform" or "transform-assets" or "transform-scripts" or "transform-m3m" or "transform-tlk" or "transform-plot" or "transform-dlc" or "transform-squad-ui" or "transform-shaders" or "transform-textures")
             {
                 using var cancellation = new CancellationTokenSource();
                 Console.CancelKeyPress += (_, signal) => { signal.Cancel = true; cancellation.Cancel(); };
@@ -39,7 +39,9 @@ internal static class Program
                 void Progress(int completed, int total) =>
                     Console.WriteLine(JsonSerializer.Serialize(new { protocol = 1, type = "progress", completed, total }));
                 OutputFile[] outputs;
-                if (args[0] == "transform-shaders")
+                if (args[0] == "transform-textures")
+                    outputs = TextureCompile.Execute(TextureCompile.ReadRequest(args[1]), cancellation.Token, Progress);
+                else if (args[0] == "transform-shaders")
                     outputs = ShaderMerge.Execute(ShaderMerge.ReadRequest(args[1]), cancellation.Token, Progress);
                 else if (args[0] == "transform-dlc")
                     outputs = MergeDlc.Execute(MergeDlc.ReadRequest(args[1]), cancellation.Token, Progress);
@@ -67,7 +69,7 @@ internal static class Program
                 return 0;
             }
             if (args.Length != 4 || args[0] != "verify-roundtrip")
-                throw new ArgumentException("Expected capabilities, transform <request>, transform-assets <request>, transform-scripts <request>, transform-m3m <request>, transform-tlk <request>, transform-plot <request>, transform-dlc <request>, transform-squad-ui <request>, transform-shaders <request>, or verify-roundtrip <game-root> <input> <new-output>.");
+                throw new ArgumentException("Expected capabilities, a supported transform command and request, or verify-roundtrip <game-root> <input> <new-output>.");
             RoundTrip(args[1], args[2], args[3]);
             return 0;
         }

@@ -30,6 +30,11 @@
     <Compile Include="SquadUi.cs" />
     <Compile Include="M3cdMerge.cs" />
     <Compile Include="Le1Config.cs" />
+    <Compile Include="TextureCompile.cs" />
+    <Compile Include="TextureOverrideCompiler.cs" />
+    <Compile Include="TextureOverrideTextureEntry.cs" />
+    <Compile Include="BtpFormat.cs" />
+    <Compile Include="TextureCompileTests.cs" />
     <Compile Include="ConfigTests.cs" />
     <Compile Include="AssetMergeTests.cs" />
     <Compile Include="ScriptMergeTests.cs" />

@@ -347,12 +347,14 @@ pub(in crate::core::game::mass_effect) async fn inspect(
             sources::verify(stored, &control)?;
         }
         control.check()?;
-        plan.prepared = Some(Cached {
-            inputs: session.inputs,
-            prepared,
-            game: destination.game.path,
-            previous: destination.previous,
-        });
+        if !plan.installation.has_raw_m3to() {
+            plan.prepared = Some(Cached {
+                inputs: session.inputs,
+                prepared,
+                game: destination.game.path,
+                previous: destination.previous,
+            });
+        }
         Ok(plan)
     })
     .await

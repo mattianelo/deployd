@@ -111,7 +111,7 @@ def build(root, refresh_lock=False):
     verify_source(root, source, build / "legendary-explorer.tar.gz", configuration["legendary_explorer"])
     helper = source / "Deployd.Mele"
     helper.mkdir(exist_ok=True)
-    for name in ("Deployd.Mele.csproj", "Program.cs", "TransformProtocol.cs", "M3daMerge.cs", "M3cdMerge.cs", "Le1Config.cs", "M3mAssets.cs", "M3mScripts.cs", "M3mClasses.cs", "M3mOrdered.cs", "PackageOutput.cs", "TlkMerge.cs", "PlotMerge.cs", "ShaderMerge.cs", "GlobalShaderFile.cs", "MergeDlcConfig.cs", "EmailGraph.cs", "SquadStreaming.cs", "MergeStartup.cs", "MergeDlcInputs.cs", "MergeDlc.cs", "SquadUi.cs"):
+    for name in ("Deployd.Mele.csproj", "Program.cs", "TransformProtocol.cs", "M3daMerge.cs", "M3cdMerge.cs", "Le1Config.cs", "M3mAssets.cs", "M3mScripts.cs", "M3mClasses.cs", "M3mOrdered.cs", "PackageOutput.cs", "TlkMerge.cs", "PlotMerge.cs", "ShaderMerge.cs", "GlobalShaderFile.cs", "MergeDlcConfig.cs", "EmailGraph.cs", "SquadStreaming.cs", "MergeStartup.cs", "MergeDlcInputs.cs", "MergeDlc.cs", "SquadUi.cs", "TextureCompile.cs", "TextureOverrideCompiler.cs", "TextureOverrideTextureEntry.cs", "BtpFormat.cs"):
         write_changed(helper / name, (root / "helpers/mele/managed" / name).read_bytes())
     projects = ("LegendaryExplorerCore", "LegendaryExplorerCore.SourceGenerators", "Deployd.Mele")
     if not refresh_lock:
@@ -211,7 +211,7 @@ def transformation_tests(root, game=None, corpus=None, corpus_kind="m3da"):
     if project.resolve() != project or any(path.is_symlink() for path in project.rglob("*")):
         raise ValueError("Refusing a linked transformation-test directory")
     for name in ("TransformationTests.csproj", "TransformationTests.cs", "CommunityPatchTests.cs", "TransformProtocol.cs",
-                 "M3daMerge.cs", "M3cdMerge.cs", "Le1Config.cs", "M3mAssets.cs", "M3mScripts.cs", "M3mClasses.cs", "M3mOrdered.cs", "PackageOutput.cs", "TlkMerge.cs", "PlotMerge.cs", "ShaderMerge.cs", "GlobalShaderFile.cs", "MergeDlcConfig.cs", "EmailGraph.cs", "SquadStreaming.cs", "MergeStartup.cs", "MergeDlcInputs.cs", "MergeDlc.cs", "SquadUi.cs", "ConfigTests.cs", "AssetMergeTests.cs", "ScriptMergeTests.cs", "OrderedM3mTests.cs", "TlkPlotTests.cs", "PlotCorpusTests.cs", "MergeDlcTests.cs", "ShaderMergeTests.cs"):
+                 "M3daMerge.cs", "M3cdMerge.cs", "Le1Config.cs", "M3mAssets.cs", "M3mScripts.cs", "M3mClasses.cs", "M3mOrdered.cs", "PackageOutput.cs", "TlkMerge.cs", "PlotMerge.cs", "ShaderMerge.cs", "GlobalShaderFile.cs", "MergeDlcConfig.cs", "EmailGraph.cs", "SquadStreaming.cs", "MergeStartup.cs", "MergeDlcInputs.cs", "MergeDlc.cs", "SquadUi.cs", "TextureCompile.cs", "TextureOverrideCompiler.cs", "TextureOverrideTextureEntry.cs", "BtpFormat.cs", "TextureCompileTests.cs", "ConfigTests.cs", "AssetMergeTests.cs", "ScriptMergeTests.cs", "OrderedM3mTests.cs", "TlkPlotTests.cs", "PlotCorpusTests.cs", "MergeDlcTests.cs", "ShaderMergeTests.cs"):
         write_changed(project / name, (root / "helpers/mele/managed" / name).read_bytes())
     write_changed(project / "packages.lock.json", (root / "helpers/mele/locks/Deployd.Mele.json").read_bytes())
     environment = dict(os.environ, DOTNET_CLI_TELEMETRY_OPTOUT="1", DOTNET_SKIP_FIRST_TIME_EXPERIENCE="1",

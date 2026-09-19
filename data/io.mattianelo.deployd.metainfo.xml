@@ -76,7 +76,7 @@
     <release version="2.5.0" date="2026-09-11" type="development">
       <description>
         <p>Adds experimental Mass Effect Legendary Edition mod management for all three
-        games, including content, precompiled texture overrides, shader mods and approved
+        games, including content, raw and precompiled texture overrides, shader mods and approved
         plugins. Manage separate game profiles, shared launcher mods and restore managed
         files after removing mods.</p>
       </description>

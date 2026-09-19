@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::super::Target;
 use super::super::m3za::StringEdit;
 
-pub(in crate::core::game::mass_effect) const VERSION: &str = "0.11.0";
+pub(in crate::core::game::mass_effect) const VERSION: &str = "0.12.0";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -117,6 +117,15 @@ pub(crate) struct MovieEdit {
 #[derive(Clone, Serialize)]
 #[serde(tag = "operation")]
 pub(crate) enum Job {
+    #[serde(rename = "mele-m3to")]
+    Texture {
+        game: Target,
+        dlc: String,
+        manifests: Vec<FileIdentity>,
+        packages: Vec<FileIdentity>,
+        outputs: Vec<String>,
+        textures: u32,
+    },
     #[serde(rename = "mele-m3gs")]
     Shaders {
         game: Target,
@@ -172,7 +181,8 @@ pub(crate) enum Job {
 impl Job {
     pub(super) fn game(&self) -> Target {
         match self {
-            Self::Shaders { game, .. }
+            Self::Texture { game, .. }
+            | Self::Shaders { game, .. }
             | Self::M3m { game, .. }
             | Self::Plot { game, .. }
             | Self::Dlc { game, .. } => *game,
@@ -183,6 +193,7 @@ impl Job {
 
     pub(super) fn operation(&self) -> &'static str {
         match self {
+            Self::Texture { .. } => "mele-m3to",
             Self::Shaders { .. } => "mele-m3gs",
             Self::Tables { .. } => "le1-m3da",
             Self::Config { .. } => "le1-m3cd",
@@ -196,6 +207,7 @@ impl Job {
 
     pub(super) fn command(&self) -> &'static str {
         match self {
+            Self::Texture { .. } => "transform-textures",
             Self::Tables { .. } | Self::Config { .. } => "transform",
             Self::Shaders { .. } => "transform-shaders",
             Self::M3m { .. } => "transform-m3m",
@@ -208,6 +220,7 @@ impl Job {
 
     pub(super) fn targets(&self) -> Vec<&FileIdentity> {
         match self {
+            Self::Texture { .. } => Vec::new(),
             Self::Tables { targets, .. }
             | Self::Config { targets, .. }
             | Self::M3m { targets, .. } => targets.iter().map(|target| &target.current).collect(),
@@ -220,7 +233,7 @@ impl Job {
 
     pub(super) fn outputs(&self) -> Vec<String> {
         match self {
-            Self::Dlc { outputs, .. } => outputs.clone(),
+            Self::Texture { outputs, .. } | Self::Dlc { outputs, .. } => outputs.clone(),
             _ => self
                 .targets()
                 .iter()
@@ -231,7 +244,9 @@ impl Job {
 
     pub(super) fn originals(&self) -> Vec<&FileIdentity> {
         match self {
-            Self::Tlk { .. } | Self::Dlc { .. } | Self::SquadUi { .. } => Vec::new(),
+            Self::Texture { .. } | Self::Tlk { .. } | Self::Dlc { .. } | Self::SquadUi { .. } => {
+                Vec::new()
+            }
             Self::Shaders { target, .. } | Self::Plot { target, .. } => vec![&target.original],
             Self::Tables { targets, .. }
             | Self::Config { targets, .. }
@@ -241,6 +256,7 @@ impl Job {
 
     pub(super) fn byte_limit(&self) -> u64 {
         match self {
+            Self::Texture { .. } => 4 * 1024 * 1024 * 1024,
             Self::Shaders { .. } => 512 * 1024 * 1024,
             Self::Tlk { .. } | Self::Plot { .. } => 2 * 1024 * 1024 * 1024,
             _ => 4 * 1024 * 1024 * 1024,
@@ -249,6 +265,11 @@ impl Job {
 
     pub(super) fn inputs(&self) -> Vec<&FileIdentity> {
         match self {
+            Self::Texture {
+                manifests,
+                packages,
+                ..
+            } => manifests.iter().chain(packages.iter()).collect(),
             Self::Shaders {
                 target,
                 contributions,
@@ -402,6 +423,7 @@ pub(super) struct Transcript {
 impl Transcript {
     pub(super) fn for_job(job: &Job) -> Self {
         let (expected_total, progress_required) = match job {
+            Job::Texture { textures, .. } => (Some(*textures), true),
             Job::Tables { contributions, .. } | Job::Config { contributions, .. } => {
                 (Some(contributions.len() as u32), !contributions.is_empty())
             }
@@ -439,7 +461,7 @@ impl Transcript {
                 ensure!(
                     protocol == 1
                         && total > 0
-                        && total <= 4096
+                        && total <= 100_000
                         && completed > 0
                         && completed <= total,
                     "Invalid helper progress"

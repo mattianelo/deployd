@@ -84,6 +84,15 @@ pub(super) async fn run(
         .context("MELE merge candidate preparation failed")??
     };
     let mut prepared = work.prepared;
+    let mut texture_compilations = Vec::new();
+    for step in &work.installation.steps {
+        texture_compilations.extend(super::super::m3to::compilations(
+            &step.m3to,
+            &step.files,
+            prepared.recipe.target,
+        )?);
+    }
+    let texture_compilations = super::super::m3to::combine(texture_compilations)?;
     if !work.installation.steps.is_empty() {
         let total = work.installation.steps.len();
         for (index, step) in work.installation.steps.into_iter().enumerate() {
@@ -191,6 +200,37 @@ pub(super) async fn run(
             progress((index + 1) * 1000 / total, PROGRESS_TOTAL);
         }
     }
+    let texture_count = texture_compilations.len();
+    for (index, mut compilation) in texture_compilations.into_iter().enumerate() {
+        compilation.bind(&current)?;
+        let texture_progress = progress.clone();
+        let output = helper::transform_with_lease(
+            work.backend.clone(),
+            helper::Inputs {
+                game: work.game.clone(),
+                candidate: prepared.directory.path().join("BioGame"),
+                original: None,
+            },
+            work.data.join("mele-transformations"),
+            compilation.job,
+            control.clone(),
+            Arc::new(move |done, count| {
+                let fraction = (index * 500 + done as usize * 500 / count as usize) / texture_count;
+                texture_progress(1000 + fraction, PROGRESS_TOTAL)
+            }),
+            lease.clone(),
+        )
+        .await?;
+        (prepared, current) =
+            remove_step((prepared, current), compilation.removals, control.clone()).await?;
+        (prepared, current) = accept_new(
+            (prepared, current),
+            output,
+            compilation.outputs,
+            control.clone(),
+        )
+        .await?;
+    }
     for phase in 0..5 {
         control.check()?;
         let Some(job) = work.merges.job(phase, &current)? else {
@@ -215,7 +255,7 @@ pub(super) async fn run(
             control.clone(),
             Arc::new(move |done, total| {
                 merge_progress(
-                    1000 + phase * 640 + done as usize * 640 / total as usize,
+                    1500 + phase * 600 + done as usize * 600 / total as usize,
                     PROGRESS_TOTAL,
                 )
             }),
@@ -260,7 +300,7 @@ pub(super) async fn run(
                     inputs.job.clone(),
                     control.clone(),
                     Arc::new(move |done, total| {
-                        ui_progress(4200 + done as usize * 800 / total as usize, PROGRESS_TOTAL)
+                        ui_progress(4500 + done as usize * 500 / total as usize, PROGRESS_TOTAL)
                     }),
                     lease.clone(),
                 )
@@ -394,6 +434,15 @@ async fn accept(
     output: helper::ValidatedOutput,
     control: Control,
 ) -> Result<Candidate> {
+    accept_new(candidate, output, BTreeSet::new(), control).await
+}
+
+async fn accept_new(
+    candidate: Candidate,
+    output: helper::ValidatedOutput,
+    allowed_new: BTreeSet<String>,
+    control: Control,
+) -> Result<Candidate> {
     tokio::task::spawn_blocking(move || {
         let (mut prepared, mut current) = candidate;
         let mut files: BTreeMap<_, _> = prepared
@@ -405,7 +454,9 @@ async fn accept(
             control.check()?;
             let before = current.get(&file.path);
             ensure!(
-                before.is_some() || super::super::merge_dlc::contains(&file.path),
+                before.is_some()
+                    || allowed_new.contains(&file.path)
+                    || super::super::merge_dlc::contains(&file.path),
                 "Unexpected MELE merge output"
             );
             let relative = format!("BioGame/{}", file.path);

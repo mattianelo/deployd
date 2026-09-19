@@ -18,8 +18,8 @@ from build_support import directory, download
 
 
 def validate(arguments):
-    if len(arguments) != 1 or arguments[0] not in {"env", "build", "test", "smoke", "community-patch", "community-patch-config", "community-patch-assets", "community-patch-scripts", "community-patch-m3m", "mele-scripts", "mele-plot", "merge-dlc", "shaders", "community-patch-startup", "community-patch-tlk", "community-patch-plot", "sdk", "lock", "audit", "licenses", "bundle"}:
-        raise ValueError("usage: ./check.sh mele <env|build|test|smoke|community-patch|community-patch-config|community-patch-assets|community-patch-scripts|community-patch-m3m|mele-scripts|mele-plot|merge-dlc|shaders|community-patch-startup|community-patch-tlk|community-patch-plot|sdk|lock|audit|licenses|bundle>")
+    if len(arguments) != 1 or arguments[0] not in {"env", "build", "test", "smoke", "m3to", "community-patch", "community-patch-config", "community-patch-assets", "community-patch-scripts", "community-patch-m3m", "mele-scripts", "mele-plot", "merge-dlc", "shaders", "community-patch-startup", "community-patch-tlk", "community-patch-plot", "sdk", "lock", "audit", "licenses", "bundle"}:
+        raise ValueError("usage: ./check.sh mele <env|build|test|smoke|m3to|community-patch|community-patch-config|community-patch-assets|community-patch-scripts|community-patch-m3m|mele-scripts|mele-plot|merge-dlc|shaders|community-patch-startup|community-patch-tlk|community-patch-plot|sdk|lock|audit|licenses|bundle>")
     if arguments[0] == "lock" and os.environ.get("DEPLOYD_DEPENDENCY_MAINTENANCE") != "1":
         raise ValueError("Helper lock generation requires DEPLOYD_DEPENDENCY_MAINTENANCE=1")
     return arguments[0]
@@ -49,7 +49,7 @@ def run(command):
         collect(root)
         return
     build_native(root)
-    if command in {"build", "smoke", "community-patch", "community-patch-config", "community-patch-assets", "community-patch-scripts", "community-patch-m3m", "mele-scripts", "mele-plot", "merge-dlc", "shaders", "community-patch-startup", "community-patch-tlk", "community-patch-plot", "lock", "test", "audit"}:
+    if command in {"build", "smoke", "m3to", "community-patch", "community-patch-config", "community-patch-assets", "community-patch-scripts", "community-patch-m3m", "mele-scripts", "mele-plot", "merge-dlc", "shaders", "community-patch-startup", "community-patch-tlk", "community-patch-plot", "lock", "test", "audit"}:
         setup_sdk(root)
         spec = importlib.util.spec_from_file_location("build_managed", root / "helpers/mele/build_managed.py")
         module = importlib.util.module_from_spec(spec)
@@ -63,6 +63,9 @@ def run(command):
             module.build(root, refresh_lock=command == "lock")
         if command == "smoke":
             module.smoke(root)
+        if command == "m3to":
+            from m3to_test import run as run_m3to
+            run_m3to(root)
         if command == "community-patch":
             from community_patch_test import run as community_patch_test
             community_patch_test(root, module.transformation_tests)

@@ -84,6 +84,8 @@ def assemble(root, output):
         for license_file in (root / "helpers/mele/native/vendor/mem").glob("license_*.txt"):
             shutil.copy2(license_file, notices / license_file.name)
         shutil.copy2(root / "LICENSE", notices / "Deployd-GPL-3.0.txt")
+        shutil.copy2(root / "LICENSE", notices / "ME3TweaksCore-GPL-3.0.txt")
+        shutil.copy2(root / "helpers/mele/ME3TweaksCore-NOTICE.txt", notices / "ME3TweaksCore-NOTICE.txt")
         texts = []
         for package in license_inventory.locked_packages(root):
             name, resolved = package["name"].lower(), package["version"]

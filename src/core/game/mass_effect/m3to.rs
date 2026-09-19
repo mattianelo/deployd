@@ -3,15 +3,17 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 mod btp;
 
 use super::Target;
+use super::helper::{FileIdentity, Job};
 use super::manifest::relative_path;
 use super::package::{FileMapping, SourceFile};
+use super::recipe::PlannedFile;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct TextureOverride {
@@ -37,6 +39,245 @@ pub(super) struct M3toPlan {
     pub(super) layout: Layout,
     mount: i32,
     textures: BTreeSet<String>,
+}
+
+impl M3toPlan {
+    pub(super) fn dlc(&self) -> &str {
+        &self.dlc
+    }
+
+    pub(super) fn is_compiled(&self) -> bool {
+        matches!(self.layout, Layout::Precompiled { .. })
+    }
+}
+
+pub(super) struct Compilation {
+    pub(super) job: Job,
+    pub(super) removals: Vec<String>,
+    pub(super) outputs: BTreeSet<String>,
+    textures: Vec<String>,
+}
+
+impl Compilation {
+    pub(super) fn bind(&mut self, files: &BTreeMap<String, FileIdentity>) -> Result<()> {
+        let Job::Texture {
+            manifests,
+            packages,
+            ..
+        } = &mut self.job
+        else {
+            bail!("Invalid M3TO compilation job")
+        };
+        for input in manifests.iter_mut().chain(packages) {
+            *input = files
+                .get(&input.path)
+                .with_context(|| format!("Missing final M3TO input '{}'", input.path))?
+                .clone();
+        }
+        self.job.validate()
+    }
+}
+
+fn planned_input<'a>(source: &str, files: &'a [PlannedFile]) -> Result<&'a PlannedFile> {
+    let mut matches = files.iter().filter(|file| file.source == source);
+    let file = matches
+        .next()
+        .with_context(|| format!("Missing staged M3TO input '{source}'"))?;
+    ensure!(
+        matches.next().is_none(),
+        "M3TO input '{source}' has ambiguous destinations"
+    );
+    Ok(file)
+}
+
+fn identity(file: &PlannedFile) -> Result<FileIdentity> {
+    Ok(FileIdentity {
+        path: file
+            .destination
+            .relative
+            .strip_prefix("BioGame/")
+            .context("M3TO input is outside BioGame")?
+            .to_owned(),
+        size: file.destination.size,
+        sha256: file.destination.sha256.clone(),
+    })
+}
+
+pub(super) fn compilations(
+    plans: &[M3toPlan],
+    files: &[PlannedFile],
+    game: Target,
+) -> Result<Vec<Compilation>> {
+    let mut result = Vec::new();
+    for plan in plans {
+        let Layout::Compile { manifests } = &plan.layout else {
+            continue;
+        };
+        let mut manifest_inputs = Vec::new();
+        let mut package_inputs = BTreeMap::new();
+        let mut removals = BTreeSet::new();
+        let mut texture_paths = Vec::new();
+        for manifest in manifests {
+            let file = planned_input(&manifest.source, files)?;
+            removals.insert(file.destination.relative.clone());
+            manifest_inputs.push(identity(file)?);
+            for texture in &manifest.textures {
+                if let Some(index) = texture_paths
+                    .iter()
+                    .position(|name: &String| name.eq_ignore_ascii_case(&texture.texture))
+                {
+                    texture_paths.remove(index);
+                }
+                texture_paths.push(texture.texture.clone());
+                let file = planned_input(&texture.source, files)?;
+                removals.insert(file.destination.relative.clone());
+                package_inputs
+                    .entry(file.destination.relative.to_lowercase())
+                    .or_insert(identity(file)?);
+            }
+        }
+        let outputs = vec![
+            format!("DLC/{}/CombinedTextureOverrides.btp", plan.dlc),
+            format!("DLC/{}/BTPMetadata.btm", plan.dlc),
+        ];
+        let output_set = outputs.iter().cloned().collect();
+        let job = Job::Texture {
+            game,
+            dlc: plan.dlc.clone(),
+            manifests: manifest_inputs,
+            packages: package_inputs.into_values().collect(),
+            outputs,
+            textures: u32::try_from(texture_paths.len()).context("Too many M3TO textures")?,
+        };
+        job.validate()?;
+        result.push(Compilation {
+            job,
+            removals: removals.into_iter().collect(),
+            outputs: output_set,
+            textures: texture_paths,
+        });
+    }
+    Ok(result)
+}
+
+pub(super) fn combine(compilations: Vec<Compilation>) -> Result<Vec<Compilation>> {
+    let mut groups: BTreeMap<String, Compilation> = BTreeMap::new();
+    for mut compilation in compilations {
+        let Job::Texture {
+            game,
+            dlc,
+            manifests,
+            packages,
+            outputs,
+            ..
+        } = &mut compilation.job
+        else {
+            bail!("Invalid M3TO compilation job")
+        };
+        let key = dlc.to_lowercase();
+        let Some(existing) = groups.get_mut(&key) else {
+            groups.insert(key, compilation);
+            continue;
+        };
+        let Job::Texture {
+            game: existing_game,
+            manifests: existing_manifests,
+            packages: existing_packages,
+            textures,
+            ..
+        } = &mut existing.job
+        else {
+            bail!("Invalid M3TO compilation group")
+        };
+        ensure!(
+            existing_game == game && existing.outputs.iter().eq(outputs.iter()),
+            "Conflicting M3TO compilation targets"
+        );
+        for manifest in manifests.drain(..) {
+            existing_manifests.retain(|item| !item.path.eq_ignore_ascii_case(&manifest.path));
+            existing_manifests.push(manifest);
+        }
+        for package in packages.drain(..) {
+            existing_packages.retain(|item| !item.path.eq_ignore_ascii_case(&package.path));
+            existing_packages.push(package);
+        }
+        for texture in compilation.textures {
+            existing
+                .textures
+                .retain(|item| !item.eq_ignore_ascii_case(&texture));
+            existing.textures.push(texture);
+        }
+        *textures = u32::try_from(existing.textures.len()).context("Too many M3TO textures")?;
+        existing.removals.extend(compilation.removals);
+        existing.removals.sort();
+        existing.removals.dedup();
+        existing.job.validate()?;
+    }
+    Ok(groups.into_values().collect())
+}
+
+pub(super) fn validate_job(
+    game: Target,
+    dlc: &str,
+    manifests: &[FileIdentity],
+    packages: &[FileIdentity],
+    outputs: &[String],
+    textures: u32,
+) -> Result<()> {
+    super::manifest::validate_dlc(dlc)?;
+    ensure!(
+        dlc.starts_with("DLC_MOD_")
+            && !game.is_official_dlc(dlc)
+            && !manifests.is_empty()
+            && manifests.len() <= 64
+            && !packages.is_empty()
+            && packages.len() <= 4096
+            && (1..=100_000).contains(&textures),
+        "Invalid M3TO compilation request"
+    );
+    let cooked = format!("DLC/{dlc}/CookedPCConsole/");
+    let mut paths = BTreeSet::new();
+    for manifest in manifests {
+        let name = manifest.path.strip_prefix(&cooked).unwrap_or_default();
+        ensure!(
+            !name.contains('/')
+                && name.starts_with("TextureOverride-")
+                && name.len() > 21
+                && name.to_ascii_lowercase().ends_with(".m3to")
+                && manifest.size > 0
+                && manifest.size <= 16 * 1024 * 1024
+                && paths.insert(manifest.path.to_lowercase()),
+            "Invalid or duplicate M3TO manifest input"
+        );
+    }
+    for package in packages {
+        let name = package.path.strip_prefix(&cooked).unwrap_or_default();
+        ensure!(
+            !name.contains('/')
+                && name.starts_with("TO_")
+                && name.len() > 7
+                && name.to_ascii_lowercase().ends_with(".pcc")
+                && package.size > 0
+                && package.size <= 512 * 1024 * 1024
+                && paths.insert(package.path.to_lowercase()),
+            "Invalid or duplicate M3TO package input"
+        );
+    }
+    let total = manifests
+        .iter()
+        .chain(packages)
+        .try_fold(0_u64, |total, input| total.checked_add(input.size))
+        .context("M3TO input size overflow")?;
+    ensure!(total <= 4 * 1024 * 1024 * 1024, "M3TO inputs exceed 4 GiB");
+    ensure!(
+        outputs
+            == [
+                format!("DLC/{dlc}/CombinedTextureOverrides.btp"),
+                format!("DLC/{dlc}/BTPMetadata.btm"),
+            ],
+        "M3TO output inventory differs from its plan"
+    );
+    Ok(())
 }
 
 #[derive(Deserialize)]
@@ -76,7 +317,8 @@ fn parse(text: &str, target: Target) -> Result<Manifest> {
             .next()
             .context("Missing M3TO source package name")?;
         ensure!(
-            name.starts_with("TO_")
+            package == name
+                && name.starts_with("TO_")
                 && name.len() > 7
                 && name.to_ascii_lowercase().ends_with(".pcc"),
             "M3TO source packages must be named TO_<name>.pcc"
@@ -86,7 +328,9 @@ fn parse(text: &str, target: Target) -> Result<Manifest> {
             texture.contains('.')
                 && texture.encode_utf16().count() <= 255
                 && texture.split('.').all(|part| !part.is_empty()
-                    && part.chars().all(|ch| ch.is_alphanumeric() || ch == '_')),
+                    && part
+                        .chars()
+                        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')),
             "M3TO texture paths must identify a nested export and fit the runtime's 255-character limit"
         );
         ensure!(
@@ -241,11 +485,19 @@ fn inspect_controlled(
                 "M3TO source manifests and precompiled BTP/BTM files cannot be combined in the same DLC"
             );
             let mut result = Vec::new();
+            let mut total_textures = 0_usize;
             for file in manifests {
                 let source = index
                     .get(file.source.as_str())
                     .context("M3TO source is absent from the inspected package")?;
                 let manifest = read_manifest(root, source, target)?;
+                total_textures = total_textures
+                    .checked_add(manifest.textures.len())
+                    .context("M3TO texture count overflow")?;
+                ensure!(
+                    total_textures <= 100_000,
+                    "M3TO texture count exceeds 100000"
+                );
                 let mut textures = Vec::new();
                 for entry in manifest.textures {
                     let package = relative_path(&entry.sourcepackage)?;
@@ -393,7 +645,7 @@ pub(super) fn validate_staged(
         plans
             .iter()
             .all(|plan| matches!(plan.layout, Layout::Precompiled { .. })),
-        "M3TO source compilation is not supported yet"
+        "Raw M3TO inputs remained in the final deployment candidate"
     );
     Ok(())
 }
@@ -412,9 +664,10 @@ mod tests {
             (Target::Le2, "LE2"),
             (Target::Le3, "LE3"),
         ] {
-            let valid = json!({"game":name,"textures":[{"sourcepackage":"Chunk/TO_Test.pcc","textureifp":"Example.Texture"}]});
+            let valid = json!({"game":name,"textures":[{"sourcepackage":"TO_Test.pcc","textureifp":"Example.Texture"}]});
             parse(&valid.to_string(), game)?;
             for source in [
+                "Chunk/TO_Test.pcc",
                 "../TO_Test.pcc",
                 "Engine.pcc",
                 "/TO_Test.pcc",
@@ -440,5 +693,60 @@ mod tests {
             assert!(parse(&invalid.to_string(), game).is_err());
         }
         Ok(())
+    }
+
+    #[test]
+    fn helper_job_requires_bounded_custom_dlc_inputs_and_exact_outputs() {
+        let manifest = FileIdentity {
+            path: "DLC/DLC_MOD_Test/CookedPCConsole/TextureOverride-Test.m3to".into(),
+            size: 10,
+            sha256: "a".repeat(64),
+        };
+        let package = FileIdentity {
+            path: "DLC/DLC_MOD_Test/CookedPCConsole/TO_Test.pcc".into(),
+            size: 20,
+            sha256: "b".repeat(64),
+        };
+        let outputs = vec![
+            "DLC/DLC_MOD_Test/CombinedTextureOverrides.btp".into(),
+            "DLC/DLC_MOD_Test/BTPMetadata.btm".into(),
+        ];
+        assert!(
+            validate_job(
+                Target::Le2,
+                "DLC_MOD_Test",
+                &[manifest.clone()],
+                &[package.clone()],
+                &outputs,
+                1
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_job(
+                Target::Le2,
+                "DLC_EXP_Test",
+                &[manifest.clone()],
+                &[package.clone()],
+                &outputs,
+                1
+            )
+            .is_err()
+        );
+        let oversized = FileIdentity {
+            size: 512 * 1024 * 1024 + 1,
+            ..package
+        };
+        assert!(
+            validate_job(
+                Target::Le2,
+                "DLC_MOD_Test",
+                &[manifest],
+                &[oversized],
+                &outputs,
+                1
+            )
+            .is_err()
+        );
     }
 }

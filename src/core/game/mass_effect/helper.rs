@@ -275,7 +275,10 @@ fn prepare(
         );
     }
     job.validate()?;
-    if !matches!(job, Job::Tlk { .. } | Job::SquadUi { .. }) {
+    if !matches!(
+        job,
+        Job::Texture { .. } | Job::Tlk { .. } | Job::SquadUi { .. }
+    ) {
         let original = inputs
             .original
             .as_ref()

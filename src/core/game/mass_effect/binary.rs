@@ -47,7 +47,7 @@ pub(super) fn executable(path: &str) -> bool {
 
 pub(super) fn source_name(path: &str) -> Result<()> {
     if !executable(path) {
-        super::package::validate_payload_name(path)?;
+        super::package::validate_source_name(path)?;
     }
     Ok(())
 }

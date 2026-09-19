@@ -104,6 +104,34 @@ fn alternate_folder_overlays_regenerate_merges_and_validate_unused_sources() -> 
 
 // @variants: both
 #[test]
+fn alternate_overlay_can_target_dlc_declared_by_selected_alternate() -> Result<()> {
+    use std::fs;
+
+    let root = tempfile::tempdir()?;
+    fs::create_dir_all(root.path().join("DLC/CookedPCConsole"))?;
+    fs::create_dir_all(root.path().join("Patch/CookedPCConsole"))?;
+    fs::write(root.path().join("DLC/CookedPCConsole/Base.pcc"), b"base")?;
+    fs::write(root.path().join("Patch/CookedPCConsole/Base.pcc"), b"patch")?;
+    let manifest = "[ModManager]\ncmmver=9.2\n[ModInfo]\ngame=LE2\nmodname=Alternate DLC\nmodver=1\nmoddev=Deployd\nmoddesc=Fixture\n[CUSTOMDLC]\naltdlc=((FriendlyName=Install,Condition=COND_MANUAL,CheckedByDefault=true,ModOperation=OP_ADD_CUSTOMDLC,ModAltDLC=DLC,ModDestDLC=DLC_MOD_ESA),(FriendlyName=Patch,Condition=COND_MANUAL,CheckedByDefault=true,ModOperation=OP_ADD_FOLDERFILES_TO_CUSTOMDLC,ModAltDLC=Patch,ModDestDLC=DLC_MOD_ESA))\n";
+    fs::write(root.path().join("moddesc.ini"), manifest)?;
+    let original = PackagePlan::inspect(root.path(), None)?;
+    let mut selected = original.clone();
+    selected.resolve(root.path(), &original.default_options(), &BTreeSet::new())?;
+    assert!(selected.files.iter().any(|file| {
+        file.source == "Patch/CookedPCConsole/Base.pcc"
+            && file.destination == "DLC/DLC_MOD_ESA/CookedPCConsole/Base.pcc"
+    }));
+
+    fs::write(
+        root.path().join("moddesc.ini"),
+        manifest.replace("ModDestDLC=DLC_MOD_ESA))", "ModDestDLC=DLC_UNDECLARED))"),
+    )?;
+    assert!(PackagePlan::inspect(root.path(), None).is_err());
+    Ok(())
+}
+
+// @variants: both
+#[test]
 fn exclusive_groups_require_one_default_and_one_saved_choice() -> Result<()> {
     let text = "((FriendlyName=Standard,Condition=COND_MANUAL,OptionGroup=Appearance,CheckedByDefault=true,ModOperation=OP_NOTHING),(FriendlyName=Alternative,Condition=COND_MANUAL,OptionGroup=Appearance,ModOperation=OP_NOTHING))";
     let options = Alternate::parse(Some(text), true, Target::Le1)?;

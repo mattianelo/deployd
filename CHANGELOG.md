@@ -4,7 +4,8 @@
 
 - Added experimental Mass Effect Legendary Edition support for LE1, LE2 and LE3,
   with separate mod libraries, installer choices and profiles for each game.
-- Install content and cosmetic mods, precompiled M3TO textures such as ALOT + ISL,
+- Install content and cosmetic mods, raw and precompiled M3TO textures such as
+  No Headgear for Squadmates, ALOT and ISL,
   shader mods, squadmate outfits and LE2 email additions. Required mods and
   installation options are checked before deployment.
 - Deploy applies enabled mods and their combined changes; Purge restores managed
@@ -20,8 +21,13 @@
   custom-DLC display names used by LE2 packages.
 - LE2 installers now apply selected M3CD configuration options to their custom DLC
   without requiring the LE1-only `AutoLoad.ini` file.
+- MELE2 installers can layer selected alternates onto custom DLC declared by another
+  selected alternate and retain inert script or executable files inside custom DLC.
+  These files are copied as data and are never executed by Deployd.
+- Raw M3TO 9.2 packages now compile into the texture runtime format during deployment;
+  source manifests and texture packages are not published into the game.
 - MELE setup and deployment show progress and support Snap parallel installations.
-- MEM textures, raw M3TO source packages, headmorphs, portable MELE profile transfers,
+- MEM textures, headmorphs, portable MELE profile transfers,
   launcher installer choices and launcher executable replacements are not supported.
   Mod deployment does not edit saves.
 

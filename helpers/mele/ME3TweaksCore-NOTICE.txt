@@ -1,0 +1,9 @@
+Deployd's MELE helper contains adapted Binary Texture Package compiler code from
+ME3TweaksCore commit b5f006add38dbaea91dde3f16f45ecbc3b0155a9.
+
+Copyright ME3Tweaks contributors.
+Licensed under GNU General Public License version 3 only.
+Source: https://github.com/ME3Tweaks/ME3TweaksCore
+
+The adapted source is distributed with Deployd in helpers/mele/managed and in
+the helper source bundle.

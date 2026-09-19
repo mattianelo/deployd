@@ -64,6 +64,16 @@ pub(in crate::core::game::mass_effect) fn compiler_inputs(
 impl Job {
     pub(in crate::core::game::mass_effect) fn validate(&self) -> Result<()> {
         match self {
+            Self::Texture {
+                game,
+                dlc,
+                manifests,
+                packages,
+                outputs,
+                textures,
+            } => super::super::m3to::validate_job(
+                *game, dlc, manifests, packages, outputs, *textures,
+            )?,
             Self::Shaders {
                 target,
                 contributions,
@@ -246,6 +256,7 @@ impl Job {
             return matches!(self, Self::Tlk { .. }) && tlk_target(path);
         };
         match self {
+            Self::Texture { .. } => false,
             Self::Dlc { .. } | Self::SquadUi { .. } => false,
             Self::Tlk { .. } => tlk_target(path),
             Self::Shaders { .. } => path == super::super::m3gs::TARGET,
