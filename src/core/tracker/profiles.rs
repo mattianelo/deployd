@@ -178,6 +178,7 @@ impl Tracker {
 
     /// Resolve the profile used by the most recent successful deploy for this game.
     /// Missing and stale settings deliberately leave the current profile unchanged.
+    #[cfg_attr(not(test), allow(dead_code))]
     async fn get_last_deployed_profile(&self, game_id: &str) -> Result<Option<Profile>> {
         let key = format!("last_deployed_profile_{game_id}");
         let Some(profile_id) = self.get_setting(&key).await? else {
@@ -191,6 +192,7 @@ impl Tracker {
             .find(|profile| profile.id == profile_id))
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) async fn restore_last_deployed_profile(
         &self,
         game_id: &str,
@@ -210,6 +212,7 @@ impl Tracker {
         Ok(Some((active_profile, deployed_profile)))
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) async fn record_deployed_profile(
         &self,
         game_id: &str,

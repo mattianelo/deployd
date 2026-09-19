@@ -1,3 +1,7 @@
+#![cfg_attr(not(test), allow(dead_code))]
+
+pub(crate) mod generations;
+
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::future::Future;

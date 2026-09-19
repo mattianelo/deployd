@@ -189,6 +189,7 @@ impl Tracker {
     }
 
     /// Clear all deployed file records for a game.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub async fn clear_deployed_files(&self, game_id: &str) -> Result<()> {
         sqlx::query("DELETE FROM deployed_files WHERE game_id = ?")
             .bind(game_id)
@@ -199,6 +200,7 @@ impl Tracker {
     }
 
     /// Remove specific deployed file records by their lowercase path for a game.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub async fn remove_deployed_files(&self, game_id: &str, paths: &[&str]) -> Result<()> {
         if paths.is_empty() {
             return Ok(());
@@ -215,6 +217,7 @@ impl Tracker {
     }
 
     /// Record the currently deployed files in a single transaction.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub async fn record_deployed_files(&self, game_id: &str, files: &[ModFile]) -> Result<()> {
         let mut tx = self.pool.begin().await?;
         for f in files {

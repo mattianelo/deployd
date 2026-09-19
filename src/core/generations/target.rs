@@ -1,6 +1,6 @@
 use std::path::{Component, Path, PathBuf};
 
-use anyhow::{Result, bail, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 
 use crate::core::game;
@@ -97,6 +97,21 @@ impl Target {
         })
     }
 
+    pub(super) fn recorded(&self) -> Result<String> {
+        Ok(match self {
+            Self::Bethesda { root, path }
+            | Self::Aurora { root, path }
+            | Self::Redengine { root, path } => {
+                format!("{}{path}", if *root { "../" } else { "" })
+            }
+            Self::Eclipse { documents, path } => {
+                format!("{}{path}", if *documents { "~docs~/" } else { "" })
+            }
+            Self::MassEffect { path } => path.clone(),
+            _ => bail!("Managed configuration is not a mod-file target"),
+        })
+    }
+
     pub(super) fn resolve(&self, game: &Game) -> Result<PathBuf> {
         self.validate(&game.engine)?;
         let data = game::deploy_dir(game);
@@ -114,6 +129,90 @@ impl Target {
             Self::CustomIni { slot } if game.engine == GameEngine::Bethesda => return game::custom_ini_paths(game).get(*slot).cloned().ok_or_else(|| anyhow::anyhow!("Managed INI location is unavailable; restore Wine prefix access")),
             _ => bail!("Historical target belongs to a different engine"),
         };
-        Ok(base.join(relative(path)?))
+        let destination = base.join(relative(path)?);
+        let root = if matches!(self, Self::MeleLauncher { .. }) {
+            game.path
+                .parent()
+                .context("Shared launcher root is unavailable")?
+        } else if destination.starts_with(&game.path) {
+            game.path.as_path()
+        } else if let Some(prefix) = game
+            .wine_prefix
+            .as_deref()
+            .filter(|prefix| destination.starts_with(prefix))
+        {
+            prefix
+        } else {
+            base.as_path()
+        };
+        resolve_casing(root, destination.strip_prefix(root)?)
+    }
+}
+
+fn resolve_casing(root: &Path, relative: &Path) -> Result<PathBuf> {
+    let mut resolved = root.to_owned();
+    for component in relative.components() {
+        let Component::Normal(name) = component else {
+            bail!("Target escapes its authorized root");
+        };
+        match std::fs::symlink_metadata(&resolved) {
+            Ok(metadata) => ensure!(
+                metadata.is_dir(),
+                "Deployment parent is redirected or is not a directory: {}",
+                resolved.display()
+            ),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error).context("Cannot inspect deployment parent"),
+        }
+        let entries = match std::fs::read_dir(&resolved) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                resolved.push(name);
+                continue;
+            }
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!(
+                        "Cannot inspect deployment directory '{}'",
+                        resolved.display()
+                    )
+                });
+            }
+        };
+        let expected = name.to_string_lossy().to_lowercase();
+        let mut matched = None;
+        for entry in entries {
+            let entry = entry?;
+            if entry.file_name().to_string_lossy().to_lowercase() == expected {
+                ensure!(
+                    matched.is_none(),
+                    "Ambiguous filename casing in '{}'; resolve duplicate names before deploying",
+                    resolved.display()
+                );
+                matched = Some(entry.file_name());
+            }
+        }
+        resolved.push(matched.as_deref().unwrap_or(name));
+    }
+    Ok(resolved)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // @variants: both
+    #[test]
+    fn preserves_existing_casing_and_rejects_ambiguous_names() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        std::fs::create_dir_all(temp.path().join("data/Textures"))?;
+        std::fs::write(temp.path().join("data/Textures/Example.dds"), b"texture")?;
+        assert_eq!(
+            resolve_casing(temp.path(), Path::new("Data/textures/example.dds"))?,
+            temp.path().join("data/Textures/Example.dds")
+        );
+        std::fs::write(temp.path().join("data/Textures/example.dds"), b"other")?;
+        assert!(resolve_casing(temp.path(), Path::new("Data/textures/Example.dds")).is_err());
+        Ok(())
     }
 }

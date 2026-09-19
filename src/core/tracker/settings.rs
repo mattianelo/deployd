@@ -214,6 +214,7 @@ impl Tracker {
         old_prefix: &str,
         new_prefix: &str,
         custom_dir: Option<&Path>,
+        relocation: Option<(&str, &Path)>,
     ) -> Result<()> {
         let mut transaction = self
             .pool
@@ -240,6 +241,28 @@ impl Tracker {
         .execute(&mut *transaction)
         .await
         .context("Failed to update deployed_files cache paths")?;
+
+        if let Some((journal, cache)) = relocation {
+            let changed = sqlx::query("UPDATE generation_stores SET cache_root=?,binding_version=binding_version+1 WHERE game_id=? AND cache_root=?")
+                .bind(cache.to_str().context("Cache path is not UTF-8")?)
+                .bind(game_id)
+                .bind(old_prefix)
+                .execute(&mut *transaction)
+                .await?;
+            anyhow::ensure!(
+                changed.rows_affected() == 1,
+                "History cache binding changed during relocation"
+            );
+            let changed = sqlx::query("UPDATE generation_journals SET committed=1 WHERE id=? AND game_id=? AND kind='relocate' AND committed=0")
+                .bind(journal)
+                .bind(game_id)
+                .execute(&mut *transaction)
+                .await?;
+            anyhow::ensure!(
+                changed.rows_affected() == 1,
+                "History relocation decision changed"
+            );
+        }
 
         let key = format!("cache_dir_{game_id}");
         if let Some(directory) = custom_dir {

@@ -80,11 +80,13 @@ When one archive contains both a game mod and a launcher mod, add it from the ga
 mod list. Deployd identifies and installs both components in the same workflow. Use
 **Shared launcher mods** to enable, disable, reorder, repair or remove imported launcher
 components.
+The shared launcher menu also keeps revision history. Restoring an older revision is
+an explicit shared action and is blocked if it would remove runtime support owned by
+another deployed game.
 
 **Limitations:** MEM textures, headmorphs and portable MELE profile transfers are
-not supported. Launcher executable replacements and
-launcher installer choices are also unsupported; add supported launcher archives
-through the shared launcher menu. Restore existing MEM textures to clean game
+not supported. Launcher executable replacements and launcher installer choices are
+also unsupported. Restore existing MEM textures to clean game
 content before adding the game. Mod deployment does not edit saves.
 
 ---
@@ -95,7 +97,11 @@ content before adding the game. Mod deployment does not edit saves.
 - **Nexus Mods Integration** — SSO login, NXM deep links, one-click update checking,
   and manual Nexus Mod ID and installed-version correction from Mod Properties
 - **FOMOD Installer** — Full wizard with conditional steps, image previews, and DLC-aware auto-selection
-- **Mod Profiles** — Per-game profiles to switch between configurations instantly
+- **Mod Profiles** — Per-game editable configurations; selecting a profile does not change game
+  files or live saves until you explicitly choose **Deploy**
+- **Deployment History** — Every successful Deploy retains the complete profile configuration and
+  installed content needed to restore it as a new editable profile, including disabled mods and
+  conflict-losing files. History remains after ordinary profile or mod deletion and excludes saves
 - **Plugin Load Order** — Select Mode reorder workflow for `.esp`/`.esm`/`.esl` management written to `plugins.txt`
 - **Conflict Detection** — Per-file visibility into which mods override each other, with a detailed Conflicts section in each mod's Properties dialog (The Witcher 1's Override/ files are matched by filename regardless of subfolder depth)
 - **Priority-Based Deployment** — Lower in the list wins file conflicts; MELE also
@@ -147,6 +153,12 @@ Deployd uses libadwaita throughout its primary workflows:
 
 By default Deployd stores all cached mod files in `~/.local/share/deployd/cache/` (or `$SNAP_USER_COMMON/deployd/cache/` in the Snap). You can relocate a game's cache to any directory via **Settings → Manage Games**, under the "Cache Folder" row for that game.
 
+Deployment history is stored beside each game's configured cache and moves with it through a
+recoverable copy-and-verify operation. Historical content uses independent retained copies, so
+editing or replacing files in the writable mod cache cannot change an older generation. If an
+external cache or its portal grant is unavailable, restoration remains blocked until access is
+restored; Deployd does not substitute content from another location.
+
 **Why would you move it?**  
 Most supported games use **hardlinks**, which avoid duplicate file storage when the
 cache and game share a compatible filesystem. Moving the cache can make that possible
@@ -197,6 +209,14 @@ Deployment and purge report success only after required filesystem and tracking 
 Problems cleaning empty directories or restoring optional backups appear as warnings without
 hiding completed work. If moving a game cache fails partway through, Deployd attempts to move the
 already-relocated files back and reports any rollback problem that still needs attention.
+
+The header shows the selected editable profile separately from the deployed profile. Open
+**Deploy options → Deployment history** to see retained storage, modification or recovery status,
+restore a generation as a new profile, or delete an unprotected generation. Restoring history does
+not change the game immediately. Live save banks switch only during Deploy, and saves are not part
+of deployment history. External tools require the selected profile to match the deployed
+configuration; after a tool exits, Deployd scans for changes without automatically sorting or
+deploying them.
 
 **Hardlink filesystem constraint**
 

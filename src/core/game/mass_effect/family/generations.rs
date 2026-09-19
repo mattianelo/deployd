@@ -194,6 +194,7 @@ pub(crate) async fn dependency(
 
 pub(crate) enum Action {
     Mods(Vec<super::super::launcher::Entry>),
+    #[allow(dead_code)]
     Support(super::super::recipe::Recipe),
     Restore(Revision),
 }

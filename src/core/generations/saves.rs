@@ -12,6 +12,7 @@ use super::records::text;
 use super::state::{self, State};
 
 pub(super) struct Prepared {
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(super) previous: State,
     pub(super) target: SaveSetId,
     pub(super) journal: Journal,

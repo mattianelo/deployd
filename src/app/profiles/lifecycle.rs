@@ -1,7 +1,7 @@
 use adw::prelude::*;
 use relm4::prelude::*;
 
-use crate::core::{game, save_manager};
+use crate::core::save_manager;
 use crate::models::profile::SaveMode;
 
 use super::super::App;
@@ -89,11 +89,11 @@ impl App {
         let (heading, body) = match profile.save_mode {
             SaveMode::Global => (
                 "Use isolated saves for this profile?",
-                "Deployd will preserve the shared Global saves and seed this profile from the current live saves. Close the game before continuing.",
+                "This changes the selected profile. On its next Deploy, Deployd will preserve the shared Global saves and initialize the isolated bank from the current live saves.",
             ),
             SaveMode::ProfileSpecific => (
                 "Return to Global saves?",
-                "Deployd will preserve this profile's saves and replace the live directory with the shared Global state. Close the game before continuing.",
+                "This changes the selected profile. On its next Deploy, Deployd will preserve this profile's saves and switch to the shared Global state.",
             ),
         };
         let dialog = adw::AlertDialog::builder()
@@ -156,7 +156,6 @@ impl App {
         self.session.pending_save_profile_idx = Some(idx);
 
         let target_profile_id = self.session.profiles[idx].id.clone();
-        let target_save_mode = self.session.profiles[idx].save_mode.clone();
         let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
@@ -164,13 +163,11 @@ impl App {
             return;
         };
 
-        let old_profile = self
+        let old_profile_id = self
             .session
             .profiles
             .get(self.session.active_profile_idx)
-            .cloned();
-        let old_profile_id = old_profile.as_ref().map(|p| p.id.clone());
-        let old_save_mode = old_profile.map(|p| p.save_mode).unwrap_or(SaveMode::Global);
+            .map(|profile| profile.id.clone());
 
         self.location_command(sender, async move {
             let result = async {
@@ -180,43 +177,14 @@ impl App {
                         .await
                         .map_err(|e| e.to_string())?;
                 }
-                let transition = if game::has_save_management(&game) {
-                    let backup_cap = save_manager::configured_backup_cap_bytes(&tracker).await;
-                    let old_id = old_profile_id.as_deref().unwrap_or(&target_profile_id);
-                    let source =
-                        save_manager::SaveSetId::for_profile(&game.id, old_id, &old_save_mode);
-                    let target = save_manager::SaveSetId::for_profile(
-                        &game.id,
-                        &target_profile_id,
-                        &target_save_mode,
-                    );
-                    Some(
-                        save_manager::prepare_transition(
-                            &game,
-                            &source,
-                            &target,
-                            save_manager::BackupTrigger::ProfileSwitch,
-                            backup_cap,
-                        )
-                        .await
-                        .map_err(|e| e.to_string())?,
-                    )
-                } else {
-                    None
-                };
-                if let Err(error) = tracker.switch_profile(&game.id, &target_profile_id).await {
-                    if let Some(transition) = transition {
-                        transition.rollback().await.map_err(|rollback| {
-                            format!("{error}; save rollback also failed: {rollback}")
-                        })?;
-                    }
-                    return Err(error.to_string());
-                }
-                let save_sync = if let Some(transition) = transition {
-                    transition.commit().await.map_err(|e| e.to_string())?
-                } else {
-                    None
-                };
+                crate::core::generations::session::initialize(&tracker, &game)
+                    .await
+                    .map_err(|error| error.to_string())?;
+                tracker
+                    .switch_profile(&game.id, &target_profile_id)
+                    .await
+                    .map_err(|error| error.to_string())?;
+                let save_sync = None;
                 let data = load_game_data(&tracker, &game, GameLoadMode::Refresh).await?;
                 Ok::<_, String>((data, save_sync))
             };
@@ -358,7 +326,13 @@ impl App {
                     .save_to_profile(&source_profile.id, &game.id)
                     .await
                     .map_err(|e| e.to_string())?;
-                if source_profile.save_mode == SaveMode::ProfileSpecific {
+                if source_profile.save_mode == SaveMode::ProfileSpecific
+                    && crate::core::generations::session::live_saves(&tracker, &game)
+                        .await
+                        .map_err(|error| error.to_string())?
+                        .profile_id()
+                        == Some(source_profile.id.as_str())
+                {
                     let backup_cap = save_manager::configured_backup_cap_bytes(&tracker).await;
                     let source_set = save_manager::SaveSetId::for_profile(
                         &game.id,
@@ -414,7 +388,6 @@ impl App {
         let delete_id = self.session.profiles[self.session.active_profile_idx]
             .id
             .clone();
-        let source_profile = self.session.profiles[self.session.active_profile_idx].clone();
         let Some(target_profile) = self
             .session
             .profiles
@@ -427,56 +400,21 @@ impl App {
 
         self.location_command(sender, async move {
             let result = async {
-                let transition = if game::has_save_management(&game) {
-                    let source_set = save_manager::SaveSetId::for_profile(
-                        &game.id,
-                        &source_profile.id,
-                        &source_profile.save_mode,
-                    );
-                    let target_set = save_manager::SaveSetId::for_profile(
-                        &game.id,
-                        &target_profile.id,
-                        &target_profile.save_mode,
-                    );
-                    let backup_cap = save_manager::configured_backup_cap_bytes(&tracker).await;
-                    Some(
-                        save_manager::prepare_transition(
-                            &game,
-                            &source_set,
-                            &target_set,
-                            save_manager::BackupTrigger::ProfileSwitch,
-                            backup_cap,
-                        )
-                        .await
-                        .map_err(|error| error.to_string())?,
-                    )
-                } else {
-                    None
-                };
-                if let Err(error) = tracker.switch_profile(&game.id, &target_profile.id).await {
-                    if let Some(transition) = transition {
-                        transition.rollback().await.map_err(|rollback| {
-                            format!("{error}; save rollback also failed: {rollback}")
-                        })?;
-                    }
-                    return Err(error.to_string());
-                }
+                crate::core::generations::session::can_delete_profile(&tracker, &delete_id)
+                    .await
+                    .map_err(|error| error.to_string())?;
+                tracker
+                    .switch_profile(&game.id, &target_profile.id)
+                    .await
+                    .map_err(|error| error.to_string())?;
                 if let Err(error) = tracker.delete_profile(&delete_id).await {
-                    let database_rollback = tracker.switch_profile(&game.id, &delete_id).await;
-                    if let Some(transition) = transition {
-                        transition.rollback().await.map_err(|rollback| {
-                            format!(
-                                "{error}; database rollback: {database_rollback:?}; save rollback also failed: {rollback}"
-                            )
+                    tracker
+                        .switch_profile(&game.id, &delete_id)
+                        .await
+                        .map_err(|rollback| {
+                            format!("{error}; could not restore profile selection: {rollback}")
                         })?;
-                    }
-                    database_rollback.map_err(|rollback| {
-                        format!("{error}; failed to restore the deleted profile selection: {rollback}")
-                    })?;
                     return Err(error.to_string());
-                }
-                if let Some(transition) = transition {
-                    transition.commit().await.map_err(|error| error.to_string())?;
                 }
                 let cleanup_warning = save_manager::delete_profile_save_data(&game.id, &delete_id)
                     .await
@@ -539,9 +477,6 @@ impl App {
         let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
-        let Some(game) = self.selected_game().cloned() else {
-            return;
-        };
         let new_mode = match profile.save_mode {
             SaveMode::Global => SaveMode::ProfileSpecific,
             SaveMode::ProfileSpecific => SaveMode::Global,
@@ -549,51 +484,6 @@ impl App {
         let profile_id = profile.id.clone();
         self.location_command(sender, async move {
             let result = async {
-                if game::has_save_management(&game) {
-                    let old_set = save_manager::SaveSetId::for_profile(
-                        &game.id,
-                        &profile_id,
-                        &profile.save_mode,
-                    );
-                    let new_set =
-                        save_manager::SaveSetId::for_profile(&game.id, &profile_id, &new_mode);
-                    if new_mode == SaveMode::ProfileSpecific {
-                        let backup_cap = save_manager::configured_backup_cap_bytes(&tracker).await;
-                        save_manager::capture_save_set(
-                            &game,
-                            &old_set,
-                            save_manager::BackupTrigger::ModeChange,
-                            backup_cap,
-                        )
-                        .await
-                        .map_err(|e| e.to_string())?;
-                        save_manager::initialize_save_set(&game, &new_set)
-                            .await
-                            .map_err(|e| e.to_string())?;
-                    } else {
-                        let backup_cap = save_manager::configured_backup_cap_bytes(&tracker).await;
-                        let transition = save_manager::prepare_transition(
-                            &game,
-                            &old_set,
-                            &new_set,
-                            save_manager::BackupTrigger::ModeChange,
-                            backup_cap,
-                        )
-                        .await
-                        .map_err(|e| e.to_string())?;
-                        if let Err(error) = tracker
-                            .set_profile_save_mode(&profile_id, new_mode.clone())
-                            .await
-                        {
-                            transition.rollback().await.map_err(|rollback| {
-                                format!("{error}; save rollback also failed: {rollback}")
-                            })?;
-                            return Err(error.to_string());
-                        }
-                        transition.commit().await.map_err(|e| e.to_string())?;
-                        return Ok(());
-                    }
-                }
                 tracker
                     .set_profile_save_mode(&profile_id, new_mode)
                     .await
@@ -661,10 +551,17 @@ impl App {
         self.location_command(sender, async move {
             let save_set =
                 save_manager::SaveSetId::for_profile(&game.id, &profile_id, &profile.save_mode);
-            let backup_cap = save_manager::configured_backup_cap_bytes(&tracker).await;
-            let result = save_manager::sync_save_set(&game, &save_set, backup_cap)
-                .await
-                .map_err(|e| e.to_string());
+            let result = async {
+                let owner = crate::core::generations::session::live_saves(&tracker, &game).await?;
+                anyhow::ensure!(
+                    owner == save_set,
+                    "Deploy this profile before syncing live saves into its bank"
+                );
+                let backup_cap = save_manager::configured_backup_cap_bytes(&tracker).await;
+                save_manager::sync_save_set(&game, &save_set, backup_cap).await
+            }
+            .await
+            .map_err(|error| error.to_string());
             AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::SavesSynced(result))
         });
     }
@@ -690,21 +587,18 @@ impl App {
         let Some(game) = self.selected_game().cloned() else {
             return;
         };
-        let Some(profile) = self
-            .session
-            .profiles
-            .get(self.session.active_profile_idx)
-            .cloned()
-        else {
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
-        let save_set =
-            save_manager::SaveSetId::for_profile(&game.id, &profile.id, &profile.save_mode);
         self.location_command(sender, async move {
-            let result = save_manager::create_manual_backup(&game, &save_set, label)
-                .await
-                .map(|_| "Save backup created".to_string())
-                .map_err(|error| error.to_string());
+            let result = async {
+                let save_set =
+                    crate::core::generations::session::live_saves(&tracker, &game).await?;
+                save_manager::create_manual_backup(&game, &save_set, label).await?;
+                Ok::<_, anyhow::Error>("Save backup created".to_string())
+            }
+            .await
+            .map_err(|error| error.to_string());
             AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::SaveBackupMutation(
                 result,
             ))
@@ -744,26 +638,19 @@ impl App {
         let Some(game) = self.selected_game().cloned() else {
             return;
         };
-        let Some(profile) = self
-            .session
-            .profiles
-            .get(self.session.active_profile_idx)
-            .cloned()
-        else {
+        let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
-        let active_set =
-            save_manager::SaveSetId::for_profile(&game.id, &profile.id, &profile.save_mode);
-        let tracker = self.session.tracker.clone();
         self.location_command(sender, async move {
-            let backup_cap = match tracker {
-                Some(tracker) => save_manager::configured_backup_cap_bytes(&tracker).await,
-                None => save_manager::DEFAULT_AUTOMATIC_BACKUP_CAP_BYTES,
-            };
-            let result = save_manager::restore_backup(&game, &backup_id, &active_set, backup_cap)
-                .await
-                .map(|_| "Save backup restored".to_string())
-                .map_err(|error| error.to_string());
+            let result = async {
+                let active_set =
+                    crate::core::generations::session::live_saves(&tracker, &game).await?;
+                let backup_cap = save_manager::configured_backup_cap_bytes(&tracker).await;
+                save_manager::restore_backup(&game, &backup_id, &active_set, backup_cap).await?;
+                Ok::<_, anyhow::Error>("Save backup restored".to_string())
+            }
+            .await
+            .map_err(|error| error.to_string());
             AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::SaveBackupMutation(
                 result,
             ))

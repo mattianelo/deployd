@@ -85,12 +85,14 @@ pub(super) fn files(manifest: &Manifest) -> Result<Vec<Output>> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(not(test), allow(dead_code))]
 pub(super) enum Difference {
     Added(Target),
     Removed(Target),
     Changed(Target),
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn compare(previous: &[Output], next: &[Output]) -> Result<Vec<Difference>> {
     let index =
         |outputs: &[Output]| -> Result<BTreeMap<Target, (Option<super::content::Identity>, u32)>> {

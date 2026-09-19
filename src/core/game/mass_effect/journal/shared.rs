@@ -1,3 +1,5 @@
+#![cfg_attr(not(test), allow(dead_code))]
+
 use super::*;
 
 pub(in crate::core::game::mass_effect) async fn stage(

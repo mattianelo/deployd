@@ -48,14 +48,99 @@ pub(crate) async fn load(tracker: &Tracker, game: &Game) -> Result<Snapshot> {
     })
 }
 
-pub(crate) async fn apply(
-    tracker: Tracker,
+pub(crate) async fn generation_entries(
+    tracker: &Tracker,
     snapshot: Snapshot,
     action: Action,
     cancelled: Arc<AtomicBool>,
-) -> Result<()> {
+) -> Result<(Game, Vec<super::Entry>)> {
+    tracker.ensure_location_ready(&snapshot.game.id).await?;
+    tracker.ensure_no_mele_journal(&snapshot.game.id).await?;
+    ensure!(
+        tracker
+            .folder_location(&snapshot.game.id, FolderRole::Game)
+            .await?
+            .id
+            == snapshot.location
+            && tracker.mele_family(snapshot.location).await? == snapshot.expected,
+        "Shared launcher mods changed; reopen their list before applying changes"
+    );
     let data = crate::utils::paths::deployd_data_dir()?;
-    apply_in(tracker, snapshot, action, data, cancelled).await
+    let control = Control::new(cancelled, Arc::new(AtomicBool::new(false)));
+    let mut entries = snapshot.entries;
+    match action {
+        #[cfg(test)]
+        Action::Add(mut inspected) => {
+            inspected.entry.approval = inspected.entry.source_sha256.clone();
+            let entry = inspected.entry.clone();
+            ensure!(
+                !entries
+                    .iter()
+                    .any(|old| old.source_sha256 == entry.source_sha256),
+                "This launcher package is already in the shared list"
+            );
+            let retaining = data.clone();
+            let source = inspected
+                .source
+                .as_ref()
+                .context("Launcher archive was already released")?
+                .path()
+                .to_path_buf();
+            let retained = entry.clone();
+            tokio::task::spawn_blocking(move || retain(&retaining, &source, &retained, &control))
+                .await??;
+            entries.push(entry);
+        }
+        Action::AddBundled { mut entry, source } => {
+            entry.approval = entry.source_sha256.clone();
+            if !entries
+                .iter()
+                .any(|old| old.source_sha256 == entry.source_sha256)
+            {
+                let retaining = data.clone();
+                let retained = entry.clone();
+                tokio::task::spawn_blocking(move || {
+                    retain(&retaining, &source, &retained, &control)
+                })
+                .await??;
+                entries.push(entry);
+            }
+        }
+        Action::Enable(id, enabled) => {
+            entries
+                .iter_mut()
+                .find(|entry| entry.id == id)
+                .context("Launcher mod no longer exists")?
+                .enabled = enabled;
+        }
+        Action::Move(id, offset) => {
+            ensure!(offset == -1 || offset == 1, "Invalid launcher order change");
+            let index = entries
+                .iter()
+                .position(|entry| entry.id == id)
+                .context("Launcher mod no longer exists")?;
+            let destination = index
+                .checked_add_signed(offset as isize)
+                .filter(|index| *index < entries.len())
+                .context("Launcher mod is already at the end of the list")?;
+            entries.swap(index, destination);
+        }
+        Action::Remove(id) => {
+            ensure!(
+                entries.iter().any(|entry| entry.id == id),
+                "Launcher mod no longer exists"
+            );
+            entries.retain(|entry| entry.id != id);
+        }
+        Action::Restore => {
+            for entry in &mut entries {
+                entry.enabled = false;
+            }
+        }
+        Action::Repair => {}
+    }
+    validate_entries(&entries)?;
+    Ok((snapshot.game, entries))
 }
 
 pub(crate) async fn add_bundled(
@@ -66,18 +151,38 @@ pub(crate) async fn add_bundled(
     cancelled: Arc<AtomicBool>,
 ) -> Result<()> {
     let snapshot = load(&tracker, &game).await?;
-    apply(
-        tracker,
+    let (game, entries) = generation_entries(
+        &tracker,
         snapshot,
         Action::AddBundled {
             entry: bundled.entry,
             source: extracted_root.join(bundled.source),
         },
-        cancelled,
+        cancelled.clone(),
     )
+    .await?;
+    let cache = tracker
+        .get_setting(&format!("cache_dir_{}", game.id))
+        .await?
+        .map(PathBuf::from)
+        .map_or_else(crate::utils::paths::cache_root, Ok)?;
+    let control = crate::core::generations::content::Control {
+        cancelled,
+        progress: Arc::new(|_, _| {}),
+    };
+    crate::core::generations::activation::prepare_shared(
+        &tracker,
+        &game,
+        &cache,
+        entries,
+        control.clone(),
+    )
+    .await?
+    .apply(control)
     .await
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(in crate::core::game::mass_effect) async fn apply_in(
     tracker: Tracker,
     snapshot: Snapshot,

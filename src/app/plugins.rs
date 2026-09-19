@@ -14,7 +14,6 @@ use super::App;
 use super::messages::AppCmdMsg;
 use super::reorder::{block_destination, item_destination};
 use super::session::{GameLoadMode, load_game_data};
-use super::types::PostLootAction;
 
 impl App {
     pub(crate) fn handle_move_plugin_to(
@@ -339,7 +338,6 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         if self.selected_game().map(|game| game.id.as_str()) != Some(game_id.as_str()) {
-            self.plugins.pending_post_loot_action = PostLootAction::None;
             self.push_notification(
                 "LOOT finished after the selected game changed; its result was not applied",
             );
@@ -349,14 +347,9 @@ impl App {
             Ok((sorted_names, dirty)) => {
                 let dirty_count = dirty.len();
                 self.plugins.dirty = dirty;
-                let post_action = std::mem::take(&mut self.plugins.pending_post_loot_action);
 
                 self.shell.needs_deploy = true;
-                if post_action == PostLootAction::Deploy {
-                    self.show_toast("Load order sorted by LOOT — deploying…");
-                } else {
-                    self.show_toast("Load order sorted by LOOT — deploy to apply");
-                }
+                self.show_toast("Load order sorted by LOOT — deploy to apply");
 
                 if dirty_count > 0 {
                     self.show_toast(&format!(
@@ -402,7 +395,6 @@ impl App {
                         .await;
                         AppCmdMsg::Plugins(crate::app::messages::PluginsCmdMsg::LootOrderApplied(
                             Box::new(result),
-                            post_action,
                         ))
                     });
                 } else {
@@ -412,7 +404,6 @@ impl App {
                 }
             }
             Err(e) => {
-                self.plugins.pending_post_loot_action = PostLootAction::None;
                 self.show_toast(&format!("LOOT sort failed: {e}"));
             }
         }
@@ -422,15 +413,12 @@ impl App {
     pub(crate) fn handle_cmd_loot_order_applied(
         &mut self,
         result: Result<super::types::LoadedData, String>,
-        post_action: PostLootAction,
         sender: &ComponentSender<Self>,
     ) {
         match result {
             Ok(data) => {
                 self.apply_loaded_data(data, sender);
-                if post_action == PostLootAction::Deploy {
-                    self.prepare_deploy(sender);
-                }
+                self.shell.needs_deploy = true;
             }
             Err(error) => {
                 self.push_notification(&format!("Failed to apply LOOT order: {error}"));

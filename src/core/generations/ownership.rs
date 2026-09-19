@@ -32,7 +32,7 @@ pub(super) async fn initialize(history: &History) -> Result<State> {
         .context("Live save ownership initialization stopped")?
 }
 
-async fn import(tracker: &Tracker, game: &str) -> Result<State> {
+pub(super) async fn import(tracker: &Tracker, game: &str) -> Result<State> {
     let mut tx = durable(tracker).await?;
     let pending: bool =
         sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM generation_journals WHERE game_id=?)")

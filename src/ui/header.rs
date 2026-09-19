@@ -32,6 +32,7 @@ pub(crate) struct HeaderState {
     pub(crate) busy_message: String,
     pub(crate) deploying: bool,
     pub(crate) needs_deploy: bool,
+    pub(crate) deployment_status: String,
     pub(crate) selection_active: bool,
     pub(crate) notification_count: usize,
     pub(crate) notification_badge: String,
@@ -79,6 +80,7 @@ pub(crate) enum HeaderOutput {
     ManageSaveBackups,
     DeployClicked,
     OpenDeploymentFolder,
+    DeploymentHistory,
     LauncherMods,
     PurgeClicked,
     CreateEmptyMod,
@@ -104,6 +106,8 @@ impl SimpleComponent for Header {
             #[wrap(Some)]
             set_title_widget = &adw::WindowTitle {
                 set_title: "Deployd",
+                #[watch]
+                set_subtitle: &model.state.deployment_status,
             },
 
             #[local_ref]
@@ -394,6 +398,14 @@ impl SimpleComponent for Header {
                                 add_css_class: "flat",
                                 connect_clicked[sender] => move |_| {
                                     sender.output(HeaderOutput::OpenDeploymentFolder).ok();
+                                },
+                            },
+
+                            gtk::Button {
+                                set_label: "Deployment history…",
+                                add_css_class: "flat",
+                                connect_clicked[sender] => move |_| {
+                                    sender.output(HeaderOutput::DeploymentHistory).ok();
                                 },
                             },
 

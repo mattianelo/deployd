@@ -26,6 +26,7 @@ impl App {
             return;
         }
         match msg {
+            AppMsg::Generations(msg) => self.handle_generation(msg, &sender),
             AppMsg::Mele(msg) => self.handle_mele(msg, &sender, root),
             AppMsg::Recovery(msg) => self.handle_recovery(msg, &sender, root),
             AppMsg::Shell(msg) => self.dispatch_shell_input(msg, sender, root),
@@ -53,6 +54,12 @@ impl App {
                 self.handle_vanilla_deploy_confirmed(protect, &sender)
             }
             ShellMsg::DeployPreflightCancelled => self.handle_deploy_preflight_cancelled(),
+            ShellMsg::ApplyPreparedGeneration(prepared) => {
+                self.apply_prepared_generation(*prepared, &sender)
+            }
+            ShellMsg::DiscardPreparedGeneration(prepared) => {
+                self.discard_prepared_generation(*prepared, &sender)
+            }
             ShellMsg::PurgeClicked => self.handle_purge_clicked(root, &sender),
             ShellMsg::PurgeConfirmed => self.handle_purge_confirmed(&sender),
             ShellMsg::GrantGameFolderAccess => self.handle_grant_game_folder_access(root, &sender),
@@ -445,6 +452,7 @@ impl App {
                 self.dispatch_command(*msg, sender, root);
                 drop(lease);
             }
+            AppCmdMsg::Generations(msg) => self.handle_generation_command(msg, &sender, root),
             AppCmdMsg::Mele(msg) => self.handle_mele_command(msg, &sender, root),
             AppCmdMsg::Shell(msg) => self.dispatch_shell_command(msg, sender, root),
             AppCmdMsg::Games(msg) => self.dispatch_games_command(msg, sender, root),
@@ -471,6 +479,9 @@ impl App {
             }
             ShellCmdMsg::VanillaProtectionSaved { protect, result } => {
                 self.handle_cmd_vanilla_protection_saved(protect, result, &sender)
+            }
+            ShellCmdMsg::GenerationPrepared(result) => {
+                self.handle_generation_prepared(result, root, &sender)
             }
             ShellCmdMsg::DeployDone(result) => self.handle_cmd_deploy_done(result, &sender),
             ShellCmdMsg::PurgeDone(result) => self.handle_cmd_purge_done(result),
@@ -628,8 +639,8 @@ impl App {
                 self.handle_cmd_loot_sort_done(game_id, result, &sender)
             }
             #[cfg(feature = "loot")]
-            PluginsCmdMsg::LootOrderApplied(result, post_action) => {
-                self.handle_cmd_loot_order_applied(*result, post_action, &sender)
+            PluginsCmdMsg::LootOrderApplied(result) => {
+                self.handle_cmd_loot_order_applied(*result, &sender)
             }
             PluginsCmdMsg::PluginOrderSnapshotSaved(result) => {
                 self.handle_cmd_plugin_order_snapshot_saved(result, &sender)
@@ -726,6 +737,7 @@ impl App {
 fn requires_game_access(msg: &AppMsg) -> bool {
     use crate::app::messages::{DownloadsMsg, GamesMsg, ShellMsg, ToolsMsg};
     match msg {
+        AppMsg::Generations(message) => !matches!(message, super::generations::Msg::Open),
         AppMsg::Mods(_) | AppMsg::Plugins(_) | AppMsg::Install(_) => true,
         AppMsg::Tools(ToolsMsg::LaunchTool(_)) => true,
         AppMsg::Mele(msg) => !matches!(
@@ -739,6 +751,8 @@ fn requires_game_access(msg: &AppMsg) -> bool {
             ShellMsg::DeployClicked
             | ShellMsg::DeployConfirmed
             | ShellMsg::DeployVanillaConfirmed(_)
+            | ShellMsg::ApplyPreparedGeneration(_)
+            | ShellMsg::DiscardPreparedGeneration(_)
             | ShellMsg::PurgeClicked
             | ShellMsg::PurgeConfirmed,
         ) => true,

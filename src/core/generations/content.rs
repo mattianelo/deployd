@@ -116,6 +116,13 @@ pub(super) fn transfer(
     Ok(identity)
 }
 
+pub(crate) fn replace(source: &Path, destination: &Path) -> Result<()> {
+    let control = Control::default();
+    let expected = inspect(source, &control)?;
+    let mode = fs::symlink_metadata(source)?.permissions().mode() & 0o777;
+    copy(source, destination, &expected, mode, &control)
+}
+
 pub(crate) fn copy(
     source: &Path,
     destination: &Path,

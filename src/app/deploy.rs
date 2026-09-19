@@ -398,33 +398,163 @@ impl App {
         };
 
         self.shell.deploying = true;
-        self.begin_work(WorkKind::Deploying, "Deploying...");
+        self.begin_work(WorkKind::Deploying, "Preparing deployment...");
 
         self.location_command(sender, async move {
             if let Err(error) = tracker.save_to_profile(&profile_id, &game.id).await {
-                return AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::DeployDone(Err(
-                    format!("Failed to save the active profile before deployment: {error}"),
-                )));
+                return AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::GenerationPrepared(
+                    Err(format!(
+                        "Failed to save the active profile before deployment: {error}"
+                    )),
+                ));
             }
-            let timing_start = std::time::Instant::now();
-            let game_id = game.id.clone();
-            let result =
-                match deployer::deploy(&game, &tracker, &cache_root, protect_vanilla_files).await {
-                    Ok(result) => {
-                        crate::app::timing::log_phase("deploy.apply", &game_id, timing_start, None);
-                        match tracker.record_deployed_profile(&game_id, &profile_id).await {
-                            Ok(()) => Ok(DeployCompletion {
-                                outcome: result,
-                                profile_id,
-                            }),
-                            Err(error) => {
-                                Err(format!("Failed to record the deployed profile: {error}"))
-                            }
-                        }
-                    }
-                    Err(error) => Err(error.to_string()),
-                };
-            AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::DeployDone(result))
+            let result = crate::core::generations::activation::prepare(
+                &tracker,
+                &game,
+                &cache_root,
+                Some(&profile_id),
+                protect_vanilla_files,
+                crate::core::generations::content::Control::default(),
+            )
+            .await
+            .map(Box::new)
+            .map_err(|error| format!("{error:#}"));
+            AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::GenerationPrepared(
+                result,
+            ))
+        });
+    }
+
+    pub(crate) fn handle_generation_prepared(
+        &mut self,
+        result: Result<Box<crate::core::generations::activation::Prepared>, String>,
+        root: &adw::ApplicationWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.finish_work(WorkKind::Deploying);
+        self.finish_work(WorkKind::Purging);
+        let prepared = match result {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                self.shell.deploying = false;
+                self.push_notification(&format!("Could not prepare deployment: {error}"));
+                return;
+            }
+        };
+        let purge = prepared.is_purge();
+        let details = if prepared.differences.is_empty() {
+            "No managed files differ. Applying still records this activation.".to_string()
+        } else {
+            let shown = prepared
+                .differences
+                .iter()
+                .take(50)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("\n");
+            if prepared.differences.len() > 50 {
+                format!(
+                    "{shown}\n… and {} more change(s)",
+                    prepared.differences.len() - 50
+                )
+            } else {
+                shown
+            }
+        };
+        let dialog = adw::AlertDialog::builder()
+            .heading(if purge {
+                "Apply purge?"
+            } else {
+                "Apply prepared deployment?"
+            })
+            .body(details)
+            .build();
+        dialog.add_response("cancel", "Cancel");
+        dialog.add_response("apply", if purge { "Purge" } else { "Deploy" });
+        dialog.set_close_response("cancel");
+        dialog.set_response_appearance(
+            "apply",
+            if purge {
+                adw::ResponseAppearance::Destructive
+            } else {
+                adw::ResponseAppearance::Suggested
+            },
+        );
+        let input = sender.input_sender().clone();
+        let plan = std::cell::RefCell::new(Some(prepared));
+        dialog.connect_response(None, move |_, response| {
+            let Some(prepared) = plan.borrow_mut().take() else {
+                return;
+            };
+            let message = if response == "apply" {
+                crate::app::messages::ShellMsg::ApplyPreparedGeneration(prepared)
+            } else {
+                crate::app::messages::ShellMsg::DiscardPreparedGeneration(prepared)
+            };
+            let _ = input.send(AppMsg::Shell(message));
+        });
+        dialog.present(Some(root));
+    }
+
+    pub(crate) fn discard_prepared_generation(
+        &mut self,
+        prepared: crate::core::generations::activation::Prepared,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.shell.deploying = false;
+        self.location_command(sender, async move {
+            let result = prepared.discard().await.map_err(|error| error.to_string());
+            AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
+        });
+    }
+
+    pub(crate) fn apply_prepared_generation(
+        &mut self,
+        prepared: crate::core::generations::activation::Prepared,
+        sender: &ComponentSender<Self>,
+    ) {
+        let purge = prepared.is_purge();
+        let profile = prepared.profile_id().map(str::to_owned);
+        let total = prepared.file_count();
+        let (added, removed, changed) = prepared.change_counts();
+        self.begin_work(
+            if purge {
+                WorkKind::Purging
+            } else {
+                WorkKind::Deploying
+            },
+            if purge { "Purging…" } else { "Deploying…" },
+        );
+        self.location_command(sender, async move {
+            let result = prepared
+                .activate(crate::core::generations::content::Control::default())
+                .await
+                .map_err(|error| format!("{error:#}"));
+            if purge {
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PurgeDone(result.map(
+                    |_| crate::core::deployer::PurgeOutcome {
+                        files_removed: removed + changed,
+                        vanilla_files_restored: 0,
+                        warnings: Vec::new(),
+                    },
+                )))
+            } else {
+                let profile_id = profile.unwrap_or_default();
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::DeployDone(result.map(
+                    |_| DeployCompletion {
+                        profile_id,
+                        outcome: crate::core::deployer::DeployOutcome {
+                            files_total: total,
+                            files_added: added + changed,
+                            files_removed: removed,
+                            conflicts_resolved: 0,
+                            vanilla_files_backed_up: 0,
+                            vanilla_files_restored: 0,
+                            warnings: Vec::new(),
+                        },
+                    },
+                )))
+            }
         });
     }
 
@@ -522,13 +652,22 @@ impl App {
         };
 
         self.shell.deploying = true;
-        self.begin_work(WorkKind::Purging, "Purging...");
+        self.begin_work(WorkKind::Purging, "Preparing purge...");
 
         self.location_command(sender, async move {
-            AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PurgeDone(
-                deployer::purge(&game, &tracker, &cache_root)
-                    .await
-                    .map_err(|e| e.to_string()),
+            let result = crate::core::generations::activation::prepare(
+                &tracker,
+                &game,
+                &cache_root,
+                None,
+                false,
+                crate::core::generations::content::Control::default(),
+            )
+            .await
+            .map(Box::new)
+            .map_err(|error| format!("{error:#}"));
+            AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::GenerationPrepared(
+                result,
             ))
         });
     }
@@ -695,6 +834,7 @@ impl App {
         match result {
             Ok(outcome) => {
                 self.shell.needs_deploy = true;
+                self.session.last_deployed_profile_id = None;
                 if outcome.files_removed == 0 {
                     self.push_notification(
                         "No deployed files tracked — the game folder may already be clean, or try redeploying first",

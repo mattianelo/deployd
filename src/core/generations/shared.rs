@@ -663,6 +663,7 @@ pub(super) async fn delete(history: &History, family: &str, id: &str) -> Result<
 #[path = "../../../tests/generations/shared.rs"]
 mod tests;
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(super) async fn dependency_matches(
     history: &History,
     game: &Game,

@@ -128,44 +128,6 @@ impl Tracker {
         Ok(())
     }
 
-    /// Sync plugin enabled state from a parsed Plugins.txt.
-    ///
-    /// Only updates the `enabled` flag for plugins already in the DB.
-    pub async fn sync_plugins_from_txt(
-        &self,
-        game_id: &str,
-        txt_entries: &[(String, bool)],
-    ) -> Result<()> {
-        let plugins = self.list_plugins(game_id).await?;
-        if plugins.is_empty() || txt_entries.is_empty() {
-            return Ok(());
-        }
-
-        let txt_enabled: std::collections::HashMap<String, bool> = txt_entries
-            .iter()
-            .map(|(filename, enabled)| (filename.to_lowercase(), *enabled))
-            .collect();
-
-        let mut tx = self.pool.begin().await?;
-        for p in &plugins {
-            if let Some(&enabled) = txt_enabled.get(&p.filename.to_lowercase()) {
-                sqlx::query(
-                    "UPDATE plugins SET enabled = ? WHERE id = ?
-                     AND mod_id IN (SELECT id FROM mods WHERE enabled = 1)",
-                )
-                .bind(enabled)
-                .bind(&p.id)
-                .execute(&mut *tx)
-                .await?;
-            }
-        }
-        tx.commit()
-            .await
-            .context("Failed to commit plugin enabled sync from Plugins.txt")?;
-
-        Ok(())
-    }
-
     /// Delete all plugins belonging to a mod.
     pub async fn delete_plugins_for_mod(&self, mod_id: &str) -> Result<()> {
         sqlx::query("DELETE FROM plugins WHERE mod_id = ?")

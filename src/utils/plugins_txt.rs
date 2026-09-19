@@ -13,6 +13,7 @@ use crate::models::plugin::Plugin;
 /// *EnabledPlugin.esp
 /// DisabledPlugin.esp
 /// ```
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn write_plugins_txt(path: &Path, plugins: &[Plugin]) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).with_context(|| {
@@ -68,6 +69,7 @@ pub fn read_plugins_txt(path: &Path) -> Result<Vec<(String, bool)>> {
 ///
 /// Only creates the file if it does not already exist — never overwrites
 /// user customizations.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn ensure_archive_invalidation(path: &Path) -> Result<()> {
     if path.exists() {
         return Ok(());

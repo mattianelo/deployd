@@ -12,7 +12,7 @@ use super::package::SourceFile;
 mod package;
 mod service;
 pub(crate) use package::inspect_bundle;
-pub(crate) use service::{Action, Snapshot, add_bundled, apply, load};
+pub(crate) use service::{Action, Snapshot, add_bundled, generation_entries, load};
 
 #[derive(Debug)]
 pub(crate) struct Bundled {

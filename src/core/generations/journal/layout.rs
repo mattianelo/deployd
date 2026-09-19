@@ -161,7 +161,7 @@ impl Journal {
                 if !self.links.contains(&link) {
                     self.links.push(link);
                 }
-                self.version = 3;
+                self.version = self.version.max(3);
             }
             Err(error)
                 if matches!(
@@ -268,7 +268,7 @@ impl Journal {
         keyed.sort_by_key(|(depth, _)| *depth);
         self.directories = keyed.into_iter().map(|(_, entry)| entry).collect();
         if !self.directories.is_empty() {
-            self.version = 3;
+            self.version = self.version.max(3);
         }
         self.validate_layout(game)
     }

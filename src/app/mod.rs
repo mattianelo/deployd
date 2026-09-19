@@ -4,6 +4,7 @@ mod deploy;
 mod dispatch;
 mod downloads;
 mod external;
+mod generations;
 mod init;
 mod install;
 mod install_file_id;

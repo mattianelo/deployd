@@ -58,13 +58,6 @@ pub(crate) struct DeployCompletion {
     pub(crate) profile_id: String,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PostLootAction {
-    #[default]
-    None,
-    Deploy,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ToolSessionState {
     Preparing,

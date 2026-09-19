@@ -22,6 +22,7 @@ impl App {
             busy_message: self.busy_message(),
             deploying: self.shell.deploying,
             needs_deploy: self.shell.needs_deploy,
+            deployment_status: self.deployment_status(),
             selection_active: self.selection_mode_active(),
             notification_count: self.notifications_count(),
             notification_badge: self.notifications_badge(),
@@ -36,6 +37,28 @@ impl App {
             downloads_visible: self.download.visible,
             search_active: self.shell.search_active,
         }
+    }
+
+    fn deployment_status(&self) -> String {
+        let selected = self
+            .session
+            .profiles
+            .get(self.session.active_profile_idx)
+            .map(|profile| profile.name.as_str())
+            .unwrap_or("None");
+        let deployed = self
+            .session
+            .last_deployed_profile_id
+            .as_deref()
+            .and_then(|id| {
+                self.session
+                    .profiles
+                    .iter()
+                    .find(|profile| profile.id == id)
+            })
+            .map(|profile| profile.name.as_str())
+            .unwrap_or("None");
+        format!("Selected: {selected} · Deployed: {deployed}")
     }
     pub(crate) fn has_games(&self) -> bool {
         !self.session.games.is_empty()

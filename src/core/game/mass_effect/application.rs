@@ -20,8 +20,37 @@ pub(crate) struct Preview {
     pub(crate) purge: bool,
     pub(crate) repair: bool,
     previous: Option<journal::State>,
+    #[cfg_attr(not(test), allow(dead_code))]
     plan: ValidatedRecipe,
     backend: Option<Backend>,
+}
+
+impl Preview {
+    pub(crate) fn into_generation_request(self) -> GenerationRequest {
+        GenerationRequest {
+            purge: self.purge,
+            recipe: self.recipe,
+            destination: recipe::Destination {
+                game: self.game,
+                profile: self.profile,
+                previous: self.previous.map(|state| state.generation),
+                repair_components: self.repair,
+                backend: self.backend,
+            },
+        }
+    }
+}
+
+pub(crate) struct GenerationRequest {
+    purge: bool,
+    recipe: Recipe,
+    destination: recipe::Destination,
+}
+
+impl GenerationRequest {
+    pub(crate) fn into_parts(self) -> (recipe::Destination, Recipe, bool) {
+        (self.destination, self.recipe, self.purge)
+    }
 }
 
 impl std::fmt::Debug for Preview {
@@ -42,13 +71,13 @@ pub(crate) struct Request {
     pub(crate) repair: bool,
 }
 
-pub(crate) async fn deploy(
+pub(crate) async fn preview(
     tracker: Tracker,
     request: Request,
     cancelled: Arc<AtomicBool>,
     progress: Arc<dyn Fn(usize, usize) + Send + Sync>,
-) -> Result<DeployOutcome> {
-    deploy_in(
+) -> Result<Preview> {
+    preview_with_progress(
         tracker,
         request,
         crate::utils::paths::deployd_data_dir()?,
@@ -58,6 +87,7 @@ pub(crate) async fn deploy(
     .await
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(super) async fn deploy_in(
     tracker: Tracker,
     request: Request,
@@ -184,6 +214,7 @@ async fn preview_with_progress(
     })
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(super) async fn apply_in(
     tracker: Tracker,
     preview: Preview,

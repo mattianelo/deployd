@@ -25,7 +25,7 @@ use super::session::{GameLoadMode, load_game_data};
 use super::state::{
     DownloadState, ModState, PluginState, SessionState, ShellState, ToolState, UiState,
 };
-use super::types::{InitData, ModFilter, PostLootAction, SearchScope};
+use super::types::{InitData, ModFilter, SearchScope};
 use super::{App, AppCmdMsg, AppMsg};
 
 /// Builds the initial App model, wires up factory lists, constructs UI helpers
@@ -213,6 +213,7 @@ pub(super) fn build_model(
                 busy_message: "Working...".to_string(),
                 deploying: false,
                 needs_deploy: false,
+                deployment_status: "Selected: None · Deployed: None".to_string(),
                 selection_active: false,
                 notification_count: 0,
                 notification_badge: String::new(),
@@ -275,6 +276,7 @@ pub(super) fn build_model(
             HeaderOutput::LauncherMods => AppMsg::Mele(crate::app::mele::Msg::Launcher(Box::new(
                 crate::app::mele::launcher::Msg::Open,
             ))),
+            HeaderOutput::DeploymentHistory => AppMsg::Generations(super::generations::Msg::Open),
             HeaderOutput::OpenDeploymentFolder => {
                 AppMsg::Shell(crate::app::messages::ShellMsg::OpenDeploymentFolder)
             }
@@ -383,7 +385,6 @@ pub(super) fn build_model(
             scroll: plugin_scroll,
             #[cfg(feature = "loot")]
             dirty: HashMap::new(),
-            pending_post_loot_action: PostLootAction::None,
             show_vanilla: false,
             managed_count: 0,
             vanilla_names: Vec::new(),

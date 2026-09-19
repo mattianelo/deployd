@@ -1,3 +1,5 @@
+#![cfg_attr(not(test), allow(dead_code))]
+
 use std::fs::{self, File};
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
@@ -49,9 +51,9 @@ pub(super) async fn bake_modified_plugins(
             .with_context(|| format!("Failed to inspect cached plugin '{game_rel_orig}'"))?
             .ino();
         if disk_ino != cache_ino {
-            fs::copy(&disk_path, cache_path).with_context(|| {
-                format!("Could not preserve modified plugin '{game_rel_orig}' in the mod cache")
-            })?;
+            crate::core::generations::content::replace(&disk_path, cache_path).with_context(
+                || format!("Could not preserve modified plugin '{game_rel_orig}' in the mod cache"),
+            )?;
         }
     }
     Ok(())
@@ -191,7 +193,7 @@ pub(super) async fn backup_exists(
         .map(|hash| hash.is_some())
 }
 
-pub(super) async fn backup_vanilla_file(
+pub(crate) async fn backup_vanilla_file(
     game: &Game,
     tracker: &Tracker,
     canonical_path: &str,

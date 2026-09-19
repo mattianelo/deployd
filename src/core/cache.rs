@@ -38,15 +38,47 @@ pub async fn move_game_cache(
         .await
         .context("Failed to list mods for cache move")?;
 
-    let moved = move_cache_directories(&mods, old_cache_root, new_cache_root)?;
+    let history = crate::core::generations::relocation::prepare(
+        tracker,
+        game_id,
+        old_cache_root,
+        new_cache_root,
+    )
+    .await?;
+
+    let moved = match move_cache_directories(&mods, old_cache_root, new_cache_root) {
+        Ok(moved) => moved,
+        Err(error) => {
+            if let Some(history) = history {
+                history.abort(tracker).await?;
+            }
+            return Err(error);
+        }
+    };
 
     let old_prefix = old_cache_root.to_string_lossy();
     let new_prefix = new_cache_root.to_string_lossy();
     if let Err(error) = tracker
-        .commit_game_cache_move(game_id, &old_prefix, &new_prefix, Some(new_cache_root))
+        .commit_game_cache_move(
+            game_id,
+            &old_prefix,
+            &new_prefix,
+            Some(new_cache_root),
+            history
+                .as_ref()
+                .map(|history| (history.journal(), history.new_cache())),
+        )
         .await
     {
-        return Err(cache_move_failure(error, rollback_cache_moves(&moved)));
+        let rollback = rollback_cache_moves(&moved);
+        if let Some(history) = history {
+            history.abort(tracker).await?;
+        }
+        return Err(cache_move_failure(error, rollback));
+    }
+
+    if let Some(history) = history {
+        history.finish(tracker).await?;
     }
 
     Ok(())
@@ -71,15 +103,47 @@ pub async fn reset_game_cache(
         .await
         .context("Failed to list mods for cache reset")?;
 
-    let moved = move_cache_directories(&mods, current_cache_root, default_cache_root)?;
+    let history = crate::core::generations::relocation::prepare(
+        tracker,
+        game_id,
+        current_cache_root,
+        default_cache_root,
+    )
+    .await?;
+
+    let moved = match move_cache_directories(&mods, current_cache_root, default_cache_root) {
+        Ok(moved) => moved,
+        Err(error) => {
+            if let Some(history) = history {
+                history.abort(tracker).await?;
+            }
+            return Err(error);
+        }
+    };
 
     let old_prefix = current_cache_root.to_string_lossy();
     let new_prefix = default_cache_root.to_string_lossy();
     if let Err(error) = tracker
-        .commit_game_cache_move(game_id, &old_prefix, &new_prefix, None)
+        .commit_game_cache_move(
+            game_id,
+            &old_prefix,
+            &new_prefix,
+            None,
+            history
+                .as_ref()
+                .map(|history| (history.journal(), history.new_cache())),
+        )
         .await
     {
-        return Err(cache_move_failure(error, rollback_cache_moves(&moved)));
+        let rollback = rollback_cache_moves(&moved);
+        if let Some(history) = history {
+            history.abort(tracker).await?;
+        }
+        return Err(cache_move_failure(error, rollback));
+    }
+
+    if let Some(history) = history {
+        history.finish(tracker).await?;
     }
 
     Ok(())

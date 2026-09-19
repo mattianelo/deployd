@@ -1090,7 +1090,7 @@ async fn unknown_recovery_versions_preserve_the_bound_store_and_journal() -> Res
     let temp = tempfile::tempdir()?;
     let tracker = Tracker::open("sqlite::memory:").await?.tracker;
     drop(History::open(&tracker, "game", temp.path(), true).await?);
-    sqlx::query("INSERT INTO generation_journals(id,game_id,kind,document_version,document) VALUES ('future','game','deploy',5,'{}')").execute(&tracker.pool).await?;
+    sqlx::query("INSERT INTO generation_journals(id,game_id,kind,document_version,document) VALUES ('future','game','deploy',6,'{}')").execute(&tracker.pool).await?;
     assert!(
         History::open(&tracker, "game", temp.path(), true)
             .await

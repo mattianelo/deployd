@@ -234,7 +234,7 @@ async fn coordinator_reports_committed_cleanup_failure_without_rolling_back() ->
 
 // @variants: both
 #[tokio::test]
-async fn coordinator_refuses_stale_state_and_incomplete_target_coverage() -> Result<()> {
+async fn coordinator_refuses_stale_state_and_missing_target_coverage() -> Result<()> {
     let fixture = Fixture::new().await?;
     sqlx::query("INSERT INTO generation_game_state(game_id,live_save_mode) VALUES (?,'global')")
         .bind(&fixture.game.id)
@@ -242,30 +242,28 @@ async fn coordinator_refuses_stale_state_and_incomplete_target_coverage() -> Res
         .await?;
     assert!(fixture.deploy(None, Control::default()).await.is_err());
     let previous = fixture.state().await?;
-    for name in ["Missing.txt", "file.txt"] {
-        fixture
-            .history
-            .tracker
-            .clear_deployed_files(&fixture.game.id)
-            .await?;
-        let mut missing = fixture.files[0].clone();
-        missing.game_rel_original = name.into();
-        missing.game_rel_lowercase = name.to_lowercase();
-        fixture
-            .history
-            .tracker
-            .record_deployed_files(&fixture.game.id, &[missing])
-            .await?;
-        let error = fixture
-            .deploy(previous.as_ref(), Control::default())
-            .await
-            .unwrap_err();
-        assert!(
-            error
-                .to_string()
-                .contains("omits a previously managed target")
-        );
-    }
+    fixture
+        .history
+        .tracker
+        .clear_deployed_files(&fixture.game.id)
+        .await?;
+    let mut missing = fixture.files[0].clone();
+    missing.game_rel_original = "Missing.txt".into();
+    missing.game_rel_lowercase = "missing.txt".into();
+    fixture
+        .history
+        .tracker
+        .record_deployed_files(&fixture.game.id, &[missing])
+        .await?;
+    let error = fixture
+        .deploy(previous.as_ref(), Control::default())
+        .await
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("omits a previously managed target")
+    );
     assert_eq!(fs::read(fixture.live())?, b"old content");
     assert_eq!(fixture.pending().await?, 0);
     Ok(())

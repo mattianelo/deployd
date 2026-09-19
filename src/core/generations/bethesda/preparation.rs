@@ -10,6 +10,7 @@ pub(in crate::core::generations) struct Prepared {
     pub(in crate::core::generations) manifest: Manifest,
     pub(in crate::core::generations) journal: Journal,
     pub(in crate::core::generations) files: Vec<ModFile>,
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(in crate::core::generations) reused: Option<String>,
 }
 
@@ -253,7 +254,10 @@ fn complete_at(game: &Game, outputs: &[Output]) -> Result<()> {
     Ok(())
 }
 
-fn deployment_files(history: &History, manifest: &Manifest) -> Result<Vec<ModFile>> {
+pub(in crate::core::generations) fn deployment_files(
+    history: &History,
+    manifest: &Manifest,
+) -> Result<Vec<ModFile>> {
     let rows = &manifest
         .records
         .iter()

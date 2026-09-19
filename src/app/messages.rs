@@ -18,12 +18,12 @@ use crate::utils::fomod_resolver;
 use super::state::InstallIdentity;
 use super::types::{
     DeployCompletion, DownloadScanResult, InitData, LoadedData, ModFilter, NxmDownloadResult,
-    PostLootAction,
 };
 use crate::models::download::DownloadFilter;
 
 #[derive(Debug)]
 pub(crate) enum AppMsg {
+    Generations(super::generations::Msg),
     Mele(super::mele::Msg),
     Recovery(super::location_recovery::RecoveryMsg),
     Shell(ShellMsg),
@@ -42,6 +42,8 @@ pub(crate) enum ShellMsg {
     DeployConfirmed,
     DeployVanillaConfirmed(bool),
     DeployPreflightCancelled,
+    ApplyPreparedGeneration(Box<crate::core::generations::activation::Prepared>),
+    DiscardPreparedGeneration(Box<crate::core::generations::activation::Prepared>),
     PurgeClicked,
     PurgeConfirmed,
     /// Open a file-chooser dialog so the user can confirm access to the current
@@ -410,6 +412,7 @@ impl std::fmt::Debug for PrepareResultMsg {
 
 #[derive(Debug)]
 pub(crate) enum AppCmdMsg {
+    Generations(super::generations::Cmd),
     Mele(super::mele::Command),
     Recovery(super::location_recovery::RecoveryCmd),
     LocationActivityCompleted(tokio::sync::OwnedRwLockReadGuard<()>, Box<AppCmdMsg>),
@@ -430,6 +433,7 @@ pub(crate) enum ShellCmdMsg {
         protect: bool,
         result: Result<(), String>,
     },
+    GenerationPrepared(Result<Box<crate::core::generations::activation::Prepared>, String>),
     DeployDone(Result<DeployCompletion, String>),
     PurgeDone(Result<crate::core::deployer::PurgeOutcome, String>),
     GamePathSaved {
@@ -552,7 +556,7 @@ pub(crate) enum PluginsCmdMsg {
         Result<(Vec<String>, HashMap<String, PluginDirtyInfo>), String>,
     ),
     #[cfg(feature = "loot")]
-    LootOrderApplied(Box<Result<LoadedData, String>>, PostLootAction),
+    LootOrderApplied(Box<Result<LoadedData, String>>),
     /// Plugin order snapshot saved.
     PluginOrderSnapshotSaved(Result<(), String>),
     /// Plugin order snapshot restored.

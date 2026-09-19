@@ -13,7 +13,17 @@ impl App {
         result: Result<Option<String>, String>,
     ) {
         match result {
-            Ok(id) => self.session.last_deployed_profile_id = id,
+            Ok(id) => {
+                self.session.last_deployed_profile_id = id;
+                self.shell.needs_deploy = self
+                    .session
+                    .profiles
+                    .get(self.session.active_profile_idx)
+                    .is_some_and(|profile| {
+                        Some(profile.id.as_str())
+                            != self.session.last_deployed_profile_id.as_deref()
+                    });
+            }
             Err(error) => self.push_notification(&format!(
                 "Failed to load the last deployed profile: {error}"
             )),
@@ -249,6 +259,14 @@ impl App {
                 };
                 self.apply_loaded_data(loaded, sender);
                 self.session.last_deployed_profile_id = data.last_deployed_profile_id;
+                self.shell.needs_deploy = self
+                    .session
+                    .profiles
+                    .get(self.session.active_profile_idx)
+                    .is_some_and(|profile| {
+                        Some(profile.id.as_str())
+                            != self.session.last_deployed_profile_id.as_deref()
+                    });
 
                 if let Some(dir) = data.downloads_dir {
                     self.download.directory = dir;

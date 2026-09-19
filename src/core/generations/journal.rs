@@ -13,6 +13,7 @@ use super::catalog::{History, durable};
 use super::content::{self, Control, Identity};
 use super::target::Target;
 
+mod cache;
 mod layout;
 mod mele;
 mod shared;
@@ -52,6 +53,8 @@ pub(super) struct Change {
 #[serde(deny_unknown_fields)]
 pub(super) struct Journal {
     version: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    cache_sources: Vec<(Target, String)>,
     pub(super) id: String,
     pub(super) game: String,
     pub(super) changes: Vec<Change>,
@@ -317,10 +320,13 @@ impl Journal {
         self.verify_mele(history, game, false).await?;
         self.verify_dependency(history, game).await?;
         self.verify_shared(history, game, false).await?;
+        let cache = history.cache.clone();
+        let store = history.store.clone();
         let journal = self.clone();
         let game = game.clone();
         history.lease.blocking(move || -> Result<()> {
             journal.validate(&game)?;
+            journal.verify_cache(&cache, &store, &control)?;
             journal.verify_links(&game)?;
             journal.verify_directories(&game, false)?;
             for change in &journal.changes {
@@ -372,6 +378,7 @@ impl Journal {
             .blocking(move || -> Result<_> {
                 let mut journal = Self {
                     version: 1,
+                    cache_sources: Vec::new(),
                     id: uuid::Uuid::new_v4().to_string(),
                     game: game.id.clone(),
                     changes: Vec::new(),
@@ -500,7 +507,7 @@ impl Journal {
 
     pub(super) fn validate(&self, game: &Game) -> Result<()> {
         ensure!(
-            matches!(self.version, 1..=4)
+            matches!(self.version, 1..=5)
                 && self.game == game.id
                 && uuid::Uuid::parse_str(&self.id).is_ok(),
             "Unsupported or invalid activation journal"
@@ -512,6 +519,7 @@ impl Journal {
             );
             saves.validate(&self.id, game)?;
         }
+        self.validate_cache()?;
         self.validate_layout(game)?;
         self.validate_mele(game)?;
         self.validate_shared(game)?;
@@ -637,6 +645,7 @@ impl Journal {
         }
         let journal = self.clone();
         let store = history.store.clone();
+        let cache = history.cache.clone();
         let game = game.clone();
         history
             .lease
@@ -653,7 +662,16 @@ impl Journal {
                         "Managed file changed since preparation; activation stopped: {}",
                         path.display()
                     );
-                    if change.before != change.after {
+                    if change.before != change.after
+                        && !journal.apply_cache(
+                            &cache,
+                            &store,
+                            &change.target,
+                            &path,
+                            &change.after,
+                            &control,
+                        )?
+                    {
                         apply_node(&store, &path, &change.after, &control)?;
                     }
                     ensure!(

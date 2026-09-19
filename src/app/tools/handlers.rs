@@ -12,7 +12,7 @@ use crate::ui::tool_manager::{ToolManager, ToolManagerOutput};
 
 use super::super::App;
 use super::super::messages::{AppCmdMsg, AppMsg};
-use super::super::types::{PostLootAction, ToolLaunchSession, ToolSessionState, WorkKind};
+use super::super::types::{ToolLaunchSession, ToolSessionState, WorkKind};
 
 const PROTON_SETUP_BODY: &str = "Proton GE needs to be installed before tools can run. \
 This is a one-time setup handled by UMU Launcher.\n\n\
@@ -21,8 +21,6 @@ The tool will launch automatically when the setup starts.";
 #[derive(Debug, Default, PartialEq, Eq)]
 struct PostToolExitActions {
     scan_external_files: bool,
-    sort_with_loot: bool,
-    deploy: Option<PostToolDeploy>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,12 +28,6 @@ enum ToolExitKind {
     Completed,
     Cancelled,
     Failed,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PostToolDeploy {
-    AfterLoot,
-    Now,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -52,20 +44,8 @@ fn post_tool_exit_actions(
         return PostToolExitActions::default();
     }
 
-    #[cfg(feature = "loot")]
-    let sort_with_loot =
-        _selected_game_id.is_some_and(crate::core::loot_sort::game_has_loot_support);
-    #[cfg(not(feature = "loot"))]
-    let sort_with_loot = false;
-
     PostToolExitActions {
         scan_external_files: true,
-        sort_with_loot,
-        deploy: Some(if sort_with_loot {
-            PostToolDeploy::AfterLoot
-        } else {
-            PostToolDeploy::Now
-        }),
     }
 }
 
@@ -291,18 +271,6 @@ impl App {
         if actions.scan_external_files {
             sender.input(AppMsg::Mods(
                 crate::app::messages::ModsMsg::ScanExternalFiles,
-            ));
-        }
-        if actions.sort_with_loot {
-            if actions.deploy == Some(PostToolDeploy::AfterLoot) {
-                self.plugins.pending_post_loot_action = PostLootAction::Deploy;
-            }
-            sender.input(AppMsg::Plugins(
-                crate::app::messages::PluginsMsg::SortWithLoot,
-            ));
-        } else if actions.deploy == Some(PostToolDeploy::Now) {
-            sender.input(AppMsg::Shell(
-                crate::app::messages::ShellMsg::DeployConfirmed,
             ));
         }
     }
@@ -764,10 +732,7 @@ fn monitor_deployd_proton_runtime(sender: relm4::Sender<AppMsg>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        PROTON_SETUP_BODY, PostToolDeploy, PostToolExitActions, ToolExitKind,
-        post_tool_exit_actions,
-    };
+    use super::{PROTON_SETUP_BODY, PostToolExitActions, ToolExitKind, post_tool_exit_actions};
 
     #[test]
     fn proton_setup_message_does_not_claim_a_download_size() {
@@ -777,18 +742,12 @@ mod tests {
 
     // @variants: both
     #[test]
-    fn normal_tool_exit_scans_and_sorts_every_loot_game() {
+    fn normal_tool_exit_only_scans_for_changes() {
         for game_id in ["skyrim-se", "fallout-4", "fallout-nv", "starfield"] {
             assert_eq!(
                 post_tool_exit_actions(ToolExitKind::Completed, Some(game_id)),
                 PostToolExitActions {
                     scan_external_files: true,
-                    sort_with_loot: cfg!(feature = "loot"),
-                    deploy: Some(if cfg!(feature = "loot") {
-                        PostToolDeploy::AfterLoot
-                    } else {
-                        PostToolDeploy::Now
-                    }),
                 },
                 "unexpected post-tool actions for {game_id}",
             );
@@ -820,8 +779,6 @@ mod tests {
             post_tool_exit_actions(ToolExitKind::Completed, Some("witcher-3")),
             PostToolExitActions {
                 scan_external_files: true,
-                sort_with_loot: false,
-                deploy: Some(PostToolDeploy::Now),
             },
         );
     }

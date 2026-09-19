@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+- Added retained deployment generations for Bethesda, Aurora, Eclipse, REDEngine and MELE. Each
+  successful explicit Deploy records immutable mod content, ordering, routing, managed outputs and
+  configuration so it can later be restored as a new editable profile without changing live saves.
+- Profile selection now remains a draft action. The header distinguishes selected and deployed
+  profiles, save-bank switching happens during explicit Deploy, and external-tool completion scans
+  and reports live divergence without automatically sorting or deploying.
+- Added game-scoped Deployment history with storage and reclaimable-size reporting, protected
+  deletion, modified/recovery status, and Restore as new profile. Retained content remains
+  independent of writable mod caches and moves with cache relocation through verified recovery
+  state.
+- Added retained MELE final outputs and vanilla-input validation, plus separate shared-launcher
+  revision history. Game Deploy is blocked when its recorded shared dependency differs from the
+  live launcher, and incompatible restores preserve current cross-game runtime ownership.
+- Eclipse activation now removes stale Deployd-managed AddIns.xml registrations while preserving
+  unrelated registrations and settings.
 - Removed AppImage-to-Snap migration export, preview and import.
 
 ## [2.5.0]

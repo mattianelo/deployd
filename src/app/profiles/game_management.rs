@@ -210,11 +210,11 @@ impl App {
     ) {
         let dialog = adw::AlertDialog::builder()
             .heading("Stop managing this game?")
-            .body("Installed mods stay in the cache and can be kept or permanently deleted.")
+            .body("Deployment history is always retained and can be deleted explicitly from Deployment history. Choose whether to keep or permanently delete the editable mod cache.")
             .build();
         dialog.add_response("cancel", "Cancel");
-        dialog.add_response("remove", "Remove only");
-        dialog.add_response("remove-delete", "Remove & delete mods");
+        dialog.add_response("remove", "Remove, keep data");
+        dialog.add_response("remove-delete", "Remove & delete mod cache");
         dialog.set_close_response("cancel");
         dialog.set_response_appearance("remove-delete", adw::ResponseAppearance::Destructive);
         let s = sender.input_sender().clone();

@@ -14,12 +14,6 @@ fn loot_game_type(game_id: &str) -> Option<libloot::GameType> {
     }
 }
 
-/// Returns `true` if the given game ID is supported by the LOOT sort / dirty-check integration.
-/// Used by `ToolExited` to decide whether to auto-trigger a re-sort.
-pub fn game_has_loot_support(game_id: &str) -> bool {
-    loot_game_type(game_id).is_some()
-}
-
 fn loot_game_folder(game_id: &str) -> Option<&'static str> {
     match game_id {
         "skyrim-se" => Some("Skyrim Special Edition"),

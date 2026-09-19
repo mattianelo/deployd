@@ -89,6 +89,7 @@ pub(crate) trait EngineHandler: Send + Sync {
     /// Engine-specific steps run after all files are hard-linked.
     ///
     /// Returns a boxed future for trait-object compatibility. Default: no-op.
+    #[cfg_attr(not(test), allow(dead_code))]
     fn post_deploy<'a>(
         &'a self,
         _game: &'a Game,

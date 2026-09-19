@@ -63,24 +63,8 @@ pub(super) fn write_files(
                 if let Some(parent) = cache_file.parent() {
                     fs::create_dir_all(parent)?;
                 }
-                match fs::copy(&planned.source, &cache_file) {
-                    Ok(_) => {}
-                    Err(error) if error.raw_os_error() == Some(21) => {
-                        eprintln!(
-                            "[deployd] WARNING: skipping '{}' — resolved as directory at copy time (EISDIR)",
-                            planned.source.display()
-                        );
-                        if let Some(callback) = on_progress {
-                            callback(file_idx + 1, total_files);
-                        }
-                        continue;
-                    }
-                    Err(error) => {
-                        return Err(error).with_context(|| {
-                            format!("Cache copy failed: {}", planned.source.display())
-                        });
-                    }
-                }
+                crate::core::generations::content::replace(&planned.source, &cache_file)
+                    .with_context(|| format!("Cache copy failed: {}", planned.source.display()))?;
 
                 let lowercase = planned.lowercase_rel.to_string_lossy();
                 let recorded_rel = if deploy_to_root {

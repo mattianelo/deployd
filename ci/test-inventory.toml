@@ -62,7 +62,7 @@ interface_state = "not_applicable"
 
 [[variant_tests]]
 path = "src/app/tools/handlers.rs"
-name = "normal_tool_exit_scans_and_sorts_every_loot_game"
+name = "normal_tool_exit_only_scans_for_changes"
 variant = "both"
 interface_state = "not_applicable"
 

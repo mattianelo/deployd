@@ -111,51 +111,12 @@ pub(crate) async fn load_game_data(
             .map_err(|e| e.to_string())?;
     }
 
-    if matches!(mode, GameLoadMode::OpenGame)
-        && (game.engine != crate::models::game::GameEngine::MassEffect || game_folder_accessible)
+    if game_folder_accessible
+        && wine_prefix_accessible
+        && let Err(error) = crate::core::generations::session::initialize(tracker, game).await
     {
-        let transition = tracker
-            .restore_last_deployed_profile(game_id)
-            .await
-            .map_err(|e| e.to_string())?;
-        if let Some((active_profile, deployed_profile)) = transition
-            && game::has_save_management(game)
-            && wine_prefix_accessible
-        {
-            let source = save_manager::SaveSetId::for_profile(
-                game_id,
-                &active_profile.id,
-                &active_profile.save_mode,
-            );
-            let target = save_manager::SaveSetId::for_profile(
-                game_id,
-                &deployed_profile.id,
-                &deployed_profile.save_mode,
-            );
-            let backup_cap = save_manager::configured_backup_cap_bytes(tracker).await;
-            match save_manager::prepare_transition(
-                game,
-                &source,
-                &target,
-                save_manager::BackupTrigger::ProfileSwitch,
-                backup_cap,
-            )
-            .await
-            {
-                Ok(transition) => {
-                    transition.commit().await.map_err(|e| e.to_string())?;
-                }
-                Err(error) => {
-                    tracker
-                        .switch_profile(game_id, &active_profile.id)
-                        .await
-                        .map_err(|rollback| {
-                            format!("{error}; failed to restore the active profile: {rollback}")
-                        })?;
-                    return Err(error.to_string());
-                }
-            }
-        }
+        game_folder_accessible = false;
+        access_warnings.push(format!("Deployment recovery needs attention: {error:#}"));
     }
 
     // Take a one-time vanilla snapshot so the external-file detector can exclude
@@ -172,24 +133,13 @@ pub(crate) async fn load_game_data(
             .map_err(|e| e.to_string())?;
     }
 
-    // Sync plugin order from Plugins.txt (written by LOOT or other tools).
-    // Only performed on initial game select, not on every in-session reload.
-    if matches!(mode, GameLoadMode::OpenGame) && wine_prefix_accessible {
-        let txt_paths = game::plugins_txt_paths(game);
-        let txt_entries = txt_paths
-            .iter()
-            .find_map(|p| {
-                crate::utils::plugins_txt::read_plugins_txt(p)
-                    .ok()
-                    .filter(|v| !v.is_empty())
-            })
-            .unwrap_or_default();
-        if !txt_entries.is_empty() {
-            tracker
-                .sync_plugins_from_txt(game_id, &txt_entries)
-                .await
-                .map_err(|e| e.to_string())?;
-        }
+    if matches!(mode, GameLoadMode::OpenGame) && game_folder_accessible && wine_prefix_accessible {
+        crate::core::generations::session::reconcile_plugins(tracker, game)
+            .await
+            .map_err(|error| error.to_string())?;
+        crate::core::generations::session::inspect_live(tracker, game)
+            .await
+            .map_err(|error| format!("Cannot inspect the deployed generation: {error:#}"))?;
     }
 
     let mods = tracker

@@ -3,6 +3,7 @@ mod catalog;
 pub(crate) mod content;
 mod coordinator;
 mod divergence;
+mod eclipse;
 mod manifest;
 mod mele;
 mod operation;
@@ -15,6 +16,7 @@ mod history;
 mod journal;
 mod prepared;
 mod recovery;
+pub(crate) mod relocation;
 mod restore;
 mod saves;
 mod shared;
@@ -33,3 +35,9 @@ mod generated_tests;
 #[cfg(test)]
 #[path = "../../../tests/generations/mele.rs"]
 mod mele_tests;
+
+pub(crate) mod session;
+
+pub(crate) mod activation;
+
+pub(crate) mod api;

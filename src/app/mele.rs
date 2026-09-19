@@ -11,7 +11,7 @@ use super::{
     App,
     messages::{AppCmdMsg, AppMsg},
     state::{InstallIdentity, InstallStage},
-    types::{DeployCompletion, WorkKind},
+    types::WorkKind,
 };
 
 pub(super) mod launcher;
@@ -26,6 +26,7 @@ pub(crate) enum Msg {
         purge: bool,
         repair: bool,
     },
+    Apply(Box<application::Preview>),
     Cancel,
     Progress(f64),
 }
@@ -47,11 +48,9 @@ pub(crate) enum Command {
         language: Result<String, String>,
         purge: bool,
     },
+    Preview(Result<Box<application::Preview>, String>),
+    GenerationPrepared(Result<Box<crate::core::generations::activation::Prepared>, String>),
     Removed(Result<Vec<crate::models::mod_entry::ModEntry>, String>),
-    Applied {
-        result: Result<DeployCompletion, String>,
-        purge: bool,
-    },
 }
 
 impl App {
@@ -194,7 +193,49 @@ impl App {
                     return;
                 };
                 self.shell.deploying = true;
-                self.begin_work(WorkKind::Deploying, "Building MELE installation...");
+                self.begin_work(WorkKind::Deploying, "Preparing MELE deployment...");
+                let cancelled = Arc::new(AtomicBool::new(false));
+                self.ui.mele_operation = Some(mele_dialog::progress(
+                    root,
+                    "Preparing MELE Deployment",
+                    cancelled.clone(),
+                ));
+                let progress = Arc::from(super::progress::throttled_mele_progress(
+                    sender.input_sender().clone(),
+                ));
+                self.location_command(sender, async move {
+                    AppCmdMsg::Mele(Command::Preview(
+                        application::preview(
+                            tracker,
+                            application::Request {
+                                game,
+                                profile,
+                                language,
+                                purge,
+                                repair,
+                            },
+                            cancelled,
+                            progress,
+                        )
+                        .await
+                        .map(Box::new)
+                        .map_err(|error| format!("{error:#}")),
+                    ))
+                });
+            }
+            Msg::Apply(preview) => {
+                let Some(tracker) = self.session.tracker.clone() else {
+                    return;
+                };
+                let Some(cache) = self
+                    .selected_game()
+                    .and_then(|game| self.cache_root_for(&game.id).ok())
+                else {
+                    self.push_notification("Cannot resolve the MELE mod cache");
+                    return;
+                };
+                let purge = preview.purge;
+                self.begin_work(WorkKind::Deploying, "Preparing retained MELE generation...");
                 let cancelled = Arc::new(AtomicBool::new(false));
                 self.ui.mele_operation = Some(mele_dialog::progress(
                     root,
@@ -205,30 +246,21 @@ impl App {
                     },
                     cancelled.clone(),
                 ));
-                let progress = Arc::from(super::progress::throttled_mele_progress(
-                    sender.input_sender().clone(),
-                ));
                 self.location_command(sender, async move {
-                    let profile_id = profile.clone();
-                    let result = application::deploy(
-                        tracker,
-                        application::Request {
-                            game,
-                            profile,
-                            language,
-                            purge,
-                            repair,
+                    let request = preview.into_generation_request();
+                    let result = crate::core::generations::activation::prepare_mele(
+                        &tracker,
+                        &cache,
+                        request,
+                        crate::core::generations::content::Control {
+                            cancelled,
+                            progress: Arc::new(|_, _| {}),
                         },
-                        cancelled,
-                        progress,
                     )
                     .await
-                    .map(|outcome| DeployCompletion {
-                        outcome,
-                        profile_id,
-                    })
+                    .map(Box::new)
                     .map_err(|error| format!("{error:#}"));
-                    AppCmdMsg::Mele(Command::Applied { result, purge })
+                    AppCmdMsg::Mele(Command::GenerationPrepared(result))
                 });
             }
             Msg::Cancel => {
@@ -424,7 +456,7 @@ impl App {
                     .body(if purge {
                         "Restore the game to its recorded original state. Your mod library and saves will be kept."
                     } else {
-                        "Choose the game language. Deployd will apply the selected mods and any required support files. Your saves will be kept."
+                        "Choose the game language. Deployd will prepare the selected mods and any required support files. Your saves will be kept."
                     }).build();
                 dialog.add_responses(&[
                     ("cancel", "Cancel"),
@@ -469,20 +501,20 @@ impl App {
                 });
                 dialog.present(Some(root));
             }
-            Command::Applied { result, purge } => {
+            Command::Preview(result) => {
                 self.close_mele_operation();
-                if purge {
-                    self.finish_work(WorkKind::Deploying);
-                    self.handle_cmd_purge_done(result.map(|done| {
-                        crate::core::deployer::PurgeOutcome {
-                            files_removed: done.outcome.files_removed,
-                            vanilla_files_restored: done.outcome.vanilla_files_restored,
-                            warnings: done.outcome.warnings,
-                        }
-                    }));
-                } else {
-                    self.handle_cmd_deploy_done(result, sender);
+                self.finish_work(WorkKind::Deploying);
+                match result {
+                    Ok(preview) => sender.input(AppMsg::Mele(Msg::Apply(preview))),
+                    Err(error) => {
+                        self.shell.deploying = false;
+                        self.push_notification(&format!("Cannot deploy MELE: {error}"));
+                    }
                 }
+            }
+            Command::GenerationPrepared(result) => {
+                self.close_mele_operation();
+                self.handle_generation_prepared(result, root, sender);
             }
         }
     }

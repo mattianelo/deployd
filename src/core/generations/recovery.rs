@@ -28,7 +28,7 @@ pub(super) async fn recover_journal(history: &History, game: &Game) -> Result<()
     .await?;
     if let Some((kind, version, document, committed)) = pending {
         match (kind.as_str(), version) {
-            ("deploy" | "purge" | "shared", 1..=4) => {
+            ("deploy" | "purge" | "shared", 1..=5) => {
                 let journal = Journal::from_record(version, &document)?;
                 ensure!(
                     (kind == "shared") == journal.shared.is_some(),

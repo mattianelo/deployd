@@ -184,6 +184,7 @@ enum TransitionPhase {
     LiveRestored,
 }
 
+#[allow(dead_code)]
 pub struct SaveTransition {
     live_path: PathBuf,
     rollback_path: Option<PathBuf>,
@@ -191,6 +192,7 @@ pub struct SaveTransition {
     pub sync_result: Option<SaveSyncResult>,
 }
 
+#[allow(dead_code)]
 impl SaveTransition {
     fn no_op() -> Self {
         Self {
@@ -728,6 +730,7 @@ pub async fn capture_save_set(
     Ok(diff)
 }
 
+#[allow(dead_code)]
 pub async fn prepare_transition(
     game: &Game,
     source: &SaveSetId,

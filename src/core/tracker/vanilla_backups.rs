@@ -104,6 +104,7 @@ impl Tracker {
             .collect())
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) async fn delete_vanilla_backup(
         &self,
         game_id: &str,

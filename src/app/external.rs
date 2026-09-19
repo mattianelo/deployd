@@ -210,18 +210,10 @@ impl App {
                             }
                         }
                     } else {
-                        std::fs::copy(&ef.abs_path, cache_path).map_err(|e| {
-                            format!("Failed to update cache for {}: {e}", ef.game_rel)
-                        })?;
-                        std::fs::remove_file(&ef.abs_path).map_err(|e| {
-                            format!("Failed to remove {} from game folder: {e}", ef.game_rel)
-                        })?;
-                        std::fs::hard_link(cache_path, &ef.abs_path).map_err(|e| {
-                            format!(
-                                "Failed to hardlink {} back into game folder: {e}",
-                                ef.game_rel
-                            )
-                        })?;
+                        crate::core::generations::content::replace(&ef.abs_path, cache_path)
+                            .map_err(|e| {
+                                format!("Failed to update cache for {}: {e}", ef.game_rel)
+                            })?;
                     }
                     adopted += 1;
                 }
@@ -271,9 +263,9 @@ impl App {
                     let Some(cache_path) = cache_map.get(&ef.game_rel) else {
                         continue;
                     };
-                    std::fs::copy(backup_path, cache_path).map_err(|e| {
-                        format!("Failed to restore {} from backup: {e}", ef.game_rel)
-                    })?;
+                    crate::core::generations::content::replace(backup_path, cache_path).map_err(
+                        |e| format!("Failed to restore {} from backup: {e}", ef.game_rel),
+                    )?;
                     let plugin_filename = std::path::Path::new(&ef.game_rel)
                         .file_name()
                         .map(|n| n.to_string_lossy().to_lowercase())
@@ -300,12 +292,6 @@ impl App {
     }
 
     pub(crate) fn handle_scan_external_files(&mut self, sender: &ComponentSender<Self>) {
-        if self
-            .selected_game()
-            .is_some_and(|game| game.engine == crate::models::game::GameEngine::MassEffect)
-        {
-            return;
-        }
         let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
@@ -314,6 +300,14 @@ impl App {
         };
         sender.oneshot_command(async move {
             let result = async {
+                crate::core::generations::session::inspect_live(&tracker, &game)
+                    .await
+                    .map_err(|error| {
+                        format!("Cannot inspect the deployed generation: {error:#}")
+                    })?;
+                if game.engine == crate::models::game::GameEngine::MassEffect {
+                    return Ok(Vec::new());
+                }
                 let tracked = tracker
                     .get_tracked_rel_paths(&game.id)
                     .await
@@ -505,16 +499,7 @@ impl App {
                     "Adopted {count} cleaned plugin{} into deployd",
                     if count == 1 { "" } else { "s" }
                 ));
-                #[cfg(feature = "loot")]
-                if self
-                    .selected_game()
-                    .map(|g| crate::core::loot_sort::game_has_loot_support(&g.id))
-                    .unwrap_or(false)
-                {
-                    sender.input(AppMsg::Plugins(
-                        crate::app::messages::PluginsMsg::SortWithLoot,
-                    ));
-                }
+                self.shell.needs_deploy = true;
                 sender.input(AppMsg::Mods(
                     crate::app::messages::ModsMsg::ScanExternalFiles,
                 ));
@@ -536,21 +521,10 @@ impl App {
         match result {
             Ok(count) => {
                 self.show_toast(&format!(
-                    "Restored {count} plugin{} from xEdit backup — plugin{} {} dirty edits",
+                    "Restored {count} plugin{} to the cache — Deploy to apply",
                     if count == 1 { "" } else { "s" },
-                    if count == 1 { "" } else { "s" },
-                    if count == 1 { "has" } else { "have" },
                 ));
-                #[cfg(feature = "loot")]
-                if self
-                    .selected_game()
-                    .map(|g| crate::core::loot_sort::game_has_loot_support(&g.id))
-                    .unwrap_or(false)
-                {
-                    sender.input(AppMsg::Plugins(
-                        crate::app::messages::PluginsMsg::SortWithLoot,
-                    ));
-                }
+                self.shell.needs_deploy = true;
                 sender.input(AppMsg::Mods(
                     crate::app::messages::ModsMsg::ScanExternalFiles,
                 ));

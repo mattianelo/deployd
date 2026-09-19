@@ -142,7 +142,6 @@ pub(crate) struct PluginState {
     pub(crate) scroll: gtk::ScrolledWindow,
     #[cfg(feature = "loot")]
     pub(crate) dirty: HashMap<String, PluginDirtyInfo>,
-    pub(crate) pending_post_loot_action: super::types::PostLootAction,
     pub(crate) show_vanilla: bool,
     pub(crate) managed_count: usize,
     pub(crate) vanilla_names: Vec<String>,
