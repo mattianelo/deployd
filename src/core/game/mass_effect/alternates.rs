@@ -719,7 +719,19 @@ pub(super) fn apply_with_context(
     let effective = plan
         .choice_model()?
         .evaluate_context(selected, None, Some(context))?;
-    let selected = &effective.selected;
+    apply_selected(plan, &effective.selected)
+}
+
+pub(super) fn apply_selected_choices(
+    plan: &mut PackagePlan,
+    selected: &BTreeSet<String>,
+) -> Result<()> {
+    validate_choices(plan, selected)?;
+    let effective = plan.choice_model()?.evaluate(selected, None)?;
+    apply_selected(plan, &effective.selected)
+}
+
+fn apply_selected(plan: &mut PackagePlan, selected: &BTreeSet<String>) -> Result<()> {
     plan.active_options = plan
         .manifest
         .alternates

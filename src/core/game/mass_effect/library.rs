@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::{Arc, atomic::AtomicBool};
 
@@ -186,22 +186,7 @@ async fn import_in(
         install_target: InstallTarget::Data,
         notes: None,
     };
-    let files = request
-        .plan
-        .files
-        .iter()
-        .map(|file| ModFile {
-            mod_id: entry.id.clone(),
-            game_rel_lowercase: display_path(&file.destination).to_lowercase(),
-            game_rel_original: display_path(&file.destination),
-            cache_path: data
-                .join("mele-sources")
-                .join(&package.source_sha256)
-                .join(&file.source)
-                .to_string_lossy()
-                .into_owned(),
-        })
-        .collect::<Vec<_>>();
+    let files = tracked_files(&entry.id, &stored, &package.options)?;
     control.check()?;
     tracker
         .register_mele_package(
@@ -225,6 +210,83 @@ async fn import_in(
         plugins_found: Vec::new(),
         warnings: Vec::new(),
     })
+}
+
+fn tracked_files(
+    mod_id: &str,
+    stored: &recipe::sources::StoredPackage,
+    selected: &BTreeSet<String>,
+) -> Result<Vec<ModFile>> {
+    let (root, plan) = stored.selected_plan(selected)?;
+    let mut files = BTreeMap::new();
+    for file in plan.files {
+        let original = display_path(&file.destination);
+        files.insert(
+            original.to_lowercase(),
+            ModFile {
+                mod_id: mod_id.to_string(),
+                game_rel_lowercase: original.to_lowercase(),
+                game_rel_original: original,
+                cache_path: root.join(file.source).to_string_lossy().into_owned(),
+            },
+        );
+    }
+    for merge in plan.m3m {
+        let cache_path = root
+            .join(merge.source.relative)
+            .to_string_lossy()
+            .into_owned();
+        for target in merge
+            .files
+            .into_iter()
+            .flat_map(|file| file.target_candidates)
+        {
+            let original = format!("CookedPCConsole/{target}");
+            files.insert(
+                original.to_lowercase(),
+                ModFile {
+                    mod_id: mod_id.to_string(),
+                    game_rel_lowercase: original.to_lowercase(),
+                    game_rel_original: original,
+                    cache_path: cache_path.clone(),
+                },
+            );
+        }
+    }
+    Ok(files.into_values().collect())
+}
+
+pub(crate) async fn load_tracked_files(tracker: &Tracker, mod_id: &str) -> Result<Vec<ModFile>> {
+    load_tracked_files_in(tracker, mod_id, paths::deployd_data_dir()?).await
+}
+
+async fn load_tracked_files_in(
+    tracker: &Tracker,
+    mod_id: &str,
+    data: PathBuf,
+) -> Result<Vec<ModFile>> {
+    let current = tracker.get_mod_files(mod_id).await?;
+    if !current.is_empty() {
+        return Ok(current);
+    }
+    let Some(record) = tracker.mele_package(mod_id).await? else {
+        return Ok(current);
+    };
+    let id = mod_id.to_string();
+    let files = tokio::task::spawn_blocking(move || {
+        let control = Control::new(
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(false)),
+        );
+        let stored = recipe::sources::load(&data, &record.package, record.target, &control)?;
+        tracked_files(&id, &stored, &record.package.options)
+    })
+    .await
+    .context("MELE tracked-file repair worker failed")??;
+    if !files.is_empty() {
+        tracker.replace_mod_files(mod_id, &files).await?;
+    }
+    Ok(files)
 }
 
 fn recipe(target: Target, packages: Vec<Package>, language: String, runtimes: bool) -> Recipe {

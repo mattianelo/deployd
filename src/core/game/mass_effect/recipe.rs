@@ -86,7 +86,7 @@ impl Recipe {
                 == helper::protocol::VERSION
                 || matches!(
                     version,
-                    "0.7.1" | "0.8.0" | "0.9.0" | "0.9.1" | "0.9.2" | "0.10.0"
+                    "0.7.1" | "0.8.0" | "0.9.0" | "0.9.1" | "0.9.2" | "0.10.0" | "0.11.0"
                 )),
             "Unsupported MELE transformation helper version"
         );

@@ -52,6 +52,8 @@ Deployd reports unsupported packages before installation.
    separately. Deployd treats this installation as your restoration point. Initial
    setup can take several minutes and shows progress for each game.
 2. Select a game, install a mod archive and choose its options.
+   Deployd tracks files contributed by selected installer alternates and merge
+   transformations as part of the mod's library entry.
 3. Enable and order your mods, then choose **Deploy** and select the game language.
 4. Deploy again after disabling, removing, reordering or switching profiles.
    **Purge** restores managed game files while keeping your mod library. Reinstall

@@ -582,6 +582,22 @@ impl PackagePlan {
             return Ok(());
         }
         super::alternates::apply_with_context(self, selected, context)?;
+        self.finish_resolution(root)
+    }
+
+    pub(super) fn resolve_selected(
+        &mut self,
+        root: &Path,
+        selected: &BTreeSet<String>,
+    ) -> Result<()> {
+        if self.manifest.alternates.is_empty() {
+            return Ok(());
+        }
+        super::alternates::apply_selected_choices(self, selected)?;
+        self.finish_resolution(root)
+    }
+
+    fn finish_resolution(&mut self, root: &Path) -> Result<()> {
         let mut destinations = BTreeSet::new();
         self.jobs.retain(|job| {
             matches!(
@@ -1273,6 +1289,9 @@ mod tests {
     fn inspects_supplied_esa_combat_and_no_headgear_packages() -> Result<()> {
         let esa_root = Path::new("modTesting/Expanded Shepard Armory (ESA)");
         let esa_original = PackagePlan::inspect(esa_root, None)?;
+        let mut esa_tracked = esa_original.clone();
+        esa_tracked.resolve_selected(esa_root, &esa_original.default_options())?;
+        assert!(!esa_tracked.files.is_empty());
         let mut esa = esa_original.clone();
         esa.resolve(esa_root, &esa_original.default_options(), &BTreeSet::new())?;
         assert!(esa.files.iter().any(|file| {
@@ -1315,6 +1334,18 @@ mod tests {
             file.destination
                 .ends_with("TextureOverride-DLC_MOD_NoHeadgearSquad_GarrusNoMic.m3to")
         }));
+
+        let sheploo_root = Path::new("modTesting/Sheploo Appearance Consistency Project");
+        let sheploo_original = PackagePlan::inspect(sheploo_root, None)?;
+        let mut sheploo_tracked = sheploo_original.clone();
+        sheploo_tracked.resolve_selected(sheploo_root, &sheploo_original.default_options())?;
+        assert!(
+            sheploo_tracked
+                .m3m
+                .iter()
+                .flat_map(|merge| &merge.files)
+                .any(|file| !file.target_candidates.is_empty())
+        );
         Ok(())
     }
 

@@ -111,6 +111,86 @@ fn cancel() -> Arc<AtomicBool> {
 
 // @variants: both
 #[tokio::test]
+async fn alternate_only_import_tracks_and_repairs_selected_files() -> Result<()> {
+    let fixture = Fixture::new().await?;
+    fs::remove_dir_all(fixture.source.join("CookedPCConsole"))?;
+    fs::create_dir_all(fixture.source.join("Optional/CookedPCConsole"))?;
+    fs::write(
+        fixture.source.join("Optional/CookedPCConsole/Content.pcc"),
+        b"alternate content",
+    )?;
+    fs::write(
+        fixture.source.join("moddesc.ini"),
+        "[ModManager]\ncmmver=9.2\n[ModInfo]\ngame=LE1\nmodname=Alternate only\nmodver=1\nmoddev=Deployd\nmoddesc=Fixture\n[CUSTOMDLC]\naltdlc=((FriendlyName=Install,Condition=COND_MANUAL,CheckedByDefault=true,ModOperation=OP_ADD_CUSTOMDLC,ModAltDLC=Optional,ModDestDLC=DLC_MOD_Optional))\n",
+    )?;
+    let mut request = fixture.request(None)?;
+    request.options = request.plan.default_options();
+    let imported = import_in(
+        fixture.tracker.clone(),
+        request,
+        fixture.data.clone(),
+        cancel(),
+        Arc::new(|_, _| {}),
+    )
+    .await?;
+    let expected = "DLC/DLC_MOD_Optional/CookedPCConsole/Content.pcc";
+    let tracked = fixture
+        .tracker
+        .get_mod_files(&imported.mod_entry.id)
+        .await?;
+    assert_eq!(tracked.len(), 1);
+    assert_eq!(tracked[0].game_rel_original, expected);
+
+    fixture
+        .tracker
+        .delete_mod_files(&imported.mod_entry.id)
+        .await?;
+    let repaired = load_tracked_files_in(
+        &fixture.tracker,
+        &imported.mod_entry.id,
+        fixture.data.clone(),
+    )
+    .await?;
+    assert_eq!(repaired.len(), 1);
+    assert_eq!(repaired[0].game_rel_original, expected);
+    assert_eq!(
+        fixture
+            .tracker
+            .get_mod_files(&imported.mod_entry.id)
+            .await?
+            .len(),
+        1
+    );
+    Ok(())
+}
+
+// @variants: both
+#[tokio::test]
+#[ignore = "requires the maintainer-supplied reported Sheploo directory"]
+async fn transform_only_import_tracks_merged_package_outputs() -> Result<()> {
+    let source = fs::canonicalize("modTesting/Sheploo Appearance Consistency Project")?;
+    let plan = PackagePlan::inspect(&source, Some(Target::Le2))?;
+    let data = tempfile::tempdir()?;
+    let stored = recipe::sources::retain_in(
+        source,
+        plan,
+        None,
+        data.path().to_path_buf(),
+        cancel(),
+        Arc::new(|_, _| {}),
+    )
+    .await?;
+    let package = stored.selection();
+    let files = tracked_files("sheploo", &stored, &package.options)?;
+    assert!(files.iter().any(|file| {
+        file.game_rel_original == "CookedPCConsole/SFXGame.pcc"
+            && file.cache_path.ends_with("MergeMods/SHEPLOO.m3m")
+    }));
+    Ok(())
+}
+
+// @variants: both
+#[tokio::test]
 async fn removal_only_mods_retain_sources_and_preview_their_effect() -> Result<()> {
     use super::super::application;
     let fixture = Fixture::new().await?;

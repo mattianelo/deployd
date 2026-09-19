@@ -128,10 +128,12 @@ impl App {
         };
         let mod_id_for_load = mod_id;
         sender.oneshot_command(async move {
-            let files = tracker
-                .get_mod_files(&mod_id_for_load)
-                .await
-                .unwrap_or_default();
+            let files = crate::core::game::mass_effect::library::load_tracked_files(
+                &tracker,
+                &mod_id_for_load,
+            )
+            .await
+            .unwrap_or_default();
             AppCmdMsg::Mods(crate::app::messages::ModsCmdMsg::ModFilesLoaded {
                 mod_id: mod_id_for_load,
                 files,

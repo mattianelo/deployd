@@ -48,6 +48,15 @@ impl StoredPackage {
             options: Default::default(),
         }
     }
+
+    pub(in crate::core::game::mass_effect) fn selected_plan(
+        &self,
+        selected: &BTreeSet<String>,
+    ) -> Result<(PathBuf, PackagePlan)> {
+        let mut plan = self.plan.clone();
+        plan.resolve_selected(&self.root, selected)?;
+        Ok((self.root.clone(), plan))
+    }
 }
 
 pub(crate) async fn retain(
@@ -191,7 +200,7 @@ fn save(
     Ok(stored)
 }
 
-pub(super) fn load(
+pub(in crate::core::game::mass_effect) fn load(
     data: &Path,
     package: &Package,
     target: Target,
