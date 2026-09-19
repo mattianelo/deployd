@@ -26,9 +26,10 @@
   These files are copied as data and are never executed by Deployd.
 - Raw M3TO 9.2 packages now compile into the texture runtime format during deployment;
   source manifests and texture packages are not published into the game.
-- MELE library entries now track files supplied only by selected installer alternates
-  or merge transformations, repair affected existing entries when their file list is
-  opened, and accept profiles saved with the previous transformation-helper protocol.
+- MELE profiles saved with the previous transformation-helper protocol remain usable.
+- MELE deployment now prepares and applies a profile after one confirmation. Removed
+  mods disappear from the list immediately, and MELE properties no longer expose
+  generic cache-file and per-file controls.
 - MELE setup and deployment show progress and support Snap parallel installations.
 - MEM textures, headmorphs, portable MELE profile transfers,
   launcher installer choices and launcher executable replacements are not supported.

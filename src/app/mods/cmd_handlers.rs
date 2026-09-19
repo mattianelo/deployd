@@ -68,7 +68,20 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         match result {
-            Ok((_, warnings)) => {
+            Ok((mod_id, warnings)) => {
+                let index = {
+                    let guard = self.mods.rows.guard();
+                    (0..guard.len()).find(|index| {
+                        guard
+                            .get(*index)
+                            .and_then(|row| row.mod_row())
+                            .is_some_and(|row| row.mod_entry.id == mod_id)
+                    })
+                };
+                if let Some(index) = index {
+                    self.mods.rows.guard().remove(index);
+                    self.refresh_priority_labels();
+                }
                 for warning in warnings {
                     self.push_notification(&warning);
                 }

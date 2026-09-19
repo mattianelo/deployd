@@ -256,39 +256,6 @@ fn tracked_files(
     Ok(files.into_values().collect())
 }
 
-pub(crate) async fn load_tracked_files(tracker: &Tracker, mod_id: &str) -> Result<Vec<ModFile>> {
-    load_tracked_files_in(tracker, mod_id, paths::deployd_data_dir()?).await
-}
-
-async fn load_tracked_files_in(
-    tracker: &Tracker,
-    mod_id: &str,
-    data: PathBuf,
-) -> Result<Vec<ModFile>> {
-    let current = tracker.get_mod_files(mod_id).await?;
-    if !current.is_empty() {
-        return Ok(current);
-    }
-    let Some(record) = tracker.mele_package(mod_id).await? else {
-        return Ok(current);
-    };
-    let id = mod_id.to_string();
-    let files = tokio::task::spawn_blocking(move || {
-        let control = Control::new(
-            Arc::new(AtomicBool::new(false)),
-            Arc::new(AtomicBool::new(false)),
-        );
-        let stored = recipe::sources::load(&data, &record.package, record.target, &control)?;
-        tracked_files(&id, &stored, &record.package.options)
-    })
-    .await
-    .context("MELE tracked-file repair worker failed")??;
-    if !files.is_empty() {
-        tracker.replace_mod_files(mod_id, &files).await?;
-    }
-    Ok(files)
-}
-
 fn recipe(target: Target, packages: Vec<Package>, language: String, runtimes: bool) -> Recipe {
     let mut recipe = Recipe {
         version: if packages

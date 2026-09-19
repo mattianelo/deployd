@@ -157,6 +157,9 @@ impl SimpleComponent for ModPropertiesDialog {
                             set_spacing: 12,
 
                         adw::PreferencesGroup {
+                            #[watch]
+                            set_visible: !model.is_mele,
+
                             // Spinner shown while files are loading
                             add = &gtk::Box {
                                 set_orientation: gtk::Orientation::Horizontal,
@@ -244,7 +247,7 @@ impl SimpleComponent for ModPropertiesDialog {
 
                         adw::PreferencesGroup {
                             #[watch]
-                            set_visible: !model.override_files.is_empty() || !model.overridden_files.is_empty(),
+                            set_visible: !model.is_mele && (!model.override_files.is_empty() || !model.overridden_files.is_empty()),
 
                             add = &gtk::Button {
                                 #[watch]
@@ -486,7 +489,7 @@ impl SimpleComponent for ModPropertiesDialog {
             is_mele,
             files: Vec::new(),
             file_targets: Vec::new(),
-            files_loading: true,
+            files_loading: !is_mele,
             saving: false,
             rescanning: false,
             files_visible: false,

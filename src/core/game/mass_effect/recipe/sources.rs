@@ -200,7 +200,7 @@ fn save(
     Ok(stored)
 }
 
-pub(in crate::core::game::mass_effect) fn load(
+pub(super) fn load(
     data: &Path,
     package: &Package,
     target: Target,

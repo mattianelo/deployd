@@ -19,7 +19,6 @@ pub(crate) struct Preview {
     pub(crate) recipe: Recipe,
     pub(crate) purge: bool,
     pub(crate) repair: bool,
-    pub(crate) summary: String,
     previous: Option<journal::State>,
     plan: ValidatedRecipe,
     backend: Option<Backend>,
@@ -43,13 +42,13 @@ pub(crate) struct Request {
     pub(crate) repair: bool,
 }
 
-pub(crate) async fn preview(
+pub(crate) async fn deploy(
     tracker: Tracker,
     request: Request,
     cancelled: Arc<AtomicBool>,
     progress: Arc<dyn Fn(usize, usize) + Send + Sync>,
-) -> Result<Preview> {
-    preview_with_progress(
+) -> Result<DeployOutcome> {
+    deploy_in(
         tracker,
         request,
         crate::utils::paths::deployd_data_dir()?,
@@ -57,6 +56,24 @@ pub(crate) async fn preview(
         progress,
     )
     .await
+}
+
+pub(super) async fn deploy_in(
+    tracker: Tracker,
+    request: Request,
+    data: std::path::PathBuf,
+    cancelled: Arc<AtomicBool>,
+    progress: Arc<dyn Fn(usize, usize) + Send + Sync>,
+) -> Result<DeployOutcome> {
+    let preview = preview_with_progress(
+        tracker.clone(),
+        request,
+        data.clone(),
+        cancelled.clone(),
+        progress.clone(),
+    )
+    .await?;
+    apply_in(tracker, preview, data, cancelled, progress).await
 }
 
 #[cfg(test)]
@@ -155,49 +172,16 @@ async fn preview_with_progress(
         }
     })
     .await??;
-    let mut summary = deployment_summary(
-        &game.title,
-        recipe
-            .packages
-            .iter()
-            .filter(|package| package.enabled)
-            .count(),
-        purge,
-    );
-
-    if !plan.removals().is_empty() {
-        summary.push_str(" Obsolete DLC declared by these mods will be removed.");
-    }
-    if plan.family.is_some() {
-        summary.push_str(" Shared launcher support is managed for all three games and kept while any game needs it.");
-    }
     Ok(Preview {
         game,
         profile,
         recipe,
         purge,
         repair,
-        summary,
         previous,
         plan,
         backend,
     })
-}
-
-pub(crate) async fn apply(
-    tracker: Tracker,
-    preview: Preview,
-    cancelled: Arc<AtomicBool>,
-    progress: Arc<dyn Fn(usize, usize) + Send + Sync>,
-) -> Result<DeployOutcome> {
-    apply_in(
-        tracker,
-        preview,
-        crate::utils::paths::deployd_data_dir()?,
-        cancelled,
-        progress,
-    )
-    .await
 }
 
 pub(super) async fn apply_in(
@@ -279,16 +263,4 @@ pub(super) async fn apply_in(
         vanilla_files_restored: 0,
         warnings,
     })
-}
-
-fn deployment_summary(game: &str, enabled: usize, purge: bool) -> String {
-    if purge {
-        format!(
-            "Restore {game} to its recorded original state. Your mod library and saves will be kept."
-        )
-    } else {
-        format!(
-            "Apply {enabled} enabled mod(s) to {game} using the current mod order. Your saves will be kept."
-        )
-    }
 }

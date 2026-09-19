@@ -73,11 +73,16 @@ impl App {
         };
         let is_bethesda = game.engine == GameEngine::Bethesda;
         let is_aurora = game.engine == GameEngine::Aurora;
-        let cache_root = match self.cache_root_for(&game.id) {
-            Ok(path) => path,
-            Err(error) => {
-                self.push_notification(&format!("Cannot resolve the mod cache: {error}"));
-                return;
+        let is_mele = game.engine == GameEngine::MassEffect;
+        let cache_root = if is_mele {
+            std::path::PathBuf::new()
+        } else {
+            match self.cache_root_for(&game.id) {
+                Ok(path) => path,
+                Err(error) => {
+                    self.push_notification(&format!("Cannot resolve the mod cache: {error}"));
+                    return;
+                }
             }
         };
         self.ui.mod_properties_dialog = Some(
@@ -87,7 +92,7 @@ impl App {
                     mod_entry,
                     is_bethesda,
                     is_aurora,
-                    is_mele: game.engine == GameEngine::MassEffect,
+                    is_mele,
                     cache_root,
                     override_files,
                     overridden_files,
@@ -123,17 +128,18 @@ impl App {
                     }
                 }),
         );
+        if is_mele {
+            return;
+        }
         let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
         let mod_id_for_load = mod_id;
         sender.oneshot_command(async move {
-            let files = crate::core::game::mass_effect::library::load_tracked_files(
-                &tracker,
-                &mod_id_for_load,
-            )
-            .await
-            .unwrap_or_default();
+            let files = tracker
+                .get_mod_files(&mod_id_for_load)
+                .await
+                .unwrap_or_default();
             AppCmdMsg::Mods(crate::app::messages::ModsCmdMsg::ModFilesLoaded {
                 mod_id: mod_id_for_load,
                 files,

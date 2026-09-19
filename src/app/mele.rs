@@ -21,12 +21,11 @@ pub(crate) enum Msg {
     Launcher(Box<launcher::Msg>),
     Install(mele_dialog::Selection),
     Setup(bool),
-    Inspect {
+    Deploy {
         language: String,
         purge: bool,
         repair: bool,
     },
-    Apply(Box<application::Preview>),
     Cancel,
     Progress(f64),
 }
@@ -48,7 +47,6 @@ pub(crate) enum Command {
         language: Result<String, String>,
         purge: bool,
     },
-    Preview(Result<Box<application::Preview>, String>),
     Removed(Result<Vec<crate::models::mod_entry::ModEntry>, String>),
     Applied {
         result: Result<DeployCompletion, String>,
@@ -176,7 +174,7 @@ impl App {
                     AppCmdMsg::Mele(Command::Setup { language, purge })
                 });
             }
-            Msg::Inspect {
+            Msg::Deploy {
                 language,
                 purge,
                 repair,
@@ -196,60 +194,40 @@ impl App {
                     return;
                 };
                 self.shell.deploying = true;
-                self.begin_work(WorkKind::Deploying, "Preparing MELE deployment...");
-                let cancelled = Arc::new(AtomicBool::new(false));
-                self.ui.mele_operation = Some(mele_dialog::progress(
-                    root,
-                    "Preparing MELE Deployment",
-                    cancelled.clone(),
-                ));
-                let progress = Arc::from(super::progress::throttled_mele_progress(
-                    sender.input_sender().clone(),
-                ));
-                self.location_command(sender, async move {
-                    AppCmdMsg::Mele(Command::Preview(
-                        application::preview(
-                            tracker,
-                            application::Request {
-                                game,
-                                profile,
-                                language,
-                                purge,
-                                repair,
-                            },
-                            cancelled,
-                            progress,
-                        )
-                        .await
-                        .map(Box::new)
-                        .map_err(|error| format!("{error:#}")),
-                    ))
-                });
-            }
-            Msg::Apply(preview) => {
-                let Some(tracker) = self.session.tracker.clone() else {
-                    return;
-                };
                 self.begin_work(WorkKind::Deploying, "Building MELE installation...");
                 let cancelled = Arc::new(AtomicBool::new(false));
                 self.ui.mele_operation = Some(mele_dialog::progress(
                     root,
-                    "Applying MELE Profile",
+                    if purge {
+                        "Restoring MELE Game Files"
+                    } else {
+                        "Deploying MELE Profile"
+                    },
                     cancelled.clone(),
                 ));
                 let progress = Arc::from(super::progress::throttled_mele_progress(
                     sender.input_sender().clone(),
                 ));
                 self.location_command(sender, async move {
-                    let purge = preview.purge;
-                    let profile_id = preview.profile.clone();
-                    let result = application::apply(tracker, *preview, cancelled, progress)
-                        .await
-                        .map(|outcome| DeployCompletion {
-                            outcome,
-                            profile_id,
-                        })
-                        .map_err(|error| format!("{error:#}"));
+                    let profile_id = profile.clone();
+                    let result = application::deploy(
+                        tracker,
+                        application::Request {
+                            game,
+                            profile,
+                            language,
+                            purge,
+                            repair,
+                        },
+                        cancelled,
+                        progress,
+                    )
+                    .await
+                    .map(|outcome| DeployCompletion {
+                        outcome,
+                        profile_id,
+                    })
+                    .map_err(|error| format!("{error:#}"));
                     AppCmdMsg::Mele(Command::Applied { result, purge })
                 });
             }
@@ -364,6 +342,22 @@ impl App {
                 self.finish_work(WorkKind::Deploying);
                 match result {
                     Ok(entries) => {
+                        let removed: BTreeSet<_> =
+                            entries.iter().map(|entry| entry.id.as_str()).collect();
+                        let indices = {
+                            let guard = self.mods.rows.guard();
+                            (0..guard.len())
+                                .filter(|index| {
+                                    guard.get(*index).and_then(|row| row.mod_row()).is_some_and(
+                                        |row| removed.contains(row.mod_entry.id.as_str()),
+                                    )
+                                })
+                                .collect::<Vec<_>>()
+                        };
+                        for index in indices.into_iter().rev() {
+                            self.mods.rows.guard().remove(index);
+                        }
+                        self.refresh_priority_labels();
                         self.mods.selected.clear();
                         self.mods.selection_dirty = true;
                         self.shell.needs_deploy = true;
@@ -430,10 +424,13 @@ impl App {
                     .body(if purge {
                         "Restore the game to its recorded original state. Your mod library and saves will be kept."
                     } else {
-                        "Choose the game language. Deployd will prepare the selected mods and any required support files. Your saves will be kept."
+                        "Choose the game language. Deployd will apply the selected mods and any required support files. Your saves will be kept."
                     }).build();
-                dialog.add_responses(&[("cancel", "Cancel"), ("preview", "Continue")]);
-                dialog.set_response_appearance("preview", adw::ResponseAppearance::Suggested);
+                dialog.add_responses(&[
+                    ("cancel", "Cancel"),
+                    ("deploy", if purge { "Restore" } else { "Deploy" }),
+                ]);
+                dialog.set_response_appearance("deploy", adw::ResponseAppearance::Suggested);
                 dialog.set_close_response("cancel");
                 let group = adw::PreferencesGroup::new();
                 let languages = [
@@ -455,8 +452,8 @@ impl App {
                 dialog.set_extra_child(Some(&group));
                 let input = sender.input_sender().clone();
                 dialog.connect_response(None, move |_, response| {
-                    let message = if response == "preview" {
-                        Msg::Inspect {
+                    let message = if response == "deploy" {
+                        Msg::Deploy {
                             language: languages
                                 .get(language_row.selected() as usize)
                                 .copied()
@@ -471,46 +468,6 @@ impl App {
                     let _ = input.send(AppMsg::Mele(message));
                 });
                 dialog.present(Some(root));
-            }
-            Command::Preview(result) => {
-                self.close_mele_operation();
-                self.finish_work(WorkKind::Deploying);
-                match result {
-                    Ok(preview) => {
-                        let dialog = adw::AlertDialog::builder()
-                            .heading(if preview.purge {
-                                "Restore game?"
-                            } else {
-                                "Apply mods?"
-                            })
-                            .body(&preview.summary)
-                            .build();
-                        dialog.add_responses(&[
-                            ("cancel", "Cancel"),
-                            ("apply", if preview.purge { "Restore" } else { "Deploy" }),
-                        ]);
-                        dialog.set_response_appearance("apply", adw::ResponseAppearance::Suggested);
-                        dialog.set_close_response("cancel");
-                        let plan = std::cell::RefCell::new(Some(preview));
-                        let input = sender.input_sender().clone();
-                        dialog.connect_response(None, move |_, response| {
-                            let message = if response == "apply" {
-                                plan.borrow_mut()
-                                    .take()
-                                    .map(Msg::Apply)
-                                    .unwrap_or(Msg::Cancel)
-                            } else {
-                                Msg::Cancel
-                            };
-                            let _ = input.send(AppMsg::Mele(message));
-                        });
-                        dialog.present(Some(root));
-                    }
-                    Err(error) => {
-                        self.shell.deploying = false;
-                        self.push_notification(&format!("Cannot deploy MELE: {error}"));
-                    }
-                }
             }
             Command::Applied { result, purge } => {
                 self.close_mele_operation();

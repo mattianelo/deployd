@@ -111,7 +111,43 @@ fn cancel() -> Arc<AtomicBool> {
 
 // @variants: both
 #[tokio::test]
-async fn alternate_only_import_tracks_and_repairs_selected_files() -> Result<()> {
+async fn combined_restore_prepares_and_applies_in_one_operation() -> Result<()> {
+    use super::super::application;
+
+    let fixture = Fixture::new().await?;
+    application::deploy_in(
+        fixture.tracker.clone(),
+        application::Request {
+            game: fixture.game.clone(),
+            profile: fixture.profile.clone(),
+            language: "INT".into(),
+            purge: true,
+            repair: false,
+        },
+        fixture.data.clone(),
+        cancel(),
+        Arc::new(|_, _| {}),
+    )
+    .await?;
+    let state = fixture
+        .tracker
+        .mele_deployment(&fixture.game.id)
+        .await?
+        .context("missing combined deployment state")?;
+    assert_eq!(state.profile, fixture.profile);
+    assert!(
+        state
+            .recipe
+            .context("missing combined recipe")?
+            .packages
+            .is_empty()
+    );
+    Ok(())
+}
+
+// @variants: both
+#[tokio::test]
+async fn alternate_only_import_tracks_selected_files() -> Result<()> {
     let fixture = Fixture::new().await?;
     fs::remove_dir_all(fixture.source.join("CookedPCConsole"))?;
     fs::create_dir_all(fixture.source.join("Optional/CookedPCConsole"))?;
@@ -141,26 +177,6 @@ async fn alternate_only_import_tracks_and_repairs_selected_files() -> Result<()>
     assert_eq!(tracked.len(), 1);
     assert_eq!(tracked[0].game_rel_original, expected);
 
-    fixture
-        .tracker
-        .delete_mod_files(&imported.mod_entry.id)
-        .await?;
-    let repaired = load_tracked_files_in(
-        &fixture.tracker,
-        &imported.mod_entry.id,
-        fixture.data.clone(),
-    )
-    .await?;
-    assert_eq!(repaired.len(), 1);
-    assert_eq!(repaired[0].game_rel_original, expected);
-    assert_eq!(
-        fixture
-            .tracker
-            .get_mod_files(&imported.mod_entry.id)
-            .await?
-            .len(),
-        1
-    );
     Ok(())
 }
 
@@ -221,14 +237,13 @@ async fn removal_only_mods_retain_sources_and_preview_their_effect() -> Result<(
         purge: false,
         repair: false,
     };
-    let preview = application::preview_in(
+    application::preview_in(
         fixture.tracker.clone(),
         request(),
         fixture.data.clone(),
         cancel(),
     )
     .await?;
-    assert!(preview.summary.contains("Obsolete DLC"));
     let unexpected = fixture.game.path.join("BioGame/DLC/DLC_OLD/user.txt");
     fs::create_dir_all(unexpected.parent().context("missing parent")?)?;
     fs::write(&unexpected, b"external")?;
@@ -381,16 +396,9 @@ async fn application_import_preview_deploy_disable_and_purge_use_the_same_recipe
         .tracker
         .toggle_mod(&installed.mod_entry.id, true)
         .await?;
-    let preview = application::preview_in(
+    application::deploy_in(
         fixture.tracker.clone(),
         request(false),
-        fixture.data.clone(),
-        cancel(),
-    )
-    .await?;
-    application::apply_in(
-        fixture.tracker.clone(),
-        preview,
         fixture.data.clone(),
         cancel(),
         Arc::new(|_, _| {}),
