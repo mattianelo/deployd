@@ -21,7 +21,7 @@
       with original-file protection. Experimental Mass Effect Legendary Edition support
       lets you install, manage and restore mods for all three games.
     </p>
-    <p>Version 2.5.0.</p>
+    <p>Version 3.0.0.</p>
     <ul>
       <li>Supports Skyrim SE, Fallout 4, Fallout: New Vegas, Starfield, The Witcher 3, and Cyberpunk 2077</li>
       <li>Experimental mod installation and profile rebuilding for Mass Effect Legendary Edition</li>
@@ -73,6 +73,13 @@
   </screenshots>
 
   <releases>
+    <release version="3.0.0" date="2026-09-19" type="development">
+      <description>
+        <p>Adds retained deployment generations and game-scoped history, separates editable
+        profile selection from explicit deployment and save switching, and adds recoverable MELE
+        game and shared-launcher revisions. Removes the AppImage-to-Snap migration workflow.</p>
+      </description>
+    </release>
     <release version="2.5.0" date="2026-09-11" type="development">
       <description>
         <p>Adds experimental Mass Effect Legendary Edition mod management for all three

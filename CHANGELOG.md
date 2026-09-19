@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [3.0.0]
+
 - Added retained deployment generations for Bethesda, Aurora, Eclipse, REDEngine and MELE. Each
   successful explicit Deploy records immutable mod content, ordering, routing, managed outputs and
   configuration so it can later be restored as a new editable profile without changing live saves.
