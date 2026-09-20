@@ -2,33 +2,6 @@ use std::fs;
 
 use super::*;
 
-const LEGACY_ENTRY: &str = r#"{"id":"00000000-0000-0000-0000-000000000001","name":"Legacy","enabled":true,"source_sha256":"27e29c93b9d89118dd343ac56328f306194ad16ccc3e3c6186ba31aba8db22ac","approval":"27e29c93b9d89118dd343ac56328f306194ad16ccc3e3c6186ba31aba8db22ac","files":[{"source":"Content/Test.swf","destination":"Content/Test.swf","identity":{"size":5,"sha256":"8a6ba32c9bed6ce703f999f9af6ec23686d44e144e4da572d94c8daca4a9cbab"}}],"sources":[{"relative":"Content/Test.swf","size":5,"sha256":"8a6ba32c9bed6ce703f999f9af6ec23686d44e144e4da572d94c8daca4a9cbab"}]}"#;
-
-// @variants: both
-#[test]
-fn legacy_launcher_entries_round_trip_canonically() -> Result<()> {
-    let entry: PersistedEntry = serde_json::from_str(LEGACY_ENTRY)?;
-    assert!(serde_json::from_str::<Entry>(LEGACY_ENTRY).is_err());
-    validate_persisted_entries(std::slice::from_ref(&entry))?;
-    assert!(matches!(entry, PersistedEntry::Legacy(_)));
-    assert_eq!(serde_json::to_string(&entry)?, LEGACY_ENTRY);
-    let mut owned = entry.owned(
-        "00000000-0000-0000-0000-000000000002".into(),
-        "mass-effect-le2".into(),
-    );
-    owned.name = "Renamed parent".into();
-    assert!(entry.matches(&owned));
-    owned.files[0].destination = "Content/Other.swf".into();
-    assert!(!entry.matches(&owned));
-
-    let mixed = LEGACY_ENTRY.replace(
-        "\"name\":\"Legacy\"",
-        "\"owner\":\"mass-effect-le2\",\"name\":\"Legacy\"",
-    );
-    assert!(serde_json::from_str::<PersistedEntry>(&mixed).is_err());
-    Ok(())
-}
-
 // @variants: both
 #[test]
 fn launcher_layouts_preserve_scope_and_require_explicit_consent() -> Result<()> {

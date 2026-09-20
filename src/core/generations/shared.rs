@@ -1,8 +1,3 @@
-#![allow(
-    dead_code,
-    reason = "retained shared revisions and pending journals remain readable after removing their standalone UI"
-)]
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
@@ -19,7 +14,7 @@ use crate::core::game::mass_effect::{
 };
 use crate::models::game::Game;
 
-use super::catalog::{History, durable};
+use super::catalog::History;
 use super::content::Control;
 use super::journal::{Journal, Node};
 use super::target::Target;
@@ -240,7 +235,7 @@ pub(super) async fn publish(
 pub(super) async fn prepare(
     history: &History,
     game: &Game,
-    action: engine::Action,
+    recipe: crate::core::game::mass_effect::recipe::Recipe,
     data: PathBuf,
     control: Control,
 ) -> Result<Journal> {
@@ -251,7 +246,7 @@ pub(super) async fn prepare(
     let prepared = history
         .lease
         .participant(async move {
-            engine::prepare(tracker, preparing_game, action, data, preparing).await
+            engine::prepare(tracker, preparing_game, recipe, data, preparing).await
         })
         .await
         .context("Shared launcher preparation stopped")??;
@@ -316,31 +311,6 @@ pub(super) async fn prepare(
     result
 }
 
-pub(super) async fn apply(
-    history: &History,
-    game: &Game,
-    journal: &Journal,
-    control: Control,
-) -> Result<()> {
-    ensure!(
-        journal.shared.is_some(),
-        "Shared Apply requires its prepared participant"
-    );
-    journal
-        .verify_prepared(history, game, Vec::new(), control.clone())
-        .await?;
-    journal
-        .persist(history, game, "shared", BTreeMap::new())
-        .await?;
-    let attempt = async {
-        let applied = journal.apply(history, game, control.clone()).await?;
-        control.check()?;
-        applied.commit_shared(history, game).await
-    }
-    .await;
-    super::coordinator::finish(history, game, journal, attempt).await
-}
-
 async fn idle(history: &History) -> Result<()> {
     let pending: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM generation_journals WHERE game_id LIKE 'mass-effect-le%') OR EXISTS(SELECT 1 FROM mele_journals)")
         .fetch_one(&history.tracker.pool).await?;
@@ -399,7 +369,7 @@ pub(super) async fn verify_dependency(
         .context("Shared dependency verification stopped")??;
     ensure!(
         current.as_ref() == expected,
-        "The live shared launcher differs from this generation; explicitly Apply or Restore its shared revision before Deploy"
+        "The live shared launcher differs from this generation; prepare the game deployment again to include its parent-owned launcher components"
     );
     Ok(())
 }
@@ -466,190 +436,4 @@ pub(super) async fn load(
         .await
         .context("Shared payload verification stopped")??;
     Ok(revision)
-}
-
-pub(super) async fn restore(
-    history: &History,
-    game: &Game,
-    family: &str,
-    id: &str,
-    control: Control,
-) -> Result<Journal> {
-    idle(history).await?;
-    let desired = load(history, family, id, control.clone()).await?;
-    let current = history
-        .tracker
-        .mele_family(desired.location)
-        .await?
-        .context("Shared launcher state is unavailable")?;
-    desired.restore(&current)?;
-    let current = Revision::capture(desired.location, &current)?;
-    let current = load(history, family, &current.id()?, control.clone()).await?;
-    let store = history.store.clone();
-    let cache = history.cache.clone();
-    let copying = control.clone();
-    let restoring = desired.clone();
-    let directory = history
-        .lease
-        .blocking(move || -> Result<_> {
-            let directory = tempfile::Builder::new()
-                .prefix(".shared-history-")
-                .tempdir_in(cache)?;
-            let mut paths = BTreeMap::new();
-            for revision in [current, restoring] {
-                for (logical, identity) in revision.payloads()? {
-                    let path = revision.source(directory.path(), &logical)?;
-                    if let Some(previous) = paths.insert(path.clone(), identity.clone()) {
-                        ensure!(
-                            previous == identity,
-                            "Shared revisions disagree on required retained inputs"
-                        );
-                        continue;
-                    }
-                    std::fs::create_dir_all(
-                        path.parent().context("Shared payload has no parent")?,
-                    )?;
-                    store.materialize(&identity, &path, 0o600, &copying)?;
-                }
-            }
-            Ok(directory)
-        })
-        .await
-        .context("Shared restoration materialization stopped")??;
-    let result = prepare(
-        history,
-        game,
-        engine::Action::Restore(desired),
-        directory.path().into(),
-        control,
-    )
-    .await;
-    history
-        .lease
-        .blocking(move || drop(directory))
-        .await
-        .context("Shared restoration cleanup stopped")?;
-    result
-}
-
-#[derive(Debug)]
-pub(super) struct Entry {
-    pub(super) id: String,
-    pub(super) created_at: String,
-    pub(super) live: bool,
-    pub(super) references: i64,
-}
-
-pub(super) async fn list(history: &History, family: &str) -> Result<Vec<Entry>> {
-    use sqlx::Row;
-    sqlx::query("SELECT r.id,r.created_at,EXISTS(SELECT 1 FROM generation_shared_state s WHERE s.family_id=r.family_id AND s.revision_id=r.id) AS live,(SELECT COUNT(*) FROM generation_shared_dependencies d WHERE d.family_id=r.family_id AND d.revision_id=r.id) AS refs FROM generation_shared_revisions r WHERE r.family_id=? AND EXISTS(SELECT 1 FROM generation_shared_objects o WHERE o.family_id=r.family_id AND o.revision_id=r.id AND o.game_id=?) ORDER BY r.created_at DESC,r.id")
-        .bind(family).bind(&history.game).fetch_all(&history.tracker.pool).await?.into_iter().map(|row| Ok(Entry {
-            id: row.try_get("id")?, created_at: row.try_get("created_at")?, live: row.try_get("live")?, references: row.try_get("refs")?,
-        })).collect()
-}
-
-async fn deletable(tx: &mut Transaction<'_, Sqlite>, family: &str, id: &str) -> Result<()> {
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM generation_shared_revisions WHERE family_id=? AND id=?)",
-    )
-    .bind(family)
-    .bind(id)
-    .fetch_one(&mut **tx)
-    .await?;
-    ensure!(exists, "Shared revision is unavailable");
-    let protected: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM generation_shared_state WHERE family_id=? AND revision_id=?) OR EXISTS(SELECT 1 FROM generation_shared_dependencies WHERE family_id=? AND revision_id=?) OR EXISTS(SELECT 1 FROM generation_journals WHERE game_id LIKE 'mass-effect-le%')")
-        .bind(family).bind(id).bind(family).bind(id).fetch_one(&mut **tx).await?;
-    ensure!(
-        !protected,
-        "Shared revision is live or referenced by game history or pending recovery"
-    );
-    Ok(())
-}
-
-async fn reclaimable(
-    tx: &mut Transaction<'_, Sqlite>,
-    family: &str,
-    id: &str,
-) -> Result<Vec<(String, String, i64)>> {
-    Ok(sqlx::query_as("SELECT o.game_id,o.sha256,o.size FROM generation_shared_objects r JOIN generation_objects o ON o.game_id=r.game_id AND o.sha256=r.sha256 WHERE r.family_id=? AND r.revision_id=? AND NOT EXISTS(SELECT 1 FROM generation_object_references g WHERE g.game_id=o.game_id AND g.sha256=o.sha256) AND NOT EXISTS(SELECT 1 FROM generation_pending_objects p WHERE p.game_id=o.game_id AND p.sha256=o.sha256) AND NOT EXISTS(SELECT 1 FROM generation_shared_objects other WHERE other.game_id=o.game_id AND other.sha256=o.sha256 AND (other.family_id<>r.family_id OR other.revision_id<>r.revision_id))")
-        .bind(family).bind(id).fetch_all(&mut **tx).await?)
-}
-
-pub(super) async fn deletion_size(history: &History, family: &str, id: &str) -> Result<u64> {
-    let mut tx = history.tracker.pool.begin().await?;
-    deletable(&mut tx, family, id).await?;
-    reclaimable(&mut tx, family, id)
-        .await?
-        .into_iter()
-        .try_fold(0u64, |total, (_, _, size)| {
-            total
-                .checked_add(size.try_into()?)
-                .context("Shared history usage exceeds the supported range")
-        })
-}
-
-pub(super) async fn delete(history: &History, family: &str, id: &str) -> Result<()> {
-    let mut tx = durable(&history.tracker).await?;
-    deletable(&mut tx, family, id).await?;
-    let objects = reclaimable(&mut tx, family, id).await?;
-    sqlx::query("DELETE FROM generation_shared_revisions WHERE family_id=? AND id=?")
-        .bind(family)
-        .bind(id)
-        .execute(&mut *tx)
-        .await?;
-    let mut games = BTreeSet::new();
-    for (game, hash, _) in objects {
-        sqlx::query("INSERT INTO generation_deletions(game_id,sha256) VALUES (?,?)")
-            .bind(&game)
-            .bind(hash)
-            .execute(&mut *tx)
-            .await?;
-        games.insert(game);
-    }
-    tx.commit().await?;
-    for game in games {
-        let bound: String =
-            sqlx::query_scalar("SELECT cache_root FROM generation_stores WHERE game_id=?")
-                .bind(&game)
-                .fetch_one(&history.tracker.pool)
-                .await?;
-        let other = History::bind(
-            &history.tracker,
-            &game,
-            std::path::Path::new(&bound),
-            false,
-            history.lease.clone(),
-        )
-        .await
-        .context(
-            "Shared deletion was recorded; reconnect affected caches to finish payload cleanup",
-        )?;
-        other.finish_deletions().await?;
-    }
-    Ok(())
-}
-
-#[cfg_attr(not(test), allow(dead_code))]
-pub(super) async fn dependency_matches(
-    history: &History,
-    game: &Game,
-    manifest: &super::manifest::Manifest,
-) -> Result<bool> {
-    ensure!(
-        history.game == game.id
-            && manifest.game_id == game.id
-            && game.engine == crate::models::game::GameEngine::MassEffect,
-        "Shared dependency status belongs to another game"
-    );
-    let location = history
-        .tracker
-        .folder_location(&game.id, crate::utils::location::FolderRole::Game)
-        .await?;
-    let revision = history
-        .tracker
-        .mele_family(location.id)
-        .await?
-        .map(|family| Revision::capture(location.id, &family))
-        .transpose()?;
-    Ok(identity(revision.as_ref())? == manifest.shared_revision)
 }

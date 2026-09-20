@@ -1,8 +1,3 @@
-#![allow(
-    dead_code,
-    reason = "retained shared revisions remain readable by game generation history"
-)]
-
 use super::*;
 use crate::core::generations::content::Identity as Content;
 
@@ -10,7 +5,7 @@ use crate::core::generations::content::Identity as Content;
 #[serde(deny_unknown_fields)]
 pub(crate) struct Revision {
     pub(crate) location: i64,
-    mods: Vec<super::super::launcher::PersistedEntry>,
+    mods: Vec<super::super::launcher::Entry>,
     original: Identity,
     originals: BTreeMap<String, Option<Identity>>,
     installed: bool,
@@ -32,7 +27,7 @@ impl Revision {
                     family
                         .mods
                         .iter()
-                        .flat_map(super::super::launcher::PersistedEntry::files)
+                        .flat_map(|entry| &entry.files)
                         .any(|file| &file.destination == *path)
                 })
                 .map(|(path, identity)| (path.clone(), identity.clone()))
@@ -61,7 +56,7 @@ impl Revision {
             self.original != proxy(),
             "Historical launcher baseline contains a proxy"
         );
-        super::super::launcher::validate_persisted_entries(&self.mods)?;
+        super::super::launcher::validate_entries(&self.mods)?;
         for (path, identity) in &self.originals {
             super::super::launcher::destination(path)?;
             if let Some(identity) = identity {
@@ -71,39 +66,11 @@ impl Revision {
         ensure!(
             self.mods
                 .iter()
-                .flat_map(super::super::launcher::PersistedEntry::files)
+                .flat_map(|entry| &entry.files)
                 .all(|file| self.originals.contains_key(&file.destination)),
             "Historical launcher source has no original identity"
         );
         Ok(())
-    }
-
-    pub(crate) fn restore(&self, current: &Family) -> Result<Family> {
-        self.validate()?;
-        current.validate()?;
-        ensure!(
-            self.runtime
-                .as_ref()
-                .is_none_or(|runtime| runtime == &proxy()),
-            "Historical launcher runtime is incompatible with the current protected runtime"
-        );
-        ensure!(
-            self.original == current.original
-                && self
-                    .originals
-                    .iter()
-                    .all(|(path, identity)| current.originals.get(path) == Some(identity)),
-            "Historical launcher requires different original inputs"
-        );
-        let mut desired = current.clone();
-        desired.mods = self.mods.clone();
-        desired.installed = self.installed;
-        ensure!(
-            desired.installed == desired.support_required(),
-            "This launcher revision is incompatible with current game ownership; keep the required runtime support"
-        );
-        desired.validate()?;
-        Ok(desired)
     }
 
     pub(crate) fn payloads(&self) -> Result<BTreeMap<String, Content>> {
@@ -125,9 +92,9 @@ impl Revision {
             }
         }
         for entry in &self.mods {
-            for source in entry.sources() {
+            for source in &entry.sources {
                 add(
-                    format!("source/{}/{}", entry.source_sha256(), source.relative),
+                    format!("source/{}/{}", entry.source_sha256, source.relative),
                     &Identity {
                         size: source.size,
                         sha256: source.sha256.clone(),
@@ -195,12 +162,6 @@ pub(crate) async fn dependency(
         "Shared launcher ownership changed during inspection"
     );
     Ok(Some(Revision::capture(location.id, &family)?))
-}
-
-pub(crate) enum Action {
-    #[allow(dead_code)]
-    Support(super::super::recipe::Recipe),
-    Restore(Revision),
 }
 
 pub(crate) struct Prepared {
@@ -355,12 +316,12 @@ impl Change {
 
 fn sources(
     data: &Path,
-    entries: &[super::super::launcher::PersistedEntry],
+    entries: &[super::super::launcher::Entry],
     control: &Control,
 ) -> Result<()> {
     for entry in entries {
-        super::super::launcher::verify_persisted_source(
-            &super::super::launcher::source_root(data, entry.source_sha256()),
+        super::super::launcher::verify_source(
+            &super::super::launcher::source_root(data, &entry.source_sha256),
             entry,
             control,
         )?;
@@ -371,7 +332,7 @@ fn sources(
 pub(crate) async fn prepare(
     tracker: Tracker,
     game: Game,
-    action: Action,
+    recipe: super::super::recipe::Recipe,
     data: PathBuf,
     control: crate::core::generations::content::Control,
 ) -> Result<Prepared> {
@@ -382,42 +343,14 @@ pub(crate) async fn prepare(
     let lease = super::super::operation::Lease::acquire(&control).await?;
     tracker.ensure_location_ready(&game.id).await?;
     tracker.ensure_no_mele_journal(&game.id).await?;
-    let plan = match action {
-        Action::Support(recipe) => {
-            recipe.validate()?;
-            ensure!(
-                recipe.target.game_id() == game.id,
-                "Shared support recipe belongs to another game"
-            );
-            inspect_recipe(&tracker, &game, &recipe, false, control.clone())
-                .await?
-                .context("No shared launcher change is required")?
-        }
-        Action::Restore(revision) => {
-            let previous = tracker
-                .mele_family(revision.location)
-                .await?
-                .context("Shared launcher ownership is unavailable")?;
-            let stored = previous.clone();
-            let desired = revision.restore(&previous)?;
-            let root = root(&tracker, &game, revision.location).await?;
-            let mut change = Change {
-                launcher_edit: true,
-                adopted_legacy: BTreeSet::new(),
-                location_id: revision.location,
-                previous,
-                desired,
-                missing: Vec::new(),
-                operations: Vec::new(),
-            };
-            change.operations = change.operations()?;
-            Plan {
-                root,
-                change,
-                stored,
-            }
-        }
-    };
+    recipe.validate()?;
+    ensure!(
+        recipe.target.game_id() == game.id,
+        "Shared support recipe belongs to another game"
+    );
+    let plan = inspect_recipe(&tracker, &game, &recipe, false, control.clone())
+        .await?
+        .context("No shared launcher change is required")?;
     let location = tracker.folder_location(&game.id, FolderRole::Game).await?;
     let games: BTreeSet<_> = location
         .bindings
@@ -482,21 +415,6 @@ impl Change {
 mod tests {
     use super::*;
 
-    const LEGACY_REVISION: &str = r#"{"location":1,"mods":[{"id":"00000000-0000-0000-0000-000000000001","name":"Legacy","enabled":false,"source_sha256":"27e29c93b9d89118dd343ac56328f306194ad16ccc3e3c6186ba31aba8db22ac","approval":"27e29c93b9d89118dd343ac56328f306194ad16ccc3e3c6186ba31aba8db22ac","files":[{"source":"Content/Test.swf","destination":"Content/Test.swf","identity":{"size":5,"sha256":"8a6ba32c9bed6ce703f999f9af6ec23686d44e144e4da572d94c8daca4a9cbab"}}],"sources":[{"relative":"Content/Test.swf","size":5,"sha256":"8a6ba32c9bed6ce703f999f9af6ec23686d44e144e4da572d94c8daca4a9cbab"}]}],"original":{"size":1,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"originals":{"Content/Test.swf":null},"installed":false,"runtime":null}"#;
-
-    // @variants: both
-    #[test]
-    fn version_three_zero_revision_keeps_its_canonical_identity() -> Result<()> {
-        let revision: Revision = serde_json::from_str(LEGACY_REVISION)?;
-        revision.validate()?;
-        assert_eq!(serde_json::to_string(&revision)?, LEGACY_REVISION);
-        assert_eq!(
-            revision.id()?,
-            format!("{:x}", Sha256::digest(LEGACY_REVISION.as_bytes()))
-        );
-        Ok(())
-    }
-
     fn family(owners: &[&str], installed: bool) -> Family {
         Family {
             baseline: BTreeMap::new(),
@@ -522,8 +440,6 @@ mod tests {
         let family = family(&[], false);
         let change = Change {
             location_id: 1,
-            launcher_edit: true,
-            adopted_legacy: BTreeSet::new(),
             previous: family.clone(),
             desired: family.clone(),
             missing: Vec::new(),
@@ -552,21 +468,17 @@ mod tests {
 
     // @variants: both
     #[test]
-    fn historical_launcher_restoration_preserves_current_game_ownership() -> Result<()> {
+    fn shared_revision_identity_does_not_depend_on_which_games_need_runtime() -> Result<()> {
         let original = Revision::capture(1, &family(&["mass-effect-le1"], true))?;
         let current = family(
             &["mass-effect-le1", "mass-effect-le2", "mass-effect-le3"],
             true,
         );
-        let restored = original.restore(&current)?;
-        assert_eq!(restored.owners, current.owners);
         assert_eq!(original.id()?, Revision::capture(1, &current)?.id()?);
-        let vanilla = Revision::capture(1, &family(&[], false))?;
-        assert!(vanilla.restore(&current).is_err());
-        assert!(original.restore(&family(&[], false)).is_err());
-        let mut changed = current;
-        changed.original.sha256 = "b".repeat(64);
-        assert!(original.restore(&changed).is_err());
+        assert_ne!(
+            original.id()?,
+            Revision::capture(1, &family(&[], false))?.id()?
+        );
         Ok(())
     }
 
@@ -576,8 +488,6 @@ mod tests {
         let previous = family(&["mass-effect-le1", "mass-effect-le2"], true);
         let mut change = Change {
             location_id: 1,
-            launcher_edit: true,
-            adopted_legacy: BTreeSet::new(),
             previous: previous.clone(),
             desired: previous,
             missing: Vec::new(),
@@ -610,13 +520,4 @@ mod tests {
         );
         Ok(())
     }
-}
-
-#[cfg(test)]
-pub(crate) async fn seed_test_proxy(data: &Path) -> Result<()> {
-    let selections: Vec<_> = components::required(super::super::Target::Le1)
-        .into_iter()
-        .filter(|selection| selection.component == Component::BinkProxy)
-        .collect();
-    components::test_cache::seed(data, &selections).await
 }

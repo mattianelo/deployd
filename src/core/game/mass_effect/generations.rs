@@ -382,7 +382,7 @@ pub(crate) async fn purge(
     let previous = tracker
         .mele_deployment(&game.id)
         .await?
-        .context("No MELE deployment is available to purge")?;
+        .context("No recorded MELE deployment is available to purge. Deployd cannot determine whether the game folder is clean; restore the installation before capturing a fresh baseline")?;
     let target = super::library::target(&game)?;
     let snapshot = Snapshot {
         recipe: Recipe {

@@ -91,12 +91,8 @@ async fn validate(
             .bind(&game.id)
             .fetch_one(&mut *tx)
             .await?;
-    let shared_pending: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM generation_journals WHERE kind='shared')")
-            .fetch_one(&mut *tx)
-            .await?;
     ensure!(
-        !(pending || game.engine == GameEngine::MassEffect && shared_pending),
+        !pending,
         "Finish the pending operation before activating another configuration"
     );
     ensure!(

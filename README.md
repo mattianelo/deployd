@@ -82,10 +82,14 @@ Purge removes the current game's launcher components while preserving components
 deployed by another Legendary Edition game. Deployd records the shared launcher's
 original files during game setup and restores them after the last parent mod using them
 is removed. Required launcher support remains active while any deployed game needs it.
-Launcher components installed by Deployd 3.0 upgrade automatically and do not need to
-be reinstalled in dependency order. If an original parent archive is temporarily
-unavailable, Deployd preserves the existing launcher state and completes the association
-automatically when the matching archive becomes available again.
+Removing mods from the library does not discard the deployed state: Purge can still
+restore managed originals, and retained generations can restore the removed mods.
+Purge reports removed mod files and restored originals separately. A missing deployment
+record is not proof that the game folder is clean.
+
+Start MELE setup with a clean, unmodded game installation. Earlier experimental
+standalone launcher records are not migrated; use fresh MELE state and reinstall mods
+from their archives.
 
 **Limitations:** MEM textures, headmorphs and portable MELE profile transfers are
 not supported. Launcher executable replacements and launcher installer choices are
@@ -279,7 +283,7 @@ Open **Settings** (gear icon) and log in under **Nexus Mods**:
 - **Archive metadata** — Manual metadata refresh uses the same Nexus mod and exact-file details as
   Mod Manager downloads. Installation uses the metadata already stored on the download and does
   not contact Nexus or request an ID. Clearing metadata restores the archive name and re-detects
-  its Nexus identity when the filename contains one. Refreshed metadata remains available after restarting.
+  its Nexus identity when the filename contains one, including one- and two-digit mod IDs. Refreshed metadata remains available after restarting.
   Rescanning current Nexus filenames matches the page, file label, and version, keeping metadata
   attached to the correct archive when multiple versions of the same file are present.
 - **From Nexus Mods** — Click **Mod Manager Download**; the file downloads into Deployd automatically

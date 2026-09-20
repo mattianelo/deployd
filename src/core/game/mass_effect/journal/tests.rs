@@ -146,7 +146,6 @@ async fn committed_removal_cleanup_resumes_without_deleting_late_external_files(
         },
     };
     let journal = Journal {
-        family_only: false,
         version: 4,
         id: desired.generation.clone(),
         game_id: fixture.game.id.clone(),
@@ -354,7 +353,6 @@ impl Fixture {
         };
         let operations = operations(&baseline, None, &desired, Target::Le1, &[])?;
         let journal = Journal {
-            family_only: false,
             family: None,
             missing_components: Vec::new(),
             version: 1,

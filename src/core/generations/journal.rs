@@ -563,12 +563,12 @@ impl Journal {
             "Journal and history store target different games"
         );
         ensure!(
-            matches!(kind, "deploy" | "purge" | "shared"),
+            matches!(kind, "deploy" | "purge"),
             "Unsupported activation operation"
         );
         ensure!(
-            (kind == "shared") == (self.shared.is_some() && self.mele.is_none()),
-            "Shared Apply requires its separate journal kind"
+            self.shared.is_none() || self.mele.is_some(),
+            "Launcher changes must commit with a MELE game deployment"
         );
         ensure!(
             self.shared.is_some()

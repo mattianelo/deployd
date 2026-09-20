@@ -28,10 +28,10 @@ pub(super) async fn recover_journal(history: &History, game: &Game) -> Result<()
     .await?;
     if let Some((kind, version, document, committed)) = pending {
         match (kind.as_str(), version) {
-            ("deploy" | "purge" | "shared", 1..=6) => {
+            ("deploy" | "purge", 1..=6) => {
                 let journal = Journal::from_record(version, &document)?;
                 ensure!(
-                    (kind == "shared") == (journal.shared.is_some() && journal.mele.is_none()),
+                    journal.shared.is_none() || journal.mele.is_some(),
                     "Recovery participant differs from its operation; records were preserved"
                 );
                 journal.recover(history, game, committed).await?;

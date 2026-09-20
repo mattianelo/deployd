@@ -4,10 +4,12 @@
 
 - Fixed MELE Deploy preparation rejecting Deployd's required AutoTOC ASI and runtime DLLs when
   retaining deployment history.
-- Fixed MELE 3.0 launcher ownership records failing Deploy with an `enabled` schema error.
-  Existing launcher components now upgrade transparently as parts of their parent mods;
-  unavailable parent archives remain preserved and are associated automatically when the
-  matching archive becomes available again.
+- Fixed archive detection missing short Nexus mod IDs, including the MELE community patches.
+  Manual file-ID prompts now identify the mod page and distinguish file IDs from mod IDs.
+- Purge now reports restored originals separately from removed files and distinguishes an
+  already purged MELE deployment from missing deployment records.
+- MELE setup requires fresh state for earlier experimental standalone launcher installations;
+  launcher components remain owned by their parent game mods.
 - MELE now records the shared launcher's original files when games are added. Launcher
   components bundled with game mods follow their parent mod's enabled state, priority,
   replacement and removal; Deploy and Purge restore originals when those parents no

@@ -29,10 +29,9 @@ impl App {
 
         let dialog = adw::AlertDialog::builder()
             .heading("File Not Found on Nexus")
-            .body(
-                "The archive filename did not match any file on this mod page. \
-                 Enter the Nexus file ID to complete the metadata, or skip.",
-            )
+            .body(format!(
+                "The archive could not be matched to a file on {domain}/mods/{mod_id}. Enter a file ID from that page's Files tab, not the mod-page ID ({mod_id}), or skip."
+            ))
             .build();
         dialog.set_extra_child(Some(&text_entry));
         dialog.add_response("skip", "Skip");
@@ -118,7 +117,7 @@ impl App {
                     .iter()
                     .find(|file| file.file_id == file_id)
                     .ok_or_else(|| {
-                        format!("Nexus file ID {file_id} was not found on this mod page")
+                        format!("Nexus file ID {file_id} was not found on {domain}/mods/{mod_id}. Use a file ID from that page’s Files tab, not the mod-page ID")
                     })?;
                 let fallback_name = partial_name.as_deref().unwrap_or(file.display_name());
                 let latest_version = crate::app::downloads::latest_file_version(

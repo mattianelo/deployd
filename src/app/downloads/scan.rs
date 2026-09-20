@@ -731,6 +731,71 @@ mod tests {
     use anyhow::Result;
     use tempfile::TempDir;
 
+    // @variants: both
+    #[tokio::test]
+    async fn scanned_mele_patches_keep_their_page_ids_and_shared_domain() -> Result<()> {
+        let temp = TempDir::new()?;
+        let domain = temp.path().join("masseffectlegendaryedition");
+        std::fs::create_dir_all(&domain)?;
+        let archives = [
+            (
+                "Unofficial Mass Effect 2 Legendary Edition Patch-8-0-9-6-1762432362.7z",
+                8,
+            ),
+            ("LE1 Community Patch-23-2-0-1762480826.7z", 23),
+        ];
+        for (name, _) in archives {
+            std::fs::write(domain.join(name), name)?;
+        }
+        let tracker = crate::core::tracker::Tracker::open("sqlite::memory:")
+            .await?
+            .tracker;
+        let result = scan_downloads_and_persist(temp.path().into(), Vec::new(), tracker.clone())
+            .await
+            .map_err(anyhow::Error::msg)?;
+        assert_eq!(result.new_count, 2);
+        let loaded = tracker.load_download_entries().await?;
+        for (name, id) in archives {
+            let path = domain.join(name);
+            let entry = loaded
+                .iter()
+                .find(|entry| entry.archive_path.as_ref() == Some(&path))
+                .unwrap();
+            assert_eq!(
+                entry.nexus_ids,
+                Some(NexusIds {
+                    mod_id: id,
+                    file_id: 0,
+                    domain: "masseffectlegendaryedition".into()
+                })
+            );
+            assert_eq!(
+                entry.game_domain.as_deref(),
+                Some("masseffectlegendaryedition")
+            );
+            assert!(!entry.metadata_fetched);
+        }
+        let mut stale = loaded;
+        let le1_path = domain.join(archives[1].0);
+        let le1 = stale
+            .iter_mut()
+            .find(|entry| entry.archive_path.as_ref() == Some(&le1_path))
+            .unwrap();
+        le1.nexus_ids.as_mut().unwrap().mod_id = 8;
+        scan_downloads_and_persist(temp.path().into(), stale, tracker.clone())
+            .await
+            .map_err(anyhow::Error::msg)?;
+        let repaired = tracker.load_download_entries().await?;
+        assert_eq!(repaired.len(), 2);
+        let le1 = repaired
+            .iter()
+            .find(|entry| entry.archive_path.as_ref() == Some(&le1_path))
+            .unwrap();
+        assert_eq!(le1.nexus_ids.as_ref().unwrap().mod_id, 23);
+        assert_eq!(le1.nexus_ids.as_ref().unwrap().file_id, 0);
+        Ok(())
+    }
+
     #[tokio::test]
     async fn scan_is_persisted_before_result_is_returned() -> Result<()> {
         let temp = TempDir::new()?;

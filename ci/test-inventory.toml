@@ -578,37 +578,13 @@ interface_state = "not_applicable"
 
 [[variant_tests]]
 path = "src/core/game/mass_effect/family/generations.rs"
-name = "version_three_zero_revision_keeps_its_canonical_identity"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/game/mass_effect/family/generations.rs"
 name = "abandoned_shared_preparation_cleans_staging_before_releasing_its_lease"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
 path = "src/core/game/mass_effect/family/generations.rs"
-name = "historical_launcher_restoration_preserves_current_game_ownership"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/game/mass_effect/family/generations.rs"
 name = "shared_restore_rejects_foreign_owners_and_changed_original_protection"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/game/mass_effect/family.rs"
-name = "version_three_zero_family_round_trips_without_losing_enabled_state"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/game/mass_effect/family.rs"
-name = "version_two_family_captures_a_new_launcher_original"
 variant = "both"
 interface_state = "not_applicable"
 
@@ -633,12 +609,6 @@ interface_state = "not_applicable"
 [[variant_tests]]
 path = "src/core/game/mass_effect/family.rs"
 name = "repairs_only_missing_owned_launcher_files"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/game/mass_effect/family.rs"
-name = "adopts_only_explicitly_reconciled_legacy_entries"
 variant = "both"
 interface_state = "not_applicable"
 
@@ -1010,12 +980,6 @@ interface_state = "not_applicable"
 
 [[variant_tests]]
 path = "src/core/game/mass_effect/launcher/tests.rs"
-name = "legacy_launcher_entries_round_trip_canonically"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/game/mass_effect/launcher/tests.rs"
 name = "launcher_layouts_preserve_scope_and_require_explicit_consent"
 variant = "both"
 interface_state = "not_applicable"
@@ -1083,30 +1047,6 @@ interface_state = "not_applicable"
 [[variant_tests]]
 path = "src/core/game/mass_effect/library/tests.rs"
 name = "launcher_component_follows_its_parent_mod_state"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/game/mass_effect/library/tests.rs"
-name = "reconciles_a_version_three_launcher_component_from_verified_archive_evidence"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/game/mass_effect/library/tests.rs"
-name = "unavailable_reconciliation_archive_preserves_legacy_state"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/game/mass_effect/library/tests.rs"
-name = "mismatched_reconciliation_archive_preserves_legacy_state"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/game/mass_effect/library/tests.rs"
-name = "version_three_database_previews_multiple_mods_without_install_order"
 variant = "both"
 interface_state = "not_applicable"
 
@@ -3679,24 +3619,6 @@ name = "restored_drafts_cannot_invent_legacy_live_save_ownership"
 variant = "both"
 interface_state = "not_applicable"
 
-[[variant_tests]]
-path = "src/core/game/mass_effect/family.rs"
-name = "version_three_zero_pending_change_defaults_reconciliation_state"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/game/mass_effect/library/tests.rs"
-name = "linked_reconciliation_archive_is_not_trusted_as_evidence"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/game/mass_effect/library/tests.rs"
-name = "removed_parent_reconciles_when_its_archive_returns"
-variant = "both"
-interface_state = "not_applicable"
-
 [[engine_tests]]
 path = "src/core/installer/mod.rs"
 name = "excludes_bethesda_root_file_before_root_target_recording"
@@ -3744,3 +3666,33 @@ path = "src/core/installer/deployment.rs"
 name = "skips_only_bethesda_empty_directory_sentinel"
 engine = "redengine"
 case = "negative"
+
+[[variant_tests]]
+path = "src/app/downloads/metadata.rs"
+name = "entering_mele_mod_id_keeps_file_identity_unknown_until_matched"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/app/downloads/scan.rs"
+name = "scanned_mele_patches_keep_their_page_ids_and_shared_domain"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/family/generations.rs"
+name = "shared_revision_identity_does_not_depend_on_which_games_need_runtime"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/nexus_identity.rs"
+name = "parses_short_mele_mod_ids_from_downloaded_archives"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/activation.rs"
+name = "purge_report_counts_restored_files_without_counting_directories"
+variant = "both"
+interface_state = "not_applicable"

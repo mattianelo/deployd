@@ -74,7 +74,7 @@ pub(crate) fn parse_nexus_mod_id(filename: &str) -> Option<i64> {
         }
     }
 
-    if let Ok(pattern) = regex::Regex::new(r"-(\d{3,})-")
+    if let Ok(pattern) = regex::Regex::new(r"-(\d+)-")
         && let Some(captures) = pattern.captures(filename)
         && let Some(id) = captures
             .get(1)
@@ -90,7 +90,7 @@ pub(crate) fn parse_nexus_mod_id(filename: &str) -> Option<i64> {
         .map(|(left, _)| left)
         .unwrap_or(filename);
     stem.split('-').find_map(|part| {
-        (part.len() >= 3 && part.bytes().all(|byte| byte.is_ascii_digit()))
+        (!part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
             .then(|| part.parse::<i64>().ok())
             .flatten()
             .filter(|id| *id > 0 && *id < 1_000_000_000)
@@ -185,6 +185,21 @@ mod tests {
                 "Release 108480 1.3.0 2026-08-31T12-00Z Gpr9A6gVu notes.zip"
             ),
             None
+        );
+    }
+
+    // @variants: both
+    #[test]
+    fn parses_short_mele_mod_ids_from_downloaded_archives() {
+        assert_eq!(
+            parse_nexus_mod_id(
+                "Unofficial Mass Effect 2 Legendary Edition Patch-8-0-9-6-1762432362.7z"
+            ),
+            Some(8)
+        );
+        assert_eq!(
+            parse_nexus_mod_id("LE1 Community Patch-23-2-0-1762480826.7z"),
+            Some(23)
         );
     }
 

@@ -66,8 +66,6 @@ pub(super) struct Operation {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Journal {
-    #[serde(default)]
-    pub(crate) family_only: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) family: Option<super::family::Change>,
     version: u32,
@@ -373,41 +371,6 @@ impl Journal {
                     && self.previous.as_ref().is_none_or(|state| state.version < 4),
             "Binary-mod recovery requires MELE journal version 5"
         );
-        if self.family_only {
-            ensure!(
-                self.version >= 6
-                    && self
-                        .family
-                        .as_ref()
-                        .is_some_and(|change| change.launcher_edit)
-                    && self.operations.is_empty()
-                    && self.directories.is_empty()
-                    && self.missing_components.is_empty(),
-                "Invalid launcher-only journal"
-            );
-            if let Some(previous) = &self.previous {
-                let mut desired = self.desired.clone();
-                desired.generation = previous.generation.clone();
-                ensure!(
-                    &desired == previous,
-                    "Launcher edits cannot change a game deployment"
-                );
-            } else {
-                ensure!(
-                    self.desired.files.is_empty()
-                        && self.desired.recipe.is_none()
-                        && self.desired.removals.is_empty(),
-                    "Launcher edit invents a game deployment"
-                );
-            }
-        } else {
-            ensure!(
-                self.family
-                    .as_ref()
-                    .is_none_or(|change| !change.launcher_edit),
-                "Launcher library changes require a launcher-only journal"
-            );
-        }
         if let Some(change) = &self.family {
             change.validate(&game.id, &self.desired)?;
         }
@@ -476,14 +439,14 @@ async fn recover_locked(tracker: &Tracker, game: &Game, data: &Path) -> Result<(
     let current = tracker.mele_deployment(&game.id).await?;
     ensure!(
         current
-            == if committed && !journal.family_only {
+            == if committed {
                 Some(journal.desired.clone())
             } else {
                 journal.previous.clone()
             },
         "MELE deployment state differs from its recovery journal"
     );
-    if committed && !journal.family_only {
+    if committed {
         ensure!(
             tracker
                 .mele_recipe(&game.id, &journal.desired.profile)
@@ -515,18 +478,14 @@ async fn recover_locked(tracker: &Tracker, game: &Game, data: &Path) -> Result<(
     let game_root = game.path.clone();
     tokio::task::spawn_blocking(move || {
         if !committed {
-            if !work.family_only {
-                files::rollback(&game_root, &root, &work)?;
-            }
+            files::rollback(&game_root, &root, &work)?;
             if let (Some(change), Some((launcher, stage))) = (&work.family, &launcher) {
                 change.rollback(launcher, stage)?;
             }
-        } else if !work.family_only {
+        } else {
             super::removal::cleanup(&game_root, &baseline, &work.desired, &Control::recovery())?;
         }
-        if !work.family_only {
-            files::cleanup(&root, &work)?;
-        }
+        files::cleanup(&root, &work)?;
         if let (Some(change), Some((_, stage))) = (&work.family, &launcher) {
             change.cleanup(stage)?;
         }
@@ -746,7 +705,6 @@ pub(super) async fn prepare_with_lease(
         "MELE deployment changed while preserving originals; rebuild the plan"
     );
     let mut journal = Journal {
-        family_only: false,
         family: family.as_ref().map(|plan| plan.change.clone()),
         version: if desired.version >= 4
             || previous.as_ref().is_some_and(|state| state.version >= 4)
@@ -985,5 +943,3 @@ fn managed_files(state: &State, baseline: &Baseline, target: Target) -> Result<V
     files.extend(super::binary::owned(state)?);
     Ok(files)
 }
-
-pub(super) mod shared;

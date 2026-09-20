@@ -504,6 +504,7 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         let purge = prepared.is_purge();
+        let purge_report = prepared.purge_report();
         let profile = prepared.profile_id().map(str::to_owned);
         let total = prepared.file_count();
         let (added, removed, changed) = prepared.change_counts();
@@ -521,13 +522,9 @@ impl App {
                 .await
                 .map_err(|error| format!("{error:#}"));
             if purge {
-                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PurgeDone(result.map(
-                    |_| crate::core::deployer::PurgeOutcome {
-                        files_removed: removed + changed,
-                        vanilla_files_restored: 0,
-                        warnings: Vec::new(),
-                    },
-                )))
+                AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PurgeDone(
+                    result.map(|_| purge_report),
+                ))
             } else {
                 let profile_id = profile.unwrap_or_default();
                 AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::DeployDone(result.map(
@@ -817,7 +814,7 @@ impl App {
 
     pub(crate) fn handle_cmd_purge_done(
         &mut self,
-        result: Result<crate::core::deployer::PurgeOutcome, String>,
+        result: Result<crate::core::generations::activation::PurgeReport, String>,
     ) {
         self.shell.deploying = false;
         self.finish_work(WorkKind::Purging);
@@ -825,21 +822,8 @@ impl App {
             Ok(outcome) => {
                 self.shell.needs_deploy = true;
                 self.session.last_deployed_profile_id = None;
-                if outcome.files_removed == 0 {
-                    self.push_notification(
-                        "No deployed files tracked — the game folder may already be clean, or try redeploying first",
-                    );
-                } else {
-                    let mut message = format!("Purged {} deployed files", outcome.files_removed);
-                    if outcome.vanilla_files_restored > 0 {
-                        message.push_str(&format!(
-                            ", restored {} vanilla file(s)",
-                            outcome.vanilla_files_restored
-                        ));
-                    }
-                    self.show_toast(&message);
-                }
-                for warning in outcome.warnings {
+                self.show_toast(&outcome.message());
+                for warning in outcome.outcome.warnings {
                     self.push_notification(&format!("Purge warning: {warning}"));
                 }
             }

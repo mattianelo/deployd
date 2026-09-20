@@ -153,10 +153,7 @@ impl Tracker {
         .bind(&journal.game_id)
         .fetch_one(&mut *tx)
         .await?;
-        ensure!(
-            active || journal.family_only,
-            "Select the planned MELE profile before deploying"
-        );
+        ensure!(active, "Select the planned MELE profile before deploying");
         sqlx::query("INSERT INTO mele_journals (game_id, id, document) VALUES (?, ?, ?)")
             .bind(&journal.game_id)
             .bind(&journal.id)
@@ -183,7 +180,7 @@ impl Tracker {
         .fetch_one(&mut *tx)
         .await?;
         ensure!(
-            active || journal.family_only,
+            active,
             "MELE profile changed during deployment; restoring previous files"
         );
         let result = sqlx::query("UPDATE mele_journals SET committed = 1 WHERE game_id = ? AND id = ? AND committed = 0 AND document = ?")
@@ -193,12 +190,6 @@ impl Tracker {
             result.rows_affected() == 1,
             "MELE deployment journal changed before commit"
         );
-        if journal.family_only {
-            return tx
-                .commit()
-                .await
-                .context("Failed to commit shared launcher mods");
-        }
         sqlx::query("INSERT INTO mele_deployments (game_id, document) VALUES (?, ?) ON CONFLICT(game_id) DO UPDATE SET document = excluded.document")
             .bind(&journal.game_id).bind(encode(&journal.desired)?)
             .execute(&mut *tx).await?;

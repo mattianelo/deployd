@@ -30,6 +30,59 @@ pub(crate) struct Prepared {
     pub(crate) differences: Vec<String>,
 }
 
+#[derive(Debug)]
+pub(crate) struct PurgeReport {
+    pub(crate) outcome: crate::core::deployer::PurgeOutcome,
+    pub(crate) already_purged: bool,
+}
+
+impl PurgeReport {
+    pub(super) fn from_journal(journal: &Journal) -> Self {
+        let mut report = Self {
+            already_purged: journal
+                .mele
+                .as_ref()
+                .and_then(|mele| mele.previous.as_ref())
+                .is_some_and(|previous| {
+                    previous.recipe.is_none()
+                        && previous.files.is_empty()
+                        && previous.removals.is_empty()
+                }),
+            outcome: crate::core::deployer::PurgeOutcome {
+                files_removed: 0,
+                vanilla_files_restored: 0,
+                warnings: Vec::new(),
+            },
+        };
+        for change in &journal.changes {
+            if change.before == change.after {
+                continue;
+            }
+            match (&change.before, &change.after) {
+                (Node::File { .. }, Node::Absent) => report.outcome.files_removed += 1,
+                (_, Node::File { .. }) => report.outcome.vanilla_files_restored += 1,
+                _ => {}
+            }
+        }
+        report.already_purged &=
+            report.outcome.files_removed == 0 && report.outcome.vanilla_files_restored == 0;
+        report
+    }
+
+    pub(crate) fn message(&self) -> String {
+        if self.already_purged {
+            "This game's managed deployment is already purged.".into()
+        } else if self.outcome.files_removed == 0 && self.outcome.vanilla_files_restored == 0 {
+            "Purge complete; no managed file changes were needed.".into()
+        } else {
+            format!(
+                "Purge complete: {} mod file(s) removed, {} original file(s) restored.",
+                self.outcome.files_removed, self.outcome.vanilla_files_restored
+            )
+        }
+    }
+}
+
 impl std::fmt::Debug for Prepared {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
@@ -43,6 +96,10 @@ impl std::fmt::Debug for Prepared {
 impl Prepared {
     pub(crate) fn is_purge(&self) -> bool {
         self.manifest.is_none()
+    }
+
+    pub(crate) fn purge_report(&self) -> PurgeReport {
+        PurgeReport::from_journal(&self.journal)
     }
 
     pub(crate) fn profile_id(&self) -> Option<&str> {
@@ -436,6 +493,39 @@ mod tests {
     use std::os::unix::fs::MetadataExt;
 
     use super::*;
+
+    // @variants: both
+    #[test]
+    fn purge_report_counts_restored_files_without_counting_directories() -> Result<()> {
+        use serde_json::json;
+        let file = |hash: char| json!({"File": {"identity": {"size": 1, "sha256": hash.to_string().repeat(64)}, "mode": 420}});
+        let change = |path: &str, before: serde_json::Value, after: serde_json::Value| {
+            json!({
+                "target": {"MassEffect": {"path": path}}, "before": before, "after": after
+            })
+        };
+        let journal: Journal = serde_json::from_value(json!({
+            "version": 1, "id": uuid::Uuid::new_v4().to_string(), "game": "mass-effect-le1",
+            "changes": [
+                change("Engine.pcc", file('a'), file('b')),
+                change("MissingOriginal.pcc", json!("Absent"), file('c')),
+                change("Mod.pcc", file('d'), json!("Absent")),
+                change("Untouched.pcc", file('e'), file('e')),
+                change("EmptyDirectory", json!({"Directory": {"mode": 493}}), json!("Absent"))
+            ]
+        }))?;
+        let report = PurgeReport::from_journal(&journal);
+        assert_eq!(report.outcome.files_removed, 1);
+        assert_eq!(report.outcome.vanilla_files_restored, 2);
+        assert!(!report.already_purged);
+        assert!(report.message().contains("2 original file(s) restored"));
+        let mut unchanged = journal;
+        unchanged.changes.clear();
+        let report = PurgeReport::from_journal(&unchanged);
+        assert!(!report.message().contains("clean"));
+        assert!(!report.already_purged);
+        Ok(())
+    }
 
     // @variants: both
     #[tokio::test]

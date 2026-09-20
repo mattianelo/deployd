@@ -160,14 +160,6 @@ pub(super) async fn commit(
         .bind(change.location_id)
         .execute(&mut **tx)
         .await?;
-    sqlx::query(
-        "UPDATE mele_launcher_component_links SET adopted=1
-         WHERE location_id=? AND game_id=?",
-    )
-    .bind(change.location_id)
-    .bind(game_id)
-    .execute(&mut **tx)
-    .await?;
     Ok(())
 }
 

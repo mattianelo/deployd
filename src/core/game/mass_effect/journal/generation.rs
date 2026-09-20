@@ -27,7 +27,7 @@ impl Journal {
     pub(crate) fn generation_shape(&self, game: &Game) -> Result<()> {
         target(game)?;
         ensure!(
-            self.game_id == game.id && !self.family_only && self.family.is_none(),
+            self.game_id == game.id && self.family.is_none(),
             "Game generations cannot apply shared launcher changes"
         );
         ensure!(
@@ -150,7 +150,7 @@ impl Journal {
 impl Journal {
     pub(crate) async fn discard_generation_stage(&self, data: PathBuf) -> Result<()> {
         ensure!(
-            !self.family_only && self.family.is_none(),
+            self.family.is_none(),
             "Shared preparation needs its own cleanup"
         );
         discard(&storage(&data, &self.game_id, &self.id), self, &data).await
@@ -171,7 +171,7 @@ impl Journal {
 impl Journal {
     pub(crate) fn discard_abandoned_generation_stage(&self, data: &Path) -> Result<()> {
         ensure!(
-            !self.family_only && self.family.is_none(),
+            self.family.is_none(),
             "Shared preparation needs its own cleanup"
         );
         files::cleanup(&storage(data, &self.game_id, &self.id), self)

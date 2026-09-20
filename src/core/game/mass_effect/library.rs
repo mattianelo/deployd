@@ -12,7 +12,7 @@ use crate::models::{
     manifest::ModFile,
     mod_entry::{InstallTarget, ModEntry},
 };
-use crate::utils::{location::FolderRole, paths};
+use crate::utils::paths;
 
 use super::{
     Target,
@@ -55,28 +55,6 @@ impl Record {
             false,
         )
         .validate()
-    }
-
-    pub(crate) fn launcher(&self) -> Option<&super::launcher::Entry> {
-        self.launcher.as_ref()
-    }
-
-    pub(crate) fn launcher_source_sha256(&self) -> Option<&str> {
-        self.launcher
-            .as_ref()
-            .map(|entry| entry.source_sha256.as_str())
-    }
-
-    pub(super) fn bind_launcher(&self, launcher: super::launcher::Entry) -> Result<Self> {
-        ensure!(
-            launcher.id == self.package.id && launcher.owner == self.target.game_id(),
-            "Launcher component belongs to another MELE package"
-        );
-        let mut record = self.clone();
-        record.version = record.version.max(4);
-        record.launcher = Some(launcher);
-        record.validate()?;
-        Ok(record)
     }
 }
 
@@ -148,7 +126,6 @@ async fn import_in(
         "This MELE package requires a format that is not supported yet"
     );
     super::alternates::validate_choices(&request.plan, &request.options)?;
-    super::launcher::reconcile(&tracker, &request.game, &data, cancelled.clone()).await?;
     let previous_approval = if let Some(id) = &request.replace {
         tracker
             .mele_package(id)
@@ -365,8 +342,6 @@ fn recipe(
 
 pub(crate) async fn remove(tracker: &Tracker, game: &Game, ids: &[String]) -> Result<()> {
     target(game)?;
-    let data = crate::utils::paths::deployd_data_dir()?;
-    super::launcher::reconcile(tracker, game, &data, Arc::new(AtomicBool::new(false))).await?;
     let control = Control::new(
         Arc::new(AtomicBool::new(false)),
         Arc::new(AtomicBool::new(false)),
@@ -374,19 +349,7 @@ pub(crate) async fn remove(tracker: &Tracker, game: &Game, ids: &[String]) -> Re
     let _lease = Lease::acquire(&control).await?;
     tracker.ensure_location_ready(&game.id).await?;
     tracker.ensure_no_mele_journal(&game.id).await?;
-    let location = tracker.folder_location(&game.id, FolderRole::Game).await?;
-    let retain_reconciliation = tracker
-        .mele_family(location.id)
-        .await?
-        .is_some_and(|family| {
-            family
-                .mods
-                .iter()
-                .any(|entry| matches!(entry, super::launcher::PersistedEntry::Legacy(_)))
-        });
-    tracker
-        .remove_mele_packages(location.id, &game.id, ids, retain_reconciliation)
-        .await
+    tracker.remove_mele_packages(&game.id, ids).await
 }
 
 pub(crate) async fn desired(

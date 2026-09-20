@@ -124,9 +124,7 @@ pub(super) async fn reuse(
     let shared = super::shared::prepare(
         history,
         game,
-        crate::core::game::mass_effect::family::generations::Action::Support(
-            snapshot.recipe.clone(),
-        ),
+        snapshot.recipe.clone(),
         data.clone(),
         control.clone(),
     )
@@ -214,7 +212,7 @@ pub(super) async fn prepare(
     let shared = super::shared::prepare(
         history,
         &game,
-        crate::core::game::mass_effect::family::generations::Action::Support(recipe.clone()),
+        recipe.clone(),
         data.clone(),
         control.clone(),
     )
@@ -364,18 +362,16 @@ pub(super) async fn purge(
     let shared = super::shared::prepare(
         history,
         game,
-        crate::core::game::mass_effect::family::generations::Action::Support(
-            crate::core::game::mass_effect::recipe::Recipe {
-                version: 1,
-                target,
-                backend_version: 1,
-                helper_version: None,
-                language: "INT".into(),
-                packages: Vec::new(),
-                launcher: Vec::new(),
-                components: Vec::new(),
-            },
-        ),
+        crate::core::game::mass_effect::recipe::Recipe {
+            version: 1,
+            target,
+            backend_version: 1,
+            helper_version: None,
+            language: "INT".into(),
+            packages: Vec::new(),
+            launcher: Vec::new(),
+            components: Vec::new(),
+        },
         data.clone(),
         control.clone(),
     )

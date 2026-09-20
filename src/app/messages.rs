@@ -435,7 +435,7 @@ pub(crate) enum ShellCmdMsg {
     },
     GenerationPrepared(Result<Box<crate::core::generations::activation::Prepared>, String>),
     DeployDone(Result<DeployCompletion, String>),
-    PurgeDone(Result<crate::core::deployer::PurgeOutcome, String>),
+    PurgeDone(Result<crate::core::generations::activation::PurgeReport, String>),
     GamePathSaved {
         game_id: String,
         path: PathBuf,

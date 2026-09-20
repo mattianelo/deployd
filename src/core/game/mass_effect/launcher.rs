@@ -10,9 +10,7 @@ use super::operation::Control;
 use super::package::SourceFile;
 
 mod package;
-mod reconcile;
 pub(crate) use package::inspect_bundle;
-pub(crate) use reconcile::reconcile;
 
 #[derive(Debug)]
 pub(crate) struct Bundled {
@@ -30,108 +28,6 @@ pub(crate) struct Entry {
     pub(super) approval: String,
     pub(super) files: Vec<Mapping>,
     pub(super) sources: Vec<SourceFile>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct LegacyEntry {
-    pub(super) id: String,
-    pub(super) name: String,
-    pub(super) enabled: bool,
-    pub(super) source_sha256: String,
-    pub(super) approval: String,
-    pub(super) files: Vec<Mapping>,
-    pub(super) sources: Vec<SourceFile>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub(super) enum PersistedEntry {
-    Owned(Entry),
-    Legacy(LegacyEntry),
-}
-
-impl PersistedEntry {
-    pub(super) fn id(&self) -> &str {
-        match self {
-            Self::Owned(entry) => &entry.id,
-            Self::Legacy(entry) => &entry.id,
-        }
-    }
-
-    pub(super) fn owner(&self) -> Option<&str> {
-        match self {
-            Self::Owned(entry) => Some(&entry.owner),
-            Self::Legacy(_) => None,
-        }
-    }
-
-    pub(super) fn active(&self) -> bool {
-        match self {
-            Self::Owned(_) => true,
-            Self::Legacy(entry) => entry.enabled,
-        }
-    }
-
-    pub(super) fn source_sha256(&self) -> &str {
-        match self {
-            Self::Owned(entry) => &entry.source_sha256,
-            Self::Legacy(entry) => &entry.source_sha256,
-        }
-    }
-
-    pub(super) fn files(&self) -> &[Mapping] {
-        match self {
-            Self::Owned(entry) => &entry.files,
-            Self::Legacy(entry) => &entry.files,
-        }
-    }
-
-    pub(super) fn sources(&self) -> &[SourceFile] {
-        match self {
-            Self::Owned(entry) => &entry.sources,
-            Self::Legacy(entry) => &entry.sources,
-        }
-    }
-
-    pub(super) fn as_owned(&self) -> Option<&Entry> {
-        match self {
-            Self::Owned(entry) => Some(entry),
-            Self::Legacy(_) => None,
-        }
-    }
-
-    pub(super) fn matches(&self, entry: &Entry) -> bool {
-        self.source_sha256() == entry.source_sha256
-            && self.files() == entry.files
-            && self.sources() == entry.sources
-    }
-
-    pub(super) fn owned(&self, id: String, owner: String) -> Entry {
-        match self {
-            Self::Owned(entry) => {
-                let mut entry = entry.clone();
-                entry.id = id;
-                entry.owner = owner;
-                entry
-            }
-            Self::Legacy(entry) => Entry {
-                id,
-                owner,
-                name: entry.name.clone(),
-                source_sha256: entry.source_sha256.clone(),
-                approval: entry.approval.clone(),
-                files: entry.files.clone(),
-                sources: entry.sources.clone(),
-            },
-        }
-    }
-}
-
-impl From<Entry> for PersistedEntry {
-    fn from(entry: Entry) -> Self {
-        Self::Owned(entry)
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -188,65 +84,15 @@ pub(super) fn destination(path: &str) -> Result<()> {
 }
 
 pub(super) fn validate_entries(entries: &[Entry]) -> Result<()> {
-    validate(entries.iter().map(|entry| EntryRef {
-        id: &entry.id,
-        owner: Some(&entry.owner),
-        name: &entry.name,
-        source_sha256: &entry.source_sha256,
-        approval: &entry.approval,
-        files: &entry.files,
-        sources: &entry.sources,
-    }))
-}
-
-pub(super) fn validate_persisted_entries(entries: &[PersistedEntry]) -> Result<()> {
-    validate(entries.iter().map(|entry| match entry {
-        PersistedEntry::Owned(entry) => EntryRef {
-            id: &entry.id,
-            owner: Some(&entry.owner),
-            name: &entry.name,
-            source_sha256: &entry.source_sha256,
-            approval: &entry.approval,
-            files: &entry.files,
-            sources: &entry.sources,
-        },
-        PersistedEntry::Legacy(entry) => EntryRef {
-            id: &entry.id,
-            owner: None,
-            name: &entry.name,
-            source_sha256: &entry.source_sha256,
-            approval: &entry.approval,
-            files: &entry.files,
-            sources: &entry.sources,
-        },
-    }))
-}
-
-struct EntryRef<'a> {
-    id: &'a str,
-    owner: Option<&'a str>,
-    name: &'a str,
-    source_sha256: &'a str,
-    approval: &'a str,
-    files: &'a [Mapping],
-    sources: &'a [SourceFile],
-}
-
-fn validate<'a>(entries: impl Iterator<Item = EntryRef<'a>>) -> Result<()> {
-    let entries: Vec<_> = entries.collect();
     ensure!(entries.len() <= 256, "Too many shared launcher mods");
     let mut ids = BTreeSet::new();
     let mut destinations = BTreeMap::new();
     for entry in entries {
         ensure!(
-            Uuid::parse_str(entry.id)?.to_string() == entry.id
-                && ids.insert(entry.id)
-                && entry.owner.is_none_or(|owner| [
-                    "mass-effect-le1",
-                    "mass-effect-le2",
-                    "mass-effect-le3"
-                ]
-                .contains(&owner)),
+            Uuid::parse_str(&entry.id)?.to_string() == entry.id
+                && ids.insert(&entry.id)
+                && ["mass-effect-le1", "mass-effect-le2", "mass-effect-le3"]
+                    .contains(&entry.owner.as_str()),
             "Invalid or duplicate launcher mod identity"
         );
         ensure!(
@@ -258,11 +104,11 @@ fn validate<'a>(entries: impl Iterator<Item = EntryRef<'a>>) -> Result<()> {
         );
         ensure!(
             entry.approval == entry.source_sha256
-                && entry.source_sha256 == super::package::tree_digest(entry.sources),
+                && entry.source_sha256 == super::package::tree_digest(&entry.sources),
             "Launcher mod requires approval for this exact source"
         );
         let mut sources = BTreeSet::new();
-        for file in entry.sources {
+        for file in &entry.sources {
             super::baseline::relative(&file.relative)?;
             ensure!(
                 sources.insert(file.relative.to_lowercase()),
@@ -275,7 +121,7 @@ fn validate<'a>(entries: impl Iterator<Item = EntryRef<'a>>) -> Result<()> {
             .validate()?;
         }
         let mut unique = BTreeSet::new();
-        for file in entry.files {
+        for file in &entry.files {
             destination(&file.destination)?;
             file.identity.validate()?;
             ensure!(
@@ -315,51 +161,16 @@ pub(super) fn source_root(data: &Path, hash: &str) -> PathBuf {
 
 pub(super) fn retain(data: &Path, source: &Path, entry: &Entry, control: &Control) -> Result<()> {
     validate_entries(std::slice::from_ref(entry))?;
-    retain_payload(
-        data,
-        source,
-        &entry.source_sha256,
-        &entry.files,
-        &entry.sources,
-        control,
-    )
-}
-
-pub(super) fn retain_persisted(
-    data: &Path,
-    source: &Path,
-    entry: &PersistedEntry,
-    control: &Control,
-) -> Result<()> {
-    validate_persisted_entries(std::slice::from_ref(entry))?;
-    retain_payload(
-        data,
-        source,
-        entry.source_sha256(),
-        entry.files(),
-        entry.sources(),
-        control,
-    )
-}
-
-fn retain_payload(
-    data: &Path,
-    source: &Path,
-    source_sha256: &str,
-    mappings: &[Mapping],
-    sources: &[SourceFile],
-    control: &Control,
-) -> Result<()> {
     let cache = data.join("mele-launcher-sources");
     files::create_directory(&cache)?;
-    let destination = source_root(data, source_sha256);
+    let destination = source_root(data, &entry.source_sha256);
     if destination.try_exists()? {
-        return verify_payload(&destination, mappings, sources, control);
+        return verify_source(&destination, entry, control);
     }
     let temp = tempfile::Builder::new()
         .prefix("incoming-")
         .tempdir_in(&cache)?;
-    for file in sources {
+    for file in &entry.sources {
         control.check()?;
         files::copy(
             source,
@@ -373,37 +184,19 @@ fn retain_payload(
             control,
         )?;
     }
-    verify_payload(temp.path(), mappings, sources, control)?;
+    verify_source(temp.path(), entry, control)?;
     files::sync(temp.path())?;
     std::fs::rename(temp.path(), &destination)?;
     files::sync(&cache)
 }
 
-#[cfg(test)]
 pub(super) fn verify_source(root: &Path, entry: &Entry, control: &Control) -> Result<()> {
-    verify_payload(root, &entry.files, &entry.sources, control)
-}
-
-pub(super) fn verify_persisted_source(
-    root: &Path,
-    entry: &PersistedEntry,
-    control: &Control,
-) -> Result<()> {
-    verify_payload(root, entry.files(), entry.sources(), control)
-}
-
-fn verify_payload(
-    root: &Path,
-    mappings: &[Mapping],
-    sources: &[SourceFile],
-    control: &Control,
-) -> Result<()> {
     control.check()?;
     ensure!(
-        super::package::scan(root)? == sources,
+        super::package::scan(root)? == entry.sources,
         "Launcher source cache changed; reinstall its original archive"
     );
-    package::validate_payloads(root, mappings, sources)
+    package::validate_payloads(root, &entry.files, &entry.sources)
 }
 
 #[cfg(test)]

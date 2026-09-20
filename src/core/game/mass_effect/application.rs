@@ -132,7 +132,6 @@ async fn preview_with_progress(
     } = request;
     tracker.ensure_location_ready(&game.id).await?;
     tracker.ensure_no_mele_journal(&game.id).await?;
-    super::launcher::reconcile(&tracker, &game, &data, cancelled.clone()).await?;
     let baseline = tracker
         .load_mele_baseline(&game.id)
         .await?

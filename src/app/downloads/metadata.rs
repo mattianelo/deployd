@@ -161,6 +161,14 @@ fn match_nexus_file(
         .or_else(|| candidates.into_iter().next())
 }
 
+fn mod_identity(mod_id: i64, domain: String) -> NexusIds {
+    NexusIds {
+        mod_id,
+        file_id: 0,
+        domain,
+    }
+}
+
 impl App {
     pub(crate) fn handle_fetch_download_metadata(
         &mut self,
@@ -253,11 +261,7 @@ impl App {
         domain: String,
         sender: &ComponentSender<Self>,
     ) {
-        let nexus_ids = NexusIds {
-            mod_id,
-            file_id: 0,
-            domain,
-        };
+        let nexus_ids = mod_identity(mod_id, domain);
 
         let Some(tracker) = self.session.tracker.clone() else {
             self.push_notification("Nexus identity could not be saved: database unavailable");
@@ -457,7 +461,7 @@ impl App {
                     Ok(ManualMetadataResult::Resolved(metadata))
                 } else if nexus_file_id > 0 {
                     Err(format!(
-                        "Nexus file ID {nexus_file_id} was not found on this mod page"
+                        "Nexus file ID {nexus_file_id} was not found on {domain}/mods/{nexus_mod_id}. Check the file ID on that page’s Files tab"
                     ))
                 } else {
                     Ok(ManualMetadataResult::NeedsFileId(metadata))
@@ -478,6 +482,35 @@ mod tests {
         latest_file_version, match_nexus_file, nexus_download_metadata, version_is_strictly_newer,
     };
     use crate::models::nexus::{NexusFileEntry, NexusFileUpdate, NexusModInfo};
+
+    // @variants: both
+    #[test]
+    fn entering_mele_mod_id_keeps_file_identity_unknown_until_matched() {
+        let id = crate::core::nexus_identity::parse_nexus_mod_id_from_input("8").unwrap();
+        let identity = super::mod_identity(id, "masseffectlegendaryedition".into());
+        assert_eq!(identity.mod_id, 8);
+        assert_eq!(identity.file_id, 0);
+        assert_eq!(identity.domain, "masseffectlegendaryedition");
+        let filename = "Unofficial Mass Effect 2 Legendary Edition Patch-8-0-9-6-1762432362.7z";
+        let file: NexusFileEntry = serde_json::from_value(serde_json::json!({
+            "file_id": 12199, "file_name": filename, "name": "Unofficial LE2 Patch", "version": "0.9.6"
+        })).unwrap();
+        let matched =
+            match_nexus_file(vec![file.clone()], identity.file_id, Some(filename)).unwrap();
+        assert_eq!(matched.file_id, 12199);
+        assert!(
+            match_nexus_file(
+                vec![file.clone()],
+                identity.file_id,
+                Some("LE1 Community Patch-23-2-0-1762480826.7z")
+            )
+            .is_none()
+        );
+        assert!(match_nexus_file(vec![file], 8, Some(filename)).is_none());
+        let partial = nexus_download_metadata(&identity.domain, "Patch", None, None, None, None);
+        assert_eq!(partial.file_id, None);
+        assert_eq!(partial.domain, "masseffectlegendaryedition");
+    }
 
     fn archived_file() -> NexusFileEntry {
         serde_json::from_value(serde_json::json!({

@@ -1,8 +1,3 @@
-#![allow(
-    dead_code,
-    reason = "legacy shared activation journals remain recoverable after removing standalone launcher actions"
-)]
-
 use super::*;
 
 impl Journal {
@@ -124,60 +119,6 @@ impl Journal {
             intent.verify(history, game, applied).await?;
         }
         Ok(())
-    }
-}
-
-impl Applied {
-    pub(in crate::core::generations) async fn commit_shared(
-        self,
-        history: &History,
-        game: &Game,
-    ) -> Result<()> {
-        ensure!(
-            self.game == game.id && self.game == history.game,
-            "Shared activation belongs to another game"
-        );
-        let journal: Journal = serde_json::from_str(&self.document)?;
-        journal.validate(game)?;
-        journal.check_record(history, false).await?;
-        let intent = journal
-            .shared
-            .clone()
-            .context("Missing shared activation participant")?;
-        journal.verify_shared(history, game, true).await?;
-        let copy = game.clone();
-        history
-            .lease
-            .blocking(move || -> Result<()> {
-                journal.verify_directories(&copy, true)?;
-                for change in &journal.changes {
-                    let path = change.target.resolve(&copy)?;
-                    layout::accessible(&copy, &change.target, &path, false)?;
-                    ensure!(
-                        inspect(&path, &Control::default())? == change.after,
-                        "Launcher changed before commit; recovery information was preserved"
-                    );
-                }
-                Ok(())
-            })
-            .await
-            .context("Shared final verification stopped")??;
-        let mut tx = durable(&history.tracker).await?;
-        let kind: String =
-            sqlx::query_scalar("SELECT kind FROM generation_journals WHERE id=? AND game_id=?")
-                .bind(&self.id)
-                .bind(&self.game)
-                .fetch_one(&mut *tx)
-                .await?;
-        ensure!(
-            kind == "shared",
-            "Shared decision targets a different operation"
-        );
-        intent.publish(&mut tx, game).await?;
-        self.decide(&mut tx).await?;
-        tx.commit()
-            .await
-            .context("Shared commit outcome requires durable recovery")
     }
 }
 

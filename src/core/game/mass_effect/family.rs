@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Read;
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
@@ -29,7 +29,7 @@ pub(crate) struct Family {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub(super) baseline: BTreeMap<String, Identity>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(super) mods: Vec<super::launcher::PersistedEntry>,
+    pub(super) mods: Vec<super::launcher::Entry>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub(super) originals: BTreeMap<String, Option<Identity>>,
     version: u32,
@@ -41,10 +41,6 @@ pub(crate) struct Family {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Change {
-    #[serde(default)]
-    pub(crate) launcher_edit: bool,
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub(crate) adopted_legacy: BTreeSet<String>,
     pub(crate) location_id: i64,
     pub(crate) previous: Family,
     pub(crate) desired: Family,
@@ -72,51 +68,6 @@ fn required(state: Option<&State>) -> bool {
 
 fn proxy() -> Identity {
     components::proxy_identity()
-}
-
-fn capture_original(root: &Path, path: &str, control: &Control) -> Result<Option<Identity>> {
-    files::check_path(root, path)?;
-    let target = root.join(path);
-    let metadata = match fs::symlink_metadata(&target) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error).context("Cannot inspect launcher original"),
-    };
-    ensure!(
-        metadata.is_file() && metadata.nlink() == 1,
-        "Launcher originals must be independent regular files"
-    );
-    let mut input = fs::File::options()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(&target)?;
-    let opened = input.metadata()?;
-    ensure!(
-        opened.dev() == metadata.dev()
-            && opened.ino() == metadata.ino()
-            && opened.len() == metadata.len(),
-        "Launcher original changed during inspection"
-    );
-    let mut hash = Sha256::new();
-    let mut size = 0_u64;
-    let mut buffer = [0_u8; 128 * 1024];
-    loop {
-        control.check()?;
-        let count = input.read(&mut buffer)?;
-        if count == 0 {
-            break;
-        }
-        hash.update(&buffer[..count]);
-        size += count as u64;
-    }
-    ensure!(
-        size == metadata.len(),
-        "Launcher original changed during inspection"
-    );
-    Ok(Some(Identity {
-        size,
-        sha256: format!("{:x}", hash.finalize()),
-    }))
 }
 
 impl Family {
@@ -148,7 +99,7 @@ impl Family {
             self.version < 3 || !self.baseline.is_empty(),
             "Launcher baseline is missing from shared state"
         );
-        super::launcher::validate_persisted_entries(&self.mods)?;
+        super::launcher::validate_entries(&self.mods)?;
         ensure!(
             self.baseline.len() <= 100_000 && self.originals.len() <= 10000,
             "Too many launcher restoration entries"
@@ -213,7 +164,7 @@ impl Family {
         ensure!(
             self.mods
                 .iter()
-                .flat_map(super::launcher::PersistedEntry::files)
+                .flat_map(|entry| &entry.files)
                 .all(|file| self.originals.contains_key(&file.destination)),
             "Launcher mod has no recorded original"
         );
@@ -221,7 +172,7 @@ impl Family {
     }
 
     fn support_required(&self) -> bool {
-        !self.owners.is_empty() || self.mods.iter().any(|entry| entry.active())
+        !self.owners.is_empty() || !self.mods.is_empty()
     }
 
     fn files(&self) -> BTreeMap<String, Identity> {
@@ -232,8 +183,8 @@ impl Family {
                 identity.clone().map(|identity| (path.clone(), identity))
             })
             .collect();
-        for entry in self.mods.iter().filter(|entry| entry.active()) {
-            for file in entry.files() {
+        for entry in &self.mods {
+            for file in &entry.files {
                 files.insert(file.destination.clone(), file.identity.clone());
             }
         }
@@ -341,57 +292,39 @@ impl Change {
                 && self.desired.owners.contains(game_id) == required(Some(state)),
             "MELE launcher ownership disagrees with the game deployment"
         );
-        if self.launcher_edit {
-            ensure!(
-                self.adopted_legacy.is_empty() && self.previous.owners == self.desired.owners,
-                "Launcher-only changes cannot alter game ownership"
-            );
-        } else {
-            ensure!(
-                self.adopted_legacy.iter().all(|id| {
-                    self.previous.mods.iter().any(|entry| {
-                        entry.id() == id
-                            && matches!(entry, super::launcher::PersistedEntry::Legacy(_))
-                    }) && !self.desired.mods.iter().any(|entry| entry.id() == id)
-                }),
-                "Only verified legacy launcher components can be adopted"
-            );
-            let previous_foreign: Vec<_> = self
-                .previous
-                .mods
-                .iter()
-                .filter(|entry| !self.adopted_legacy.contains(entry.id()))
-                .filter(|entry| entry.owner() != Some(game_id))
-                .collect();
-            let desired_foreign: Vec<_> = self
-                .desired
-                .mods
-                .iter()
-                .filter(|entry| entry.owner() != Some(game_id))
-                .collect();
-            ensure!(
-                previous_foreign == desired_foreign,
-                "A game deployment cannot change another game's launcher components"
-            );
-            let expected: Vec<_> = state
-                .recipe
-                .as_ref()
-                .into_iter()
-                .flat_map(|recipe| &recipe.launcher)
-                .filter(|entry| recipe_package_enabled(state, &entry.id))
-                .collect();
-            let actual: Vec<_> = self
-                .desired
-                .mods
-                .iter()
-                .filter_map(super::launcher::PersistedEntry::as_owned)
-                .filter(|entry| entry.owner == game_id)
-                .collect();
-            ensure!(
-                actual == expected,
-                "Launcher components disagree with the deployed parent mods"
-            );
-        }
+        let previous_foreign: Vec<_> = self
+            .previous
+            .mods
+            .iter()
+            .filter(|entry| entry.owner != game_id)
+            .collect();
+        let desired_foreign: Vec<_> = self
+            .desired
+            .mods
+            .iter()
+            .filter(|entry| entry.owner != game_id)
+            .collect();
+        ensure!(
+            previous_foreign == desired_foreign,
+            "A game deployment cannot change another game's launcher components"
+        );
+        let expected: Vec<_> = state
+            .recipe
+            .as_ref()
+            .into_iter()
+            .flat_map(|recipe| &recipe.launcher)
+            .filter(|entry| recipe_package_enabled(state, &entry.id))
+            .collect();
+        let actual: Vec<_> = self
+            .desired
+            .mods
+            .iter()
+            .filter(|entry| entry.owner == game_id)
+            .collect();
+        ensure!(
+            actual == expected,
+            "Launcher components disagree with the deployed parent mods"
+        );
         ensure!(
             self.previous
                 .originals
@@ -558,48 +491,6 @@ pub(super) async fn inspect(
     } else {
         owners.remove(&game.id);
     }
-    let links = tracker.mele_launcher_component_links(location.id).await?;
-    let mut enabled = BTreeSet::new();
-    for binding in location
-        .bindings
-        .iter()
-        .filter(|binding| binding.role == FolderRole::Game)
-    {
-        enabled.extend(
-            tracker
-                .list_mods(&binding.game_id)
-                .await?
-                .into_iter()
-                .filter(|entry| entry.enabled)
-                .map(|entry| entry.id),
-        );
-    }
-    let mut linked = BTreeMap::<String, Vec<bool>>::new();
-    for link in links {
-        let Some(legacy) = existing.mods.iter().find(|entry| {
-            entry.id() == link.legacy_id
-                && matches!(entry, super::launcher::PersistedEntry::Legacy(_))
-        }) else {
-            continue;
-        };
-        let resolved = if link.adopted || link.game_id == game.id || !enabled.contains(&link.mod_id)
-        {
-            true
-        } else {
-            match tracker.mele_package(&link.mod_id).await? {
-                Some(record) => record
-                    .launcher()
-                    .is_none_or(|component| !legacy.matches(component)),
-                None => false,
-            }
-        };
-        linked.entry(link.legacy_id).or_default().push(resolved);
-    }
-    let adopted_legacy: BTreeSet<_> = linked
-        .into_iter()
-        .filter(|(_, links)| !links.is_empty() && links.iter().all(|resolved| *resolved))
-        .map(|(legacy, _)| legacy)
-        .collect();
     let game_id = game.id.clone();
     let desired_state = desired.clone();
     tokio::task::spawn_blocking(move || {
@@ -637,31 +528,18 @@ pub(super) async fn inspect(
             if previous.originals.contains_key(&file.destination) {
                 continue;
             }
-            let identity = if previous.version >= 3 {
-                let identity = previous.baseline.get(&file.destination).cloned();
-                files::verify(&root, &file.destination, identity.as_ref(), &control)?;
-                identity
-            } else {
-                capture_original(&root, &file.destination, &control)?
-            };
+            let identity = previous.baseline.get(&file.destination).cloned();
+            files::verify(&root, &file.destination, identity.as_ref(), &control)?;
             previous.originals.insert(file.destination.clone(), identity);
         }
         previous.validate()?;
         let mut desired = previous.clone();
         desired.owners = owners;
-        desired.mods.retain(|entry| {
-            entry.owner() != Some(game_id.as_str())
-                && !adopted_legacy.contains(entry.id())
-        });
-        desired.mods.extend(entries.into_iter().map(Into::into));
-        desired.mods.sort_by(|left, right| {
-            left.owner()
-                .is_some()
-                .cmp(&right.owner().is_some())
-                .then_with(|| left.owner().cmp(&right.owner()))
-        });
+        desired.mods.retain(|entry| entry.owner != game_id);
+        desired.mods.extend(entries);
+        desired.mods.sort_by(|left, right| left.owner.cmp(&right.owner));
         desired.installed = desired.support_required();
-        let mut change = Change { launcher_edit: false, adopted_legacy, location_id: location.id, previous, desired, missing: Vec::new(), operations: Vec::new() };
+        let mut change = Change { location_id: location.id, previous, desired, missing: Vec::new(), operations: Vec::new() };
         if repair && change.previous.installed {
             for path in change.paths() {
                 if matches!(fs::symlink_metadata(root.join(&path)), Err(error) if error.kind() == std::io::ErrorKind::NotFound) {
@@ -768,22 +646,15 @@ impl Plan {
                 } else if operation.path == BINK || operation.path == ORIGINAL {
                     (originals.as_path(), BINK)
                 } else {
-                    let source = self
-                        .change
-                        .desired
-                        .mods
-                        .iter()
-                        .rev()
-                        .filter(|entry| entry.active())
-                        .find_map(|entry| {
-                            entry
-                                .files()
-                                .iter()
-                                .find(|file| file.destination == operation.path)
-                                .map(|file| (entry, file))
-                        });
+                    let source = self.change.desired.mods.iter().rev().find_map(|entry| {
+                        entry
+                            .files
+                            .iter()
+                            .find(|file| file.destination == operation.path)
+                            .map(|file| (entry, file))
+                    });
                     if let Some((entry, file)) = source {
-                        let source_root = super::launcher::source_root(data, entry.source_sha256());
+                        let source_root = super::launcher::source_root(data, &entry.source_sha256);
                         files::copy(
                             &source_root,
                             &file.source,
@@ -839,43 +710,6 @@ mod tests {
     use super::*;
     use crate::core::game::mass_effect::{Target, recipe::Recipe};
 
-    const LEGACY_FAMILY: &str = r#"{"mods":[{"id":"00000000-0000-0000-0000-000000000001","name":"Legacy","enabled":true,"source_sha256":"27e29c93b9d89118dd343ac56328f306194ad16ccc3e3c6186ba31aba8db22ac","approval":"27e29c93b9d89118dd343ac56328f306194ad16ccc3e3c6186ba31aba8db22ac","files":[{"source":"Content/Test.swf","destination":"Content/Test.swf","identity":{"size":5,"sha256":"8a6ba32c9bed6ce703f999f9af6ec23686d44e144e4da572d94c8daca4a9cbab"}}],"sources":[{"relative":"Content/Test.swf","size":5,"sha256":"8a6ba32c9bed6ce703f999f9af6ec23686d44e144e4da572d94c8daca4a9cbab"}]}],"originals":{"Content/Test.swf":null},"version":2,"original":{"size":1,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"owners":[],"installed":true}"#;
-
-    // @variants: both
-    #[test]
-    fn version_three_zero_family_round_trips_without_losing_enabled_state() -> Result<()> {
-        let family: Family = serde_json::from_str(LEGACY_FAMILY)?;
-        family.validate()?;
-        assert!(family.mods[0].active());
-        assert_eq!(serde_json::to_string(&family)?, LEGACY_FAMILY);
-
-        let disabled = LEGACY_FAMILY
-            .replace("\"enabled\":true", "\"enabled\":false")
-            .replace("\"installed\":true", "\"installed\":false");
-        let disabled: Family = serde_json::from_str(&disabled)?;
-        disabled.validate()?;
-        assert!(!disabled.mods[0].active());
-        Ok(())
-    }
-
-    // @variants: both
-    #[test]
-    fn version_two_family_captures_a_new_launcher_original() -> Result<()> {
-        let root = tempfile::tempdir()?;
-        fs::create_dir(root.path().join("Content"))?;
-        fs::write(root.path().join("Content/New.swf"), b"original")?;
-        let identity = capture_original(root.path(), "Content/New.swf", &Control::recovery())?
-            .context("missing original")?;
-        assert_eq!(identity.size, 8);
-        assert_eq!(
-            identity.sha256,
-            format!("{:x}", Sha256::digest(b"original"))
-        );
-        std::os::unix::fs::symlink("New.swf", root.path().join("Content/Linked.swf"))?;
-        assert!(capture_original(root.path(), "Content/Linked.swf", &Control::recovery()).is_err());
-        Ok(())
-    }
-
     fn state(target: Target, enabled: bool) -> State {
         let recipe = Recipe {
             version: 2,
@@ -918,8 +752,6 @@ mod tests {
 
     fn change(previous: Family, desired: Family) -> Result<Change> {
         let mut change = Change {
-            launcher_edit: false,
-            adopted_legacy: BTreeSet::new(),
             location_id: 1,
             previous,
             desired,
@@ -1009,43 +841,6 @@ mod tests {
 
     // @variants: both
     #[test]
-    fn adopts_only_explicitly_reconciled_legacy_entries() -> Result<()> {
-        let disabled = LEGACY_FAMILY
-            .replace("\"enabled\":true", "\"enabled\":false")
-            .replace("\"installed\":true", "\"installed\":false");
-        let previous: Family = serde_json::from_str(&disabled)?;
-        let legacy_id = previous.mods[0].id().to_owned();
-        let mut desired = previous.clone();
-        desired.mods.clear();
-        let mut transition = change(previous, desired)?;
-        assert!(
-            transition
-                .validate("mass-effect-le1", &state(Target::Le1, false))
-                .is_err()
-        );
-        transition.adopted_legacy.insert(legacy_id);
-        transition.validate("mass-effect-le1", &state(Target::Le1, false))?;
-        Ok(())
-    }
-
-    // @variants: both
-    #[test]
-    fn version_three_zero_pending_change_defaults_reconciliation_state() -> Result<()> {
-        let disabled = LEGACY_FAMILY
-            .replace("\"enabled\":true", "\"enabled\":false")
-            .replace("\"installed\":true", "\"installed\":false");
-        let family: Family = serde_json::from_str(&disabled)?;
-        let pending = change(family.clone(), family)?;
-        let document = serde_json::to_string(&pending)?;
-        assert!(!document.contains("adopted_legacy"));
-        let restored: Change = serde_json::from_str(&document)?;
-        assert!(restored.adopted_legacy.is_empty());
-        restored.validate("mass-effect-le1", &state(Target::Le1, false))?;
-        Ok(())
-    }
-
-    // @variants: both
-    #[test]
     fn purging_parent_mod_restores_its_launcher_files() -> Result<()> {
         let temp = tempfile::tempdir()?;
         let launcher = temp.path().join("Launcher");
@@ -1066,9 +861,32 @@ mod tests {
             "Content/Intro.bik".into(),
             deployed.baseline.get("Content/Intro.bik").cloned(),
         );
-        deployed.mods.push(entry.into());
+        deployed.mods.push(entry.clone());
         deployed.installed = true;
         deployed.validate()?;
+
+        let mut shared = deployed.clone();
+        entry.id = uuid::Uuid::new_v4().to_string();
+        entry.owner = "mass-effect-le2".into();
+        shared.mods.push(entry);
+        let mut remaining = shared.clone();
+        remaining
+            .mods
+            .retain(|entry| entry.owner != "mass-effect-le1");
+        let first_purge = change(shared, remaining)?;
+        first_purge.validate("mass-effect-le1", &state(Target::Le1, false))?;
+        assert!(first_purge.operations.is_empty());
+        let mut last_removed = first_purge.desired.clone();
+        last_removed.mods.clear();
+        last_removed.installed = false;
+        let last_purge = change(first_purge.desired, last_removed)?;
+        last_purge.validate("mass-effect-le2", &state(Target::Le2, false))?;
+        assert!(
+            last_purge
+                .operations
+                .iter()
+                .any(|operation| operation.path == "Content/Intro.bik")
+        );
 
         let mut restored = deployed.clone();
         restored.mods.clear();
