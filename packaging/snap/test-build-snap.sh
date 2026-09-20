@@ -27,6 +27,9 @@ printf '%s\n' \
     '#!/bin/bash' \
     'set -euo pipefail' \
     'printf "%s\n" "$*" >> "$LXC_LOG"' \
+    'if [ "${FAIL_SOURCE_COPY:-0}" = "1" ] && [[ "$*" == *scripts/package_source.py* ]]; then' \
+    '    exit 1' \
+    'fi' \
     'case "${1:-}" in' \
     '    info|start|exec|delete|launch|config) exit 0 ;;' \
     '    file)' \
@@ -61,5 +64,13 @@ if PATH="$FAKE_BIN:$PATH" LXC_LOG="$LXC_LOG" \
     > "$TEST_ROOT/stdout" 2> "$TEST_ROOT/stderr"; then
     fail "unknown build option was accepted"
 fi
+
+if PATH="$FAKE_BIN:$PATH" LXC_LOG="$LXC_LOG" FAIL_SOURCE_COPY=1 \
+    "$PROJECT_ROOT/packaging/snap/build-snap.sh" --development \
+    > "$TEST_ROOT/stdout" 2> "$TEST_ROOT/stderr"; then
+    fail "unsafe source-copy failure was ignored"
+fi
+grep -F -- 'rerun with --rebuild' "$TEST_ROOT/stderr" >/dev/null || \
+    fail "source-copy failure omitted rebuild guidance"
 
 echo "Snap build wrapper tests passed"

@@ -68,8 +68,12 @@ else
 fi
 
 echo "==> Copying source into container-owned Snap build storage"
-lxc exec "$LXD_CONTAINER" -- python3 /workspace/scripts/package_source.py \
-    /workspace "$SNAP_BUILD_DIR"
+if ! lxc exec "$LXD_CONTAINER" -- python3 /workspace/scripts/package_source.py \
+    /workspace "$SNAP_BUILD_DIR"; then
+    echo "ERROR: Snap build storage could not be refreshed safely." >&2
+    echo "If this builder predates protected source copies, rerun with --rebuild." >&2
+    exit 1
+fi
 
 if [ "$DEVELOPMENT" = "1" ]; then
     echo "==> Selecting isolated development Snap recipe"

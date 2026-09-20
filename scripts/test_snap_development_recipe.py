@@ -55,6 +55,7 @@ class DevelopmentSnapRecipeTests(unittest.TestCase):
         )
 
     def test_recipe_retains_strict_confinement(self) -> None:
+        self.assertRegex(self.recipe, r"(?m)^summary:\s*\S.+$")
         self.assertIn("grade: devel\n", self.recipe)
         self.assertIn("confinement: strict\n", self.recipe)
         self.assertNotIn("personal-files", self.recipe)

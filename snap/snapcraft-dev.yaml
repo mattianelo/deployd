@@ -4,6 +4,7 @@ platforms:
   amd64:
 version: '3.0.0'
 title: Deployd Development
+summary: Isolated development build of the Deployd mod manager
 license: GPL-3.0-only
 contact: https://gitlab.com/mattianelo/deployd/-/issues
 issues: https://gitlab.com/mattianelo/deployd/-/issues
