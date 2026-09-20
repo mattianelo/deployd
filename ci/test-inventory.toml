@@ -1367,6 +1367,12 @@ interface_state = "not_applicable"
 
 [[variant_tests]]
 path = "src/core/game/mass_effect/generations.rs"
+name = "historical_mele_outputs_accept_declared_runtime_components"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/generations.rs"
 name = "historical_mele_outputs_reject_foreign_anchors_saves_and_unapproved_binaries"
 variant = "both"
 interface_state = "not_applicable"

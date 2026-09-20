@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Fixed MELE Deploy preparation rejecting Deployd's required AutoTOC ASI and runtime DLLs when
+  retaining deployment history.
 - MELE now records the shared launcher's original files when games are added. Launcher
   components bundled with game mods follow their parent mod's enabled state, priority,
   replacement and removal; Deploy and Purge restore originals when those parents no

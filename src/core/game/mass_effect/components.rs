@@ -58,6 +58,22 @@ pub(super) fn inventory(
     Ok(files)
 }
 
+pub(super) fn declares(
+    selections: &[Selection],
+    target: Target,
+    file: &SourceFile,
+) -> Result<bool> {
+    validate(selections, target)?;
+    Ok(selections.iter().any(|selection| {
+        selection
+            .component
+            .payloads()
+            .iter()
+            .any(|payload| payload.file() == *file)
+            || selection.component == Component::BinkProxy && file.relative == ORIGINAL
+    }))
+}
+
 impl Plan {
     pub(super) fn inspect(
         selections: &[Selection],

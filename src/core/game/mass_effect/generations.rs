@@ -26,6 +26,20 @@ impl Snapshot {
             "Historical MELE recipe targets another game"
         );
         self.removals.validate(self.recipe.target)?;
+        let binaries = super::binary::inventory(&self.recipe)?;
+        let mut approved_payloads = BTreeSet::new();
+        for file in &self.files {
+            if super::binary::executable(&file.relative)
+                && (binaries.contains(file)
+                    || super::components::declares(
+                        &self.recipe.components,
+                        self.recipe.target,
+                        file,
+                    )?)
+            {
+                approved_payloads.insert(file.relative.as_str());
+            }
+        }
         for inventory in [&self.files, &self.required] {
             ensure!(
                 inventory.len() <= 100_000,
@@ -34,7 +48,9 @@ impl Snapshot {
             let mut seen = BTreeSet::new();
             for file in inventory {
                 super::baseline::relative(&file.relative)?;
-                super::package::validate_payload_name(&file.relative)?;
+                if !approved_payloads.contains(file.relative.as_str()) {
+                    super::package::validate_payload_name(&file.relative)?;
+                }
                 Identity {
                     size: file.size,
                     sha256: file.sha256.clone(),
@@ -483,6 +499,36 @@ mod tests {
         let mut duplicate = snapshot.clone();
         duplicate.files.push(snapshot.files[0].clone());
         assert!(duplicate.validate_baseline(&baseline).is_err());
+        Ok(())
+    }
+
+    // @variants: both
+    #[test]
+    fn historical_mele_outputs_accept_declared_runtime_components() -> Result<()> {
+        let (mut snapshot, mut baseline) = fixture();
+        let original = super::super::baseline::BaselineFile {
+            relative: super::super::components::BINK.into(),
+            size: 8,
+            sha256: "c".repeat(64),
+            modified: 0,
+        };
+        baseline.files.push(original.clone());
+        baseline.game_id = super::super::Target::Le2.game_id().into();
+        snapshot.recipe.version = 2;
+        snapshot.recipe.components = super::super::components::required(super::super::Target::Le2);
+        snapshot.recipe.target = super::super::Target::Le2;
+        snapshot.files = super::super::components::inventory(
+            &snapshot.recipe.components,
+            &baseline,
+            snapshot.recipe.target,
+        )?;
+        snapshot.required = vec![SourceFile {
+            relative: original.relative,
+            size: original.size,
+            sha256: original.sha256,
+        }];
+
+        snapshot.validate_baseline(&baseline)?;
         Ok(())
     }
 }

@@ -64,7 +64,9 @@ reorder the list. Texture overrides and shader mods also follow DLC priority.
 
 Required support components download automatically on first use and are retained
 for offline reuse. Missing managed components and plugins can be repaired from the
-deployment dialog. Interrupted deployments recover after restart. Unexpected
+deployment dialog. Deployment history includes these managed runtime components,
+so profiles that need ASI/DLL support can be prepared and restored. Interrupted
+deployments recover after restart. Unexpected
 external changes are preserved and must be resolved before deploying again.
 Large texture installations can take time; follow the progress shown in Deployd.
 
