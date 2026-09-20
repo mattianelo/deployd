@@ -82,6 +82,10 @@ Purge removes the current game's launcher components while preserving components
 deployed by another Legendary Edition game. Deployd records the shared launcher's
 original files during game setup and restores them after the last parent mod using them
 is removed. Required launcher support remains active while any deployed game needs it.
+Launcher components installed by Deployd 3.0 upgrade automatically and do not need to
+be reinstalled in dependency order. If an original parent archive is temporarily
+unavailable, Deployd preserves the existing launcher state and completes the association
+automatically when the matching archive becomes available again.
 
 **Limitations:** MEM textures, headmorphs and portable MELE profile transfers are
 not supported. Launcher executable replacements and launcher installer choices are

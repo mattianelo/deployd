@@ -132,12 +132,14 @@ async fn preview_with_progress(
     } = request;
     tracker.ensure_location_ready(&game.id).await?;
     tracker.ensure_no_mele_journal(&game.id).await?;
+    super::launcher::reconcile(&tracker, &game, &data, cancelled.clone()).await?;
     let baseline = tracker
         .load_mele_baseline(&game.id)
         .await?
         .context("MELE restoration baseline is unavailable; reopen this game to finish setup")?;
     let previous = tracker.mele_deployment(&game.id).await?;
     let recipe = library::desired(&tracker, &game, language, purge).await?;
+    let preparation_progress = progress.clone();
     let mut plan = recipe::inspect_prepared_in(
         tracker.clone(),
         recipe::Destination {
@@ -150,7 +152,9 @@ async fn preview_with_progress(
         recipe.clone(),
         data,
         cancelled.clone(),
-        progress,
+        Arc::new(move |done, total| {
+            preparation_progress(done.saturating_mul(9), total.max(1).saturating_mul(10));
+        }),
     )
     .await?;
     plan.family = super::family::inspect_recipe(
@@ -202,6 +206,7 @@ async fn preview_with_progress(
         }
     })
     .await??;
+    progress(1, 1);
     Ok(Preview {
         game,
         profile,

@@ -1,4 +1,6 @@
 use std::fs;
+use std::io::Write;
+use std::path::Path;
 
 use super::*;
 use crate::models::game::GameConfig;
@@ -123,6 +125,90 @@ impl Fixture {
 }
 fn cancel() -> Arc<AtomicBool> {
     Arc::new(AtomicBool::new(false))
+}
+
+fn zip_tree(source: &Path, archive: &Path) -> Result<()> {
+    let mut zip = zip::ZipWriter::new(fs::File::create(archive)?);
+    for entry in walkdir::WalkDir::new(source)
+        .follow_links(false)
+        .min_depth(1)
+    {
+        let entry = entry?;
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let relative = entry.path().strip_prefix(source)?.to_string_lossy();
+        zip.start_file(
+            relative.replace('\\', "/"),
+            zip::write::SimpleFileOptions::default(),
+        )?;
+        zip.write_all(&fs::read(entry.path())?)?;
+    }
+    zip.finish()?;
+    Ok(())
+}
+
+fn combined_archive(
+    fixture: &Fixture,
+) -> Result<(Import, super::super::launcher::Bundled, PathBuf)> {
+    let mut bundled = fixture.bundled_launcher()?;
+    bundled.entry.owner = fixture.game.id.clone();
+    bundled.entry.approval = bundled.entry.source_sha256.clone();
+    fs::create_dir(fixture.source.join("GameMod"))?;
+    fs::rename(
+        fixture.source.join("CookedPCConsole"),
+        fixture.source.join("GameMod/CookedPCConsole"),
+    )?;
+    fs::write(
+        fixture.source.join("GameMod/moddesc.ini"),
+        "[ModManager]\ncmmver=9.1\n[ModInfo]\ngame=LE1\nmodname=Example\nmodver=1.0\nmoddev=Deployd\nmoddesc=Fixture\n[BASEGAME]\nmoddir=.\nnewfiles=CookedPCConsole/Engine.pcc\nreplacefiles=BioGame/CookedPCConsole/Engine.pcc\n",
+    )?;
+    let mut request = fixture.request(None)?;
+    let archive = fixture._temp.path().join("legacy.zip");
+    zip_tree(&fixture.source, &archive)?;
+    request.archive_hash = Some(crate::core::archive::hash_archive_file(&archive)?);
+    request.archive_path = Some(archive.to_string_lossy().into_owned());
+    Ok((request, bundled, archive))
+}
+
+async fn seed_legacy_family(
+    fixture: &Fixture,
+    bundled: &super::super::launcher::Bundled,
+) -> Result<(i64, String)> {
+    let location = fixture
+        .tracker
+        .folder_location(&fixture.game.id, crate::utils::location::FolderRole::Game)
+        .await?;
+    let mut family = fixture
+        .tracker
+        .mele_family(location.id)
+        .await?
+        .context("missing family")?;
+    family.originals.insert("Content/Intro.bik".into(), None);
+    let legacy_id = uuid::Uuid::new_v4().to_string();
+    family
+        .mods
+        .push(super::super::launcher::PersistedEntry::Legacy(
+            super::super::launcher::LegacyEntry {
+                id: legacy_id.clone(),
+                name: bundled.entry.name.clone(),
+                enabled: true,
+                source_sha256: bundled.entry.source_sha256.clone(),
+                approval: bundled.entry.approval.clone(),
+                files: bundled.entry.files.clone(),
+                sources: bundled.entry.sources.clone(),
+            },
+        ));
+    let mut family_document = serde_json::to_value(&family)?;
+    family_document["installed"] = true.into();
+    family = serde_json::from_value(family_document)?;
+    family.validate()?;
+    sqlx::query("UPDATE mele_families SET document=? WHERE location_id=?")
+        .bind(serde_json::to_string(&family)?)
+        .bind(location.id)
+        .execute(&fixture.tracker.pool)
+        .await?;
+    Ok((location.id, legacy_id))
 }
 
 // @variants: both
@@ -374,7 +460,8 @@ async fn launcher_component_follows_its_parent_mod_state() -> Result<()> {
     assert_eq!(active.launcher, vec![launcher.clone()]);
     fixture.tracker.toggle_mod(&id, false).await?;
     let disabled = desired(&fixture.tracker, &fixture.game, "INT".into(), false).await?;
-    assert!(disabled.launcher.is_empty());
+    assert_eq!(disabled.launcher, vec![launcher.clone()]);
+    assert!(!disabled.packages[0].enabled);
     fixture.tracker.toggle_mod(&id, true).await?;
     let purge = desired(&fixture.tracker, &fixture.game, "INT".into(), true).await?;
     assert!(purge.launcher.is_empty());
@@ -388,6 +475,314 @@ async fn launcher_component_follows_its_parent_mod_state() -> Result<()> {
             .context("missing replacement")?
             .launcher
             .is_none()
+    );
+    Ok(())
+}
+
+// @variants: both
+#[tokio::test]
+async fn reconciles_a_version_three_launcher_component_from_verified_archive_evidence() -> Result<()>
+{
+    let fixture = Fixture::new().await?;
+    let (request, bundled, archive) = combined_archive(&fixture)?;
+    let archive_hash = request.archive_hash.clone();
+    let imported = import_in(
+        fixture.tracker.clone(),
+        request,
+        fixture.data.clone(),
+        cancel(),
+        Arc::new(|_, _| {}),
+    )
+    .await?;
+    let mut second = fixture.request(None)?;
+    second.archive_hash = archive_hash;
+    second.archive_path = Some(archive.to_string_lossy().into_owned());
+    let second = import_in(
+        fixture.tracker.clone(),
+        second,
+        fixture.data.clone(),
+        cancel(),
+        Arc::new(|_, _| {}),
+    )
+    .await?;
+    let (location_id, legacy_id) = seed_legacy_family(&fixture, &bundled).await?;
+
+    super::super::launcher::reconcile(&fixture.tracker, &fixture.game, &fixture.data, cancel())
+        .await?;
+
+    let record = fixture
+        .tracker
+        .mele_package(&imported.mod_entry.id)
+        .await?
+        .context("missing reconciled package")?;
+    let component = record.launcher.context("missing reconciled component")?;
+    assert_eq!(component.id, imported.mod_entry.id);
+    assert_eq!(component.owner, fixture.game.id);
+    assert!(
+        fixture
+            .tracker
+            .mele_package(&second.mod_entry.id)
+            .await?
+            .context("missing second reconciled package")?
+            .launcher
+            .is_some()
+    );
+    assert!(
+        fixture
+            .data
+            .join("mele-launcher-sources")
+            .join(&bundled.entry.source_sha256)
+            .is_dir()
+    );
+    let links = fixture
+        .tracker
+        .mele_launcher_component_links(location_id)
+        .await?;
+    assert_eq!(links.len(), 2);
+    assert!(links.iter().all(|link| {
+        link.legacy_id == legacy_id
+            && [imported.mod_entry.id.as_str(), second.mod_entry.id.as_str()]
+                .contains(&link.mod_id.as_str())
+            && !link.adopted
+    }));
+    fixture
+        .tracker
+        .remove_mele_packages(
+            location_id,
+            &fixture.game.id,
+            std::slice::from_ref(&imported.mod_entry.id),
+            true,
+        )
+        .await?;
+    assert_eq!(
+        fixture
+            .tracker
+            .mele_launcher_component_links(location_id)
+            .await?
+            .len(),
+        2
+    );
+    Ok(())
+}
+
+enum ArchiveFailure {
+    Missing,
+    Replaced(&'static [u8]),
+    Linked,
+}
+
+async fn invalid_reconciliation_archive_preserves_legacy_state(
+    failure: ArchiveFailure,
+) -> Result<()> {
+    let fixture = Fixture::new().await?;
+    let (request, bundled, archive) = combined_archive(&fixture)?;
+    let imported = import_in(
+        fixture.tracker.clone(),
+        request,
+        fixture.data.clone(),
+        cancel(),
+        Arc::new(|_, _| {}),
+    )
+    .await?;
+    let (location_id, legacy_id) = seed_legacy_family(&fixture, &bundled).await?;
+    match failure {
+        ArchiveFailure::Missing => fs::remove_file(archive)?,
+        ArchiveFailure::Replaced(bytes) => fs::write(archive, bytes)?,
+        ArchiveFailure::Linked => {
+            let target = archive.with_file_name("linked-legacy.zip");
+            fs::copy(&archive, &target)?;
+            fs::remove_file(&archive)?;
+            std::os::unix::fs::symlink(target, archive)?;
+        }
+    }
+
+    super::super::launcher::reconcile(&fixture.tracker, &fixture.game, &fixture.data, cancel())
+        .await?;
+
+    assert!(
+        fixture
+            .tracker
+            .mele_package(&imported.mod_entry.id)
+            .await?
+            .context("missing package")?
+            .launcher
+            .is_none()
+    );
+    assert!(
+        fixture
+            .tracker
+            .mele_launcher_component_links(location_id)
+            .await?
+            .is_empty()
+    );
+    let family = fixture
+        .tracker
+        .mele_family(location_id)
+        .await?
+        .context("missing preserved family")?;
+    assert!(family.mods.iter().any(|entry| {
+        entry.id() == legacy_id
+            && matches!(entry, super::super::launcher::PersistedEntry::Legacy(_))
+            && entry.active()
+    }));
+    Ok(())
+}
+
+// @variants: both
+#[tokio::test]
+async fn unavailable_reconciliation_archive_preserves_legacy_state() -> Result<()> {
+    invalid_reconciliation_archive_preserves_legacy_state(ArchiveFailure::Missing).await
+}
+
+// @variants: both
+#[tokio::test]
+async fn mismatched_reconciliation_archive_preserves_legacy_state() -> Result<()> {
+    invalid_reconciliation_archive_preserves_legacy_state(ArchiveFailure::Replaced(
+        b"changed archive",
+    ))
+    .await
+}
+
+// @variants: both
+#[tokio::test]
+async fn linked_reconciliation_archive_is_not_trusted_as_evidence() -> Result<()> {
+    invalid_reconciliation_archive_preserves_legacy_state(ArchiveFailure::Linked).await
+}
+
+// @variants: both
+#[tokio::test]
+async fn removed_parent_reconciles_when_its_archive_returns() -> Result<()> {
+    let fixture = Fixture::new().await?;
+    let (request, bundled, archive) = combined_archive(&fixture)?;
+    let backup = fixture._temp.path().join("legacy-backup.zip");
+    fs::copy(&archive, &backup)?;
+    let imported = import_in(
+        fixture.tracker.clone(),
+        request,
+        fixture.data.clone(),
+        cancel(),
+        Arc::new(|_, _| {}),
+    )
+    .await?;
+    let (location_id, legacy_id) = seed_legacy_family(&fixture, &bundled).await?;
+    fs::remove_file(&archive)?;
+    fixture
+        .tracker
+        .remove_mele_packages(
+            location_id,
+            &fixture.game.id,
+            std::slice::from_ref(&imported.mod_entry.id),
+            true,
+        )
+        .await?;
+    assert_eq!(
+        fixture
+            .tracker
+            .mele_launcher_reconciliation_candidates(location_id)
+            .await?
+            .len(),
+        1
+    );
+    fs::copy(backup, archive)?;
+
+    super::super::launcher::reconcile(&fixture.tracker, &fixture.game, &fixture.data, cancel())
+        .await?;
+
+    assert!(
+        fixture
+            .tracker
+            .mele_launcher_reconciliation_candidates(location_id)
+            .await?
+            .is_empty()
+    );
+    let links = fixture
+        .tracker
+        .mele_launcher_component_links(location_id)
+        .await?;
+    assert_eq!(links.len(), 1);
+    assert_eq!(links[0].legacy_id, legacy_id);
+    assert_eq!(links[0].mod_id, imported.mod_entry.id);
+    assert!(
+        fixture
+            .tracker
+            .mele_package(&imported.mod_entry.id)
+            .await?
+            .is_none()
+    );
+    Ok(())
+}
+
+// @variants: both
+#[tokio::test]
+async fn version_three_database_previews_multiple_mods_without_install_order() -> Result<()> {
+    use super::super::application;
+
+    let fixture = Fixture::new().await?;
+    let (request, bundled, archive) = combined_archive(&fixture)?;
+    let archive_hash = request.archive_hash.clone();
+    import_in(
+        fixture.tracker.clone(),
+        request,
+        fixture.data.clone(),
+        cancel(),
+        Arc::new(|_, _| {}),
+    )
+    .await?;
+    let mut second = fixture.request(None)?;
+    second.archive_hash = archive_hash;
+    second.archive_path = Some(archive.to_string_lossy().into_owned());
+    import_in(
+        fixture.tracker.clone(),
+        second,
+        fixture.data.clone(),
+        cancel(),
+        Arc::new(|_, _| {}),
+    )
+    .await?;
+    let (location_id, _) = seed_legacy_family(&fixture, &bundled).await?;
+    let mut family = fixture
+        .tracker
+        .mele_family(location_id)
+        .await?
+        .context("missing legacy family")?;
+    let mut document = serde_json::to_value(&family)?;
+    document["installed"] = false.into();
+    family = serde_json::from_value(document)?;
+    family.validate()?;
+    sqlx::query("UPDATE mele_families SET document=? WHERE location_id=?")
+        .bind(serde_json::to_string(&family)?)
+        .bind(location_id)
+        .execute(&fixture.tracker.pool)
+        .await?;
+    let launcher = fixture._temp.path().join("family/Game/Launcher/Content");
+    fs::create_dir_all(&launcher)?;
+    fs::write(launcher.join("Intro.bik"), b"modded launcher video")?;
+    fs::remove_file(archive)?;
+
+    let preview = application::preview_in(
+        fixture.tracker.clone(),
+        application::Request {
+            game: fixture.game.clone(),
+            profile: fixture.profile.clone(),
+            language: "INT".into(),
+            purge: false,
+            repair: false,
+        },
+        fixture.data.clone(),
+        cancel(),
+    )
+    .await?;
+
+    assert_eq!(preview.recipe.packages.len(), 2);
+    assert!(
+        fixture
+            .tracker
+            .mele_family(location_id)
+            .await?
+            .context("missing preserved legacy family")?
+            .mods
+            .iter()
+            .any(|entry| matches!(entry, super::super::launcher::PersistedEntry::Legacy(_)))
     );
     Ok(())
 }

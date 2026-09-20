@@ -1,22 +1,32 @@
 [[variant_tests]]
-path = "src/app/free_fns.rs"
-name = "parses_nexus_mod_id_from_timestamped_archive_name"
+path = "src/app/dispatch.rs"
+name = "permits_setup_progress_when_game_access_is_blocked"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/app/free_fns.rs"
-name = "reports_inaccessible_plugin_data_dir"
+path = "src/app/dispatch.rs"
+name = "permits_recovery_navigation_while_blocking_save_changes"
 variant = "snap"
-interface = "home"
-interface_state = "disconnected"
+interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/app/free_fns.rs"
-name = "discovers_starfield_free_update_plugins"
+path = "src/app/dispatch.rs"
+name = "retains_download_progress_during_folder_recovery"
 variant = "both"
-interface = "home"
-interface_state = "connected"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/app/downloads/handlers.rs"
+name = "trash_failure_requires_an_explicit_fallback_choice"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/app/downloads/updates.rs"
+name = "non_appimage_packages_open_release_page"
+variant = "snap"
+interface_state = "not_applicable"
 
 [[variant_tests]]
 path = "src/app/downloads/updates.rs"
@@ -25,9 +35,21 @@ variant = "appimage"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/app/downloads/updates.rs"
-name = "non_appimage_packages_open_release_page"
-variant = "snap"
+path = "src/app/mods/properties.rs"
+name = "bethesda_rescan_preserves_saved_targets_and_routes_new_binary"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/app/mods/properties.rs"
+name = "aurora_rescan_preserves_manual_targets_and_routes_new_sibling"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/app/mods/properties.rs"
+name = "rescan_does_not_reinterpret_other_engine_anchors"
+variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
@@ -61,6 +83,20 @@ variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
+path = "src/app/session.rs"
+name = "reports_inaccessible_plugin_data_dir"
+variant = "snap"
+interface = "home"
+interface_state = "disconnected"
+
+[[variant_tests]]
+path = "src/app/session.rs"
+name = "discovers_starfield_free_update_plugins"
+variant = "both"
+interface = "home"
+interface_state = "connected"
+
+[[variant_tests]]
 path = "src/app/tools/handlers.rs"
 name = "normal_tool_exit_only_scans_for_changes"
 variant = "both"
@@ -69,6 +105,12 @@ interface_state = "not_applicable"
 [[variant_tests]]
 path = "src/app/tools/handlers.rs"
 name = "cancelled_tool_exit_does_not_scan_or_sort"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/app/tools/handlers.rs"
+name = "failed_tool_exit_does_not_scan_sort_or_deploy"
 variant = "both"
 interface_state = "not_applicable"
 
@@ -85,6 +127,72 @@ variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
+path = "src/core/deployer/application.rs"
+name = "witcher_2_restores_vanilla_after_multiple_mod_winners"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/deployer/application.rs"
+name = "preflight_reports_unprotected_mod_to_mod_replacement"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/deployer/purge.rs"
+name = "does_not_report_success_after_required_removal_fails"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/deployer/tests.rs"
+name = "preserves_existing_mele_files_and_records_when_generic_deployment_is_rejected"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/deployer/tests.rs"
+name = "registered_games_restore_vanilla_or_reject_generic_deploy"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/deployer/tests.rs"
+name = "registered_games_restore_vanilla_or_reject_generic_purge"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/deployer/tests.rs"
+name = "engine_specific_anchors_preserve_the_shared_lifecycle"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/eclipse/generations.rs"
+name = "removes_only_previous_managed_registrations_and_preserves_unrelated_xml"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/eclipse/generations.rs"
+name = "rejects_duplicate_and_malformed_registrations"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/ini.rs"
+name = "repairs_only_the_generated_bethesda_registry_value"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/ini.rs"
+name = "preserves_custom_registry_paths_and_other_engines"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
 path = "src/core/game/known_games.rs"
 name = "witcher_games_use_their_distinct_save_directories"
 variant = "both"
@@ -97,69 +205,1724 @@ variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/save_manager.rs"
-name = "distinguishes_initialized_empty_bank_from_missing_bank"
+path = "src/core/game/mass_effect/alternates/choices_tests.rs"
+name = "dependencies_follow_signed_keys_and_versioned_selection_transitions"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/save_manager.rs"
-name = "hashes_content_instead_of_trusting_size"
+path = "src/core/game/mass_effect/alternates/choices_tests.rs"
+name = "dependency_graph_rejects_unknown_keys_cycles_and_unsupported_versions"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/save_manager.rs"
-name = "rejects_symbolic_links_before_copying"
+path = "src/core/game/mass_effect/alternates/choices_tests.rs"
+name = "generated_dependency_keys_follow_unicode_names_and_groups"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/save_manager.rs"
-name = "inaccessible_wine_prefix_blocks_save_mutation_preflight"
+path = "src/core/game/mass_effect/alternates/choices_tests.rs"
+name = "generated_key_collisions_preserve_legacy_manifest_acceptance"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/alternates/choices_tests.rs"
+name = "contextual_dependencies_resolve_dlc_versions_options_and_groups"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/alternates/tests.rs"
+name = "alternate_conditions_follow_presence_and_manual_selections"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/alternates/tests.rs"
+name = "alternate_parser_preserves_quoted_text_and_rejects_unknown_semantics"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/alternates/tests.rs"
+name = "alternate_folder_overlays_regenerate_merges_and_validate_unused_sources"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/alternates/tests.rs"
+name = "alternate_overlay_can_target_dlc_declared_by_selected_alternate"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/alternates/tests.rs"
+name = "exclusive_groups_require_one_default_and_one_saved_choice"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/alternates/tests.rs"
+name = "multilists_validate_sources_exclusions_flattening_and_versions"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/alternates/tests.rs"
+name = "tlk_activation_is_only_valid_for_le1_folder_alternates"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/alternates/tests.rs"
+name = "file_size_conditions_validate_paths_and_require_known_results"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/alternates/tests.rs"
+name = "advanced_installer_metadata_validates_images_and_hidden_options"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/baseline/originals/tests.rs"
+name = "preserves_only_requested_files_as_independent_originals"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/baseline/originals/tests.rs"
+name = "refuses_changed_live_files_without_publishing_them_as_originals"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/baseline/originals/tests.rs"
+name = "preserves_damaged_backups_and_refuses_to_replace_them"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/baseline/originals/tests.rs"
+name = "repairs_missing_copies_only_from_files_matching_the_baseline"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/baseline/originals/tests.rs"
+name = "retries_verified_orphans_after_database_failure_without_replacing_originals"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/baseline/originals/tests.rs"
+name = "cancellation_during_copy_discards_the_partial_file_and_ownership"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/baseline/originals/tests.rs"
+name = "abandoned_waiters_do_not_write_when_the_mutation_lock_is_released"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/baseline/originals/tests.rs"
+name = "rejects_unknown_duplicate_and_escaping_targets_before_writing"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/baseline/originals/tests.rs"
+name = "rejects_linked_sources_and_backup_entries"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/baseline/originals/tests.rs"
+name = "rejects_lost_grants_and_storage_links_without_changing_game_files"
 variant = "snap"
-interface = "home"
-interface_state = "disconnected"
+interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/save_manager.rs"
-name = "switching_back_preserves_unsynced_profile_saves"
+path = "src/core/game/mass_effect/baseline/originals/tests.rs"
+name = "complete_progress_requires_durable_ownership"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/save_manager.rs"
-name = "interrupted_transition_reconciles_with_active_save_set"
+path = "src/core/game/mass_effect/baseline/originals/tests.rs"
+name = "rejects_other_engines_through_the_application_storage_entry_point"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/save_manager.rs"
-name = "rollback_restores_live_saves_after_failed_switch"
+path = "src/core/game/mass_effect/baseline/originals/tests.rs"
+name = "abandoned_copies_retain_folder_access_until_the_writer_finishes"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/baseline/originals/tests.rs"
+name = "refuses_source_changes_during_a_copy_without_publishing_partial_originals"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/save_manager.rs"
-name = "reports_added_modified_and_removed_save_files"
+path = "src/core/game/mass_effect/baseline/originals/tests.rs"
+name = "storage_failures_and_game_overlap_cannot_publish_original_ownership"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/save_manager.rs"
-name = "storage_cap_keeps_manual_and_newest_automatic_backup"
+path = "src/core/game/mass_effect/baseline/progress.rs"
+name = "throttles_counts_but_keeps_phase_changes_and_final_bytes"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/save_manager.rs"
-name = "rejects_path_traversal_in_save_set_identifiers"
+path = "src/core/game/mass_effect/baseline/tests.rs"
+name = "assumes_supplied_content_is_clean_and_hashes_only_the_game_root"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/tracker/profiles.rs"
-name = "cloned_profile_inherits_save_mode"
+path = "src/core/game/mass_effect/baseline/tests.rs"
+name = "content_changes_with_the_same_size_change_the_baseline_identity"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/baseline/tests.rs"
+name = "rejects_linked_files_directories_and_case_collisions"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/baseline/tests.rs"
+name = "rejects_cancellation_missing_roots_and_wrong_game_identity"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/baseline/tests.rs"
+name = "records_all_three_baselines_with_game_configuration"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/baseline/tests.rs"
+name = "launcher_baseline_failure_rolls_back_game_setup"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/baseline/tests.rs"
+name = "preserves_the_original_baseline_across_reopening_and_setup_changes"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/baseline/tests.rs"
+name = "rolls_back_games_and_baselines_on_database_failure"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/baseline/tests.rs"
+name = "failed_folder_access_does_not_publish_any_family_member"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/baseline/tests.rs"
+name = "existing_mele_games_acquire_a_baseline_once_without_reconfirmation"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/baseline/tests.rs"
+name = "rejects_damaged_persisted_baselines_instead_of_recapturing"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/baseline/tests.rs"
+name = "other_engines_keep_their_existing_setup_without_mele_scans"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/baseline/tests.rs"
+name = "refuses_capture_during_location_repair_without_waiting_on_a_nested_lease"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/baseline/tests.rs"
+name = "missing_baselines_cannot_be_recaptured_from_managed_mods"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/baseline/tests.rs"
+name = "rejects_a_linked_ancestor_of_the_selected_game_folder"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/baseline/tests.rs"
+name = "reports_each_new_game_and_saves_only_after_scanning"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/baseline/tests.rs"
+name = "reports_bytes_within_large_files_and_keeps_change_detection"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/binary/tests.rs"
+name = "rejects_wrong_architecture_executables_and_truncated_sections"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/binary/tests.rs"
+name = "root_plugins_preserve_content_anchors_and_protect_managed_runtimes"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/binary/tests.rs"
+name = "manual_plugins_require_a_target_and_approval_bound_to_the_source"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/binary/tests.rs"
+name = "validates_renamed_binary_payloads_before_installation"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/binary/tests.rs"
+name = "rejects_plugin_links_and_case_collisions"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/binary/tests.rs"
+name = "inspects_inactive_binary_choices_and_multilist_companions"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/components/test_cache.rs"
+name = "cached_test_artifacts_survive_fixture_changes_and_reject_corruption"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/components/tests.rs"
+name = "resolves_game_specific_runtime_dependencies_and_rejects_unknown_versions"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/components/tests.rs"
+name = "component_plans_preserve_game_owned_bink_and_reject_unmanaged_replacements"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/components/tests.rs"
+name = "runtime_artifacts_require_exact_sizes_and_hashes"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/components/tests.rs"
+name = "runtime_cache_reuses_verified_files_offline_and_preserves_corruption"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/components/tests.rs"
+name = "repair_permits_missing_managed_components_but_preserves_changed_files"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/components/tests.rs"
+name = "texture_components_follow_the_game_and_require_their_loader_and_runtime"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/dependency.rs"
+name = "minimum_versions_compare_numeric_components_and_require_known_provenance"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/dependency.rs"
+name = "version_syntax_is_gated_and_unknown_conditions_fail_closed"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/family/generations.rs"
+name = "version_three_zero_revision_keeps_its_canonical_identity"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/family/generations.rs"
+name = "abandoned_shared_preparation_cleans_staging_before_releasing_its_lease"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/family/generations.rs"
+name = "historical_launcher_restoration_preserves_current_game_ownership"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/family/generations.rs"
+name = "shared_restore_rejects_foreign_owners_and_changed_original_protection"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/family.rs"
+name = "version_three_zero_family_round_trips_without_losing_enabled_state"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/family.rs"
+name = "version_two_family_captures_a_new_launcher_original"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/family.rs"
+name = "retains_launcher_until_the_last_game_is_restored"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/family.rs"
+name = "adopts_existing_game_owners_without_claiming_launcher_files"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/family.rs"
+name = "rejects_foreign_ownership_and_tampered_launcher_operations"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/family.rs"
+name = "repairs_only_missing_owned_launcher_files"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/family.rs"
+name = "adopts_only_explicitly_reconciled_legacy_entries"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/family.rs"
+name = "purging_parent_mod_restores_its_launcher_files"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/family.rs"
+name = "resolves_only_the_shared_granted_launcher_and_preserves_external_files"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/generations.rs"
+name = "historical_outputs_require_the_recorded_vanilla_inputs"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/generations.rs"
+name = "historical_mele_outputs_reject_foreign_anchors_saves_and_unapproved_binaries"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/generations.rs"
+name = "historical_mele_outputs_accept_declared_runtime_components"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/corpus/merges.rs"
+name = "supervises_real_community_patch_tables_with_reference_and_removal"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/corpus/merges.rs"
+name = "supervises_real_community_patch_config_with_reference_and_removal"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/corpus/merges.rs"
+name = "supervises_real_community_patch_m3m_prepared_in_rust"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/corpus.rs"
+name = "supervises_real_community_patch_tlk_without_deploying"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/corpus.rs"
+name = "supervises_real_community_patch_plot_and_original_restoration"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/dlc_jobs.rs"
+name = "rejects_foreign_outputs_and_conflicting_outfit_slots"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/dlc_jobs.rs"
+name = "rejects_shared_email_status_and_undeclared_ui_images"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/jobs.rs"
+name = "rejects_plot_dependency_and_contribution_mismatches_before_execution"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/jobs.rs"
+name = "restricts_each_merge_type_to_its_own_targets_and_originals"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/jobs.rs"
+name = "accepts_multiple_manifests_per_dlc_but_rejects_ambiguous_mounts"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/jobs.rs"
+name = "compiler_inputs_follow_each_games_package_order"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/jobs.rs"
+name = "compiler_dependencies_reuse_targets_and_ignore_asset_only_jobs"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/m3m.rs"
+name = "preserves_order_and_expands_only_available_localizations"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/m3m.rs"
+name = "rejects_missing_dependencies_changed_plans_and_cancellation"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/m3m.rs"
+name = "cancels_preparation_while_waiting_for_folder_access"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/tests.rs"
+name = "accepts_only_verified_outputs_and_preserves_input_copies"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/tests.rs"
+name = "discards_wrong_hashes_extra_files_and_failed_publication"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/tests.rs"
+name = "surfaces_structured_helper_failures_without_publishing"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/tests.rs"
+name = "kills_and_reaps_helpers_on_cancellation_and_timeout"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/tests.rs"
+name = "retains_staging_and_location_lease_until_an_abandoned_helper_exits"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/tests.rs"
+name = "rejects_noisy_helpers_without_filling_pipe_buffers"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/tests.rs"
+name = "rejects_links_case_collisions_and_foreign_engine_anchors"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/tests.rs"
+name = "uses_explicit_granted_roots_and_rejects_unavailable_access"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/tests.rs"
+name = "rejects_cancellation_and_missing_helpers_before_staging"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/tests.rs"
+name = "cancellation_while_waiting_for_folder_access_never_starts_a_helper"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/tests.rs"
+name = "discards_outputs_if_candidate_inputs_change_during_helper_work"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/tests.rs"
+name = "terminates_helper_if_progress_delivery_panics"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/tests.rs"
+name = "refuses_changed_inputs_and_backends_inside_package_content"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/tests.rs"
+name = "accepts_tlk_packages_in_nested_cooked_folders"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/tests.rs"
+name = "surfaces_runtime_startup_errors_and_discards_outputs"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/tests.rs"
+name = "bounds_runtime_diagnostics_and_reports_signal_exits"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper/tests.rs"
+name = "confines_content_library_search_to_the_running_snap"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper.rs"
+name = "helper_discovery_stays_inside_the_running_package"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/helper.rs"
+name = "accepts_runtime_mount_aliases_but_rejects_different_executables"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/journal/tests.rs"
+name = "removal_journals_recover_after_restart_and_preserve_external_files"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/journal/tests.rs"
+name = "validates_removal_versions_scopes_and_legacy_records"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/journal/tests.rs"
+name = "committed_removal_cleanup_resumes_without_deleting_late_external_files"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/journal/tests.rs"
+name = "deploys_rebuilds_and_restores_independent_originals"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/journal/tests.rs"
+name = "rejects_stale_generations_and_changed_noop_sources"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/journal/tests.rs"
+name = "cancellation_restores_files_and_discards_new_directories"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/journal/tests.rs"
+name = "database_failure_rolls_back_files_and_profile_marker"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/journal/tests.rs"
+name = "restart_rolls_back_pending_but_retains_committed_files"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/journal/tests.rs"
+name = "external_edits_block_recovery_without_losing_journal_or_content"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/journal/tests.rs"
+name = "recovery_resumes_using_the_reauthorized_game_root"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/journal/tests.rs"
+name = "interrupted_temporary_copies_are_recovered_but_modified_ones_are_preserved"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/journal/tests.rs"
+name = "rejects_unsafe_destinations_links_and_case_collisions"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/journal/tests.rs"
+name = "unknown_journal_versions_block_recovery"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/journal/tests.rs"
+name = "rejects_other_engines_before_publication"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/journal/tests.rs"
+name = "abandoned_publication_holds_leases_until_rollback_finishes"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/journal/tests.rs"
+name = "missing_originals_cannot_be_bypassed_with_different_path_casing"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/journal/tests.rs"
+name = "damaged_rollback_copies_block_recovery_without_overwriting_game_files"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/journal/tests.rs"
+name = "deletion_failure_after_commit_retries_cleanup_without_rollback"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/journal/tests.rs"
+name = "publishes_content_but_rejects_official_dlc_missing_from_the_baseline"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/journal/tests.rs"
+name = "refuses_database_settings_that_could_lose_a_committed_journal"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/journal/tests.rs"
+name = "executable_paths_require_exact_component_claims_and_versioned_state"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/journal/tests.rs"
+name = "helper_upgrades_preserve_old_deployments_and_allow_restoration"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/launcher/tests.rs"
+name = "legacy_launcher_entries_round_trip_canonically"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/launcher/tests.rs"
+name = "launcher_layouts_preserve_scope_and_require_explicit_consent"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/launcher/tests.rs"
+name = "launcher_manifests_validate_targets_renamed_plugins_and_unknown_operations"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/launcher/tests.rs"
+name = "launcher_sources_reject_links_case_collisions_and_changed_cached_inputs"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/launcher/tests.rs"
+name = "structured_launcher_manifests_expand_declared_folders"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/launcher/tests.rs"
+name = "launcher_import_selects_its_component_from_a_game_bundle"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/launcher/tests.rs"
+name = "imports_launcher_component_from_supplied_le2_patch_bundle"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/library/tests.rs"
+name = "combined_restore_prepares_and_applies_in_one_operation"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/library/tests.rs"
+name = "alternate_only_import_tracks_selected_files"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/library/tests.rs"
+name = "transform_only_import_tracks_merged_package_outputs"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/library/tests.rs"
+name = "removal_only_mods_retain_sources_and_preview_their_effect"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/library/tests.rs"
+name = "library_import_replacement_and_profiles_retain_package_identity"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/library/tests.rs"
+name = "launcher_component_follows_its_parent_mod_state"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/library/tests.rs"
+name = "reconciles_a_version_three_launcher_component_from_verified_archive_evidence"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/library/tests.rs"
+name = "unavailable_reconciliation_archive_preserves_legacy_state"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/library/tests.rs"
+name = "mismatched_reconciliation_archive_preserves_legacy_state"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/library/tests.rs"
+name = "version_three_database_previews_multiple_mods_without_install_order"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/library/tests.rs"
+name = "library_registration_failure_and_changed_staging_publish_no_mod"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/library/tests.rs"
+name = "application_import_preview_deploy_disable_and_purge_use_the_same_recipe"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/library/tests.rs"
+name = "library_removal_is_atomic_and_preserves_sources_and_game_files"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/library/tests.rs"
+name = "profile_clone_preserves_mele_language_without_claiming_a_deployment"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/library/tests.rs"
+name = "preview_checks_resolved_texture_runtime_ownership"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/library/tests.rs"
+name = "binary_consent_survives_restart_and_requires_reapproval_for_changed_sources"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/library/tests.rs"
+name = "restored_source_bindings_are_explicit_and_legacy_records_remain_readable"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/m3cd.rs"
+name = "preserves_operation_order_and_struct_values"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/m3cd.rs"
+name = "rejects_unknown_and_malformed_config_semantics"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/m3cd.rs"
+name = "applies_dlc_config_edits_without_requiring_optional_targets"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/m3gs.rs"
+name = "rejects_truncated_overlapping_and_mislabelled_shader_payloads"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/m3gs.rs"
+name = "accepts_cross_dlc_replacements_but_rejects_ambiguous_shader_order"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/m3gs.rs"
+name = "inspection_requires_feature_level_mount_and_unchanged_sources"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/m3m.rs"
+name = "accepts_le2_and_le3_assets_and_scripts_but_rejects_wrong_games"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/m3m.rs"
+name = "materializes_verified_assets_and_rejects_changed_plans_or_sources"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/m3m.rs"
+name = "decodes_v2_unicode_manifests_and_compressed_or_raw_assets"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/m3m.rs"
+name = "retains_script_text_and_normalizes_operation_order"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/m3m.rs"
+name = "retains_all_le1_voice_and_text_variants_in_canonical_order"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/m3m.rs"
+name = "rejects_unknown_localizations_and_other_engine_anchors"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/m3to/btp/tests.rs"
+name = "accepts_precompiled_overrides_and_revalidates_the_combined_staging_tree"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/m3to/btp/tests.rs"
+name = "rejects_corrupted_pairs_foreign_targets_and_out_of_bounds_mips"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/m3to/btp/tests.rs"
+name = "rejects_hidden_and_mixed_m3to_layouts_before_installing"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/m3to/btp/tests.rs"
+name = "validates_supplied_alot_and_isl_with_bounded_reads"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/m3to/btp/tests.rs"
+name = "validates_supplied_le1_alot_and_isl_with_bounded_reads"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/m3to/btp/tests.rs"
+name = "cancellation_stops_texture_validation"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/m3to/btp/tests.rs"
+name = "texture_precedence_uses_dlc_mounts_and_rejects_ambiguous_ties"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/m3to/btp/tests.rs"
+name = "le1_mount_validation_matches_the_texture_runtimes_case_sensitive_reader"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/m3to.rs"
+name = "validates_game_paths_versions_and_unknown_texture_semantics"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/m3za.rs"
+name = "decodes_both_versions_and_preserves_text_and_option_identity"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/m3za.rs"
+name = "rejects_unsafe_names_unknown_options_and_nonzero_padding"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/m3za.rs"
+name = "rejects_corrupt_container_lengths_versions_and_trailing_bytes"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/m3za.rs"
+name = "rejects_xml_directives_unknown_fields_and_duplicate_ids"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/m3za.rs"
+name = "verifies_tlk_source_identity_and_rejects_other_games"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/manifest.rs"
+name = "accepts_only_game_matching_texture_runtime_groups_and_known_update_metadata"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/merge_dlc.rs"
+name = "reserved_merge_paths_are_case_insensitive_and_do_not_capture_other_roots"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/merge_manifest.rs"
+name = "validates_manifest_layout_version_and_source_identity"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/merge_manifest.rs"
+name = "reads_merge_defaults_and_rejects_other_games"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/merge_manifest.rs"
+name = "rejects_unsafe_assets_duplicate_fields_and_unknown_semantics"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/package.rs"
+name = "archives_cannot_claim_or_retire_the_generated_merge_dlc"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/package.rs"
+name = "manual_content_requires_an_explicit_target_and_preserves_game_paths"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/package.rs"
+name = "manual_content_rejects_foreign_anchors_binaries_and_unplanned_transformations"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/package.rs"
+name = "selects_the_requested_game_from_a_launcher_bundle"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/package.rs"
+name = "permits_inert_scripts_only_inside_canonical_custom_dlc"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/package.rs"
+name = "inspects_supplied_esa_combat_and_no_headgear_packages"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/package.rs"
+name = "validates_m3cd_mounts_for_le1_but_accepts_le2_dlc_config_patches"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/package.rs"
+name = "orders_config_deltas_and_rejects_changed_operations"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/package.rs"
+name = "maps_structured_content_and_official_dlc_without_copying_unrelated_assets"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/package.rs"
+name = "inspects_supplied_community_patch_without_modifying_it"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/package.rs"
+name = "inspects_supplied_dlc_timings_mod"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/package.rs"
+name = "inspects_supplied_le2_patch_bundle"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/package.rs"
+name = "outfit_and_email_manifests_use_their_merge_backend"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/plot.rs"
+name = "accepts_additional_plot_manifests_only_at_feature_level_92"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/plot.rs"
+name = "orders_plot_contributions_by_mount_and_rejects_ambiguous_mounts"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/plot.rs"
+name = "rejects_foreign_plot_targets_missing_mounts_and_changed_sources"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/plot.rs"
+name = "preserves_plot_order_and_repeated_definitions"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/plot.rs"
+name = "rejects_invalid_plot_ids_and_unrecognized_text"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/dlc.rs"
+name = "orders_outfits_and_email_manifests_by_their_mount_semantics"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/installation.rs"
+name = "installation_dependencies_must_exist_at_the_current_step"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/installation.rs"
+name = "tlk_resolution_ignores_foreign_roots_and_rejects_unmanaged_dlc"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/advanced.rs"
+name = "advanced_basegame_choices_merge_multilists_and_rebuild"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/advanced.rs"
+name = "advanced_localization_follows_its_dlc_and_restores_independently"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/alternates.rs"
+name = "alternates_rebuild_with_order_dependencies_and_saved_manual_choices"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/alternates.rs"
+name = "grouped_multilists_rebuild_and_exclude_files_added_by_other_options"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/alternates.rs"
+name = "dependent_options_rebuild_from_saved_user_choices"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/alternates.rs"
+name = "conditional_tlk_options_rebuild_when_preceding_dlc_changes"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/binary.rs"
+name = "binary_recipe_resolves_runtime_dependencies_and_checks_consent"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/binary.rs"
+name = "binary_mods_rebuild_repair_and_restore_originals_for_all_three_games"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/binary.rs"
+name = "root_companions_survive_content_transformations_and_failed_rebuilds"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/content.rs"
+name = "manual_official_dlc_files_use_the_same_restoration_boundary"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/content.rs"
+name = "official_dlc_edits_reorder_disable_and_restore_without_changing_sources"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/content.rs"
+name = "official_dlc_changes_roll_back_on_cancellation_and_database_failure"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/content.rs"
+name = "official_dlc_preflight_rejects_missing_baselines_and_preserves_external_edits"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/corpus.rs"
+name = "installs_complete_community_patch_recipe_and_restores_game_files"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/corpus.rs"
+name = "journals_real_community_patch_target_merges_and_restores_the_baseline"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/dlc.rs"
+name = "deploys_outfits_and_emails_rebuilds_and_removes_generated_dlc"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/dlc.rs"
+name = "generated_dlc_failures_preserve_the_previous_deployment"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/installation.rs"
+name = "le2_and_le3_scripts_rebuild_and_remove"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/installation.rs"
+name = "replays_files_then_m3m_then_tlk_before_later_package_replacements"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/installation.rs"
+name = "tlk_choices_follow_manifest_version_and_missing_targets_are_reported"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/installation.rs"
+name = "tlk_uses_highest_mounted_available_package_without_requiring_a_baseline_copy"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/installation.rs"
+name = "failure_after_m3m_does_not_publish_partial_installation"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/installation.rs"
+name = "target_merges_consume_tlk_transformed_contributions_and_rebuild_without_them"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/merges.rs"
+name = "le2_plot_deployment_uses_binary_mounts_and_restores_originals"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/merges.rs"
+name = "queued_folder_recovery_waits_through_merges_and_journal_publication"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/merges.rs"
+name = "plans_mount_order_and_generated_outputs_separately_from_file_priority"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/merges.rs"
+name = "plans_merges_from_winning_manifests_and_effective_autoload_files"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/merges.rs"
+name = "external_dependency_edits_before_or_during_merges_block_publication"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/merges.rs"
+name = "rebuilds_target_merges_and_restores_originals_when_disabled"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/merges.rs"
+name = "failed_or_cancelled_merges_preserve_the_previous_deployment"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/merges.rs"
+name = "rejects_conflicting_mounts_missing_originals_and_future_helper_versions"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/playtest.rs"
+name = "deploys_supplied_le1_playtest_mods_with_community_patch_and_restores_originals"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/playtest.rs"
+name = "deploys_supplied_saren_assets_and_config_with_a_versioned_provider"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/playtest.rs"
+name = "deploys_supplied_le2_sheploo_rebuilds_and_restores_originals"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/preparation.rs"
+name = "preparation_preserves_externally_managed_merge_dlc"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/preparation.rs"
+name = "preparation_rejects_a_baseline_with_an_external_merge_dlc"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/preparation.rs"
+name = "preparation_resolves_transformed_sizes_and_reuses_verified_outputs"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/preparation.rs"
+name = "preparation_rejects_tampered_outputs_and_changed_condition_inputs"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/preparation.rs"
+name = "cancelled_preparation_discards_staging_without_publishing"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/preparation.rs"
+name = "apply_rechecks_condition_inputs_outside_the_deployed_files"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/preparation.rs"
+name = "final_preparation_keeps_live_files_and_deployment_state_unchanged"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/removal.rs"
+name = "obsolete_dlc_is_removed_rebuilt_and_restored_after_reopening_the_database"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/removal.rs"
+name = "obsolete_dlc_follows_package_order_and_excludes_retired_merge_contributions"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/removal.rs"
+name = "obsolete_dlc_is_removed_from_staging_after_installation_transformations"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/removal.rs"
+name = "obsolete_dlc_preserves_unmanaged_files_links_and_reappearing_content"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/removal.rs"
+name = "obsolete_dlc_removal_rolls_back_cancellation_and_failed_commit"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/runtime.rs"
+name = "installs_repairs_and_removes_real_runtime_components_transactionally"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/runtime.rs"
+name = "runtime_recipes_export_versions_without_local_component_claims"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/runtime.rs"
+name = "shared_launcher_survives_other_game_restoration_and_rolls_back_failures"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/shaders.rs"
+name = "shader_recipes_rebuild_and_restore_each_game_through_the_journal"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/shaders.rs"
+name = "shader_recipes_reject_same_dlc_indices_and_preserve_failed_deployments"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/shaders.rs"
+name = "deploys_real_global_shader_caches_and_restores_all_three_games"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/textures.rs"
+name = "deploys_alot_rebuilds_rejects_broken_tfc_combinations_and_restores"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests/textures.rs"
+name = "deploys_le1_alot_rebuilds_rejects_broken_tfc_combinations_and_restores"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests.rs"
+name = "retains_independent_sources_and_rebuilds_after_imports_are_removed"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests.rs"
+name = "preview_and_deployment_follow_the_same_recipe_order"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests.rs"
+name = "dependencies_and_incompatibilities_include_enabled_packages_only"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests.rs"
+name = "versioned_dependencies_follow_enabled_sources_and_obsolete_dlc_removal"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests.rs"
+name = "altered_sources_and_forged_plans_never_publish_a_retained_package"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests.rs"
+name = "damaged_retained_sources_are_preserved_and_block_publication"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests.rs"
+name = "failed_recipe_commit_restores_files_and_previous_recipe"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests.rs"
+name = "cancellation_during_retention_does_not_publish_partial_sources"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests.rs"
+name = "links_and_writable_retained_sources_are_rejected"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests.rs"
+name = "portable_recipes_reject_unknown_semantics_and_local_paths"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests.rs"
+name = "transformation_inputs_cannot_be_deployed_as_ordinary_content"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests.rs"
+name = "le2_alternate_config_delta_updates_its_custom_dlc_ini"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests.rs"
+name = "public_entry_points_honor_cancellation_before_publishing"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests.rs"
+name = "profile_recipes_survive_switching_and_restart"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests.rs"
+name = "abandoning_recipe_deployment_retains_staging_until_rollback_finishes"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests.rs"
+name = "enabled_dependencies_can_be_supplied_by_another_recipe_package"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests.rs"
+name = "preview_rejects_colliding_directory_casing_and_future_manifest_versions"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests.rs"
+name = "rejects_hardlinked_imports_and_preserves_legacy_deployment_state"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/mass_effect/recipe/tests.rs"
+name = "disabling_a_missing_source_restores_originals_without_loading_that_source"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/metadata.rs"
+name = "resolves_the_shared_nexus_domain_without_picking_one_game"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/setup.rs"
+name = "groups_three_games_without_inferring_prefix_authorization"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/setup.rs"
+name = "rejects_incomplete_families_and_duplicate_selections"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/game/setup.rs"
+name = "rejects_game_content_outside_the_selected_root"
 variant = "both"
 interface_state = "not_applicable"
 
@@ -199,263 +1962,218 @@ interface = "wine-content"
 interface_state = "disconnected"
 
 [[variant_tests]]
-path = "src/core/installer/file_list.rs"
-name = "rescan_skips_fomod_metadata_files"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/installer/file_list.rs"
-name = "rescan_skips_empty_fomod_directory_sentinels"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/tool_launcher.rs"
-name = "umu_command_does_not_reference_shared_steam_runtime"
+path = "src/core/game/wine.rs"
+name = "appimage_umu_keeps_the_configured_game_prefix"
 variant = "appimage"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/tool_launcher.rs"
-name = "umu_command_prefers_bodyslide_x64_sibling"
-variant = "appimage"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/tool_launcher.rs"
-name = "umu_command_uses_deployd_runtime_folder"
-variant = "appimage"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/tool_launcher/snap.rs"
-name = "snap_plan_uses_only_content_runtime_paths"
-variant = "snap"
-interface = "wine-content"
-interface_state = "connected"
-
-[[variant_tests]]
-path = "src/core/tool_launcher/snap.rs"
-name = "snap_setup_uses_content_runtime_without_host_preload"
-variant = "snap"
-interface = "wine-content"
-interface_state = "connected"
-
-[[variant_tests]]
-path = "src/core/update_check.rs"
-name = "update_request_uses_injected_endpoint_and_api_key"
-variant = "both"
-interface = "network"
-interface_state = "connected"
-
-[[variant_tests]]
-path = "src/core/update_check.rs"
-name = "update_request_treats_http_failure_as_no_update"
-variant = "both"
-interface = "network"
-interface_state = "disconnected"
-
-[[variant_tests]]
-path = "src/core/tracker/profiles.rs"
-name = "resolves_last_deployed_profiles_independently_per_game"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/tracker/profiles.rs"
-name = "missing_deploy_record_keeps_current_profile_available"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/tracker/profiles.rs"
-name = "stale_deploy_record_keeps_current_profile_available"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/utils/portal.rs"
-name = "splits_document_portal_path"
-variant = "snap"
-interface = "document-portal"
-interface_state = "connected"
-
-[[variant_tests]]
-path = "src/utils/portal.rs"
-name = "ignores_non_document_portal_path"
-variant = "both"
-interface = "document-portal"
-interface_state = "disconnected"
-
-[[variant_tests]]
-path = "src/utils/paths.rs"
-name = "snap_data_dir_uses_user_common"
+path = "src/core/game/wine.rs"
+name = "snap_wine_uses_the_owned_tool_prefix"
 variant = "snap"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/utils/snap.rs"
-name = "accepts_snap_user_common_path"
-variant = "snap"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/utils/snap.rs"
-name = "rejects_hidden_home_path_under_snap"
-variant = "snap"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/utils/snap.rs"
-name = "rejects_removable_media_without_interface"
-variant = "snap"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/utils/snap.rs"
-name = "accepts_document_portal_paths"
-variant = "snap"
-interface = "document-portal"
-interface_state = "connected"
-
-[[variant_tests]]
-path = "src/utils/snap.rs"
-name = "appimage_validation_does_not_probe_the_filesystem"
-variant = "appimage"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/utils/snap.rs"
-name = "snap_validation_reports_the_failed_filesystem_operation"
-variant = "snap"
-interface = "home"
-interface_state = "disconnected"
-
-[[variant_tests]]
-path = "src/utils/snap.rs"
-name = "snap_validation_accepts_portal_grant_after_access_probe"
-variant = "snap"
-interface = "document-portal"
-interface_state = "connected"
-
-[[engine_tests]]
-path = "src/core/installer/mod.rs"
-name = "excludes_bethesda_root_file_before_root_target_recording"
-engine = "bethesda"
-case = "positive"
-
-[[engine_tests]]
-path = "src/core/installer/deployment.rs"
-name = "skips_only_bethesda_empty_directory_sentinel"
-engine = "bethesda"
-case = "negative"
-
-[[engine_tests]]
-path = "src/core/installer/paths.rs"
-name = "system_path_routed_to_game_root"
-engine = "aurora"
-case = "positive"
-
-[[engine_tests]]
-path = "src/core/installer/paths.rs"
-name = "modules_path_stays_in_data"
-engine = "aurora"
-case = "negative"
-
-[[engine_tests]]
-path = "src/core/deployer.rs"
-name = "split_deploy_target_preserves_anchor_prefixes"
-engine = "eclipse"
-case = "positive"
-
-[[engine_tests]]
-path = "src/core/installer/mod.rs"
-name = "eclipse_docs_anchor_is_not_reinterpreted"
-engine = "eclipse"
-case = "negative"
-
-[[engine_tests]]
-path = "src/core/installer/mod.rs"
-name = "redengine_routed_mods_path_is_not_reinterpreted"
-engine = "redengine"
-case = "positive"
-
-[[engine_tests]]
-path = "src/core/installer/deployment.rs"
-name = "skips_only_bethesda_empty_directory_sentinel"
-engine = "redengine"
-case = "negative"
-
-[[variant_tests]]
-path = "src/core/tracker/generations/tests.rs"
-name = "upgrade_preserves_existing_state_without_inventing_history"
+path = "src/core/generations/activation.rs"
+name = "explicit_activation_retains_complete_sources_and_purge_keeps_history"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/tracker/generations/tests.rs"
-name = "history_survives_originating_profile_deletion"
+path = "src/core/generations/divergence/tests.rs"
+name = "inspects_each_engine_anchor_without_reinterpreting_other_engines"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/tracker/generations/tests.rs"
-name = "history_and_object_identities_cannot_be_rewritten"
+path = "src/core/generations/divergence/tests.rs"
+name = "missing_parents_are_missing_files_but_redirected_parents_block_inspection"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/tracker/generations/tests.rs"
-name = "deployed_history_and_live_save_owner_are_protected_independently"
+path = "src/core/generations/journal/cache.rs"
+name = "cache_hardlinks_preserve_history_and_recover_previous_bytes"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/tracker/generations/tests.rs"
-name = "restored_draft_protects_history_until_the_draft_is_deleted"
+path = "src/core/generations/journal/cache.rs"
+name = "changed_cache_source_blocks_activation_before_live_changes"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/tracker/generations/tests.rs"
-name = "references_cannot_cross_game_boundaries"
+path = "src/core/generations/operation.rs"
+name = "location_recovery_blocks_history_before_storage_initialization"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/tracker/generations/tests.rs"
-name = "recovery_intent_is_immutable_and_commit_decisions_are_monotonic"
+path = "src/core/generations/operation.rs"
+name = "history_excludes_folder_recovery_until_it_is_closed"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/tracker/generations/tests.rs"
-name = "deletion_cannot_race_references_or_pending_preparation"
+path = "src/core/generations/operation.rs"
+name = "abandoned_retained_copy_keeps_both_leases_until_the_worker_finishes"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/tracker/generations/tests.rs"
-name = "repeated_activation_reuses_history_without_rewriting_it"
+path = "src/core/generations/operation.rs"
+name = "abandoned_activation_finishes_under_lease_before_journal_recovery"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/tracker/generations/tests.rs"
-name = "shared_history_protects_each_games_retained_payload"
+path = "src/core/generations/operation.rs"
+name = "abandoned_participant_retains_leases_for_its_nested_worker"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/tracker/generations/tests.rs"
-name = "rejects_invalid_content_identities_and_sizes"
+path = "src/core/generations/ownership/tests.rs"
+name = "imports_selected_save_owner_separately_from_legacy_deployment"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/tracker/generations/tests.rs"
-name = "replacement_statements_cannot_bypass_immutable_records"
+path = "src/core/generations/ownership/tests.rs"
+name = "existing_ownership_survives_draft_and_legacy_setting_changes"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/ownership/tests.rs"
+name = "global_ownership_does_not_adopt_stale_or_other_game_deployment_markers"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/ownership/tests.rs"
+name = "ambiguous_or_unsupported_selection_does_not_create_ownership"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/ownership/tests.rs"
+name = "failed_ownership_commit_can_be_retried_without_losing_legacy_state"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/ownership/tests.rs"
+name = "pending_recovery_blocks_initialization_without_replacing_existing_ownership"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/ownership/tests.rs"
+name = "imported_ownership_survives_restart_without_following_the_selected_draft"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/recovery.rs"
+name = "dispatcher_rolls_back_uncommitted_files_and_preserves_external_changes"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/recovery.rs"
+name = "unsupported_and_inconsistent_journals_remain_pending"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/relocation.rs"
+name = "publishes_verified_history_with_the_cache_binding"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/relocation.rs"
+name = "abort_keeps_the_original_history_binding"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/session/tests.rs"
+name = "live_plugin_import_preserves_an_unrelated_selected_draft"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/session/tests.rs"
+name = "selected_deployed_profile_import_commits_order_without_enabling_disabled_mods"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/session/tests.rs"
+name = "browsing_profiles_keeps_live_save_ownership_and_deletion_protection"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/state_tests.rs"
+name = "failed_activation_commit_preserves_previous_state_and_recovers_files"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/state_tests.rs"
+name = "unchanged_generation_records_separate_activations_and_purge_retains_history_and_saves"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/state_tests.rs"
+name = "external_changes_after_application_block_the_commit_decision"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/state_tests.rs"
+name = "incomplete_deployment_records_cannot_commit_a_generation"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/state_tests.rs"
+name = "changed_required_base_inputs_block_historical_commit"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/state_tests.rs"
+name = "deployment_records_cannot_assign_a_winner_to_another_mod"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/state_tests.rs"
+name = "changed_save_ownership_blocks_a_stale_activation"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/state_tests.rs"
+name = "consumed_base_inputs_are_validated_against_the_retained_before_state"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/state_tests.rs"
+name = "saves_and_deployed_files_recover_from_the_same_commit_decision"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/target.rs"
+name = "preserves_existing_casing_and_rejects_ambiguous_names"
 variant = "both"
 interface_state = "not_applicable"
 
@@ -522,6 +2240,12 @@ interface_state = "not_applicable"
 [[variant_tests]]
 path = "src/core/generations/tests.rs"
 name = "published_metadata_is_reproducible_and_only_commits_with_its_caller"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/tests.rs"
+name = "unchanged_sources_reuse_retained_identities"
 variant = "both"
 interface_state = "not_applicable"
 
@@ -628,128 +2352,98 @@ variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/generations/state_tests.rs"
-name = "failed_activation_commit_preserves_previous_state_and_recovers_files"
+path = "src/core/generations/tests.rs"
+name = "generated_objects_deduplicate_with_sources_and_survive_writable_materialization"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/generations/state_tests.rs"
-name = "unchanged_generation_records_separate_activations_and_purge_retains_history_and_saves"
+path = "src/core/generations/tests.rs"
+name = "cancelled_generated_content_leaves_no_published_or_staged_object"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/generations/state_tests.rs"
-name = "external_changes_after_application_block_the_commit_decision"
+path = "src/core/generations/tests.rs"
+name = "generated_content_registration_failures_remain_retryable"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/generations/state_tests.rs"
-name = "incomplete_deployment_records_cannot_commit_a_generation"
+path = "src/core/installer/file_list.rs"
+name = "rescan_skips_fomod_metadata_files"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/generations/state_tests.rs"
-name = "changed_required_base_inputs_block_historical_commit"
+path = "src/core/installer/file_list.rs"
+name = "rescan_skips_empty_fomod_directory_sentinels"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/generations/state_tests.rs"
-name = "deployment_records_cannot_assign_a_winner_to_another_mod"
+path = "src/core/installer/inspection.rs"
+name = "mele_inspection_preserves_structure_before_generic_wrapper_detection"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/generations/state_tests.rs"
-name = "changed_save_ownership_blocks_a_stale_activation"
+path = "src/core/installer/inspection.rs"
+name = "refuses_headmorphs_before_generic_archive_processing"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/generations/state_tests.rs"
-name = "consumed_base_inputs_are_validated_against_the_retained_before_state"
+path = "src/core/installer/mod.rs"
+name = "refuses_generic_mele_installation_before_publishing_cache_or_records"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/save_manager/activation.rs"
-name = "preparation_leaves_live_saves_untouched_and_rollback_is_repeatable"
+path = "src/core/location_recovery.rs"
+name = "repairs_tool_bridges_after_the_old_grant_disappears"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/location_recovery.rs"
+name = "preserves_a_user_modified_tool_bridge"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/location_recovery.rs"
+name = "resumes_partially_repaired_links_after_another_grant_change"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/location_recovery.rs"
+name = "excludes_recovery_until_an_existing_operation_releases_its_lease"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/location_recovery.rs"
+name = "repairs_only_the_expected_link_and_can_repeat"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/location_recovery.rs"
+name = "rejects_a_binding_that_escapes_through_a_link"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/nexus_identity.rs"
+name = "parses_page_id_instead_of_cdn_timestamp"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/save_manager/activation.rs"
-name = "interrupted_save_rename_restores_the_original_directory"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/save_manager/activation.rs"
-name = "committed_cleanup_resumes_after_partial_rollback_deletion"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/save_manager/activation.rs"
-name = "external_save_edits_block_both_rollback_and_committed_cleanup"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/save_manager/activation.rs"
-name = "symbolic_links_and_changes_to_staged_saves_block_application"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/generations/state_tests.rs"
-name = "saves_and_deployed_files_recover_from_the_same_commit_decision"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/save_manager/activation.rs"
-name = "missing_live_saves_return_to_absence_after_rollback"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/save_manager/activation.rs"
-name = "staging_preserves_save_timestamps_and_read_only_permissions"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/save_manager/activation/tree.rs"
-name = "rejects_files_added_while_hashing_the_save_inventory"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/save_manager/activation/tree.rs"
-name = "rejects_replacement_of_an_already_hashed_save"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/save_manager/activation/tree.rs"
-name = "cancellation_stops_save_inspection_and_copying"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/save_manager/activation.rs"
-name = "frozen_saves_remain_independent_and_reject_later_live_changes"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/save_manager/activation.rs"
-name = "cancelled_staging_preserves_live_saves_and_removes_temporary_copies"
+path = "src/core/save_manager/activation/bank.rs"
+name = "first_bank_publication_recovers_after_storage_root_changes"
 variant = "both"
 interface_state = "not_applicable"
 
@@ -790,12 +2484,6 @@ variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/save_manager/activation/bank.rs"
-name = "first_bank_publication_recovers_after_storage_root_changes"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
 path = "src/core/save_manager/activation/preparation.rs"
 name = "abandoned_preparation_cleanup_preserves_new_live_saves_after_relocation"
 variant = "both"
@@ -822,42 +2510,6 @@ interface_state = "not_applicable"
 [[variant_tests]]
 path = "src/core/save_manager/activation/preparation.rs"
 name = "a_missing_preparation_record_never_authorizes_staging_deletion"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/save_manager/activation/staging.rs"
-name = "staging_ownership_precedes_creation_and_survives_parent_relocation"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/save_manager/activation/staging.rs"
-name = "bank_adoption_rejects_another_owner_and_snapshot_intents"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/save_manager/activation/staging.rs"
-name = "changed_or_missing_staging_records_never_authorize_deletion"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/save_manager/activation.rs"
-name = "missing_live_saves_produce_an_owned_empty_snapshot"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/save_manager/activation.rs"
-name = "snapshot_cleanup_preserves_external_changes_and_ownership"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/save_manager/activation/staging.rs"
-name = "pending_bank_publication_protects_its_staging_record"
 variant = "both"
 interface_state = "not_applicable"
 
@@ -898,44 +2550,796 @@ variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/generations/recovery.rs"
-name = "dispatcher_rolls_back_uncommitted_files_and_preserves_external_changes"
+path = "src/core/save_manager/activation/staging.rs"
+name = "pending_bank_publication_protects_its_staging_record"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/generations/recovery.rs"
-name = "unsupported_and_inconsistent_journals_remain_pending"
+path = "src/core/save_manager/activation/staging.rs"
+name = "staging_ownership_precedes_creation_and_survives_parent_relocation"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/generations/operation.rs"
-name = "location_recovery_blocks_history_before_storage_initialization"
+path = "src/core/save_manager/activation/staging.rs"
+name = "bank_adoption_rejects_another_owner_and_snapshot_intents"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/generations/operation.rs"
-name = "history_excludes_folder_recovery_until_it_is_closed"
+path = "src/core/save_manager/activation/staging.rs"
+name = "changed_or_missing_staging_records_never_authorize_deletion"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/generations/operation.rs"
-name = "abandoned_retained_copy_keeps_both_leases_until_the_worker_finishes"
+path = "src/core/save_manager/activation/tree.rs"
+name = "rejects_files_added_while_hashing_the_save_inventory"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/generations/operation.rs"
-name = "abandoned_activation_finishes_under_lease_before_journal_recovery"
+path = "src/core/save_manager/activation/tree.rs"
+name = "rejects_replacement_of_an_already_hashed_save"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/generations/operation.rs"
-name = "abandoned_participant_retains_leases_for_its_nested_worker"
+path = "src/core/save_manager/activation/tree.rs"
+name = "cancellation_stops_save_inspection_and_copying"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation.rs"
+name = "missing_live_saves_produce_an_owned_empty_snapshot"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation.rs"
+name = "snapshot_cleanup_preserves_external_changes_and_ownership"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation.rs"
+name = "frozen_saves_remain_independent_and_reject_later_live_changes"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation.rs"
+name = "cancelled_staging_preserves_live_saves_and_removes_temporary_copies"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation.rs"
+name = "missing_live_saves_return_to_absence_after_rollback"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation.rs"
+name = "staging_preserves_save_timestamps_and_read_only_permissions"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation.rs"
+name = "preparation_leaves_live_saves_untouched_and_rollback_is_repeatable"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation.rs"
+name = "interrupted_save_rename_restores_the_original_directory"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation.rs"
+name = "committed_cleanup_resumes_after_partial_rollback_deletion"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation.rs"
+name = "external_save_edits_block_both_rollback_and_committed_cleanup"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/activation.rs"
+name = "symbolic_links_and_changes_to_staged_saves_block_application"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/location_recovery.rs"
+name = "rebases_the_save_journal_without_changing_its_transition"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/location_recovery.rs"
+name = "rejects_foreign_or_unexpected_save_journals"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager/location_recovery.rs"
+name = "restores_original_saves_from_a_rebased_interrupted_transition"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager.rs"
+name = "distinguishes_initialized_empty_bank_from_missing_bank"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager.rs"
+name = "hashes_content_instead_of_trusting_size"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager.rs"
+name = "rejects_symbolic_links_before_copying"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager.rs"
+name = "switching_back_preserves_unsynced_profile_saves"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager.rs"
+name = "interrupted_transition_reconciles_with_active_save_set"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager.rs"
+name = "rollback_restores_live_saves_after_failed_switch"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager.rs"
+name = "inaccessible_wine_prefix_blocks_save_mutation_preflight"
+variant = "snap"
+interface = "home"
+interface_state = "disconnected"
+
+[[variant_tests]]
+path = "src/core/save_manager.rs"
+name = "reports_added_modified_and_removed_save_files"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager.rs"
+name = "storage_cap_keeps_manual_and_newest_automatic_backup"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/save_manager.rs"
+name = "rejects_path_traversal_in_save_set_identifiers"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tool_launcher/snap.rs"
+name = "snap_plan_uses_only_owned_prefix_and_content_runtime_paths"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tool_launcher/snap.rs"
+name = "source_prefix_bridges_preserve_bethesda_and_eclipse_user_state"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tool_launcher/snap.rs"
+name = "game_drive_mapping_excludes_source_runtime_links"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tool_launcher/snap.rs"
+name = "wine_11_maps_to_verified_mono_version"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tool_launcher/snap.rs"
+name = "silent_msi_command_uses_qn"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tool_launcher/snap.rs"
+name = "mono_product_verification_requires_name_and_version"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tool_launcher/snap.rs"
+name = "existing_verified_mono_is_recorded_without_reinstalling"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tool_launcher/snap.rs"
+name = "prefix_initialization_suppresses_the_wine_mono_prompt"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tool_launcher/snap.rs"
+name = "setup_removes_host_preload"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tool_launcher/snap.rs"
+name = "prefix_readiness_requires_transaction_marker_and_wine_files"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tool_launcher/snap.rs"
+name = "setup_console_is_needed_only_until_the_prefix_is_ready"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tool_launcher/snap.rs"
+name = "mono_download_enforces_limit_and_exact_final_size"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tool_launcher/snap.rs"
+name = "mono_checksum_rejects_unverified_content"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tool_launcher/snap.rs"
+name = "mono_cache_reuses_only_verified_packages"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tool_launcher/snap.rs"
+name = "native_tool_continuation_skips_mono_but_retry_does_not"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tool_launcher/snap.rs"
+name = "cancellation_interrupts_mono_setup"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tool_launcher.rs"
+name = "umu_command_uses_deployd_runtime_folder"
+variant = "appimage"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tool_launcher.rs"
+name = "umu_command_prefers_bodyslide_x64_sibling"
+variant = "appimage"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tool_launcher.rs"
+name = "umu_command_does_not_reference_shared_steam_runtime"
+variant = "appimage"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/files.rs"
+name = "replace_mod_files_rolls_back_on_invalid_replacement"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/files.rs"
+name = "repeated_file_replacement_removes_deleted_paths_without_duplicates"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/games.rs"
+name = "persists_three_games_with_shared_root_and_separate_prefix"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/games.rs"
+name = "rolls_back_the_entire_family_when_one_game_cannot_be_saved"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/generations/tests.rs"
+name = "upgrade_preserves_existing_state_without_inventing_history"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/generations/tests.rs"
+name = "history_survives_originating_profile_deletion"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/generations/tests.rs"
+name = "source_identity_cache_does_not_protect_retained_objects"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/generations/tests.rs"
+name = "history_and_object_identities_cannot_be_rewritten"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/generations/tests.rs"
+name = "deployed_history_and_live_save_owner_are_protected_independently"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/generations/tests.rs"
+name = "restored_draft_protects_history_until_the_draft_is_deleted"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/generations/tests.rs"
+name = "references_cannot_cross_game_boundaries"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/generations/tests.rs"
+name = "recovery_intent_is_immutable_and_commit_decisions_are_monotonic"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/generations/tests.rs"
+name = "deletion_cannot_race_references_or_pending_preparation"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/generations/tests.rs"
+name = "repeated_activation_reuses_history_without_rewriting_it"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/generations/tests.rs"
+name = "shared_history_protects_each_games_retained_payload"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/generations/tests.rs"
+name = "rejects_invalid_content_identities_and_sizes"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/generations/tests.rs"
+name = "replacement_statements_cannot_bypass_immutable_records"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/locations/tests.rs"
+name = "restores_a_direct_binding_without_changing_path_spelling"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/locations/tests.rs"
+name = "retains_earlier_mappings_when_a_repair_needs_another_grant"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/locations/tests.rs"
+name = "rebases_tool_configuration_without_rewriting_sibling_paths"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/locations/tests.rs"
+name = "preserves_shared_relative_bindings_during_routine_saves"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/locations/tests.rs"
+name = "commits_all_family_paths_with_a_durable_repair_record"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/locations/tests.rs"
+name = "rolls_back_every_path_when_one_family_update_fails"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/locations/tests.rs"
+name = "retains_old_bindings_when_the_database_commit_fails"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/locations/tests.rs"
+name = "preserves_configuration_on_a_unique_game_path_conflict"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/locations/tests.rs"
+name = "rejects_stale_picker_results_and_unknown_identity_without_confirmation"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/locations/tests.rs"
+name = "keeps_unfinished_repairs_after_reopening_the_database"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/locations/tests.rs"
+name = "backfills_legacy_paths_without_inventing_host_hints"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/mods.rs"
+name = "saves_all_mod_properties_in_one_transaction"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/mods.rs"
+name = "rolls_back_mod_fields_when_file_target_update_fails"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/profiles.rs"
+name = "resolves_last_deployed_profiles_independently_per_game"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/profiles.rs"
+name = "cloned_profile_inherits_save_mode"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/profiles.rs"
+name = "missing_deploy_record_keeps_current_profile_available"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/tracker/profiles.rs"
+name = "stale_deploy_record_keeps_current_profile_available"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/update_check.rs"
+name = "update_request_uses_injected_endpoint_and_api_key"
+variant = "both"
+interface = "network"
+interface_state = "connected"
+
+[[variant_tests]]
+path = "src/core/update_check.rs"
+name = "update_request_treats_http_failure_as_no_update"
+variant = "both"
+interface = "network"
+interface_state = "disconnected"
+
+[[variant_tests]]
+path = "src/main.rs"
+name = "production_package_uses_the_public_application_id"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/main.rs"
+name = "development_package_can_use_an_isolated_application_id"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/main.rs"
+name = "empty_package_application_id_uses_the_public_default"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/ui/mele_dialog.rs"
+name = "setup_progress_identifies_the_game_and_distinguishes_finalization"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/ui/mod_properties_dialog.rs"
+name = "preserves_pending_target_when_refreshed_path_keeps_identity"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/ui/mod_properties_dialog.rs"
+name = "refresh_uses_persisted_target_for_new_file"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/ui/mod_properties_dialog.rs"
+name = "ignores_refresh_results_for_another_mod"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/ui/mod_properties_dialog.rs"
+name = "metadata_only_edits_do_not_require_deployment"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/ui/mod_properties_dialog.rs"
+name = "trims_manual_version_and_clears_blank_value"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/location.rs"
+name = "retains_the_selected_root_when_host_lookup_is_unavailable"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/location.rs"
+name = "does_not_query_the_portal_for_a_direct_location"
+variant = "appimage"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/location.rs"
+name = "rejects_bindings_outside_the_selected_root"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/location.rs"
+name = "rejects_a_different_known_host_location"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/location.rs"
+name = "rebases_components_without_matching_sibling_names"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/paths.rs"
+name = "snap_data_dir_uses_user_common"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/paths.rs"
+name = "snap_tool_prefix_is_per_game_and_durable"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/paths.rs"
+name = "snap_tool_prefix_rejects_path_traversal"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/portal.rs"
+name = "permanent_delete_removes_only_the_requested_file"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/portal.rs"
+name = "permanent_delete_accepts_an_already_missing_file"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/portal.rs"
+name = "splits_document_portal_path"
+variant = "snap"
+interface = "document-portal"
+interface_state = "connected"
+
+[[variant_tests]]
+path = "src/utils/portal.rs"
+name = "splits_application_scoped_document_portal_path"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/portal.rs"
+name = "maps_exported_folder_itself_to_document_host_path"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/portal.rs"
+name = "ignores_non_document_portal_path"
+variant = "both"
+interface = "document-portal"
+interface_state = "disconnected"
+
+[[variant_tests]]
+path = "src/utils/portal.rs"
+name = "derives_prefix_from_a_stable_parent_grant"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/portal.rs"
+name = "recovers_prefix_name_without_a_host_hint"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/snap.rs"
+name = "recognizes_only_appimage_runtime"
+variant = "appimage"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/snap.rs"
+name = "snap_runtime_overrides_appimage_marker"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/snap.rs"
+name = "snap_runtime_is_not_appimage"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/snap.rs"
+name = "source_runtime_is_not_appimage"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/snap.rs"
+name = "accepts_snap_user_common_path"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/snap.rs"
+name = "rejects_hidden_home_path_under_snap"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/snap.rs"
+name = "accepts_removable_media_when_access_probe_succeeds"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/snap.rs"
+name = "accepts_document_portal_paths"
+variant = "snap"
+interface = "document-portal"
+interface_state = "connected"
+
+[[variant_tests]]
+path = "src/utils/snap.rs"
+name = "accepts_portal_granted_downloads_folder"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/snap.rs"
+name = "rejects_ungranted_removable_downloads_folder"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/snap.rs"
+name = "does_not_suggest_connection_for_read_only_removable_media"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/snap.rs"
+name = "connection_command_uses_parallel_snap_instance_name"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/snap.rs"
+name = "connection_command_defaults_to_published_snap_name"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/snap.rs"
+name = "explains_how_to_import_an_ungranted_external_archive"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/snap.rs"
+name = "leaves_appimage_archive_errors_unchanged"
+variant = "appimage"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/snap.rs"
+name = "leaves_granted_download_archive_errors_unchanged"
+variant = "snap"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/snap.rs"
+name = "appimage_validation_does_not_probe_the_filesystem"
+variant = "appimage"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/snap.rs"
+name = "snap_validation_reports_the_failed_filesystem_operation"
+variant = "snap"
+interface = "home"
+interface_state = "disconnected"
+
+[[variant_tests]]
+path = "src/utils/snap.rs"
+name = "snap_validation_accepts_portal_grant_after_access_probe"
+variant = "snap"
+interface = "document-portal"
+interface_state = "connected"
+
+[[variant_tests]]
+path = "src/utils/snap.rs"
+name = "readable_validation_accepts_read_only_storage_without_a_write_probe"
 variant = "both"
 interface_state = "not_applicable"
 
@@ -971,7 +3375,7 @@ interface_state = "not_applicable"
 
 [[variant_tests]]
 path = "tests/generations/activation.rs"
-name = "coordinator_refuses_stale_state_and_incomplete_target_coverage"
+name = "coordinator_refuses_stale_state_and_missing_target_coverage"
 variant = "both"
 interface_state = "not_applicable"
 
@@ -1008,186 +3412,6 @@ interface_state = "not_applicable"
 [[variant_tests]]
 path = "tests/generations/activation.rs"
 name = "coordinator_rejects_another_profile_and_unavailable_engine_participants"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "tests/generations/saves.rs"
-name = "restored_save_preparation_reseeds_until_the_first_committed_activation"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "tests/generations/saves.rs"
-name = "ordinary_save_banks_switch_only_when_the_prepared_activation_commits"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "tests/generations/saves.rs"
-name = "unchanged_save_ownership_does_not_create_banks_or_backups"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "tests/generations/saves.rs"
-name = "save_preparation_rejects_stale_modes_and_uninitialized_ownership"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "tests/generations/saves.rs"
-name = "save_preparation_preserves_pending_legacy_recovery"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "tests/generations/saves.rs"
-name = "cancelled_save_preparation_preserves_live_saves_and_restored_initialization"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "tests/generations/saves.rs"
-name = "save_preparation_blocks_when_prefix_access_is_lost"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/generations/ownership/tests.rs"
-name = "imports_selected_save_owner_separately_from_legacy_deployment"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/generations/ownership/tests.rs"
-name = "existing_ownership_survives_draft_and_legacy_setting_changes"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/generations/ownership/tests.rs"
-name = "global_ownership_does_not_adopt_stale_or_other_game_deployment_markers"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/generations/ownership/tests.rs"
-name = "ambiguous_or_unsupported_selection_does_not_create_ownership"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/generations/ownership/tests.rs"
-name = "failed_ownership_commit_can_be_retried_without_losing_legacy_state"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "tests/generations/saves.rs"
-name = "legacy_ownership_initialization_preserves_live_saves_and_pending_recovery"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/generations/ownership/tests.rs"
-name = "pending_recovery_blocks_initialization_without_replacing_existing_ownership"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "tests/generations/saves.rs"
-name = "restored_drafts_cannot_invent_legacy_live_save_ownership"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/generations/ownership/tests.rs"
-name = "imported_ownership_survives_restart_without_following_the_selected_draft"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "tests/generations/divergence.rs"
-name = "reports_live_edits_and_preserves_immutable_history_and_selected_draft"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "tests/generations/divergence.rs"
-name = "detects_missing_files_and_permission_changes_without_repairing_them"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "tests/generations/divergence.rs"
-name = "failed_or_cancelled_inspection_preserves_the_last_persisted_status"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "tests/generations/divergence.rs"
-name = "unavailable_roots_and_symlinks_do_not_report_a_clean_deployment"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "tests/generations/divergence.rs"
-name = "pending_recovery_and_missing_history_block_status_publication"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "tests/generations/divergence.rs"
-name = "legacy_deployments_without_generations_are_not_reported_as_verified"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/generations/divergence/tests.rs"
-name = "inspects_each_engine_anchor_without_reinterpreting_other_engines"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/generations/divergence/tests.rs"
-name = "missing_parents_are_missing_files_but_redirected_parents_block_inspection"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/utils/snap.rs"
-name = "readable_validation_accepts_read_only_storage_without_a_write_probe"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "tests/generations/divergence.rs"
-name = "concurrent_deployed_state_changes_prevent_stale_inspection_publication"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/generations/tests.rs"
-name = "generated_objects_deduplicate_with_sources_and_survive_writable_materialization"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/generations/tests.rs"
-name = "cancelled_generated_content_leaves_no_published_or_staged_object"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/generations/tests.rs"
-name = "generated_content_registration_failures_remain_retryable"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "tests/generations/generated.rs"
-name = "retained_generated_configuration_commits_or_rolls_back_with_mod_files"
 variant = "both"
 interface_state = "not_applicable"
 
@@ -1342,8 +3566,50 @@ variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/game/mass_effect/recipe/tests/preparation.rs"
-name = "final_preparation_keeps_live_files_and_deployment_state_unchanged"
+path = "tests/generations/divergence.rs"
+name = "reports_live_edits_and_preserves_immutable_history_and_selected_draft"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/divergence.rs"
+name = "detects_missing_files_and_permission_changes_without_repairing_them"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/divergence.rs"
+name = "failed_or_cancelled_inspection_preserves_the_last_persisted_status"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/divergence.rs"
+name = "unavailable_roots_and_symlinks_do_not_report_a_clean_deployment"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/divergence.rs"
+name = "pending_recovery_and_missing_history_block_status_publication"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/divergence.rs"
+name = "legacy_deployments_without_generations_are_not_reported_as_verified"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/divergence.rs"
+name = "concurrent_deployed_state_changes_prevent_stale_inspection_publication"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/generated.rs"
+name = "retained_generated_configuration_commits_or_rolls_back_with_mod_files"
 variant = "both"
 interface_state = "not_applicable"
 
@@ -1360,127 +3626,121 @@ variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/game/mass_effect/generations.rs"
-name = "historical_outputs_require_the_recorded_vanilla_inputs"
+path = "tests/generations/saves.rs"
+name = "restored_save_preparation_reseeds_until_the_first_committed_activation"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/game/mass_effect/generations.rs"
-name = "historical_mele_outputs_accept_declared_runtime_components"
+path = "tests/generations/saves.rs"
+name = "ordinary_save_banks_switch_only_when_the_prepared_activation_commits"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/game/mass_effect/generations.rs"
-name = "historical_mele_outputs_reject_foreign_anchors_saves_and_unapproved_binaries"
+path = "tests/generations/saves.rs"
+name = "unchanged_save_ownership_does_not_create_banks_or_backups"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/game/mass_effect/family/generations.rs"
-name = "historical_launcher_restoration_preserves_current_game_ownership"
+path = "tests/generations/saves.rs"
+name = "save_preparation_rejects_stale_modes_and_uninitialized_ownership"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/game/mass_effect/family/generations.rs"
-name = "shared_restore_rejects_foreign_owners_and_changed_original_protection"
+path = "tests/generations/saves.rs"
+name = "save_preparation_preserves_pending_legacy_recovery"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/game/mass_effect/library/tests.rs"
-name = "removal_only_mods_retain_sources_and_preview_their_effect"
+path = "tests/generations/saves.rs"
+name = "cancelled_save_preparation_preserves_live_saves_and_restored_initialization"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/game/mass_effect/library/tests.rs"
-name = "library_import_replacement_and_profiles_retain_package_identity"
+path = "tests/generations/saves.rs"
+name = "save_preparation_blocks_when_prefix_access_is_lost"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/game/mass_effect/library/tests.rs"
-name = "library_registration_failure_and_changed_staging_publish_no_mod"
+path = "tests/generations/saves.rs"
+name = "legacy_ownership_initialization_preserves_live_saves_and_pending_recovery"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/game/mass_effect/library/tests.rs"
-name = "application_import_preview_deploy_disable_and_purge_use_the_same_recipe"
+path = "tests/generations/saves.rs"
+name = "restored_drafts_cannot_invent_legacy_live_save_ownership"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
-path = "src/core/game/mass_effect/library/tests.rs"
-name = "library_removal_is_atomic_and_preserves_sources_and_game_files"
-variant = "both"
-interface_state = "not_applicable"
-
-[[variant_tests]]
-path = "src/core/game/mass_effect/library/tests.rs"
-name = "profile_clone_preserves_mele_language_without_claiming_a_deployment"
+path = "src/core/game/mass_effect/family.rs"
+name = "version_three_zero_pending_change_defaults_reconciliation_state"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
 path = "src/core/game/mass_effect/library/tests.rs"
-name = "preview_checks_resolved_texture_runtime_ownership"
+name = "linked_reconciliation_archive_is_not_trusted_as_evidence"
 variant = "both"
 interface_state = "not_applicable"
 
 [[variant_tests]]
 path = "src/core/game/mass_effect/library/tests.rs"
-name = "binary_consent_survives_restart_and_requires_reapproval_for_changed_sources"
+name = "removed_parent_reconciles_when_its_archive_returns"
 variant = "both"
 interface_state = "not_applicable"
 
-[[variant_tests]]
-path = "src/core/game/mass_effect/library/tests.rs"
-name = "restored_source_bindings_are_explicit_and_legacy_records_remain_readable"
-variant = "both"
-interface_state = "not_applicable"
+[[engine_tests]]
+path = "src/core/installer/mod.rs"
+name = "excludes_bethesda_root_file_before_root_target_recording"
+engine = "bethesda"
+case = "positive"
 
-[[variant_tests]]
-path = "tests/generations/shared.rs"
-name = "shared_history_retains_every_game_and_restores_without_original_sources"
-variant = "both"
-interface_state = "not_applicable"
+[[engine_tests]]
+path = "src/core/installer/deployment.rs"
+name = "skips_only_bethesda_empty_directory_sentinel"
+engine = "bethesda"
+case = "negative"
 
-[[variant_tests]]
-path = "tests/generations/shared.rs"
-name = "shared_recovery_preserves_external_edits_on_both_sides_of_commit"
-variant = "both"
-interface_state = "not_applicable"
+[[engine_tests]]
+path = "src/core/installer/paths.rs"
+name = "system_path_routed_to_game_root"
+engine = "aurora"
+case = "positive"
 
-[[variant_tests]]
-path = "tests/generations/shared.rs"
-name = "shared_payload_activation_restores_files_and_recovers_failed_commit"
-variant = "both"
-interface_state = "not_applicable"
+[[engine_tests]]
+path = "src/core/installer/paths.rs"
+name = "modules_path_stays_in_data"
+engine = "aurora"
+case = "negative"
 
-[[variant_tests]]
-path = "tests/generations/shared.rs"
-name = "game_generations_protect_shared_dependencies_and_block_mismatched_restoration"
-variant = "both"
-interface_state = "not_applicable"
+[[engine_tests]]
+path = "src/core/deployer/filesystem.rs"
+name = "split_deploy_target_preserves_anchor_prefixes"
+engine = "eclipse"
+case = "positive"
 
-[[variant_tests]]
-path = "tests/generations/shared.rs"
-name = "shared_recovery_uses_reauthorized_bindings_and_rejects_unrelated_roots"
-variant = "both"
-interface_state = "not_applicable"
+[[engine_tests]]
+path = "src/core/installer/mod.rs"
+name = "eclipse_docs_anchor_is_not_reinterpreted"
+engine = "eclipse"
+case = "negative"
 
-[[variant_tests]]
-path = "tests/generations/shared.rs"
-name = "shared_apply_blocks_missing_affected_caches_and_corrupt_retained_objects"
-variant = "both"
-interface_state = "not_applicable"
+[[engine_tests]]
+path = "src/core/installer/mod.rs"
+name = "redengine_routed_mods_path_is_not_reinterpreted"
+engine = "redengine"
+case = "positive"
 
-[[variant_tests]]
-path = "src/core/game/mass_effect/family/generations.rs"
-name = "abandoned_shared_preparation_cleans_staging_before_releasing_its_lease"
-variant = "both"
-interface_state = "not_applicable"
+[[engine_tests]]
+path = "src/core/installer/deployment.rs"
+name = "skips_only_bethesda_empty_directory_sentinel"
+engine = "redengine"
+case = "negative"

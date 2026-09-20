@@ -12,6 +12,7 @@ mod mele_baselines;
 mod mele_families;
 mod mele_journals;
 mod mele_packages;
+pub(crate) use mele_packages::LauncherComponentAssociation;
 pub mod migrations;
 pub mod mods;
 pub mod order_snapshots;

@@ -10,7 +10,7 @@ use crate::core::generations::content::Identity as Content;
 #[serde(deny_unknown_fields)]
 pub(crate) struct Revision {
     pub(crate) location: i64,
-    mods: Vec<super::super::launcher::Entry>,
+    mods: Vec<super::super::launcher::PersistedEntry>,
     original: Identity,
     originals: BTreeMap<String, Option<Identity>>,
     installed: bool,
@@ -32,7 +32,7 @@ impl Revision {
                     family
                         .mods
                         .iter()
-                        .flat_map(|entry| &entry.files)
+                        .flat_map(super::super::launcher::PersistedEntry::files)
                         .any(|file| &file.destination == *path)
                 })
                 .map(|(path, identity)| (path.clone(), identity.clone()))
@@ -61,7 +61,7 @@ impl Revision {
             self.original != proxy(),
             "Historical launcher baseline contains a proxy"
         );
-        super::super::launcher::validate_entries(&self.mods)?;
+        super::super::launcher::validate_persisted_entries(&self.mods)?;
         for (path, identity) in &self.originals {
             super::super::launcher::destination(path)?;
             if let Some(identity) = identity {
@@ -71,7 +71,7 @@ impl Revision {
         ensure!(
             self.mods
                 .iter()
-                .flat_map(|entry| &entry.files)
+                .flat_map(super::super::launcher::PersistedEntry::files)
                 .all(|file| self.originals.contains_key(&file.destination)),
             "Historical launcher source has no original identity"
         );
@@ -125,9 +125,9 @@ impl Revision {
             }
         }
         for entry in &self.mods {
-            for source in &entry.sources {
+            for source in entry.sources() {
                 add(
-                    format!("source/{}/{}", entry.source_sha256, source.relative),
+                    format!("source/{}/{}", entry.source_sha256(), source.relative),
                     &Identity {
                         size: source.size,
                         sha256: source.sha256.clone(),
@@ -355,12 +355,12 @@ impl Change {
 
 fn sources(
     data: &Path,
-    entries: &[super::super::launcher::Entry],
+    entries: &[super::super::launcher::PersistedEntry],
     control: &Control,
 ) -> Result<()> {
     for entry in entries {
-        super::super::launcher::verify_source(
-            &super::super::launcher::source_root(data, &entry.source_sha256),
+        super::super::launcher::verify_persisted_source(
+            &super::super::launcher::source_root(data, entry.source_sha256()),
             entry,
             control,
         )?;
@@ -403,6 +403,7 @@ pub(crate) async fn prepare(
             let root = root(&tracker, &game, revision.location).await?;
             let mut change = Change {
                 launcher_edit: true,
+                adopted_legacy: BTreeSet::new(),
                 location_id: revision.location,
                 previous,
                 desired,
@@ -481,6 +482,21 @@ impl Change {
 mod tests {
     use super::*;
 
+    const LEGACY_REVISION: &str = r#"{"location":1,"mods":[{"id":"00000000-0000-0000-0000-000000000001","name":"Legacy","enabled":false,"source_sha256":"27e29c93b9d89118dd343ac56328f306194ad16ccc3e3c6186ba31aba8db22ac","approval":"27e29c93b9d89118dd343ac56328f306194ad16ccc3e3c6186ba31aba8db22ac","files":[{"source":"Content/Test.swf","destination":"Content/Test.swf","identity":{"size":5,"sha256":"8a6ba32c9bed6ce703f999f9af6ec23686d44e144e4da572d94c8daca4a9cbab"}}],"sources":[{"relative":"Content/Test.swf","size":5,"sha256":"8a6ba32c9bed6ce703f999f9af6ec23686d44e144e4da572d94c8daca4a9cbab"}]}],"original":{"size":1,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"originals":{"Content/Test.swf":null},"installed":false,"runtime":null}"#;
+
+    // @variants: both
+    #[test]
+    fn version_three_zero_revision_keeps_its_canonical_identity() -> Result<()> {
+        let revision: Revision = serde_json::from_str(LEGACY_REVISION)?;
+        revision.validate()?;
+        assert_eq!(serde_json::to_string(&revision)?, LEGACY_REVISION);
+        assert_eq!(
+            revision.id()?,
+            format!("{:x}", Sha256::digest(LEGACY_REVISION.as_bytes()))
+        );
+        Ok(())
+    }
+
     fn family(owners: &[&str], installed: bool) -> Family {
         Family {
             baseline: BTreeMap::new(),
@@ -507,6 +523,7 @@ mod tests {
         let change = Change {
             location_id: 1,
             launcher_edit: true,
+            adopted_legacy: BTreeSet::new(),
             previous: family.clone(),
             desired: family.clone(),
             missing: Vec::new(),
@@ -560,6 +577,7 @@ mod tests {
         let mut change = Change {
             location_id: 1,
             launcher_edit: true,
+            adopted_legacy: BTreeSet::new(),
             previous: previous.clone(),
             desired: previous,
             missing: Vec::new(),
