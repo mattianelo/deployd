@@ -196,6 +196,10 @@ provides it and suggests it in the folder picker; you must select the original f
 authorize access. Older grants may require manual navigation and confirmation. A desktop may
 ignore the suggested starting folder.
 
+Wine-prefix recovery asks for the folder containing the original prefix. This keeps access anchored
+to the containing folder when Proton or another launcher deletes and recreates the prefix itself.
+Deployd reconnects only the configured prefix inside the folder you authorize.
+
 Recovery updates games sharing that selected folder together and repairs recognized tool links and
 interrupted save references. Repairs resume after restart. Modified links are preserved and reported;
 affected game operations stay blocked until recovery finishes. Changing to a different installation

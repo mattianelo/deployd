@@ -15,14 +15,17 @@ use super::types::WorkKind;
 #[derive(Debug)]
 pub(crate) enum RecoveryMsg {
     Start(String, FolderRole),
-    Pick(LocationRecord),
+    Pick(LocationRecord, FolderRole),
     Confirm(LocationRecord, SelectedLocation),
     Cancel,
 }
 
 #[derive(Debug)]
 pub(crate) enum RecoveryCmd {
-    Prepared(Result<LocationRecord, String>),
+    Prepared {
+        role: FolderRole,
+        record: Result<LocationRecord, String>,
+    },
     Selected(LocationRecord, Result<Option<SelectedLocation>, String>),
     Finished {
         games: Vec<PersistedGame>,
@@ -117,30 +120,43 @@ impl App {
                                     if result.is_ok() {
                                         return finished(&tracker, result).await;
                                     }
-                                    return AppCmdMsg::Recovery(RecoveryCmd::Prepared(Ok(
-                                        record.clone()
-                                    )));
+                                    return AppCmdMsg::Recovery(RecoveryCmd::Prepared {
+                                        role,
+                                        record: Ok(record.clone()),
+                                    });
                                 }
                             }
                             Err(error) => return finished(&tracker, Err(error)).await,
                         }
                     }
-                    AppCmdMsg::Recovery(RecoveryCmd::Prepared(
-                        record.map_err(|error| error.to_string()),
-                    ))
+                    AppCmdMsg::Recovery(RecoveryCmd::Prepared {
+                        role,
+                        record: record.map_err(|error| error.to_string()),
+                    })
                 });
             }
-            RecoveryMsg::Pick(record) => {
+            RecoveryMsg::Pick(record, role) => {
                 if self.shell.location_recovery.is_none() {
                     return;
                 }
                 sender.oneshot_command(async move {
-                    let result = crate::utils::portal::select_location(
-                        "Restore folder access — select the original folder",
-                        record.selection.host_hint.as_deref(),
-                        crate::utils::snap::SelectedFolderKind::GameFolder,
-                    )
-                    .await;
+                    let result = match role {
+                        FolderRole::Game => {
+                            crate::utils::portal::select_location(
+                                "Restore game access — select the original folder",
+                                record.selection.host_hint.as_deref(),
+                                crate::utils::snap::SelectedFolderKind::GameFolder,
+                            )
+                            .await
+                        }
+                        FolderRole::Prefix => {
+                            crate::utils::portal::select_prefix_recovery_location(
+                                "Restore prefix access — select the folder containing the prefix",
+                                &record.selection,
+                            )
+                            .await
+                        }
+                    };
                     AppCmdMsg::Recovery(RecoveryCmd::Selected(
                         record,
                         result.map_err(|error| error.to_string()),
@@ -181,7 +197,10 @@ impl App {
         root: &adw::ApplicationWindow,
     ) {
         match msg {
-            RecoveryCmd::Prepared(Ok(record)) => {
+            RecoveryCmd::Prepared {
+                role,
+                record: Ok(record),
+            } => {
                 let titles = record
                     .bindings
                     .iter()
@@ -193,8 +212,14 @@ impl App {
                     .host_hint
                     .as_deref()
                     .unwrap_or(&record.selection.root);
+                let instruction = match role {
+                    FolderRole::Game => "Select the original game folder",
+                    FolderRole::Prefix => {
+                        "Select the folder containing the original Wine prefix. Deployd will reconnect the prefix inside it so replacing the prefix does not invalidate access again"
+                    }
+                };
                 let body = format!(
-                    "Select the original folder to restore access for:\n\n{titles}\n\nPrevious location: {}\n\nClose the game before continuing. This reconnects existing files; it does not move an installation.",
+                    "{instruction} to restore access for:\n\n{titles}\n\nPrevious location: {}\n\nClose the game before continuing. This reconnects existing files; it does not move an installation.",
                     hint.display()
                 );
                 let dialog = adw::AlertDialog::builder()
@@ -202,13 +227,17 @@ impl App {
                     .body(&body)
                     .build();
                 dialog.add_response("cancel", "Cancel");
-                dialog.add_response("select", "Select original folder");
+                let select_label = match role {
+                    FolderRole::Game => "Select original folder",
+                    FolderRole::Prefix => "Select containing folder",
+                };
+                dialog.add_response("select", select_label);
                 dialog.set_close_response("cancel");
                 dialog.set_response_appearance("select", adw::ResponseAppearance::Suggested);
                 let input = sender.input_sender().clone();
                 dialog.connect_response(None, move |_, response| {
                     let message = if response == "select" {
-                        RecoveryMsg::Pick(record.clone())
+                        RecoveryMsg::Pick(record.clone(), role)
                     } else {
                         RecoveryMsg::Cancel
                     };
@@ -216,7 +245,10 @@ impl App {
                 });
                 dialog.present(Some(root));
             }
-            RecoveryCmd::Prepared(Err(error)) | RecoveryCmd::Selected(_, Err(error)) => {
+            RecoveryCmd::Prepared {
+                record: Err(error), ..
+            }
+            | RecoveryCmd::Selected(_, Err(error)) => {
                 self.push_notification(&format!("Could not restore folder access: {error}"));
                 self.handle_recovery(RecoveryMsg::Cancel, sender, root);
             }

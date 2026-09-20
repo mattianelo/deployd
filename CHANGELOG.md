@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Made Snap Wine-prefix recovery survive Proton and launcher prefix refreshes by reconnecting the
+  configured prefix through its user-authorized containing folder.
 - Replaced the Deploy confirmation's internal target dump with compact added, replaced and removed
   file counts.
 - Reduced repeat Deploy preparation time by reusing retained content identities for mod files that

@@ -1,6 +1,7 @@
+use std::ffi::{OsStr, OsString};
 use std::path::{Component, Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use ashpd::documents::{DocumentID, Documents};
 use gio::prelude::*;
 
@@ -39,7 +40,40 @@ pub(crate) async fn select_location(
     initial: Option<&Path>,
     kind: crate::utils::snap::SelectedFolderKind,
 ) -> Result<Option<crate::utils::location::SelectedLocation>> {
-    let path = match select_folder_at(title, initial).await {
+    let Some(path) = select_folder_path(title, initial).await? else {
+        return Ok(None);
+    };
+    let location = crate::utils::location::SelectedLocation::capture(path).await;
+    validate_location(&location, kind).await?;
+    Ok(Some(location))
+}
+
+pub(crate) async fn select_prefix_recovery_location(
+    title: &str,
+    previous: &crate::utils::location::SelectedLocation,
+) -> Result<Option<crate::utils::location::SelectedLocation>> {
+    let (initial, child) = prefix_recovery_parent(previous)?;
+    let Some(path) = select_folder_path(title, initial.as_deref()).await? else {
+        return Ok(None);
+    };
+    let parent = crate::utils::location::SelectedLocation::capture(path).await;
+    let location = append_selected_child(parent, &child);
+    validate_location(
+        &location,
+        crate::utils::snap::SelectedFolderKind::WinePrefix,
+    )
+    .await
+    .with_context(|| {
+        format!(
+            "The selected folder does not contain the saved Wine prefix '{}'",
+            child.to_string_lossy()
+        )
+    })?;
+    Ok(Some(location))
+}
+
+async fn select_folder_path(title: &str, initial: Option<&Path>) -> Result<Option<PathBuf>> {
+    match select_folder_at(title, initial).await {
         Err(error)
             if matches!(
                 error.downcast_ref::<ashpd::Error>(),
@@ -48,21 +82,49 @@ pub(crate) async fn select_location(
                 ))
             ) =>
         {
-            return Ok(None);
+            Ok(None)
         }
-        result => match result? {
-            Some(path) => path,
-            None => return Ok(None),
-        },
-    };
-    let location = crate::utils::location::SelectedLocation::capture(path).await;
+        result => result,
+    }
+}
+
+async fn validate_location(
+    location: &crate::utils::location::SelectedLocation,
+    kind: crate::utils::snap::SelectedFolderKind,
+) -> Result<()> {
     let root = location.root.clone();
     tokio::task::spawn_blocking(move || {
         crate::utils::snap::validate_selected_folder(&root, kind)
             .map_err(|error| anyhow::anyhow!(error.to_string()))
     })
     .await??;
-    Ok(Some(location))
+    Ok(())
+}
+
+fn prefix_recovery_parent(
+    previous: &crate::utils::location::SelectedLocation,
+) -> Result<(Option<PathBuf>, OsString)> {
+    let known_path = previous.host_hint.as_deref().unwrap_or(&previous.root);
+    let child = known_path
+        .file_name()
+        .context("The saved Wine prefix has no folder name")?
+        .to_owned();
+    let initial = previous
+        .host_hint
+        .as_deref()
+        .and_then(Path::parent)
+        .map(Path::to_path_buf);
+    Ok((initial, child))
+}
+
+fn append_selected_child(
+    parent: crate::utils::location::SelectedLocation,
+    child: &OsStr,
+) -> crate::utils::location::SelectedLocation {
+    crate::utils::location::SelectedLocation {
+        root: parent.root.join(child),
+        host_hint: parent.host_hint.map(|path| path.join(child)),
+    }
 }
 
 pub(crate) fn is_document_path(path: &Path) -> bool {
@@ -267,5 +329,51 @@ mod tests {
         let path = Path::new("/home/alex/Mods/fallout4/Hydra.7z");
 
         assert!(split_document_portal_path(path).is_none());
+    }
+
+    // A Proton refresh replaces pfx, so recovery grants its stable parent and retains pfx as a
+    // child of that grant.
+    // @variants: snap
+    #[test]
+    fn derives_prefix_from_a_stable_parent_grant() {
+        let previous = crate::utils::location::SelectedLocation {
+            root: "/run/user/1000/doc/old/pfx".into(),
+            host_hint: Some("/home/alex/compatdata/1328670/pfx".into()),
+        };
+
+        let (initial, child) = prefix_recovery_parent(&previous).expect("derive parent");
+        assert_eq!(initial, Some("/home/alex/compatdata/1328670".into()));
+        assert_eq!(child, "pfx");
+
+        let selected = append_selected_child(
+            crate::utils::location::SelectedLocation {
+                root: "/run/user/1000/doc/new/1328670".into(),
+                host_hint: Some("/home/alex/compatdata/1328670".into()),
+            },
+            &child,
+        );
+        assert_eq!(
+            selected.root,
+            Path::new("/run/user/1000/doc/new/1328670/pfx")
+        );
+        assert_eq!(
+            selected.host_hint.as_deref(),
+            Some(Path::new("/home/alex/compatdata/1328670/pfx"))
+        );
+    }
+
+    // Older records can lack a host hint. Recovery still knows which child to retain, but leaves
+    // the picker to choose its own starting directory.
+    // @variants: snap
+    #[test]
+    fn recovers_prefix_name_without_a_host_hint() {
+        let previous = crate::utils::location::SelectedLocation {
+            root: "/run/user/1000/doc/old/custom-prefix".into(),
+            host_hint: None,
+        };
+
+        let (initial, child) = prefix_recovery_parent(&previous).expect("derive child");
+        assert_eq!(initial, None);
+        assert_eq!(child, "custom-prefix");
     }
 }
