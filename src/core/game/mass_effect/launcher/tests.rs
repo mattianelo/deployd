@@ -12,6 +12,8 @@ fn launcher_layouts_preserve_scope_and_require_explicit_consent() -> Result<()> 
         b"video",
     )?;
     let mut entry = parse(source.path(), "Intro")?;
+    entry.id = uuid::Uuid::new_v4().to_string();
+    entry.owner = "mass-effect-le1".into();
     assert_eq!(entry.files[0].destination, "Content/Intro.bik");
     assert!(validate_entries(&[entry.clone()]).is_err());
     entry.approval = entry.source_sha256.clone();

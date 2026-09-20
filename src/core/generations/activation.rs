@@ -16,7 +16,7 @@ use super::manifest::{Manifest, Output};
 use super::target::Target;
 use super::{
     bethesda, coordinator, eclipse, journal, manifest, mele, ownership, prepared, recovery, saves,
-    shared, state,
+    state,
 };
 
 pub(crate) struct Prepared {
@@ -28,97 +28,6 @@ pub(crate) struct Prepared {
     files: Vec<ModFile>,
     saves: SaveSetId,
     pub(crate) differences: Vec<String>,
-}
-
-pub(crate) struct PreparedShared {
-    history: History,
-    game: Game,
-    journal: Journal,
-    pub(crate) differences: Vec<String>,
-}
-
-impl std::fmt::Debug for PreparedShared {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("PreparedSharedDeployment")
-            .field("game", &self.game.id)
-            .field("differences", &self.differences)
-            .finish_non_exhaustive()
-    }
-}
-
-impl PreparedShared {
-    pub(crate) async fn apply(self, control: Control) -> Result<()> {
-        shared::apply(&self.history, &self.game, &self.journal, control).await
-    }
-}
-
-pub(crate) async fn prepare_shared(
-    tracker: &Tracker,
-    game: &Game,
-    cache: &Path,
-    entries: Vec<crate::core::game::mass_effect::launcher::Entry>,
-    control: Control,
-) -> Result<PreparedShared> {
-    ensure!(
-        game.engine == GameEngine::MassEffect,
-        "Shared launcher preparation belongs to another engine"
-    );
-    let history = History::open(tracker, &game.id, cache, true).await?;
-    recovery::recover(&history, game).await?;
-    let journal = shared::prepare(
-        &history,
-        game,
-        crate::core::game::mass_effect::family::generations::Action::Mods(entries),
-        crate::utils::paths::deployd_data_dir()?,
-        control,
-    )
-    .await?;
-    let differences = journal
-        .changes
-        .iter()
-        .filter(|change| change.before != change.after)
-        .map(|change| format!("Change: {:?}", change.target))
-        .collect();
-    Ok(PreparedShared {
-        history,
-        game: game.clone(),
-        journal,
-        differences,
-    })
-}
-
-pub(crate) async fn prepare_shared_restore(
-    tracker: &Tracker,
-    game: &Game,
-    cache: &Path,
-    revision: &str,
-    control: Control,
-) -> Result<PreparedShared> {
-    ensure!(
-        game.engine == GameEngine::MassEffect,
-        "Shared launcher restoration belongs to another engine"
-    );
-    let history = History::open(tracker, &game.id, cache, false).await?;
-    recovery::recover(&history, game).await?;
-    let family = tracker
-        .folder_location(&game.id, crate::utils::location::FolderRole::Game)
-        .await?
-        .id
-        .to_string();
-    let journal = shared::restore(&history, game, &family, revision, control).await?;
-    let differences = journal
-        .changes
-        .iter()
-        .filter(|change| change.before != change.after)
-        .map(|change| format!("Change: {:?}", change.target))
-        .collect();
-    Ok(PreparedShared {
-        history,
-        game: game.clone(),
-        journal,
-        differences,
-    })
 }
 
 impl std::fmt::Debug for Prepared {

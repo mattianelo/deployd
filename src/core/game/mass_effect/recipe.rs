@@ -60,6 +60,8 @@ pub(crate) struct Recipe {
     pub(crate) helper_version: Option<String>,
     pub(crate) language: String,
     pub(crate) packages: Vec<Package>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) launcher: Vec<super::launcher::Entry>,
 }
 
 impl Recipe {
@@ -69,7 +71,7 @@ impl Recipe {
     }
     pub(crate) fn validate(&self) -> Result<()> {
         ensure!(
-            (1..=3).contains(&self.version)
+            (1..=4).contains(&self.version)
                 && self.backend_version == 1
                 && self.packages.len() <= 1024,
             "Unsupported MELE recipe or native backend version"
@@ -122,6 +124,18 @@ impl Recipe {
                 "Invalid MELE recipe version or options"
             );
         }
+        ensure!(
+            self.launcher.is_empty() || self.version >= 4,
+            "Launcher components require MELE recipe version 4"
+        );
+        super::launcher::validate_entries(&self.launcher)?;
+        ensure!(
+            self.launcher.iter().all(|entry| {
+                entry.owner == self.target.game_id()
+                    && self.packages.iter().any(|package| package.id == entry.id)
+            }),
+            "Launcher components must belong to a package in the same game recipe"
+        );
         Ok(())
     }
 }

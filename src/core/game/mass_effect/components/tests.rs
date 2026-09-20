@@ -121,6 +121,7 @@ fn repair_permits_missing_managed_components_but_preserves_changed_files() -> Re
         helper_version: None,
         language: "INT".into(),
         packages: Vec::new(),
+        launcher: Vec::new(),
         components: selected,
     };
     let previous = State {

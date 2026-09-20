@@ -63,7 +63,7 @@ impl History {
                 .await?;
         ensure!(
             pending_version.is_none_or(|(version, kind)| version == 1
-                || (matches!(version, 2..=5)
+                || (matches!(version, 2..=6)
                     && matches!(kind.as_str(), "deploy" | "purge" | "shared"))),
             "A newer recovery journal requires a compatible Deployd version; the pending operation was preserved"
         );

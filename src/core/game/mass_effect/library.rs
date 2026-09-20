@@ -29,6 +29,8 @@ pub(crate) struct Record {
     pub(crate) writable_cache: bool,
     pub(crate) target: Target,
     pub(crate) package: Package,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) launcher: Option<super::launcher::Entry>,
 }
 
 impl Record {
@@ -39,12 +41,20 @@ impl Record {
 
     pub(crate) fn validate(&self) -> Result<()> {
         ensure!(
-            (1..=3).contains(&self.version)
+            (1..=4).contains(&self.version)
                 && (!self.writable_cache || self.version >= 3)
-                && (self.package.binary_approval.is_none() || self.version >= 2),
+                && (self.package.binary_approval.is_none() || self.version >= 2)
+                && (self.launcher.is_none() || self.version >= 4),
             "Unsupported MELE library record version"
         );
-        recipe(self.target, vec![self.package.clone()], "INT".into(), false).validate()
+        recipe(
+            self.target,
+            vec![self.package.clone()],
+            self.launcher.clone().into_iter().collect(),
+            "INT".into(),
+            false,
+        )
+        .validate()
     }
 }
 
@@ -70,6 +80,7 @@ pub(crate) struct Import {
     pub(crate) archive_hash: Option<String>,
     pub(crate) archive_path: Option<String>,
     pub(crate) replace: Option<String>,
+    pub(crate) launcher: Option<super::launcher::Bundled>,
 }
 
 type Progress = Arc<dyn Fn(usize, usize) + Send + Sync>;
@@ -137,6 +148,7 @@ async fn import_in(
     };
     tracker.ensure_location_ready(&request.game.id).await?;
     tracker.ensure_no_mele_journal(&request.game.id).await?;
+    let import_root = request.source.clone();
     let stored = recipe::sources::retain_in(
         request.source,
         request.plan.clone(),
@@ -168,6 +180,23 @@ async fn import_in(
     }
     package.options = request.options;
     package.binary_approval = binary_approval;
+    let launcher = request
+        .launcher
+        .map(|mut bundled| -> Result<_> {
+            ensure!(
+                !bundled.source.is_absolute()
+                    && bundled
+                        .source
+                        .components()
+                        .all(|component| matches!(component, std::path::Component::Normal(_))),
+                "Launcher package source escapes the inspected archive"
+            );
+            bundled.entry.id = package.id.clone();
+            bundled.entry.owner = request.game.id.clone();
+            bundled.entry.approval = bundled.entry.source_sha256.clone();
+            Ok((bundled.entry, import_root.join(bundled.source)))
+        })
+        .transpose()?;
     let priority = match &previous {
         Some(entry) => entry.priority,
         None => tracker.next_priority(&request.game.id).await?,
@@ -195,19 +224,33 @@ async fn import_in(
         notes: None,
     };
     let files = tracked_files(&entry.id, &stored, &package.options)?;
+    if let Some((launcher, source)) = &launcher {
+        let data = data.clone();
+        let source = source.clone();
+        let launcher = launcher.clone();
+        let retaining = control.clone();
+        tokio::task::spawn_blocking(move || {
+            super::launcher::retain(&data, &source, &launcher, &retaining)
+        })
+        .await
+        .context("Launcher source retention stopped")??;
+    }
     control.check()?;
     tracker
         .register_mele_package(
             &entry,
             &Record {
                 writable_cache: false,
-                version: if package.binary_approval.is_some() {
+                version: if launcher.is_some() {
+                    4
+                } else if package.binary_approval.is_some() {
                     2
                 } else {
                     1
                 },
                 target,
                 package,
+                launcher: launcher.map(|(entry, _)| entry),
             },
             &files,
             previous.is_some(),
@@ -265,9 +308,17 @@ fn tracked_files(
     Ok(files.into_values().collect())
 }
 
-fn recipe(target: Target, packages: Vec<Package>, language: String, runtimes: bool) -> Recipe {
+fn recipe(
+    target: Target,
+    packages: Vec<Package>,
+    launcher: Vec<super::launcher::Entry>,
+    language: String,
+    runtimes: bool,
+) -> Recipe {
     let mut recipe = Recipe {
-        version: if packages
+        version: if !launcher.is_empty() {
+            4
+        } else if packages
             .iter()
             .any(|package| package.binary_approval.is_some())
         {
@@ -280,6 +331,7 @@ fn recipe(target: Target, packages: Vec<Package>, language: String, runtimes: bo
         helper_version: Some(super::helper::protocol::VERSION.into()),
         language,
         packages,
+        launcher,
         components: Vec::new(),
     };
     if runtimes {
@@ -308,6 +360,7 @@ pub(crate) async fn desired(
 ) -> Result<Recipe> {
     let target = target(game)?;
     let mut packages = Vec::new();
+    let mut launcher = Vec::new();
     if !purge {
         for entry in tracker.list_mods(&game.id).await? {
             let record = tracker.mele_package(&entry.id).await?.with_context(|| {
@@ -322,11 +375,16 @@ pub(crate) async fn desired(
             );
             let mut package = record.package;
             package.enabled = entry.enabled;
+            if entry.enabled
+                && let Some(component) = record.launcher
+            {
+                launcher.push(component);
+            }
             packages.push(package);
         }
     }
     let runtimes = packages.iter().any(|package| package.enabled);
-    let recipe = recipe(target, packages, language, runtimes);
+    let recipe = recipe(target, packages, launcher, language, runtimes);
     recipe.validate()?;
     Ok(recipe)
 }

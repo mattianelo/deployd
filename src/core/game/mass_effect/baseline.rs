@@ -13,6 +13,7 @@ use walkdir::WalkDir;
 use crate::core::location_recovery;
 use crate::core::tracker::Tracker;
 use crate::models::game::{Game, GameConfig, GameEngine};
+use crate::utils::location::FolderRole;
 
 pub(crate) mod progress;
 
@@ -102,7 +103,60 @@ pub(crate) async fn configure(
             games.push(config.game.clone());
         }
     }
+    let mele_configs: Vec<_> = configs
+        .iter()
+        .filter(|config| config.game.engine == GameEngine::MassEffect)
+        .collect();
+    let mut existing_family = false;
+    for config in &mele_configs {
+        existing_family |= tracker
+            .mele_family_for_game(&config.game.id)
+            .await?
+            .is_some();
+        if let Some(selection) = config
+            .locations
+            .iter()
+            .find(|selection| selection.role == FolderRole::Game)
+        {
+            existing_family |= tracker
+                .mele_family_for_root(&selection.location.root)
+                .await?
+                .is_some();
+        }
+    }
+    let capture_family = !mele_configs.is_empty() && !existing_family;
+    let family_root = if capture_family && !games.is_empty() {
+        let mut roots = BTreeSet::new();
+        for config in &mele_configs {
+            roots.insert(
+                config
+                    .game
+                    .path
+                    .parent()
+                    .context("MELE game folder has no shared Game directory")?
+                    .join("Launcher"),
+            );
+        }
+        ensure!(
+            roots.len() == 1,
+            "MELE games must share one Legendary Edition installation"
+        );
+        roots.into_iter().next()
+    } else {
+        None
+    };
     let baselines = capture(games, progress.clone()).await?;
+    let family = if let Some(root) = family_root {
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let scanning = cancelled.clone();
+        Some(
+            tokio::task::spawn_blocking(move || super::family::capture(&root, &scanning))
+                .await
+                .context("MELE launcher baseline scan stopped unexpectedly")??,
+        )
+    } else {
+        None
+    };
     progress(Progress {
         game: String::new(),
         index: 0,
@@ -112,8 +166,17 @@ pub(crate) async fn configure(
     if baselines.is_empty() {
         return tracker.persist_game_configs(configs, hidden_ids).await;
     }
+    let family_game = configs
+        .iter()
+        .find(|config| config.game.engine == GameEngine::MassEffect)
+        .map(|config| config.game.id.as_str());
     tracker
-        .persist_game_configs_with_baselines(configs, hidden_ids, &baselines)
+        .persist_game_configs_with_baselines(
+            configs,
+            hidden_ids,
+            &baselines,
+            family_game.zip(family.as_ref()),
+        )
         .await
 }
 

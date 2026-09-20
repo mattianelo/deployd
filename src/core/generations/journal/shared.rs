@@ -1,3 +1,8 @@
+#![allow(
+    dead_code,
+    reason = "legacy shared activation journals remain recoverable after removing standalone launcher actions"
+)]
+
 use super::*;
 
 impl Journal {
@@ -25,11 +30,17 @@ impl Journal {
         let Some(intent) = &self.shared else {
             return Ok(());
         };
+        let combined = self.mele.is_some();
         ensure!(
-            self.version >= 4
-                && self.mele.is_none()
-                && self.saves.is_none()
-                && self.dependency.is_none(),
+            if combined {
+                self.version >= 6
+                    && self
+                        .dependency
+                        .as_ref()
+                        .is_some_and(|dependency| dependency == &intent.revision)
+            } else {
+                self.version >= 4 && self.saves.is_none() && self.dependency.is_none()
+            },
             "Unsupported shared activation journal"
         );
         intent.validate(game)?;
@@ -51,7 +62,55 @@ impl Journal {
                 "Shared journal omits or changes a validated launcher target"
             );
         }
-        ensure!(self.changes.iter().all(|change|matches!(&change.target,Target::MeleLauncher {path} if files.get(path).is_some_and(|(before,after)| matches(&change.before,before) && matches(&change.after,after)))),"Shared Apply cannot modify game files or foreign anchors");
+        ensure!(
+            self.changes.iter().all(|change| {
+                matches!(&change.target, Target::MeleLauncher { path } if files.get(path).is_some_and(|(before, after)| matches(&change.before, before) && matches(&change.after, after)))
+                    || combined && matches!(change.target, Target::MassEffect { .. })
+            }),
+            "Shared Apply cannot modify game files or foreign anchors"
+        );
+        Ok(())
+    }
+
+    pub(in crate::core::generations) async fn attach_game_shared(
+        &mut self,
+        history: &History,
+        game: &Game,
+        shared: Self,
+    ) -> Result<()> {
+        self.validate(game)?;
+        shared.validate(game)?;
+        let intent = shared
+            .shared
+            .context("Missing prepared shared launcher participant")?;
+        ensure!(
+            self.mele.is_some()
+                && self.shared.is_none()
+                && self.dependency.is_none()
+                && shared.mele.is_none()
+                && shared.dependency.is_none()
+                && shared.saves.is_none()
+                && shared.cache_sources.is_empty()
+                && shared.links.is_empty(),
+            "Shared launcher preparation cannot join this game activation"
+        );
+        let mut combined = self.clone();
+        combined.version = 6;
+        combined.changes.extend(shared.changes);
+        combined.directories.clear();
+        combined.dependency = Some(intent.revision.clone());
+        combined.shared = Some(intent);
+        let validating_game = game.clone();
+        combined = history
+            .lease
+            .blocking(move || -> Result<Self> {
+                combined.capture_directories(&validating_game)?;
+                combined.validate(&validating_game)?;
+                Ok(combined)
+            })
+            .await
+            .context("Combined launcher activation validation stopped")??;
+        *self = combined;
         Ok(())
     }
 
@@ -124,6 +183,9 @@ impl Applied {
 
 impl Journal {
     pub(super) async fn verify_dependency(&self, history: &History, game: &Game) -> Result<()> {
+        if self.shared.is_some() {
+            return Ok(());
+        }
         if let Some(mele) = &self.mele {
             super::super::shared::verify_dependency(
                 history,

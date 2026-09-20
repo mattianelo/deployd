@@ -21,6 +21,16 @@ use super::target::Target;
 
 const ENGINE: &str = "BioGame/CookedPCConsole/Engine.pcc";
 
+fn create_launcher(root: &std::path::Path) -> Result<()> {
+    fs::create_dir_all(root.join("Game/Launcher"))?;
+    fs::write(
+        root.join("Game/Launcher/MassEffectLauncher.exe"),
+        b"launcher",
+    )?;
+    fs::write(root.join("Game/Launcher/bink2w64.dll"), b"bink")?;
+    Ok(())
+}
+
 // @variants: both
 #[tokio::test]
 async fn mele_activation_commits_engine_state_with_history_and_recovers_external_edits()
@@ -37,10 +47,11 @@ async fn mele_activation_commits_engine_state_with_history_and_recovers_external
         (3, 2),
     ] {
         let temp = tempfile::tempdir()?;
+        let family_root = temp.path().join("family");
         let game = Game {
             id: format!("mass-effect-le{number}"),
             title: "MELE".into(),
-            path: temp.path().join("game"),
+            path: family_root.join(format!("Game/ME{number}")),
             data_subdir: "BioGame".into(),
             engine: GameEngine::MassEffect,
             wine_prefix: None,
@@ -53,6 +64,7 @@ async fn mele_activation_commits_engine_state_with_history_and_recovers_external
             b"executable",
         )?;
         fs::write(game.path.join(ENGINE), b"original")?;
+        create_launcher(&family_root)?;
         let tracker = Tracker::open(&format!(
             "sqlite://{}?mode=rwc",
             temp.path().join("tracker.db").display()
@@ -64,7 +76,14 @@ async fn mele_activation_commits_engine_state_with_history_and_recovers_external
             &[GameConfig {
                 game: game.clone(),
                 custom: true,
-                locations: vec![],
+                locations: vec![crate::utils::location::FolderSelection {
+                    role: crate::utils::location::FolderRole::Game,
+                    location: crate::utils::location::SelectedLocation {
+                        root: family_root,
+                        host_hint: None,
+                    },
+                    relative: format!("Game/ME{number}").into(),
+                }],
             }],
             &[],
             Arc::new(|_| {}),
@@ -75,15 +94,11 @@ async fn mele_activation_commits_engine_state_with_history_and_recovers_external
             .load_mele_baseline(&game.id)
             .await?
             .context("Missing fixture baseline")?;
-        let history = History::open(&tracker, &game.id, temp.path(), true).await?;
-        let mut manifest = manifest::capture(
-            &history,
-            &game,
-            &profile,
-            temp.path().into(),
-            Control::default(),
-        )
-        .await?;
+        let data = temp.path().join("data");
+        fs::create_dir_all(&data)?;
+        let history = History::open(&tracker, &game.id, &data, true).await?;
+        let mut manifest =
+            manifest::capture(&history, &game, &profile, data.clone(), Control::default()).await?;
         let payload = temp.path().join("payload");
         fs::write(&payload, b"generated output")?;
         let identity = history.retain(payload, Control::default()).await?;
@@ -122,8 +137,20 @@ async fn mele_activation_commits_engine_state_with_history_and_recovers_external
         )
         .await?;
         journal.attach_mele(&game, engine.clone())?;
+        let shared = super::shared::prepare(
+            &history,
+            &game,
+            crate::core::game::mass_effect::family::generations::Action::Support(
+                snapshot.recipe.clone(),
+            ),
+            data,
+            Control::default(),
+        )
+        .await?;
+        journal.attach_game_shared(&history, &game, shared).await?;
         manifest.version = 2;
         manifest.mele = Some(snapshot);
+        manifest.shared_revision = super::shared::identity(journal.dependency.as_ref())?;
         manifest.outputs.push(Output {
             target: Target::MassEffect {
                 path: ENGINE.into(),
@@ -223,10 +250,11 @@ async fn mele_history_restores_complete_sources_and_reuses_outputs_without_a_hel
 
     let temp = tempfile::tempdir()?;
     let data = temp.path().join("data");
+    let family_root = temp.path().join("family");
     let game = Game {
         id: "mass-effect-le1".into(),
         title: "MELE".into(),
-        path: temp.path().join("game"),
+        path: family_root.join("Game/ME1"),
         data_subdir: "BioGame".into(),
         engine: GameEngine::MassEffect,
         wine_prefix: None,
@@ -238,13 +266,21 @@ async fn mele_history_restores_complete_sources_and_reuses_outputs_without_a_hel
         b"executable",
     )?;
     fs::write(game.path.join(ENGINE), b"original")?;
+    create_launcher(&family_root)?;
     let tracker = Tracker::open("sqlite::memory:").await?.tracker;
     baseline::configure(
         &tracker,
         &[GameConfig {
             game: game.clone(),
             custom: true,
-            locations: vec![],
+            locations: vec![crate::utils::location::FolderSelection {
+                role: crate::utils::location::FolderRole::Game,
+                location: crate::utils::location::SelectedLocation {
+                    root: family_root,
+                    host_hint: None,
+                },
+                relative: "Game/ME1".into(),
+            }],
         }],
         &[],
         Arc::new(|_| {}),

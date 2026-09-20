@@ -133,6 +133,7 @@ impl Applied {
         )
         .await?;
         let mele = journal.mele.clone();
+        let shared = journal.shared.clone();
         let dependency = journal.dependency.clone();
         let saves_to_verify = journal.saves.clone();
         let verified_game = game.clone();
@@ -164,6 +165,9 @@ impl Applied {
             }
             Ok(())
         }).await.context("Final activation verification worker stopped")??;
+        if let Some(shared) = &shared {
+            shared.publish(&mut tx, game).await?;
+        }
         if let Some(mele) = mele {
             mele.generation_commit(&mut tx).await?;
         }
@@ -249,10 +253,6 @@ impl Journal {
     ) -> Result<()> {
         self.validate(game)?;
         self.validate_mele_request(deployment)?;
-        ensure!(
-            self.shared.is_none(),
-            "Game activation cannot publish shared changes"
-        );
         if let Some(deployment) = deployment {
             ensure!(
                 super::shared::identity(self.dependency.as_ref())?
@@ -507,7 +507,7 @@ impl Journal {
 
     pub(super) fn validate(&self, game: &Game) -> Result<()> {
         ensure!(
-            matches!(self.version, 1..=5)
+            matches!(self.version, 1..=6)
                 && self.game == game.id
                 && uuid::Uuid::parse_str(&self.id).is_ok(),
             "Unsupported or invalid activation journal"
@@ -525,7 +525,14 @@ impl Journal {
         self.validate_shared(game)?;
         if let Some(dependency) = &self.dependency {
             ensure!(
-                self.version >= 4 && self.mele.is_some() && self.shared.is_none(),
+                self.version >= 4
+                    && self.mele.is_some()
+                    && (self.shared.is_none()
+                        || self.version >= 6
+                            && self
+                                .shared
+                                .as_ref()
+                                .is_some_and(|shared| &shared.revision == dependency)),
                 "Unsupported shared dependency participant"
             );
             dependency.validate()?;
@@ -560,7 +567,7 @@ impl Journal {
             "Unsupported activation operation"
         );
         ensure!(
-            (kind == "shared") == self.shared.is_some(),
+            (kind == "shared") == (self.shared.is_some() && self.mele.is_none()),
             "Shared Apply requires its separate journal kind"
         );
         ensure!(
@@ -606,7 +613,7 @@ impl Journal {
             mele.generation_check(&mut tx, false).await?;
         }
         if let Some(shared) = &self.shared {
-            shared.check(&mut tx, game, false).await?;
+            shared.check(&mut tx, game, false, None).await?;
         }
         sqlx::query("INSERT INTO generation_journals(id,game_id,kind,document_version,document) VALUES (?,?,?,?,?)").bind(&self.id).bind(&self.game).bind(kind).bind(self.version).bind(serde_json::to_string(self)?).execute(&mut *tx).await.context("Another operation needs recovery before activation")?;
         for (hash, _) in objects {
@@ -743,7 +750,14 @@ impl Journal {
                 .generation_root(&history.tracker, game)
                 .await?;
             let mut tx = durable(&history.tracker).await?;
-            shared.check(&mut tx, game, committed).await?;
+            shared
+                .check(
+                    &mut tx,
+                    game,
+                    committed,
+                    self.mele.as_ref().map(|mele| &mele.desired),
+                )
+                .await?;
             tx.rollback().await?;
         }
         if let Some(mele) = &self.mele {

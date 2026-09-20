@@ -156,6 +156,7 @@ impl Fixture {
             target,
             language: "INT".into(),
             packages,
+            launcher: Vec::new(),
         }
     }
 
@@ -582,7 +583,7 @@ async fn portable_recipes_reject_unknown_semantics_and_local_paths() -> Result<(
     );
     assert_eq!(serde_json::from_str::<Recipe>(&document)?, recipe);
     let mut future = recipe.clone();
-    future.version = 4;
+    future.version = 5;
     assert!(future.validate().is_err());
     future = recipe.clone();
     future.packages[0].source_sha256 = "../escape".into();
@@ -1003,5 +1004,3 @@ mod dlc;
 mod shaders;
 
 mod binary;
-
-mod launcher;

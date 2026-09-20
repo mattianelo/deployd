@@ -47,8 +47,10 @@ impl Journal {
             );
         }
         for change in &self.changes {
-            let Target::MassEffect { path } = &change.target else {
-                anyhow::bail!("MELE activation cannot reinterpret another engine anchor");
+            let path = match &change.target {
+                Target::MassEffect { path } => path,
+                Target::MeleLauncher { .. } if self.shared.is_some() => continue,
+                _ => anyhow::bail!("MELE activation cannot reinterpret another engine anchor"),
             };
             if matches!(
                 (&change.before, &change.after),

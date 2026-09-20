@@ -5,6 +5,9 @@ use tempfile::tempdir;
 use super::*;
 
 fn game(root: &Path, number: usize) -> Result<Game> {
+    fs::create_dir_all(root.join("Launcher"))?;
+    fs::write(root.join("Launcher/MassEffectLauncher.exe"), b"launcher")?;
+    fs::write(root.join("Launcher/bink2w64.dll"), b"bink")?;
     let root = root.join(format!("ME{number}"));
     fs::create_dir_all(root.join("BioGame/CookedPCConsole"))?;
     fs::create_dir_all(root.join("Binaries/Win64"))?;
@@ -129,6 +132,11 @@ async fn records_all_three_baselines_with_game_configuration() -> Result<()> {
     let configs = (1..=3)
         .map(|number| game(temp.path(), number).map(config))
         .collect::<Result<Vec<_>>>()?;
+    fs::create_dir_all(temp.path().join("Launcher/Content"))?;
+    fs::write(
+        temp.path().join("Launcher/Content/Vanilla.swf"),
+        b"vanilla launcher content",
+    )?;
     configure(&tracker, &configs, &[], Arc::new(|_| {})).await?;
     assert_eq!(tracker.load_persisted_games().await?.len(), 3);
     for config in &configs {
@@ -140,6 +148,34 @@ async fn records_all_three_baselines_with_game_configuration() -> Result<()> {
         let vanilla = tracker.get_vanilla_metadata(&config.game.id).await?;
         assert!(vanilla.contains_key("cookedpcconsole/engine.pcc"));
         assert!(vanilla.keys().any(|path| path.starts_with("../binaries/")));
+    }
+    let family = tracker
+        .mele_family_for_game(&configs[0].game.id)
+        .await?
+        .context("missing launcher baseline")?;
+    assert!(family.baseline.contains_key("MassEffectLauncher.exe"));
+    assert!(family.baseline.contains_key("bink2w64.dll"));
+    assert!(family.baseline.contains_key("Content/Vanilla.swf"));
+    Ok(())
+}
+
+// @variants: both
+#[tokio::test]
+async fn launcher_baseline_failure_rolls_back_game_setup() -> Result<()> {
+    let temp = tempdir()?;
+    let tracker = Tracker::open("sqlite::memory:").await?.tracker;
+    let configs = (1..=3)
+        .map(|number| game(temp.path(), number).map(config))
+        .collect::<Result<Vec<_>>>()?;
+    fs::remove_file(temp.path().join("Launcher/bink2w64.dll"))?;
+    assert!(
+        configure(&tracker, &configs, &[], Arc::new(|_| {}))
+            .await
+            .is_err()
+    );
+    assert!(tracker.load_persisted_games().await?.is_empty());
+    for config in &configs {
+        assert!(tracker.load_mele_baseline(&config.game.id).await?.is_none());
     }
     Ok(())
 }

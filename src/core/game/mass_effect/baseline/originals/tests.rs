@@ -24,8 +24,14 @@ impl Fixture {
         let game_root = temp.path().join("game");
         fs::create_dir_all(game_root.join("BioGame/CookedPCConsole"))?;
         fs::create_dir_all(game_root.join("Binaries/Win64"))?;
+        fs::create_dir_all(temp.path().join("Launcher"))?;
         fs::write(game_root.join(ENGINE), b"original package")?;
         fs::write(game_root.join(EXE), b"original executable")?;
+        fs::write(
+            temp.path().join("Launcher/MassEffectLauncher.exe"),
+            b"launcher",
+        )?;
+        fs::write(temp.path().join("Launcher/bink2w64.dll"), b"bink")?;
         let game = Game {
             id: "mass-effect-le1".into(),
             title: "LE1".into(),

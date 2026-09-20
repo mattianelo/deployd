@@ -84,8 +84,8 @@
       <description>
         <p>Adds experimental Mass Effect Legendary Edition mod management for all three
         games, including content, raw and precompiled texture overrides, shader mods and approved
-        plugins. Manage separate game profiles, shared launcher mods and restore managed
-        files after removing mods.</p>
+        plugins. Bundled launcher components follow their parent game mods, and managed
+        files can be restored after removing mods.</p>
       </description>
     </release>
     <release version="2.4.3" date="2026-09-06" type="development">

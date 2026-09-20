@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- MELE now records the shared launcher's original files when games are added. Launcher
+  components bundled with game mods follow their parent mod's enabled state, priority,
+  replacement and removal; Deploy and Purge restore originals when those parents no
+  longer own the files. The separate shared-launcher mod list has been removed.
 - Made Snap Wine-prefix recovery survive Proton and launcher prefix refreshes by reconnecting the
   configured prefix through its user-authorized containing folder.
 - Replaced the Deploy confirmation's internal target dump with compact added, replaced and removed
@@ -21,9 +25,9 @@
   deletion, modified/recovery status, and Restore as new profile. Retained content remains
   independent of writable mod caches and moves with cache relocation through verified recovery
   state.
-- Added retained MELE final outputs and vanilla-input validation, plus separate shared-launcher
-  revision history. Game Deploy is blocked when its recorded shared dependency differs from the
-  live launcher, and incompatible restores preserve current cross-game runtime ownership.
+- Added retained MELE final outputs and vanilla-input validation. Game generations retain their
+  shared-launcher dependency so restored profiles reproduce the launcher state owned by their
+  bundled parent mods.
 - Eclipse activation now removes stale Deployd-managed AddIns.xml registrations while preserving
   unrelated registrations and settings.
 - Removed AppImage-to-Snap migration export, preview and import.

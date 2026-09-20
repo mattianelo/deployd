@@ -4,7 +4,7 @@ use std::sync::{Arc, atomic::AtomicBool};
 use adw::prelude::*;
 use relm4::prelude::*;
 
-use crate::core::game::mass_effect::{application, launcher as launcher_core, library};
+use crate::core::game::mass_effect::{application, library};
 use crate::ui::mele_dialog;
 
 use super::{
@@ -14,11 +14,8 @@ use super::{
     types::WorkKind,
 };
 
-pub(super) mod launcher;
-
 #[derive(Debug)]
 pub(crate) enum Msg {
-    Launcher(Box<launcher::Msg>),
     Install(mele_dialog::Selection),
     Setup(bool),
     Deploy {
@@ -33,7 +30,6 @@ pub(crate) enum Msg {
 
 #[derive(Debug)]
 pub(crate) enum Command {
-    Launcher(Box<launcher::Command>),
     Options(
         InstallIdentity,
         Result<
@@ -141,7 +137,6 @@ impl App {
         root: &adw::ApplicationWindow,
     ) {
         match message {
-            Msg::Launcher(message) => self.handle_launcher(*message, sender, root),
             Msg::Install(selection) => self.install_mele(selection, sender, root),
             Msg::Setup(purge) => {
                 let Some(tracker) = self.session.tracker.clone() else {
@@ -304,9 +299,6 @@ impl App {
             return;
         };
         let bundled_launcher = pending.mele_bundled_launcher.take();
-        let extracted_root = pending.tmp_dir.path().to_path_buf();
-        let launcher_tracker = tracker.clone();
-        let launcher_game = pending.game.clone();
         let replacement = self.install.replacement.take();
         let request = library::Import {
             binary_approved: selection.binary_approved,
@@ -319,9 +311,9 @@ impl App {
             archive_hash: pending.archive_hash,
             archive_path: pending.archive_path,
             replace: replacement.as_ref().map(|item| item.mod_id.clone()),
+            launcher: bundled_launcher,
         };
         let cancelled = Arc::new(AtomicBool::new(false));
-        let launcher_cancelled = cancelled.clone();
         self.ui.mele_operation = Some(mele_dialog::progress(
             root,
             "Installing MELE Mod",
@@ -335,23 +327,9 @@ impl App {
             "Retaining sources",
         );
         self.location_command(sender, async move {
-            let mut result = library::import(tracker, request, cancelled, Arc::new(report))
+            let result = library::import(tracker, request, cancelled, Arc::new(report))
                 .await
                 .map_err(|error| format!("{error:#}"));
-            if let (Ok(added), Some(launcher)) = (&mut result, bundled_launcher)
-                && let Err(error) = launcher_core::add_bundled(
-                    launcher_tracker,
-                    launcher_game,
-                    launcher,
-                    extracted_root,
-                    launcher_cancelled,
-                )
-                .await
-            {
-                added.warnings.push(format!(
-                    "The game mod was installed, but its launcher component failed: {error:#}"
-                ));
-            }
             drop(pending.tmp_dir);
             AppCmdMsg::Install(super::messages::InstallCmdMsg::ModAdded(
                 identity,
@@ -368,7 +346,6 @@ impl App {
         root: &adw::ApplicationWindow,
     ) {
         match command {
-            Command::Launcher(command) => self.handle_launcher_command(*command, sender, root),
             Command::Removed(result) => {
                 self.shell.deploying = false;
                 self.finish_work(WorkKind::Deploying);

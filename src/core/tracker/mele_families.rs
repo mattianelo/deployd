@@ -12,6 +12,29 @@ pub(super) async fn create_tables(pool: &SqlitePool) -> Result<()> {
 }
 
 impl Tracker {
+    pub(crate) async fn mele_family_for_root(
+        &self,
+        root: &std::path::Path,
+    ) -> Result<Option<Family>> {
+        let value: Option<String> = sqlx::query_scalar(
+            "SELECT f.document FROM mele_families f JOIN folder_locations l ON l.id=f.location_id WHERE l.root=?",
+        )
+        .bind(root.to_string_lossy().as_ref())
+        .fetch_optional(&self.pool)
+        .await?;
+        value.map(|value| decode(&value)).transpose()
+    }
+
+    pub(crate) async fn mele_family_for_game(&self, game_id: &str) -> Result<Option<Family>> {
+        let value: Option<String> = sqlx::query_scalar(
+            "SELECT f.document FROM mele_families f JOIN game_locations g ON g.location_id=f.location_id WHERE g.game_id=? AND g.role='game'",
+        )
+        .bind(game_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        value.map(|value| decode(&value)).transpose()
+    }
+
     pub(crate) async fn mele_family(&self, location_id: i64) -> Result<Option<Family>> {
         let value: Option<String> =
             sqlx::query_scalar("SELECT document FROM mele_families WHERE location_id=?")
@@ -21,6 +44,7 @@ impl Tracker {
         value.map(|value| decode(&value)).transpose()
     }
 
+    #[cfg(test)]
     pub(crate) async fn record_mele_family(&self, location_id: i64, family: &Family) -> Result<()> {
         family.validate()?;
         let mut tx = self.mele_durable_transaction().await?;
@@ -63,6 +87,39 @@ impl Tracker {
             .await
             .context("Failed to preserve launcher originals")
     }
+}
+
+pub(super) async fn insert(
+    tx: &mut Transaction<'_, Sqlite>,
+    game_id: &str,
+    family: &Family,
+) -> Result<()> {
+    family.validate()?;
+    let location_id: i64 = sqlx::query_scalar(
+        "SELECT location_id FROM game_locations WHERE game_id=? AND role='game'",
+    )
+    .bind(game_id)
+    .fetch_one(&mut **tx)
+    .await?;
+    let inserted = sqlx::query(
+        "INSERT INTO mele_families(location_id,document) VALUES (?,?) ON CONFLICT(location_id) DO NOTHING",
+    )
+    .bind(location_id)
+    .bind(serde_json::to_string(family)?)
+    .execute(&mut **tx)
+    .await?;
+    if inserted.rows_affected() == 0 {
+        let stored: String =
+            sqlx::query_scalar("SELECT document FROM mele_families WHERE location_id=?")
+                .bind(location_id)
+                .fetch_one(&mut **tx)
+                .await?;
+        ensure!(
+            decode(&stored)? == *family,
+            "MELE launcher baseline already exists and cannot be replaced"
+        );
+    }
+    Ok(())
 }
 
 pub(super) async fn check(

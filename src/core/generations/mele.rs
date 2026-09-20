@@ -14,6 +14,7 @@ pub(super) async fn retain(
     game: &Game,
     manifest: &mut Manifest,
     prepared: Prepared,
+    shared: Journal,
     control: Control,
 ) -> Result<Journal> {
     ensure!(
@@ -65,12 +66,8 @@ pub(super) async fn retain(
         }
         let mut journal =
             activation(history, game, &prepared, &retained.outputs, control.clone()).await?;
-        journal.dependency = super::shared::capture_dependency(history, game, &prepared.journal.desired, &prepared.data, control.clone()).await?;
+        journal.attach_game_shared(history, game, shared).await?;
         let dependency = super::shared::identity(journal.dependency.as_ref())?;
-        if retained.shared_revision.is_some() {
-            ensure!(retained.shared_revision == dependency,
-                "The live launcher differs from this history; explicitly restore its shared revision before Deploy");
-        }
         retained.shared_revision = dependency;
         journal.validate(game)?;
         retained.validate()?;
@@ -124,6 +121,16 @@ pub(super) async fn reuse(
         .context("Restored MELE recipe is missing")?;
     snapshot.recipe = serde_json::from_str(super::records::text(recipe, "document")?)?;
     snapshot.validate(&game.id)?;
+    let shared = super::shared::prepare(
+        history,
+        game,
+        crate::core::game::mass_effect::family::generations::Action::Support(
+            snapshot.recipe.clone(),
+        ),
+        data.clone(),
+        control.clone(),
+    )
+    .await?;
     let store = history.store.clone();
     let files = snapshot.files.clone();
     let cache = history.cache.clone();
@@ -173,7 +180,7 @@ pub(super) async fn reuse(
                 destination,
                 snapshot,
                 source,
-                data,
+                data.clone(),
                 preparing,
             )
             .await
@@ -182,7 +189,7 @@ pub(super) async fn reuse(
         .context("Retained MELE preparation participant stopped")??;
     let mut restored = manifest.clone();
     restored.shared_revision = original.shared_revision;
-    let journal = retain(history, game, &mut restored, prepared, control).await?;
+    let journal = retain(history, game, &mut restored, prepared, shared, control).await?;
     *manifest = restored;
     Ok(Some(journal))
 }
@@ -204,6 +211,14 @@ pub(super) async fn prepare(
     );
     let (sources, mut frozen, recipe) =
         frozen::sources(history, manifest, recipe, control.clone()).await?;
+    let shared = super::shared::prepare(
+        history,
+        &game,
+        crate::core::game::mass_effect::family::generations::Action::Support(recipe.clone()),
+        data.clone(),
+        control.clone(),
+    )
+    .await?;
     let tracker = history.tracker.clone();
     let preparing = control.clone();
     let prepared = history
@@ -221,7 +236,7 @@ pub(super) async fn prepare(
         })
         .await
         .context("Frozen MELE preparation participant stopped")??;
-    let journal = retain(history, &game, &mut frozen, prepared, control).await?;
+    let journal = retain(history, &game, &mut frozen, prepared, shared, control).await?;
     *manifest = frozen;
     Ok(journal)
 }
@@ -345,6 +360,26 @@ pub(super) async fn purge(
     data: std::path::PathBuf,
     control: Control,
 ) -> Result<Journal> {
+    let target = crate::core::game::mass_effect::library::target(game)?;
+    let shared = super::shared::prepare(
+        history,
+        game,
+        crate::core::game::mass_effect::family::generations::Action::Support(
+            crate::core::game::mass_effect::recipe::Recipe {
+                version: 1,
+                target,
+                backend_version: 1,
+                helper_version: None,
+                language: "INT".into(),
+                packages: Vec::new(),
+                launcher: Vec::new(),
+                components: Vec::new(),
+            },
+        ),
+        data.clone(),
+        control.clone(),
+    )
+    .await?;
     let cache = history.cache.clone();
     let source = history
         .lease
@@ -362,7 +397,11 @@ pub(super) async fn purge(
         .lease
         .participant(async move {
             crate::core::game::mass_effect::generations::purge(
-                tracker, purging, data, source, preparing,
+                tracker,
+                purging,
+                data.clone(),
+                source,
+                preparing,
             )
             .await
         })
@@ -370,14 +409,7 @@ pub(super) async fn purge(
         .context("MELE purge participant stopped")??;
     let attempt = async {
         let mut journal = activation(history, game, &prepared, &[], control.clone()).await?;
-        journal.dependency = super::shared::capture_dependency(
-            history,
-            game,
-            &prepared.journal.desired,
-            &prepared.data,
-            control,
-        )
-        .await?;
+        journal.attach_game_shared(history, game, shared).await?;
         journal.validate(game)?;
         Ok(journal)
     }

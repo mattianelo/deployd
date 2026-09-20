@@ -1,3 +1,8 @@
+#![allow(
+    dead_code,
+    reason = "retained shared revisions remain readable by game generation history"
+)]
+
 use super::*;
 use crate::core::generations::content::Identity as Content;
 
@@ -193,7 +198,6 @@ pub(crate) async fn dependency(
 }
 
 pub(crate) enum Action {
-    Mods(Vec<super::super::launcher::Entry>),
     #[allow(dead_code)]
     Support(super::super::recipe::Recipe),
     Restore(Revision),
@@ -379,7 +383,6 @@ pub(crate) async fn prepare(
     tracker.ensure_location_ready(&game.id).await?;
     tracker.ensure_no_mele_journal(&game.id).await?;
     let plan = match action {
-        Action::Mods(entries) => edit(&tracker, &game, entries, &data, control.clone()).await?,
         Action::Support(recipe) => {
             recipe.validate()?;
             ensure!(
@@ -395,6 +398,7 @@ pub(crate) async fn prepare(
                 .mele_family(revision.location)
                 .await?
                 .context("Shared launcher ownership is unavailable")?;
+            let stored = previous.clone();
             let desired = revision.restore(&previous)?;
             let root = root(&tracker, &game, revision.location).await?;
             let mut change = Change {
@@ -409,7 +413,7 @@ pub(crate) async fn prepare(
             Plan {
                 root,
                 change,
-                recorded: true,
+                stored,
             }
         }
     };
@@ -479,6 +483,7 @@ mod tests {
 
     fn family(owners: &[&str], installed: bool) -> Family {
         Family {
+            baseline: BTreeMap::new(),
             version: 1,
             original: Identity {
                 size: 8,

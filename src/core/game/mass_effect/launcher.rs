@@ -10,9 +10,7 @@ use super::operation::Control;
 use super::package::SourceFile;
 
 mod package;
-mod service;
 pub(crate) use package::inspect_bundle;
-pub(crate) use service::{Action, Snapshot, add_bundled, generation_entries, load};
 
 #[derive(Debug)]
 pub(crate) struct Bundled {
@@ -24,8 +22,8 @@ pub(crate) struct Bundled {
 #[serde(deny_unknown_fields)]
 pub(crate) struct Entry {
     pub(crate) id: String,
+    pub(super) owner: String,
     pub(crate) name: String,
-    pub(crate) enabled: bool,
     pub(super) source_sha256: String,
     pub(super) approval: String,
     pub(super) files: Vec<Mapping>,
@@ -38,23 +36,6 @@ pub(super) struct Mapping {
     pub(super) source: String,
     pub(super) destination: String,
     pub(super) identity: Identity,
-}
-
-#[cfg(test)]
-#[derive(Debug)]
-pub(crate) struct Inspected {
-    pub(crate) entry: Entry,
-    pub(crate) source: Option<tempfile::TempDir>,
-}
-
-#[cfg(test)]
-impl Drop for Inspected {
-    fn drop(&mut self) {
-        if let Some(source) = self.source.take() {
-            // Closing an installer dialog must not delete an extracted archive on GTK.
-            std::thread::spawn(move || drop(source));
-        }
-    }
 }
 
 pub(super) fn destination(path: &str) -> Result<()> {
@@ -108,7 +89,10 @@ pub(super) fn validate_entries(entries: &[Entry]) -> Result<()> {
     let mut destinations = BTreeMap::new();
     for entry in entries {
         ensure!(
-            Uuid::parse_str(&entry.id)?.to_string() == entry.id && ids.insert(&entry.id),
+            Uuid::parse_str(&entry.id)?.to_string() == entry.id
+                && ids.insert(&entry.id)
+                && ["mass-effect-le1", "mass-effect-le2", "mass-effect-le3"]
+                    .contains(&entry.owner.as_str()),
             "Invalid or duplicate launcher mod identity"
         );
         ensure!(
@@ -175,7 +159,7 @@ pub(super) fn source_root(data: &Path, hash: &str) -> PathBuf {
     data.join("mele-launcher-sources").join(hash)
 }
 
-fn retain(data: &Path, source: &Path, entry: &Entry, control: &Control) -> Result<()> {
+pub(super) fn retain(data: &Path, source: &Path, entry: &Entry, control: &Control) -> Result<()> {
     validate_entries(std::slice::from_ref(entry))?;
     let cache = data.join("mele-launcher-sources");
     files::create_directory(&cache)?;
@@ -217,8 +201,5 @@ pub(super) fn verify_source(root: &Path, entry: &Entry, control: &Control) -> Re
 
 #[cfg(test)]
 pub(super) use package::parse;
-#[cfg(test)]
-pub(super) use service::apply_in;
-
 #[cfg(test)]
 mod tests;

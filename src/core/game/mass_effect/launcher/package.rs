@@ -239,14 +239,15 @@ pub(in crate::core::game::mass_effect) fn parse(root: &Path, fallback: &str) -> 
     let hash = super::super::package::tree_digest(&sources);
     let entry = Entry {
         id: Uuid::new_v4().to_string(),
+        owner: String::new(),
         name,
-        enabled: true,
         source_sha256: hash,
         approval: String::new(),
         files,
         sources,
     };
     let mut validated = entry.clone();
+    validated.owner = "mass-effect-le1".into();
     validated.approval = validated.source_sha256.clone();
     validate_entries(&[validated])?;
     Ok(entry)

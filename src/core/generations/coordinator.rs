@@ -70,10 +70,6 @@ async fn validate(
         "MELE activation requires its coordinated engine participant"
     );
     history.tracker.ensure_location_ready(&game.id).await?;
-    ensure!(
-        journal.shared.is_none(),
-        "Shared changes require their separate Apply action"
-    );
     journal.validate_request(game, previous, deployment, saves)?;
     if let Some(snapshot) = deployment.and_then(|deployment| deployment.manifest.mele.clone()) {
         let tracker = history.tracker.clone();

@@ -215,10 +215,22 @@ impl Fixture {
 
     async fn for_target(target: Target) -> Result<Self> {
         let temp = tempdir()?;
-        let game_root = temp.path().join("game");
+        let number = match target {
+            Target::Le1 => 1,
+            Target::Le2 => 2,
+            Target::Le3 => 3,
+        };
+        let family_root = temp.path().join("family");
+        let game_root = family_root.join(format!("Game/ME{number}"));
         fs::create_dir_all(game_root.join("BioGame/CookedPCConsole"))?;
         fs::create_dir_all(game_root.join("Binaries/Win64"))?;
+        fs::create_dir_all(family_root.join("Game/Launcher"))?;
         fs::write(game_root.join(ENGINE), b"original package")?;
+        fs::write(
+            family_root.join("Game/Launcher/MassEffectLauncher.exe"),
+            b"launcher",
+        )?;
+        fs::write(family_root.join("Game/Launcher/bink2w64.dll"), b"bink")?;
         let executable = match target {
             Target::Le1 => "MassEffect1.exe",
             Target::Le2 => "MassEffect2.exe",
@@ -244,7 +256,14 @@ impl Fixture {
             &[crate::models::game::GameConfig {
                 game: game.clone(),
                 custom: true,
-                locations: Vec::new(),
+                locations: vec![crate::utils::location::FolderSelection {
+                    role: crate::utils::location::FolderRole::Game,
+                    location: crate::utils::location::SelectedLocation {
+                        root: family_root,
+                        host_hint: None,
+                    },
+                    relative: format!("Game/ME{number}").into(),
+                }],
             }],
             &[],
             std::sync::Arc::new(|_| {}),
@@ -972,6 +991,7 @@ async fn executable_paths_require_exact_component_claims_and_versioned_state() -
         language: "INT".into(),
         helper_version: None,
         packages: Vec::new(),
+        launcher: Vec::new(),
         components: components::required(Target::Le1),
     };
     let mut state = State {
@@ -1031,6 +1051,7 @@ async fn helper_upgrades_preserve_old_deployments_and_allow_restoration() -> Res
         language: "INT".into(),
         helper_version: Some("0.7.1".into()),
         packages: Vec::new(),
+        launcher: Vec::new(),
         components: Vec::new(),
     });
     let installed = fixture.publish(deployment).await?;

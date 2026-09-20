@@ -9,7 +9,7 @@ impl Tracker {
         configs: &[crate::models::game::GameConfig],
         hidden_ids: &[String],
     ) -> Result<()> {
-        self.persist_game_configs_with_baselines(configs, hidden_ids, &[])
+        self.persist_game_configs_with_baselines(configs, hidden_ids, &[], None)
             .await
     }
 
@@ -18,6 +18,7 @@ impl Tracker {
         configs: &[crate::models::game::GameConfig],
         hidden_ids: &[String],
         baselines: &[crate::core::game::mass_effect::baseline::Baseline],
+        family: Option<(&str, &crate::core::game::mass_effect::family::Family)>,
     ) -> Result<()> {
         let mut transaction = self
             .pool
@@ -77,6 +78,13 @@ impl Tracker {
                 "MELE baseline does not belong to a configured game"
             );
             super::mele_baselines::insert(&mut transaction, baseline).await?;
+        }
+        if let Some((game_id, family)) = family {
+            anyhow::ensure!(
+                configs.iter().any(|config| config.game.id == game_id),
+                "MELE launcher baseline does not belong to a configured game"
+            );
+            super::mele_families::insert(&mut transaction, game_id, family).await?;
         }
         for game_id in hidden_ids {
             sqlx::query(

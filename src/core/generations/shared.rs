@@ -1,3 +1,8 @@
+#![allow(
+    dead_code,
+    reason = "retained shared revisions and pending journals remain readable after removing their standalone UI"
+)]
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
@@ -49,6 +54,7 @@ impl Intent {
         tx: &mut Transaction<'_, Sqlite>,
         game: &Game,
         committed: bool,
+        committed_game: Option<&State>,
     ) -> Result<()> {
         self.validate(game)?;
         let pending: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM mele_journals) OR EXISTS(SELECT 1 FROM generation_journals WHERE game_id LIKE 'mass-effect-le%' AND game_id<>?)")
@@ -93,8 +99,13 @@ impl Intent {
             let current: Option<State> = document
                 .map(|value| serde_json::from_str(&value))
                 .transpose()?;
+            let expected = if committed && id == &game.id {
+                committed_game.or(expected.as_ref())
+            } else {
+                expected.as_ref()
+            };
             ensure!(
-                &current == expected,
+                current.as_ref() == expected,
                 "A dependent MELE deployment changed during shared application"
             );
         }
@@ -172,7 +183,7 @@ impl Intent {
         tx: &mut Transaction<'_, Sqlite>,
         game: &Game,
     ) -> Result<()> {
-        self.check(tx, game, false).await?;
+        self.check(tx, game, false, None).await?;
         publish(tx, &self.revision, &self.games).await?;
         sqlx::query("UPDATE mele_families SET document=? WHERE location_id=?")
             .bind(serde_json::to_string(&self.change.desired)?)
@@ -364,47 +375,6 @@ async fn binding(history: &History, game: &str) -> Result<History> {
         history.lease.clone(),
     )
     .await
-}
-
-pub(super) async fn capture_dependency(
-    history: &History,
-    game: &Game,
-    desired: &State,
-    data: &std::path::Path,
-    control: Control,
-) -> Result<Option<Revision>> {
-    let tracker = history.tracker.clone();
-    let verifying_game = game.clone();
-    let desired = desired.clone();
-    let revision = history
-        .lease
-        .participant(async move { engine::dependency(&tracker, &verifying_game, &desired).await })
-        .await
-        .context("Shared dependency inspection stopped")??;
-    if let Some(revision) = &revision {
-        let retained: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM generation_shared_objects WHERE family_id=? AND revision_id=? AND game_id=?)")
-            .bind(revision.location.to_string()).bind(revision.id()?).bind(&history.game).fetch_one(&history.tracker.pool).await?;
-        if retained {
-            load(
-                history,
-                &revision.location.to_string(),
-                &revision.id()?,
-                control,
-            )
-            .await?;
-            return Ok(Some(revision.clone()));
-        }
-        for (path, expected) in revision.payloads()? {
-            ensure!(
-                history
-                    .retain(revision.source(data, &path)?, control.clone())
-                    .await?
-                    == expected,
-                "Shared dependency payload changed during retention"
-            );
-        }
-    }
-    Ok(revision)
 }
 
 pub(super) fn identity(revision: Option<&Revision>) -> Result<Option<(String, String)>> {
@@ -658,10 +628,6 @@ pub(super) async fn delete(history: &History, family: &str, id: &str) -> Result<
     }
     Ok(())
 }
-
-#[cfg(test)]
-#[path = "../../../tests/generations/shared.rs"]
-mod tests;
 
 #[cfg_attr(not(test), allow(dead_code))]
 pub(super) async fn dependency_matches(

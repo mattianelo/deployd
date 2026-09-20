@@ -92,6 +92,7 @@ impl Fixture {
             archive_hash: None,
             archive_path: None,
             replace,
+            launcher: None,
         })
     }
     async fn import(&self, replace: Option<String>) -> Result<AddResult> {
@@ -103,6 +104,21 @@ impl Fixture {
             Arc::new(|_, _| {}),
         )
         .await
+    }
+
+    fn bundled_launcher(&self) -> Result<super::super::launcher::Bundled> {
+        let relative = PathBuf::from("LauncherComponent");
+        let source = self.source.join(&relative);
+        fs::create_dir_all(source.join("Content"))?;
+        fs::write(source.join("Content/Intro.bik"), b"modded launcher video")?;
+        fs::write(
+            source.join("moddesc.ini"),
+            "[ModManager]\ncmmver=9.1\n[ModInfo]\ngame=LELAUNCHER\nmodname=Launcher component\n[BASEGAME]\nmoddir=Content\nnewfiles=Intro.bik\nreplacefiles=Content/Intro.bik\n",
+        )?;
+        Ok(super::super::launcher::Bundled {
+            entry: super::super::launcher::parse(&source, "Launcher component")?,
+            source: relative,
+        })
     }
 }
 fn cancel() -> Arc<AtomicBool> {
@@ -309,6 +325,70 @@ async fn library_import_replacement_and_profiles_retain_package_identity() -> Re
     assert!(recipe.components.is_empty());
     fixture.tracker.delete_mod(&id).await?;
     assert!(fixture.tracker.mele_package(&id).await?.is_none());
+    Ok(())
+}
+
+// @variants: both
+#[tokio::test]
+async fn launcher_component_follows_its_parent_mod_state() -> Result<()> {
+    let fixture = Fixture::new().await?;
+    let bundled = fixture.bundled_launcher()?;
+    fs::create_dir(fixture.source.join("GameMod"))?;
+    fs::rename(
+        fixture.source.join("CookedPCConsole"),
+        fixture.source.join("GameMod/CookedPCConsole"),
+    )?;
+    fs::write(
+        fixture.source.join("GameMod/moddesc.ini"),
+        "[ModManager]\ncmmver=9.1\n[ModInfo]\ngame=LE1\nmodname=Example\nmodver=1.0\nmoddev=Deployd\nmoddesc=Fixture\n[BASEGAME]\nmoddir=.\nnewfiles=CookedPCConsole/Engine.pcc\nreplacefiles=BioGame/CookedPCConsole/Engine.pcc\n",
+    )?;
+    let mut request = fixture.request(None)?;
+    request.launcher = Some(bundled);
+    let imported = import_in(
+        fixture.tracker.clone(),
+        request,
+        fixture.data.clone(),
+        cancel(),
+        Arc::new(|_, _| {}),
+    )
+    .await?;
+    let id = imported.mod_entry.id;
+    let record = fixture
+        .tracker
+        .mele_package(&id)
+        .await?
+        .context("missing parent package")?;
+    let launcher = record.launcher.context("missing launcher component")?;
+    assert_eq!(record.version, 4);
+    assert_eq!(launcher.id, id);
+    assert_eq!(launcher.owner, fixture.game.id);
+    assert!(
+        fixture
+            .data
+            .join("mele-launcher-sources")
+            .join(&launcher.source_sha256)
+            .is_dir()
+    );
+
+    let active = desired(&fixture.tracker, &fixture.game, "INT".into(), false).await?;
+    assert_eq!(active.launcher, vec![launcher.clone()]);
+    fixture.tracker.toggle_mod(&id, false).await?;
+    let disabled = desired(&fixture.tracker, &fixture.game, "INT".into(), false).await?;
+    assert!(disabled.launcher.is_empty());
+    fixture.tracker.toggle_mod(&id, true).await?;
+    let purge = desired(&fixture.tracker, &fixture.game, "INT".into(), true).await?;
+    assert!(purge.launcher.is_empty());
+
+    fixture.import(Some(id.clone())).await?;
+    assert!(
+        fixture
+            .tracker
+            .mele_package(&id)
+            .await?
+            .context("missing replacement")?
+            .launcher
+            .is_none()
+    );
     Ok(())
 }
 

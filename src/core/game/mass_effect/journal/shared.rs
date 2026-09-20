@@ -1,4 +1,7 @@
-#![cfg_attr(not(test), allow(dead_code))]
+#![allow(
+    dead_code,
+    reason = "legacy shared journals remain recoverable after removing standalone launcher actions"
+)]
 
 use super::*;
 

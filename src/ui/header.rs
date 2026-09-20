@@ -81,7 +81,6 @@ pub(crate) enum HeaderOutput {
     DeployClicked,
     OpenDeploymentFolder,
     DeploymentHistory,
-    LauncherMods,
     PurgeClicked,
     CreateEmptyMod,
     ResetVanillaBaseline,
@@ -406,16 +405,6 @@ impl SimpleComponent for Header {
                                 add_css_class: "flat",
                                 connect_clicked[sender] => move |_| {
                                     sender.output(HeaderOutput::DeploymentHistory).ok();
-                                },
-                            },
-
-                            gtk::Button {
-                                set_label: "Shared launcher mods",
-                                add_css_class: "flat",
-                                #[watch]
-                                set_visible: model.state.mele,
-                                connect_clicked[sender] => move |_| {
-                                    sender.output(HeaderOutput::LauncherMods).ok();
                                 },
                             },
 

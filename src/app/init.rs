@@ -273,9 +273,6 @@ pub(super) fn build_model(
             HeaderOutput::DeployClicked => {
                 AppMsg::Shell(crate::app::messages::ShellMsg::DeployClicked)
             }
-            HeaderOutput::LauncherMods => AppMsg::Mele(crate::app::mele::Msg::Launcher(Box::new(
-                crate::app::mele::launcher::Msg::Open,
-            ))),
             HeaderOutput::DeploymentHistory => AppMsg::Generations(super::generations::Msg::Open),
             HeaderOutput::OpenDeploymentFolder => {
                 AppMsg::Shell(crate::app::messages::ShellMsg::OpenDeploymentFolder)

@@ -3,6 +3,7 @@ use std::fs;
 use std::io::Read;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
@@ -25,6 +26,8 @@ const EXE: &str = "MassEffectLauncher.exe";
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Family {
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(super) baseline: BTreeMap<String, Identity>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(super) mods: Vec<super::launcher::Entry>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -51,7 +54,7 @@ pub(crate) struct Change {
 pub(super) struct Plan {
     pub(super) root: PathBuf,
     pub(super) change: Change,
-    recorded: bool,
+    stored: Family,
 }
 
 fn required(state: Option<&State>) -> bool {
@@ -77,7 +80,7 @@ impl Family {
             "Shared launcher record exceeds its size limit"
         );
         ensure!(
-            (1..=2).contains(&self.version)
+            (1..=3).contains(&self.version)
                 && (!self.installed || self.support_required())
                 && self.original.size > 0
                 && self.original.size <= 16 * 1024 * 1024
@@ -94,12 +97,42 @@ impl Family {
             self.version >= 2 || self.mods.is_empty() && self.originals.is_empty(),
             "Launcher mods require shared state version 2"
         );
+        ensure!(
+            self.version < 3 || !self.baseline.is_empty(),
+            "Launcher baseline is missing from shared state"
+        );
         super::launcher::validate_entries(&self.mods)?;
         ensure!(
-            self.originals.len() <= 10000,
+            self.baseline.len() <= 100_000 && self.originals.len() <= 10000,
             "Too many launcher restoration entries"
         );
         let mut original_paths = BTreeMap::new();
+        for (path, identity) in &self.baseline {
+            super::baseline::relative(path)?;
+            identity.validate()?;
+            for prefix in Path::new(path)
+                .ancestors()
+                .filter(|path| !path.as_os_str().is_empty())
+            {
+                let prefix = prefix.to_str().context("Invalid launcher baseline path")?;
+                let value = (prefix.to_owned(), prefix == path);
+                ensure!(
+                    original_paths
+                        .insert(prefix.to_lowercase(), value.clone())
+                        .is_none_or(|old| old == value),
+                    "Launcher baseline paths collide by case or file/directory type"
+                );
+            }
+        }
+        if self.version >= 3 {
+            ensure!(
+                self.baseline.get(BINK) == Some(&self.original)
+                    && self.baseline.contains_key(EXE)
+                    && !self.baseline.contains_key(ORIGINAL),
+                "Launcher baseline is missing required vanilla files"
+            );
+        }
+        original_paths.clear();
         for (path, identity) in &self.originals {
             for prefix in Path::new(path)
                 .ancestors()
@@ -117,6 +150,17 @@ impl Family {
             super::launcher::destination(path)?;
             if let Some(identity) = identity {
                 identity.validate()?;
+                ensure!(
+                    self.baseline
+                        .get(path)
+                        .is_none_or(|baseline| baseline == identity),
+                    "Launcher original differs from its setup baseline"
+                );
+            } else {
+                ensure!(
+                    !self.baseline.contains_key(path),
+                    "Launcher original cannot mark a baseline file as absent"
+                );
             }
         }
         ensure!(
@@ -130,7 +174,7 @@ impl Family {
     }
 
     fn support_required(&self) -> bool {
-        !self.owners.is_empty() || self.mods.iter().any(|entry| entry.enabled)
+        !self.owners.is_empty() || !self.mods.is_empty()
     }
 
     fn files(&self) -> BTreeMap<String, Identity> {
@@ -141,7 +185,7 @@ impl Family {
                 identity.clone().map(|identity| (path.clone(), identity))
             })
             .collect();
-        for entry in self.mods.iter().filter(|entry| entry.enabled) {
+        for entry in &self.mods {
             for file in &entry.files {
                 files.insert(file.destination.clone(), file.identity.clone());
             }
@@ -161,12 +205,88 @@ impl Family {
     }
 }
 
+pub(super) fn capture(root: &Path, cancelled: &AtomicBool) -> Result<Family> {
+    super::baseline::directory(root)?;
+    let mut baseline = BTreeMap::new();
+    for entry in walkdir::WalkDir::new(root).follow_links(false) {
+        ensure!(
+            !cancelled.load(std::sync::atomic::Ordering::Acquire),
+            "MELE restoration baseline scan was cancelled"
+        );
+        let entry = entry.context("Cannot scan the MELE launcher baseline")?;
+        ensure!(
+            entry.file_type().is_dir() || entry.file_type().is_file(),
+            "MELE launcher baseline cannot contain links or special files"
+        );
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let relative = entry
+            .path()
+            .strip_prefix(root)?
+            .to_str()
+            .context("Invalid MELE launcher baseline path")?
+            .to_owned();
+        super::baseline::relative(&relative)?;
+        ensure!(
+            baseline.len() < 100_000,
+            "MELE launcher baseline contains too many files"
+        );
+        let metadata = fs::symlink_metadata(entry.path())?;
+        let mut input = fs::File::options()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+            .open(entry.path())?;
+        let mut hash = Sha256::new();
+        let mut size = 0u64;
+        let mut buffer = [0u8; 128 * 1024];
+        loop {
+            let count = input.read(&mut buffer)?;
+            if count == 0 {
+                break;
+            }
+            hash.update(&buffer[..count]);
+            size += count as u64;
+        }
+        ensure!(size == metadata.len(), "MELE launcher changed during setup");
+        ensure!(
+            baseline
+                .insert(
+                    relative,
+                    Identity {
+                        size,
+                        sha256: format!("{:x}", hash.finalize()),
+                    },
+                )
+                .is_none(),
+            "Duplicate MELE launcher baseline file"
+        );
+    }
+    let original = baseline
+        .get(BINK)
+        .cloned()
+        .context("MELE launcher Bink library is missing")?;
+    let family = Family {
+        baseline,
+        mods: Vec::new(),
+        originals: BTreeMap::new(),
+        version: 3,
+        original,
+        owners: BTreeSet::new(),
+        installed: false,
+    };
+    family.validate()?;
+    Ok(family)
+}
+
 impl Change {
     pub(crate) fn validate(&self, game_id: &str, state: &State) -> Result<()> {
         self.previous.validate()?;
         self.desired.validate()?;
         ensure!(
-            self.location_id > 0 && self.previous.original == self.desired.original,
+            self.location_id > 0
+                && self.previous.original == self.desired.original
+                && self.previous.baseline == self.desired.baseline,
             "MELE launcher baseline changed in a deployment journal"
         );
         ensure!(
@@ -174,12 +294,46 @@ impl Change {
                 && self.desired.owners.contains(game_id) == required(Some(state)),
             "MELE launcher ownership disagrees with the game deployment"
         );
-        ensure!(
-            self.launcher_edit
-                || self.previous.mods == self.desired.mods
-                    && self.previous.originals == self.desired.originals,
-            "Game deployment cannot change the shared launcher-mod list"
-        );
+        if self.launcher_edit {
+            ensure!(
+                self.previous.owners == self.desired.owners,
+                "Launcher-only changes cannot alter game ownership"
+            );
+        } else {
+            let previous_foreign: Vec<_> = self
+                .previous
+                .mods
+                .iter()
+                .filter(|entry| entry.owner != game_id)
+                .collect();
+            let desired_foreign: Vec<_> = self
+                .desired
+                .mods
+                .iter()
+                .filter(|entry| entry.owner != game_id)
+                .collect();
+            ensure!(
+                previous_foreign == desired_foreign,
+                "A game deployment cannot change another game's launcher components"
+            );
+            let expected: Vec<_> = state
+                .recipe
+                .as_ref()
+                .into_iter()
+                .flat_map(|recipe| &recipe.launcher)
+                .filter(|entry| recipe_package_enabled(state, &entry.id))
+                .collect();
+            let actual: Vec<_> = self
+                .desired
+                .mods
+                .iter()
+                .filter(|entry| entry.owner == game_id)
+                .collect();
+            ensure!(
+                actual == expected,
+                "Launcher components disagree with the deployed parent mods"
+            );
+        }
         ensure!(
             self.previous
                 .originals
@@ -282,6 +436,15 @@ impl Change {
     }
 }
 
+fn recipe_package_enabled(state: &State, id: &str) -> bool {
+    state.recipe.as_ref().is_some_and(|recipe| {
+        recipe
+            .packages
+            .iter()
+            .any(|package| package.id == id && package.enabled)
+    })
+}
+
 pub(super) async fn root(tracker: &Tracker, game: &Game, location_id: i64) -> Result<PathBuf> {
     let location = tracker.folder_location(&game.id, FolderRole::Game).await?;
     ensure!(
@@ -318,15 +481,12 @@ pub(super) async fn inspect(
     control: Control,
 ) -> Result<Option<Plan>> {
     let location = tracker.folder_location(&game.id, FolderRole::Game).await?;
-    let existing = tracker.mele_family(location.id).await?;
-    if existing.is_none() && !required(Some(desired)) {
-        return Ok(None);
-    }
+    let existing = tracker
+        .mele_family(location.id)
+        .await?
+        .context("MELE launcher baseline is missing; remove and add the game again")?;
     let root = root(tracker, game, location.id).await?;
-    let mut owners = existing
-        .as_ref()
-        .map(|family| family.owners.clone())
-        .unwrap_or_default();
+    let mut owners = existing.owners.clone();
     for binding in &location.bindings {
         if binding.role == FolderRole::Game
             && binding.game_id != game.id
@@ -348,7 +508,8 @@ pub(super) async fn inspect(
         match fs::symlink_metadata(&asi) {
             Ok(_) => {
                 super::baseline::directory(&asi)?;
-                let known = existing.as_ref().map(Family::files).unwrap_or_default();
+                let mut known = existing.files();
+                known.extend(existing.baseline.clone());
                 for entry in walkdir::WalkDir::new(&asi).follow_links(false) {
                     let entry = entry?;
                     ensure!(entry.file_type().is_file() || entry.file_type().is_dir(), "Launcher plugin folder contains links or special files");
@@ -362,23 +523,30 @@ pub(super) async fn inspect(
             Err(error) => return Err(error).context("Cannot inspect launcher plugins"),
         }
         ensure!(root.join(EXE).is_file(), "MELE launcher executable is missing; restore folder access or repair the game");
-        let recorded = existing.is_some();
-        let previous = match existing {
-            Some(value) => value,
-            None => {
-                files::check_path(&root, BINK)?;
-                let metadata = fs::symlink_metadata(root.join(BINK))?;
-                ensure!(metadata.len() > 0 && metadata.len() <= 16 * 1024 * 1024, "Invalid launcher Bink library size");
-                let mut bytes = Vec::new();
-                fs::File::options().read(true).custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK).open(root.join(BINK))?
-                    .take(16 * 1024 * 1024 + 1).read_to_end(&mut bytes)?;
-                ensure!(bytes.len() as u64 == metadata.len(), "Launcher Bink library changed during inspection");
-                Family { mods: Vec::new(), originals: BTreeMap::new(), version: 1, original: Identity { size: bytes.len() as u64, sha256: format!("{:x}", Sha256::digest(&bytes)) }, owners: owners.iter().filter(|id| *id != &game_id).cloned().collect(), installed: false }
+        let stored = existing;
+        let mut previous = stored.clone();
+        let entries: Vec<_> = desired_state
+            .recipe
+            .as_ref()
+            .into_iter()
+            .flat_map(|recipe| &recipe.launcher)
+            .filter(|entry| recipe_package_enabled(&desired_state, &entry.id))
+            .cloned()
+            .collect();
+        for file in entries.iter().flat_map(|entry| &entry.files) {
+            if previous.originals.contains_key(&file.destination) {
+                continue;
             }
-        };
+            let identity = previous.baseline.get(&file.destination).cloned();
+            files::verify(&root, &file.destination, identity.as_ref(), &control)?;
+            previous.originals.insert(file.destination.clone(), identity);
+        }
         previous.validate()?;
         let mut desired = previous.clone();
         desired.owners = owners;
+        desired.mods.retain(|entry| entry.owner != game_id);
+        desired.mods.extend(entries);
+        desired.mods.sort_by(|left, right| left.owner.cmp(&right.owner));
         desired.installed = desired.support_required();
         let mut change = Change { launcher_edit: false, location_id: location.id, previous, desired, missing: Vec::new(), operations: Vec::new() };
         if repair && change.previous.installed {
@@ -391,7 +559,7 @@ pub(super) async fn inspect(
         change.verify(&root, true, &control)?;
         change.operations = change.operations()?;
         change.validate(&game_id, &desired_state)?;
-        Ok(Some(Plan { root, change, recorded }))
+        Ok(Some(Plan { root, change, stored }))
     }).await.context("MELE launcher preflight worker failed")?
 }
 
@@ -419,24 +587,33 @@ impl Plan {
         let destination = data
             .join("mele-family-originals")
             .join(self.change.location_id.to_string());
-        let recorded = self.recorded;
+        let stored = self.stored.clone();
+        let extended = self.change.previous.clone();
         tokio::task::spawn_blocking(move || {
             files::create_directory(&destination)?;
             if destination.join(BINK).try_exists()? {
                 files::verify(&destination, BINK, Some(&original), &control)?;
             } else {
-                ensure!(
-                    !recorded,
-                    "Preserved launcher original is missing; restore it before rebuilding"
-                );
                 files::copy(&source, BINK, &destination, BINK, &original, &control)?;
+            }
+            for (path, identity) in &extended.originals {
+                let Some(identity) = identity else { continue };
+                if destination.join(path).try_exists()? {
+                    files::verify(&destination, path, Some(identity), &control)?;
+                } else {
+                    files::copy(&source, path, &destination, path, identity, &control)?;
+                }
             }
             Ok::<_, anyhow::Error>(())
         })
         .await??;
-        tracker
-            .record_mele_family(self.change.location_id, &self.change.previous)
-            .await
+        if stored == self.change.previous {
+            Ok(())
+        } else {
+            tracker
+                .extend_mele_family(self.change.location_id, &stored, &self.change.previous)
+                .await
+        }
     }
 
     pub(super) fn stage(&self, data: &Path, id: &str, control: &Control) -> Result<()> {
@@ -478,20 +655,13 @@ impl Plan {
                 } else if operation.path == BINK || operation.path == ORIGINAL {
                     (originals.as_path(), BINK)
                 } else {
-                    let source = self
-                        .change
-                        .desired
-                        .mods
-                        .iter()
-                        .rev()
-                        .filter(|entry| entry.enabled)
-                        .find_map(|entry| {
-                            entry
-                                .files
-                                .iter()
-                                .find(|file| file.destination == operation.path)
-                                .map(|file| (entry, file))
-                        });
+                    let source = self.change.desired.mods.iter().rev().find_map(|entry| {
+                        entry
+                            .files
+                            .iter()
+                            .find(|file| file.destination == operation.path)
+                            .map(|file| (entry, file))
+                    });
                     if let Some((entry, file)) = source {
                         let source_root = super::launcher::source_root(data, &entry.source_sha256);
                         files::copy(
@@ -555,6 +725,7 @@ mod tests {
             target,
             language: "INT".into(),
             packages: Vec::new(),
+            launcher: Vec::new(),
             helper_version: None,
             backend_version: 1,
             components: if enabled {
@@ -575,6 +746,7 @@ mod tests {
 
     fn family(owners: &[&str]) -> Family {
         Family {
+            baseline: BTreeMap::new(),
             mods: Vec::new(),
             originals: BTreeMap::new(),
             version: 1,
@@ -676,6 +848,59 @@ mod tests {
         assert!(unowned.operations().is_err());
         Ok(())
     }
+
+    // @variants: both
+    #[test]
+    fn purging_parent_mod_restores_its_launcher_files() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let launcher = temp.path().join("Launcher");
+        fs::create_dir_all(launcher.join("Content"))?;
+        fs::write(launcher.join(EXE), b"launcher")?;
+        fs::write(launcher.join(BINK), b"original bink")?;
+        fs::write(launcher.join("Content/Intro.bik"), b"vanilla video")?;
+        let mut deployed = capture(&launcher, &AtomicBool::new(false))?;
+
+        let source = temp.path().join("mod");
+        fs::create_dir_all(source.join("Content"))?;
+        fs::write(source.join("Content/Intro.bik"), b"modded video")?;
+        let mut entry = super::super::launcher::parse(&source, "Parent launcher component")?;
+        entry.id = uuid::Uuid::new_v4().to_string();
+        entry.owner = "mass-effect-le1".into();
+        entry.approval = entry.source_sha256.clone();
+        deployed.originals.insert(
+            "Content/Intro.bik".into(),
+            deployed.baseline.get("Content/Intro.bik").cloned(),
+        );
+        deployed.mods.push(entry);
+        deployed.installed = true;
+        deployed.validate()?;
+
+        let mut restored = deployed.clone();
+        restored.mods.clear();
+        restored.installed = false;
+        let transition = change(deployed, restored)?;
+        transition.validate("mass-effect-le1", &state(Target::Le1, false))?;
+        let operations: BTreeMap<_, _> = transition
+            .operations
+            .iter()
+            .map(|operation| (operation.path.as_str(), operation.after.as_ref()))
+            .collect();
+        assert_eq!(
+            operations.get("Content/Intro.bik").copied().flatten(),
+            transition.desired.baseline.get("Content/Intro.bik")
+        );
+        assert_eq!(
+            operations.get(BINK).copied().flatten(),
+            Some(&transition.desired.original)
+        );
+        assert!(
+            operations
+                .get(ORIGINAL)
+                .is_some_and(|identity| identity.is_none())
+        );
+        Ok(())
+    }
+
     // @variants: both
     #[tokio::test]
     async fn resolves_only_the_shared_granted_launcher_and_preserves_external_files() -> Result<()>
@@ -719,12 +944,15 @@ mod tests {
                 &[],
             )
             .await?;
+        let location = tracker.folder_location(&game.id, FolderRole::Game).await?;
+        let initial = capture(&launcher, &AtomicBool::new(false))?;
+        tracker.record_mele_family(location.id, &initial).await?;
         let desired = state(Target::Le1, true);
         let plan = inspect(&tracker, &game, &desired, false, Control::recovery())
             .await?
             .context("missing plan")?;
         assert_eq!(plan.root, launcher);
-        assert!(!plan.recorded);
+        assert_eq!(plan.stored, plan.change.previous);
         fs::create_dir(launcher.join("ASI"))?;
         fs::write(launcher.join("ASI/unknown.asi"), b"unmanaged plugin")?;
         assert!(
@@ -738,9 +966,6 @@ mod tests {
         );
         fs::remove_file(launcher.join("ASI/unknown.asi"))?;
 
-        tracker
-            .record_mele_family(plan.change.location_id, &plan.change.previous)
-            .await?;
         fs::write(launcher.join(ORIGINAL), b"unmanaged backing")?;
         assert!(
             inspect(&tracker, &game, &desired, true, Control::recovery())
@@ -791,6 +1016,7 @@ impl Family {
     pub(crate) fn validate_extension(&self, desired: &Self) -> Result<()> {
         ensure!(
             self.original == desired.original
+                && self.baseline == desired.baseline
                 && self.owners == desired.owners
                 && self.installed == desired.installed
                 && self.mods == desired.mods
@@ -802,91 +1028,4 @@ impl Family {
         );
         Ok(())
     }
-}
-
-pub(super) async fn edit(
-    tracker: &Tracker,
-    game: &Game,
-    entries: Vec<super::launcher::Entry>,
-    data: &Path,
-    control: Control,
-) -> Result<Plan> {
-    super::launcher::validate_entries(&entries)?;
-    let location = tracker.folder_location(&game.id, FolderRole::Game).await?;
-    if tracker.mele_family(location.id).await?.is_none() {
-        let target = super::library::target(game)?;
-        let recipe = super::recipe::Recipe {
-            version: 2,
-            target,
-            language: "INT".into(),
-            packages: Vec::new(),
-            backend_version: 1,
-            helper_version: None,
-            components: components::required(target),
-        };
-        let plan = inspect_recipe(tracker, game, &recipe, false, control.clone())
-            .await?
-            .context("Missing shared launcher plan")?;
-        plan.preserve(tracker, data, control.clone()).await?;
-    }
-    let previous = tracker
-        .mele_family(location.id)
-        .await?
-        .context("Missing shared launcher state")?;
-    let root = root(tracker, game, location.id).await?;
-    let work = previous.clone();
-    let originals = data
-        .join("mele-family-originals")
-        .join(location.id.to_string());
-    let (extended, mut plan) = {
-        let root = root.clone();
-        let control = control.clone();
-        tokio::task::spawn_blocking(move || -> Result<_> {
-            let mut extended = work.clone();
-            extended.version = 2;
-            for file in entries.iter().flat_map(|entry| &entry.files) {
-                if extended.originals.contains_key(&file.destination) { continue; }
-                files::check_path(&root, &file.destination)?;
-                let identity = match fs::symlink_metadata(root.join(&file.destination)) {
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-                    Err(error) => return Err(error.into()),
-                    Ok(metadata) => {
-                        ensure!(metadata.is_file(), "Launcher original is not a regular file");
-                        let mut input = fs::File::options().read(true).custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK).open(root.join(&file.destination))?;
-                        let mut hash = Sha256::new(); let mut size = 0u64; let mut buffer = [0u8; 128 * 1024];
-                        loop { control.check()?; let count = input.read(&mut buffer)?; if count == 0 { break; } hash.update(&buffer[..count]); size += count as u64; }
-                        ensure!(size == metadata.len(), "Launcher original changed during preservation");
-                        let identity = Identity { size, sha256: format!("{:x}", hash.finalize()) };
-                        if originals.join(&file.destination).try_exists()? { files::verify(&originals, &file.destination, Some(&identity), &control)?; }
-                        else { files::copy(&root, &file.destination, &originals, &file.destination, &identity, &control)?; }
-                        Some(identity)
-                    }
-                };
-                extended.originals.insert(file.destination.clone(), identity);
-            }
-            extended.validate()?;
-            let mut desired = extended.clone(); desired.mods = entries; desired.installed = desired.support_required(); desired.validate()?;
-            let mut change = Change { launcher_edit: true, location_id: location.id, previous: extended.clone(), desired, missing: Vec::new(), operations: Vec::new() };
-            for (path, _) in change.previous.files() {
-                if path != BINK && path != ORIGINAL && !change.previous.mods.iter().filter(|entry| entry.enabled).any(|entry| entry.files.iter().any(|file| file.destination == path)) { continue; }
-                if matches!(fs::symlink_metadata(root.join(&path)), Err(error) if error.kind() == std::io::ErrorKind::NotFound) && change.previous.installed { change.missing.push(path); }
-            }
-            change.verify(&root, true, &control)?;
-            change.operations = change.operations()?;
-            Ok((extended, Plan { root, change, recorded: true }))
-        }).await??
-    };
-    if extended != previous {
-        tracker
-            .extend_mele_family(location.id, &previous, &extended)
-            .await?;
-    }
-    // Ownership remains with the deployed games even if a different profile is selected.
-    let state = tracker.mele_deployment(&game.id).await?;
-    if required(state.as_ref()) {
-        plan.change.desired.owners.insert(game.id.clone());
-    }
-    plan.change.desired.installed = plan.change.desired.support_required();
-    plan.change.operations = plan.change.operations()?;
-    Ok(plan)
 }

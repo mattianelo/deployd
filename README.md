@@ -72,17 +72,14 @@ ASI/DLL plugins require your approval for each package version and game. Deployd
 never runs archive installers or scripts. Follow the mod author's instructions
 for any additional Proton DLL overrides.
 
-Use **Deploy options → Shared launcher mods** from any MELE game to manage launcher
-mods. This list applies to all three games and is independent of game profiles.
-Game Purge leaves launcher mods installed; restore them separately from this menu.
-Required launcher support remains active while a deployed game needs it.
-When one archive contains both a game mod and a launcher mod, add it from the game's
-mod list. Deployd identifies and installs both components in the same workflow. Use
-**Shared launcher mods** to enable, disable, reorder, repair or remove imported launcher
-components.
-The shared launcher menu also keeps revision history. Restoring an older revision is
-an explicit shared action and is blocked if it would remove runtime support owned by
-another deployed game.
+When an archive contains both a game mod and a launcher component, add it from the
+game's mod list. The launcher component belongs to that parent mod: it follows the
+parent's enabled state and priority and is applied during the same Deploy. Disabling,
+replacing or removing the parent takes effect on the launcher during the next Deploy.
+Purge removes the current game's launcher components while preserving components still
+deployed by another Legendary Edition game. Deployd records the shared launcher's
+original files during game setup and restores them after the last parent mod using them
+is removed. Required launcher support remains active while any deployed game needs it.
 
 **Limitations:** MEM textures, headmorphs and portable MELE profile transfers are
 not supported. Launcher executable replacements and launcher installer choices are
