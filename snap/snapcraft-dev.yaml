@@ -1,0 +1,100 @@
+name: deployd-dev
+base: core24
+platforms:
+  amd64:
+version: '3.0.0'
+title: Deployd Development
+license: GPL-3.0-only
+contact: https://gitlab.com/mattianelo/deployd/-/issues
+issues: https://gitlab.com/mattianelo/deployd/-/issues
+source-code: https://gitlab.com/mattianelo/deployd
+website: https://gitlab.com/mattianelo/deployd
+donation: https://ko-fi.com/mattianelo
+description: |
+  Development build of Deployd for isolated testing alongside the published package.
+
+  Deployd is a non-destructive mod manager for PC games running on Linux.
+  Supports Bethesda, REDEngine, Aurora, Eclipse, and experimental Mass Effect
+  Legendary Edition mod management.
+
+icon: data/icons/hicolor/scalable/apps/deployd.svg
+
+grade: devel
+confinement: strict
+
+plugs:
+  wine-runtime:
+    interface: content
+    content: wine-runtime-c22
+    target: $SNAP/wine-runtime
+    default-provider: wine-platform-runtime-core22:wine-runtime-c22
+  wine-stable:
+    interface: content
+    content: wine-base-stable
+    target: $SNAP/wine-platform
+    default-provider: wine-platform
+
+slots:
+  dbus-deployd-dev:
+    interface: dbus
+    bus: session
+    name: io.mattianelo.deployd.Devel
+
+apps:
+  deployd-dev:
+    command: bin/deployd
+    extensions: [gnome]
+    plugs:
+      - home
+      - network
+      - removable-media
+      - wine-runtime
+      - wine-stable
+    slots: [dbus-deployd-dev]
+    desktop: usr/share/applications/io.mattianelo.deployd.Devel.desktop
+
+lint:
+  ignore:
+    # .NET resolves OpenSSL with dlopen, so it has no static ELF dependency edge.
+    - unused-library:
+        - usr/lib/x86_64-linux-gnu/libssl.so.3
+
+parts:
+  rust-deps:
+    plugin: nil
+    build-packages:
+      - rustup
+    override-build: |
+      rustup set profile minimal
+      rustup default 1.96.1
+
+  deployd:
+    plugin: rust
+    source: .
+    after: [rust-deps]
+    rust-channel: 'none'
+    build-environment:
+      - RUSTUP_TOOLCHAIN: '1.96.1'
+      - DEPLOYD_APPLICATION_ID: io.mattianelo.deployd.Devel
+    build-packages:
+      - libsqlite3-dev
+      - libssl-dev
+      - pkg-config
+      - libarchive-dev
+      - libunrar-dev
+      - python3
+      - g++
+    stage-packages:
+      - libarchive13t64
+      - libicu74
+      - libssl3t64
+    override-pull: |
+      python3 "$CRAFT_PROJECT_DIR/scripts/package_source.py" "$CRAFT_PROJECT_DIR" "$CRAFT_PART_SRC"
+    override-build: |
+      cargo build --locked --release --features loot,libarchive-fallback
+      python3 helpers/mele/package.py "$CRAFT_PART_INSTALL/usr/lib/deployd/mele"
+      install -Dm755 target/release/deployd "$CRAFT_PART_INSTALL/bin/deployd"
+      install -Dm644 data/io.mattianelo.deployd.Devel.desktop \
+        "$CRAFT_PART_INSTALL/usr/share/applications/io.mattianelo.deployd.Devel.desktop"
+      install -Dm644 data/icons/hicolor/scalable/apps/deployd.svg \
+        "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/scalable/apps/deployd.svg"

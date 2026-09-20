@@ -64,7 +64,7 @@ policy-validation:
   stage: validate
   rules: *shared-pipeline-rules
   script:
-    - bash -n check.sh scripts/*.sh scripts/mcp/*.sh packaging/appimage/*.sh
+    - bash -n check.sh scripts/*.sh scripts/mcp/*.sh packaging/appimage/*.sh packaging/snap/*.sh
     - python3 scripts/test_ci_file_size.py
     - python3 scripts/ci_file_size.py
     - python3 scripts/test_ci_dependency_direction.py
@@ -73,9 +73,12 @@ policy-validation:
     - python3 scripts/ci_test_inventory.py validate
     - python3 scripts/test_ci_policy.py
     - python3 scripts/ci_policy.py
+    - python3 scripts/test_package_source.py
+    - python3 scripts/test_snap_development_recipe.py
     - ./scripts/test_ci_environment.sh
     - ./scripts/test_check_wrapper.sh
     - ./scripts/test_mcp_wrappers.sh
+    - ./packaging/snap/test-build-snap.sh
     - ./scripts/ci-ownership-smoke.sh
 
 release-metadata:

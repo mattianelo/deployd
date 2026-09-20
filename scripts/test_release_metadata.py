@@ -33,6 +33,9 @@ class ReleaseMetadataTests(unittest.TestCase):
         (self.root / "snap" / "snapcraft.yaml").write_text(
             f"name: deployd\nversion: '{VERSION}'\nadopt-info: deployd\n"
         )
+        (self.root / "snap" / "snapcraft-dev.yaml").write_text(
+            f"name: deployd-dev\nversion: '{VERSION}'\n"
+        )
         (self.root / "data" / "io.mattianelo.deployd.metainfo.xml").write_text(
             "<component><releases>"
             f'<release version="{VERSION}" date="2026-08-29" />'
@@ -84,6 +87,12 @@ class ReleaseMetadataTests(unittest.TestCase):
         self._replace("snap/snapcraft.yaml", VERSION, "2.3.3")
 
         with self.assertRaisesRegex(release_metadata.MetadataError, "snap/snapcraft.yaml"):
+            release_metadata.validate_metadata(self.root)
+
+    def test_rejects_development_snap_version_drift(self) -> None:
+        self._replace("snap/snapcraft-dev.yaml", VERSION, "2.3.3")
+
+        with self.assertRaisesRegex(release_metadata.MetadataError, "snap/snapcraft-dev.yaml"):
             release_metadata.validate_metadata(self.root)
 
     def test_rejects_appstream_adopt_info_drift(self) -> None:

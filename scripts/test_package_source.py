@@ -110,19 +110,33 @@ class PackageSourceTests(unittest.TestCase):
         self.assertEqual((self.output / "src/input.txt").read_text(), "original")
 
     def test_snap_pull_hook_uses_the_same_filter_on_initial_and_updated_sources(self):
-        recipe = (ROOT / "snap/snapcraft.yaml").read_text()
-        hook = re.search(r"    override-pull: \|\n((?:      [^\n]*\n)+)", recipe)
-        self.assertIsNotNone(hook)
-        command = "\n".join(line[6:] for line in hook[1].splitlines())
-        self.output = self.source / "parts/deployd/src"
-        self.output.mkdir(parents=True)
-        environment = dict(os.environ, CRAFT_PROJECT_DIR=str(self.source), CRAFT_PART_SRC=str(self.output))
-        (self.source / "docs").symlink_to(self.root / "unavailable")
-        for value in ("first", "second"):
-            (self.source / "src/input.txt").write_text(value)
-            subprocess.run(["bash", "-eu", "-c", command], cwd=self.output, env=environment, check=True, capture_output=True)
-            self.assertEqual((self.output / "src/input.txt").read_text(), value)
-            self.assertFalse((self.output / "docs").exists())
+        for recipe_name in ("snapcraft.yaml", "snapcraft-dev.yaml"):
+            with self.subTest(recipe=recipe_name):
+                recipe = (ROOT / "snap" / recipe_name).read_text()
+                hook = re.search(r"    override-pull: \|\n((?:      [^\n]*\n)+)", recipe)
+                self.assertIsNotNone(hook)
+                command = "\n".join(line[6:] for line in hook[1].splitlines())
+                self.output = self.source / f"parts/{recipe_name}/src"
+                self.output.mkdir(parents=True)
+                environment = dict(
+                    os.environ,
+                    CRAFT_PROJECT_DIR=str(self.source),
+                    CRAFT_PART_SRC=str(self.output),
+                )
+                docs = self.source / "docs"
+                if not docs.exists() and not docs.is_symlink():
+                    docs.symlink_to(self.root / "unavailable")
+                for value in ("first", "second"):
+                    (self.source / "src/input.txt").write_text(value)
+                    subprocess.run(
+                        ["bash", "-eu", "-c", command],
+                        cwd=self.output,
+                        env=environment,
+                        check=True,
+                        capture_output=True,
+                    )
+                    self.assertEqual((self.output / "src/input.txt").read_text(), value)
+                    self.assertFalse((self.output / "docs").exists())
 
 
 if __name__ == "__main__":

@@ -12,7 +12,7 @@ import tempfile
 INPUTS = (
     "Cargo.toml", "Cargo.lock", "build.rs", "rust-toolchain.toml", "LICENSE",
     "src", "data", "helpers/mele", "scripts/mele-helper.py",
-    "scripts/package_source.py", "snap/snapcraft.yaml",
+    "scripts/package_source.py", "snap/snapcraft.yaml", "snap/snapcraft-dev.yaml",
 )
 MARKER = ".deployd-package-source"
 IDENTITY = "deployd-package-source-v1\n"

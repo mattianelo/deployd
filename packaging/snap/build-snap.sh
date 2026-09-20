@@ -1,6 +1,6 @@
 #!/bin/bash
 # Builds the Snap in a dedicated Ubuntu 24.04 LXD container.
-# Usage: bash packaging/snap/build-snap.sh [--rebuild] [--clean]
+# Usage: bash packaging/snap/build-snap.sh [--development] [--rebuild] [--clean]
 
 set -euo pipefail
 
@@ -9,7 +9,6 @@ LXD_CONTAINER="deployd-snap-build"
 SETUP_SCRIPT="packaging/snap/setup-lxd.sh"
 SNAP_BUILD_DIR="/build/deployd-snap"
 VERSION="$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$REPO_ROOT/Cargo.toml" | head -1)"
-SNAP_ARTIFACT="deployd_${VERSION}_amd64.snap"
 HOST_OUTPUT_DIR="$REPO_ROOT/out/snap"
 
 if [ -z "$VERSION" ]; then
@@ -27,13 +26,24 @@ esac
 
 REBUILD=0
 CLEAN=0
+DEVELOPMENT=0
 for arg in "$@"; do
     case "$arg" in
+        --development) DEVELOPMENT=1 ;;
         --rebuild) REBUILD=1 ;;
         --clean) CLEAN=1 ;;
         *) echo "Unknown option: $arg"; exit 1 ;;
     esac
 done
+
+if [ "$DEVELOPMENT" = "1" ]; then
+    SNAP_NAME="deployd-dev"
+    SNAP_RECIPE="snap/snapcraft-dev.yaml"
+else
+    SNAP_NAME="deployd"
+    SNAP_RECIPE="snap/snapcraft.yaml"
+fi
+SNAP_ARTIFACT="${SNAP_NAME}_${VERSION}_amd64.snap"
 
 if ! command -v lxc &>/dev/null || ! lxc info &>/dev/null 2>&1; then
     echo "ERROR: LXD is not available to the current user." >&2
@@ -60,6 +70,12 @@ fi
 echo "==> Copying source into container-owned Snap build storage"
 lxc exec "$LXD_CONTAINER" -- python3 /workspace/scripts/package_source.py \
     /workspace "$SNAP_BUILD_DIR"
+
+if [ "$DEVELOPMENT" = "1" ]; then
+    echo "==> Selecting isolated development Snap recipe"
+    lxc exec "$LXD_CONTAINER" -- install -m 0644 \
+        "$SNAP_BUILD_DIR/$SNAP_RECIPE" "$SNAP_BUILD_DIR/snap/snapcraft.yaml"
+fi
 
 echo "==> Building Snap inside $LXD_CONTAINER"
 lxc exec "$LXD_CONTAINER" --cwd "$SNAP_BUILD_DIR" -- \

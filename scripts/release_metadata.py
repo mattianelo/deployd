@@ -59,8 +59,8 @@ def _lockfile_version(root: Path) -> str:
     return versions[0]
 
 
-def _snap_version(root: Path) -> str:
-    source = (root / "snap" / "snapcraft.yaml").read_text()
+def _snap_version(root: Path, recipe: str = "snapcraft.yaml") -> str:
+    source = (root / "snap" / recipe).read_text()
     return _required_match(
         source,
         r"^version:\s*['\"]?([^'\"\s]+)['\"]?\s*$",
@@ -111,6 +111,7 @@ def validate_metadata(root: Path = ROOT, tag: str | None = None) -> ReleaseMetad
         "Cargo.toml": cargo_version,
         "Cargo.lock": _lockfile_version(root),
         "snap/snapcraft.yaml": _snap_version(root),
+        "snap/snapcraft-dev.yaml": _snap_version(root, "snapcraft-dev.yaml"),
         "AppStream newest release": _appstream_version(root),
     }
     readme_badge, readme_announcement = _readme_versions(root)

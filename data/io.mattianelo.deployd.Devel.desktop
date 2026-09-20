@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Deployd Development
+Comment=Development build of Deployd
+Exec=deployd-dev %u
+Icon=deployd
+Terminal=false
+Type=Application
+Categories=Game;Utility;
+Keywords=mod;manager;development;
+StartupWMClass=deployd-dev

@@ -18,6 +18,14 @@ mod utils;
 /// Set once during Component::init(), used by the command-line signal handler.
 pub(crate) static NXM_SENDER: OnceLock<relm4::Sender<app::AppMsg>> = OnceLock::new();
 
+const DEFAULT_APPLICATION_ID: &str = "io.mattianelo.deployd";
+
+fn package_application_id(configured: Option<&'static str>) -> &'static str {
+    configured
+        .filter(|application_id| !application_id.is_empty())
+        .unwrap_or(DEFAULT_APPLICATION_ID)
+}
+
 fn main() {
     if let Err(error) = gio::resources_register_include!("resources.gresource") {
         eprintln!("deployd: failed to register application resources: {error}");
@@ -89,7 +97,9 @@ fn main() {
     }
 
     let gtk_app = libadwaita::Application::builder()
-        .application_id("io.mattianelo.deployd")
+        .application_id(package_application_id(option_env!(
+            "DEPLOYD_APPLICATION_ID"
+        )))
         .flags(gio::ApplicationFlags::HANDLES_COMMAND_LINE)
         .build();
 
@@ -232,4 +242,30 @@ fn main() {
     utils::nxm_handler::ensure_registered();
 
     app.run::<app::App>(None);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // @variants: both
+    #[test]
+    fn production_package_uses_the_public_application_id() {
+        assert_eq!(package_application_id(None), "io.mattianelo.deployd");
+    }
+
+    // @variants: snap
+    #[test]
+    fn development_package_can_use_an_isolated_application_id() {
+        assert_eq!(
+            package_application_id(Some("io.mattianelo.deployd.Devel")),
+            "io.mattianelo.deployd.Devel"
+        );
+    }
+
+    // @variants: both
+    #[test]
+    fn empty_package_application_id_uses_the_public_default() {
+        assert_eq!(package_application_id(Some("")), "io.mattianelo.deployd");
+    }
 }
