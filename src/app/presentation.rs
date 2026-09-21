@@ -74,7 +74,8 @@ impl App {
     }
 
     pub(crate) fn is_busy(&self) -> bool {
-        self.ui.cache_move.is_some()
+        self.session.game_load.is_pending()
+            || self.ui.cache_move.is_some()
             || self.ui.override_order_saving
             || self.ui.mele_setup.is_some()
             || self.install.is_busy()
@@ -126,6 +127,14 @@ impl App {
     }
 
     pub(crate) fn busy_message(&self) -> String {
+        if self.session.game_load.is_pending() {
+            return if self.session.game_load.loading_library() {
+                "Loading mods…"
+            } else {
+                "Checking game files…"
+            }
+            .into();
+        }
         if let Some(status) = &self.shell.work_status {
             if let Some(progress) = status.progress {
                 let pct = (progress.clamp(0.0, 1.0) * 100.0).round() as u8;

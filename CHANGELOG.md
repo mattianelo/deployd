@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Fixed switching games temporarily showing empty mod and plugin panels while checking game files.
+  Saved lists now appear before verification finishes, with a visible checking indicator.
+
 - Show DAO override packages with ordering controls synchronized with Mod Order. Witcher games,
   Mass Effect and Cyberpunk now use one mod panel; Mass Effect omits file-conflict indicators.
 - Simplified deployment progress to one bar advancing through the operation's stages.

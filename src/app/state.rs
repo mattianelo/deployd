@@ -116,6 +116,7 @@ pub(crate) struct UiState {
 }
 
 pub(crate) struct SessionState {
+    pub(crate) game_load: super::game_loading::State,
     pub(crate) location_blocked: HashSet<String>,
     pub(crate) initializing: bool,
     pub(crate) tracker: Option<Tracker>,

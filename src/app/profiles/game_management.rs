@@ -328,6 +328,7 @@ impl App {
         if let Some(index) = index {
             self.handle_game_selected(index as u32, sender);
         } else {
+            self.session.game_load.clear();
             self.mods.rows.guard().clear();
             self.plugins.rows.guard().clear();
             self.update_profile_list(Vec::new(), 0);

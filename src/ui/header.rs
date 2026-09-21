@@ -215,6 +215,8 @@ impl SimpleComponent for Header {
 
             #[local_ref]
             pack_start = profile_dropdown -> gtk::DropDown {
+                #[watch]
+                set_sensitive: !model.state.is_busy,
                 set_tooltip_text: Some("Active profile"),
                 add_css_class: "flat",
                 #[watch]

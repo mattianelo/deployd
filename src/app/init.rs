@@ -352,6 +352,7 @@ pub(super) fn build_model(
             color_scheme_idx: 0,
         },
         session: SessionState {
+            game_load: super::game_loading::State::default(),
             location_blocked: HashSet::new(),
             initializing: true,
             tracker: None,

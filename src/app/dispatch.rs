@@ -11,6 +11,9 @@ impl App {
         sender: ComponentSender<Self>,
         root: &adw::ApplicationWindow,
     ) {
+        if self.session.game_load.is_pending() && requires_game_access(&msg) {
+            return;
+        }
         if self.ui.cache_move.is_some()
             && (requires_game_access(&msg) || changes_folder_context(&msg))
         {
@@ -545,6 +548,12 @@ impl App {
                     self.push_notification(&format!("Could not check folder access: {error}"))
                 }
             },
+            GamesCmdMsg::LibraryLoaded { request, result } => {
+                self.library_loaded(request, result, &sender)
+            }
+            GamesCmdMsg::GameOpened { request, result } => {
+                self.game_opened(request, result, &sender)
+            }
             GamesCmdMsg::ModsLoaded(result, preserve) => {
                 self.handle_cmd_mods_loaded(result, preserve, &sender)
             }

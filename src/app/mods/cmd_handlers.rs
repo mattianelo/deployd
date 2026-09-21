@@ -16,6 +16,9 @@ impl App {
         preserve_collapsed: bool,
         sender: &ComponentSender<Self>,
     ) {
+        if self.session.game_load.is_pending() {
+            return;
+        }
         match result {
             Ok(data) => {
                 if !loaded_game_is_current(

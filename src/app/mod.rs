@@ -6,6 +6,7 @@ mod deployment_status;
 mod dispatch;
 mod downloads;
 mod external;
+mod game_loading;
 mod generations;
 mod init;
 mod install;
@@ -119,6 +120,8 @@ impl Component for App {
                             set_vexpand: true,
 
                             adw::NavigationSplitView {
+                        #[watch]
+                        set_sensitive: !model.session.game_load.is_pending() && !model.session.game_load.failed(),
                         #[watch]
                         set_collapsed: !model.game_shows_plugins() && !model.game_shows_overrides(),
                         set_show_content: false,
@@ -385,10 +388,16 @@ impl Component for App {
                                 set_visible: model.has_no_mods() && matches!(model.mods.filter, ModFilter::All),
                                 set_icon_name: Some("package-x-generic-symbolic"),
                                 #[watch]
-                                set_title: if model.has_games() { "No Mods" } else { "No Games Detected" },
+                                set_title: if model.session.game_load.loading_library() { "Loading Mods…" }
+                                    else if model.session.game_load.failed() { "Could Not Load Mods" }
+                                    else if model.has_games() { "No Mods" } else { "No Games Detected" },
                                 #[watch]
                                 set_description: Some(
-                                    if model.has_games() {
+                                    if model.session.game_load.loading_library() {
+                                        "Reading the saved mod list"
+                                    } else if model.session.game_load.failed() {
+                                        "See notifications for details. Switch games and return to retry."
+                                    } else if model.has_games() {
                                         "Add mods, then Deploy to install"
                                     } else {
                                         "Install a supported game via Heroic Launcher"
@@ -661,7 +670,7 @@ impl Component for App {
 
                             adw::StatusPage {
                                 #[watch]
-                                set_visible: model.game_shows_plugins() && model.plugins.managed_count == 0,
+                                set_visible: model.game_shows_plugins() && model.plugins.managed_count == 0 && !model.session.game_load.is_pending() && !model.session.game_load.failed(),
                                 set_icon_name: Some("application-x-addon-symbolic"),
                                 set_title: "No Plugins",
                                 set_description: Some("Plugin files (.esp/.esm/.esl) will appear here"),

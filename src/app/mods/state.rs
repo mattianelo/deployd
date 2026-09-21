@@ -49,33 +49,13 @@ impl App {
     /// In-session reload: recomputes conflict overrides and refreshes the mod/plugin
     /// lists from DB without re-syncing Plugins.txt.
     pub(crate) fn reload_mods(&self, sender: &ComponentSender<Self>) {
-        self.reload_mods_impl(sender, false, true);
-    }
-
-    /// Full reload including a Plugins.txt sync. Use only on initial game select.
-    pub(crate) fn reload_mods_full(&self, sender: &ComponentSender<Self>) {
-        self.reload_mods_impl(sender, true, false);
-    }
-
-    fn reload_mods_impl(
-        &self,
-        sender: &ComponentSender<Self>,
-        sync_txt: bool,
-        preserve_collapsed: bool,
-    ) {
         if let (Some(tracker), Some(game)) =
             (self.session.tracker.clone(), self.selected_game().cloned())
         {
             self.location_command(sender, async move {
-                let mode = if sync_txt {
-                    GameLoadMode::OpenGame
-                } else {
-                    GameLoadMode::Refresh
-                };
-                let result = async { load_game_data(&tracker, &game, mode).await };
                 AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::ModsLoaded(
-                    result.await,
-                    preserve_collapsed,
+                    load_game_data(&tracker, &game, GameLoadMode::Refresh).await,
+                    true,
                 ))
             });
         }
@@ -378,15 +358,46 @@ impl App {
         self.session.updating_profiles = false;
     }
 
+    pub(crate) fn apply_library(&mut self, library: super::super::game_loading::Library) {
+        self.mods.collapsed_groups = library
+            .groups
+            .iter()
+            .filter(|group| group.collapsed)
+            .map(|group| group.id.clone())
+            .collect();
+        self.populate_plugins(
+            library.plugins,
+            &library.mods,
+            &HashMap::new(),
+            PluginDiscovery {
+                vanilla_plugins: &HashSet::new(),
+                vanilla_master_counts: &HashMap::new(),
+                vanilla_derived: &HashSet::new(),
+                scan_complete: false,
+            },
+        );
+        self.ui.override_mod_ids = library.override_mod_ids;
+        self.populate_mods(library.mods, &library.groups, &library.overrides);
+        let active = library
+            .profiles
+            .iter()
+            .position(|profile| profile.is_active)
+            .unwrap_or(0);
+        self.update_profile_list(library.profiles, active);
+        self.apply_search_filter();
+    }
+
     pub(crate) fn apply_loaded_data(
         &mut self,
         data: LoadedData,
         sender: &ComponentSender<Self>,
     ) -> bool {
-        if !loaded_game_is_current(
-            self.selected_game().map(|game| game.id.as_str()),
-            &data.game_id,
-        ) {
+        if self.session.game_load.is_pending()
+            || !loaded_game_is_current(
+                self.selected_game().map(|game| game.id.as_str()),
+                &data.game_id,
+            )
+        {
             return false;
         }
 

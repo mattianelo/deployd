@@ -24,6 +24,13 @@ impl App {
         {
             return;
         }
+        if self.is_busy() && !self.session.game_load.is_pending() {
+            self.ui
+                .game_dropdown
+                .set_selected(self.session.selected_game_idx as u32);
+            self.show_toast("Wait for the current operation to finish before switching games");
+            return;
+        }
         self.session.selected_game_idx = new_idx;
         self.mods.rows.guard().clear();
         self.plugins.rows.guard().clear();
@@ -53,7 +60,7 @@ impl App {
                 AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
             });
         }
-        self.reload_mods_full(sender);
+        self.begin_game_load(sender);
         self.rebuild_downloads_view();
     }
 

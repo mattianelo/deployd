@@ -466,6 +466,14 @@ pub(crate) enum ShellCmdMsg {
 
 #[derive(Debug)]
 pub(crate) enum GamesCmdMsg {
+    LibraryLoaded {
+        request: super::game_loading::Request,
+        result: Result<super::game_loading::Library, String>,
+    },
+    GameOpened {
+        request: super::game_loading::Request,
+        result: Result<LoadedData, String>,
+    },
     LocationAccessChecked(Result<Vec<String>, String>),
     ModsLoaded(Result<LoadedData, String>, bool),
     CacheDirMoved {

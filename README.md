@@ -145,6 +145,8 @@ Deployd uses libadwaita throughout its primary workflows:
   **Overrides** panel: move override mods earlier or later to update their priority in Mod Order.
   The Witcher games, Mass Effect and Cyberpunk use a single mod list. Mass Effect omits file-conflict
   indicators because its managed deployment handles those files.
+- Switching games shows the saved mod and plugin lists while game-file checks finish in the
+  background. The lists remain read-only while **Checking game files…** is shown.
 - Manage Games keeps your selected game when saving settings. Installing a download for another
   game asks you to select that game first instead of switching automatically.
 - Select Mode is the v2 reorder workflow for Mod Order and Plugin Order. Enter Select Mode before
