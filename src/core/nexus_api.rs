@@ -13,6 +13,25 @@ const SSO_URL: &str = "wss://sso.nexusmods.com";
 const SSO_BROWSER_URL: &str = "https://www.nexusmods.com/sso";
 const APPLICATION_SLUG: &str = "mattianelo-deployd";
 
+fn metadata_http_error(
+    operation: &str,
+    domain: &str,
+    mod_id: Option<i64>,
+    status: reqwest::StatusCode,
+) -> String {
+    let target = mod_id.map_or_else(|| domain.to_string(), |id| format!("{domain}/mods/{id}"));
+    let guidance = match status {
+        reqwest::StatusCode::UNAUTHORIZED => " Check your Nexus login in Settings.",
+        reqwest::StatusCode::FORBIDDEN => {
+            " Check the Nexus mod identity and whether your account can access that page."
+        }
+        reqwest::StatusCode::NOT_FOUND => " Check the Nexus game and mod ID.",
+        reqwest::StatusCode::TOO_MANY_REQUESTS => " Wait for your Nexus rate limit to reset.",
+        _ => "",
+    };
+    format!("Nexus {operation} failed for {target}: HTTP {status}.{guidance}")
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RateLimitInfo {
     pub hourly_remaining: u32,
@@ -100,7 +119,12 @@ impl NexusClient {
             .context("network error fetching mod info")?;
 
         if !resp.status().is_success() {
-            bail!("Nexus API error: {}", resp.status());
+            bail!(metadata_http_error(
+                "mod lookup",
+                domain,
+                Some(mod_id),
+                resp.status()
+            ));
         }
 
         let rate_limits = parse_rate_limits(resp.headers());
@@ -128,7 +152,12 @@ impl NexusClient {
             .context("network error fetching mod files")?;
 
         if !resp.status().is_success() {
-            bail!("Nexus API error: {}", resp.status());
+            bail!(metadata_http_error(
+                "file listing",
+                domain,
+                Some(mod_id),
+                resp.status()
+            ));
         }
 
         let rate_limits = parse_rate_limits(resp.headers());
@@ -163,7 +192,12 @@ impl NexusClient {
             .context("network error during MD5 search")?;
 
         if !resp.status().is_success() {
-            bail!("Nexus API error: {}", resp.status());
+            bail!(metadata_http_error(
+                "archive hash lookup",
+                domain,
+                None,
+                resp.status()
+            ));
         }
 
         let rate_limits = parse_rate_limits(resp.headers());
@@ -356,4 +390,45 @@ pub async fn sso_login() -> Result<String> {
     }
 
     bail!("SSO WebSocket closed without providing an API key")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::metadata_http_error;
+
+    #[test]
+    fn forbidden_metadata_errors_identify_the_request_without_claiming_premium_is_required() {
+        let message = metadata_http_error(
+            "file listing",
+            "fallout4",
+            Some(6),
+            reqwest::StatusCode::FORBIDDEN,
+        );
+        assert!(message.contains("fallout4/mods/6"));
+        assert!(message.contains("file listing"));
+        assert!(message.contains("403"));
+        assert!(!message.contains("premium"));
+    }
+
+    #[test]
+    fn metadata_errors_distinguish_login_and_rate_limit_failures() {
+        assert!(
+            metadata_http_error(
+                "mod lookup",
+                "fallout4",
+                Some(12631),
+                reqwest::StatusCode::UNAUTHORIZED
+            )
+            .contains("login")
+        );
+        assert!(
+            metadata_http_error(
+                "archive hash lookup",
+                "fallout4",
+                None,
+                reqwest::StatusCode::TOO_MANY_REQUESTS
+            )
+            .contains("rate limit")
+        );
+    }
 }

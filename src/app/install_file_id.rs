@@ -73,6 +73,9 @@ impl App {
         partial_name: Option<String>,
         sender: &ComponentSender<Self>,
     ) {
+        if !self.download_metadata_available() {
+            return;
+        }
         let Some(tracker) = self.session.tracker.clone() else {
             return;
         };

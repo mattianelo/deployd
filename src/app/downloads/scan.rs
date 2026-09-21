@@ -16,6 +16,10 @@ impl App {
         &mut self,
         sender: &relm4::prelude::ComponentSender<Self>,
     ) {
+        if self.download.scan_in_progress || !self.download.metadata_previous_status.is_empty() {
+            self.show_toast("Wait for the current Downloads operation, then scan again.");
+            return;
+        }
         let base_dir = self.download.directory.clone();
         if !base_dir.exists() {
             if self.download.initial_scan_done {
@@ -29,6 +33,7 @@ impl App {
             return;
         };
 
+        self.download.scan_in_progress = true;
         self.begin_work(WorkKind::ScanningDownloads, "Scanning downloads...");
         let selected_game_id = self
             .selected_game()
@@ -135,6 +140,7 @@ fn reconcile_downloads(
             status_msg: "Ready to install".to_string(),
             error_msg: None,
             nexus_ids: archive.nexus_ids,
+            nexus_identity_source: crate::models::download::NexusIdentitySource::Filename,
             archive_path: Some(archive.path),
             metadata_fetched: false,
             game_domain: archive.game_domain,
@@ -231,7 +237,10 @@ fn reconcile_archive(
             let Some(stored) = entry.nexus_ids.as_ref() else {
                 continue;
             };
-            if stored.file_id == 0 && stored.mod_id != scanned.mod_id {
+            if entry.nexus_identity_source == crate::models::download::NexusIdentitySource::Filename
+                && stored.file_id == 0
+                && stored.mod_id != scanned.mod_id
+            {
                 let domain = if scanned.domain.is_empty() {
                     stored.domain.clone()
                 } else {
@@ -355,6 +364,27 @@ fn merge_candidates(
         .filter_map(|idx| all_downloads.get(idx))
         .map(|entry| entry.id.clone())
         .collect();
+    let records: Vec<_> = all_downloads
+        .iter()
+        .filter(|entry| candidates.contains(&entry.id))
+        .collect();
+    if records.iter().any(|selected| {
+        selected.nexus_identity_source == crate::models::download::NexusIdentitySource::Confirmed
+            && records
+                .iter()
+                .any(|other| match (&selected.nexus_ids, &other.nexus_ids) {
+                    (Some(selected), Some(other)) => {
+                        selected.mod_id != other.mod_id
+                            || selected.domain != other.domain
+                            || (selected.file_id > 0
+                                && other.file_id > 0
+                                && selected.file_id != other.file_id)
+                    }
+                    _ => false,
+                })
+    }) {
+        return ReconcileOutcome::default();
+    }
     let scored_candidates: Vec<(String, i32)> = candidates
         .iter()
         .filter_map(|id| {
@@ -566,6 +596,14 @@ fn merge_download_metadata(
             && loser.nexus_ids.as_ref().is_some_and(|ids| ids.file_id > 0)
     {
         winner.nexus_ids = loser.nexus_ids.clone();
+        if winner.nexus_identity_source != crate::models::download::NexusIdentitySource::Confirmed {
+            winner.nexus_identity_source = loser.nexus_identity_source;
+        }
+    }
+    if winner.nexus_ids == loser.nexus_ids
+        && loser.nexus_identity_source == crate::models::download::NexusIdentitySource::Confirmed
+    {
+        winner.nexus_identity_source = loser.nexus_identity_source;
     }
     if winner.game_domain.is_none() {
         winner.game_domain = loser.game_domain.clone();
@@ -701,6 +739,16 @@ fn stored_metadata_conflicts_with_current_filename(
     entry: &DownloadEntry,
     identity: &CurrentNexusFileIdentity,
 ) -> bool {
+    use crate::models::download::NexusIdentitySource;
+    if entry.nexus_identity_source == NexusIdentitySource::Confirmed
+        || (entry.nexus_identity_source == NexusIdentitySource::Legacy
+            && entry
+                .nexus_ids
+                .as_ref()
+                .is_some_and(|ids| ids.mod_id != identity.mod_id))
+    {
+        return false;
+    }
     let has_exact_metadata =
         entry.metadata_fetched || entry.nexus_ids.as_ref().is_some_and(|ids| ids.file_id > 0);
     has_exact_metadata
@@ -1431,6 +1479,7 @@ mod tests {
         std::fs::write(&archive, b"archive")?;
 
         let mut stale = download_entry("stale", "Dynamic Grass");
+        stale.nexus_identity_source = crate::models::download::NexusIdentitySource::Filename;
         stale.status = DownloadStatus::Downloaded;
         stale.archive_path = Some(archive);
         stale.metadata_fetched = false;
@@ -1457,6 +1506,99 @@ mod tests {
         Ok(())
     }
 
+    // @variants: both
+    #[tokio::test]
+    async fn scans_preserve_confirmed_and_legacy_ids_despite_filename_guesses() -> Result<()> {
+        use crate::models::download::NexusIdentitySource;
+        for source in [NexusIdentitySource::Confirmed, NexusIdentitySource::Legacy] {
+            let temp = TempDir::new()?;
+            let domain = temp.path().join("fallout4");
+            std::fs::create_dir(&domain)?;
+            let archive = domain.join("LooksMenu v1-6-20-12631-1-6-20-1604483725.7z");
+            std::fs::write(&archive, b"archive")?;
+            let mut entry = download_entry("looks", "LooksMenu");
+            entry.nexus_identity_source = source;
+            entry.nexus_ids = Some(NexusIds {
+                mod_id: 12631,
+                file_id: 0,
+                domain: "fallout4".into(),
+            });
+            entry.archive_path = Some(archive.clone());
+            entry.status = DownloadStatus::Downloaded;
+            entry.metadata_fetched = false;
+            entry.nexus_file_name = None;
+            let tracker = crate::core::tracker::Tracker::open("sqlite::memory:")
+                .await?
+                .tracker;
+            tracker.save_download_entry(&entry).await?;
+            scan_downloads_and_persist(temp.path().into(), vec![entry], tracker.clone())
+                .await
+                .map_err(anyhow::Error::msg)?;
+            let loaded = tracker.load_download_entries().await?;
+            assert_eq!(loaded.len(), 1);
+            assert_eq!(loaded[0].nexus_ids.as_ref().unwrap().mod_id, 12631);
+            assert_eq!(loaded[0].nexus_identity_source, source);
+            assert_eq!(loaded[0].archive_path.as_ref(), Some(&archive));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn explicit_page_selection_overrides_a_current_nexus_filename() -> Result<()> {
+        let temp = TempDir::new()?;
+        let domain = temp.path().join("fallout4");
+        std::fs::create_dir(&domain)?;
+        let archive = domain.join("Dynamic Grass 108480 1.3.0 2026-08-31T12-00Z Gpr9A6gVu.zip");
+        std::fs::write(&archive, b"archive")?;
+        let mut entry = download_entry("explicit", "Selected Mod");
+        entry.nexus_identity_source = crate::models::download::NexusIdentitySource::Confirmed;
+        entry.archive_path = Some(archive.clone());
+        let selected = entry.nexus_ids.clone();
+        let result = scan_downloads(temp.path().into(), vec![entry]).map_err(anyhow::Error::msg)?;
+        assert_eq!(result.entries.len(), 1);
+        assert_eq!(result.entries[0].nexus_ids, selected);
+        assert_eq!(result.entries[0].archive_path, Some(archive));
+        Ok(())
+    }
+
+    #[test]
+    fn duplicate_sweeps_do_not_merge_different_confirmed_mods() {
+        let mut le1 = download_entry("le1", "LE1 Patch");
+        le1.nexus_identity_source = crate::models::download::NexusIdentitySource::Confirmed;
+        le1.nexus_ids = Some(NexusIds {
+            mod_id: 23,
+            file_id: 0,
+            domain: "masseffectlegendaryedition".into(),
+        });
+        le1.game_domain = Some("masseffectlegendaryedition".into());
+        let mut le2 = le1.clone();
+        le2.id = "le2".into();
+        le2.nexus_ids.as_mut().unwrap().mod_id = 8;
+        le2.status = DownloadStatus::Downloaded;
+        let mut entries = vec![le1, le2];
+        let outcome = sweep_duplicate_downloads(&mut entries);
+        assert!(outcome.removed_ids.is_empty());
+        assert_eq!(entries.len(), 2);
+    }
+
+    #[test]
+    fn merging_the_same_file_preserves_confirmation_on_the_retained_record() {
+        let mut installed = download_entry("installed", "Mod");
+        let mut confirmed = installed.clone();
+        confirmed.id = "confirmed".into();
+        confirmed.status = DownloadStatus::Downloaded;
+        confirmed.nexus_identity_source = crate::models::download::NexusIdentitySource::Confirmed;
+        installed.nexus_identity_source = crate::models::download::NexusIdentitySource::Legacy;
+        let mut entries = vec![installed, confirmed];
+        sweep_duplicate_downloads(&mut entries);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].id, "installed");
+        assert_eq!(
+            entries[0].nexus_identity_source,
+            crate::models::download::NexusIdentitySource::Confirmed
+        );
+    }
+
     fn download_entry(id: &str, name: &str) -> DownloadEntry {
         DownloadEntry {
             id: id.to_string(),
@@ -1470,6 +1612,7 @@ mod tests {
                 file_id: 123,
                 domain: "fallout4".to_string(),
             }),
+            nexus_identity_source: crate::models::download::NexusIdentitySource::Legacy,
             archive_path: None,
             metadata_fetched: true,
             game_domain: Some("fallout4".to_string()),

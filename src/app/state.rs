@@ -176,6 +176,7 @@ pub(crate) struct DownloadState {
     pub(crate) global_active_count: usize,
     pub(crate) directory: PathBuf,
     pub(crate) initial_scan_done: bool,
+    pub(crate) scan_in_progress: bool,
     pub(crate) sort: DownloadSort,
     pub(crate) filter: DownloadFilter,
     pub(crate) show_hidden: bool,

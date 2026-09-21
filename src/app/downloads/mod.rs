@@ -1,6 +1,7 @@
 pub mod cmd_handlers;
 mod discovery;
 pub mod handlers;
+mod identity;
 mod metadata;
 pub mod nxm;
 pub(super) mod pane;

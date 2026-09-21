@@ -336,8 +336,11 @@ impl App {
             DownloadsMsg::ConfirmDownloadRename(id, name) => {
                 self.handle_confirm_download_rename(id, name, &sender)
             }
-            DownloadsMsg::ConfirmNexusIdEntry(download_id, mod_id, domain) => {
-                self.handle_confirm_nexus_id_entry(download_id, mod_id, domain, &sender)
+            DownloadsMsg::ConfirmNexusIdEntry(download_id, ids) => {
+                self.handle_confirm_nexus_id_entry(download_id, ids, &sender)
+            }
+            DownloadsMsg::EditDownloadIdentity(index) => {
+                self.handle_edit_download_identity(index, root, &sender)
             }
             DownloadsMsg::ShowFileIdDialog {
                 download_id,
@@ -359,7 +362,7 @@ impl App {
                 self.handle_archive_md5_computed(download_id, md5, &sender)
             }
             DownloadsMsg::FetchDownloadMetadata(idx) => {
-                self.handle_fetch_download_metadata(idx, root, &sender)
+                self.handle_fetch_download_metadata(idx, &sender)
             }
             DownloadsMsg::ScanDownloadsFolder => self.handle_scan_downloads_folder(&sender),
             DownloadsMsg::DownloadSortChanged(idx) => self.handle_download_sort_changed(idx),
@@ -710,16 +713,25 @@ impl App {
                 self.handle_cmd_nxm_download_complete(id, result, &sender)
             }
             DownloadsCmdMsg::NexusMetadataFetched(download_id, result) => {
-                self.handle_cmd_nexus_metadata_fetched(download_id, result, &sender)
+                self.handle_cmd_nexus_metadata_fetched(download_id, result, root, &sender)
             }
             DownloadsCmdMsg::NexusIdentityPersisted {
                 download_id,
                 nexus_ids,
                 result,
             } => self.handle_cmd_nexus_identity_persisted(download_id, nexus_ids, result, &sender),
-            DownloadsCmdMsg::NexusMetadataPersisted { toast, result } => {
-                self.handle_cmd_nexus_metadata_persisted(toast, result)
-            }
+            DownloadsCmdMsg::NexusMetadataPersisted {
+                download_id,
+                metadata,
+                needs_file_id,
+                result,
+            } => self.handle_cmd_nexus_metadata_persisted(
+                download_id,
+                metadata,
+                needs_file_id,
+                result,
+                &sender,
+            ),
             DownloadsCmdMsg::DownloadsDirUpdated(dir) => self.handle_cmd_downloads_dir_updated(dir),
             DownloadsCmdMsg::DownloadsScanned(result) => self.handle_cmd_downloads_scanned(result),
         }

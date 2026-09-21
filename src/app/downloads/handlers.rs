@@ -36,6 +36,7 @@ fn reset_download_metadata(entry: &mut DownloadEntry) {
             .to_string_lossy()
             .to_string();
     }
+    entry.nexus_identity_source = crate::models::download::NexusIdentitySource::Filename;
     entry.metadata_fetched = false;
     entry.nexus_file_name = None;
     entry.nexus_is_primary = false;
@@ -158,6 +159,9 @@ impl App {
         index: DynamicIndex,
         sender: &ComponentSender<Self>,
     ) {
+        if !self.download_metadata_available() {
+            return;
+        }
         let idx = index.current_index();
         let download_id = {
             let guard = self.download.rows.guard();
@@ -586,19 +590,6 @@ impl App {
                 }) = entry.nexus_ids
                 {
                     *dom = domain.clone();
-                }
-                // Auto-move archive from flat root to per-game subfolder
-                if let Some(ref archive_path) = entry.archive_path
-                    && archive_path.parent() == Some(self.download.directory.as_path())
-                {
-                    let target_dir = self.download.directory.join(domain);
-                    if let Some(file_name) = archive_path.file_name() {
-                        let _ = std::fs::create_dir_all(&target_dir);
-                        let target = target_dir.join(file_name);
-                        if std::fs::rename(archive_path, &target).is_ok() {
-                            entry.archive_path = Some(target);
-                        }
-                    }
                 }
             }
         }

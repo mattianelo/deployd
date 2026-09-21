@@ -16,6 +16,32 @@ pub(crate) enum DownloadFilter {
     Completed,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum NexusIdentitySource {
+    #[default]
+    Legacy,
+    Filename,
+    Confirmed,
+}
+
+impl NexusIdentitySource {
+    pub(crate) fn as_db_str(self) -> &'static str {
+        match self {
+            Self::Legacy => "legacy",
+            Self::Filename => "filename",
+            Self::Confirmed => "confirmed",
+        }
+    }
+
+    pub(crate) fn from_db_str(value: &str) -> Self {
+        match value {
+            "filename" => Self::Filename,
+            "confirmed" => Self::Confirmed,
+            _ => Self::Legacy,
+        }
+    }
+}
+
 /// Nexus Mods identity triple for a download: mod ID, file ID, and game domain.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NexusIds {
@@ -91,6 +117,7 @@ pub struct DownloadEntry {
     pub status_msg: String,
     pub error_msg: Option<String>,
     pub nexus_ids: Option<NexusIds>,
+    pub(crate) nexus_identity_source: NexusIdentitySource,
     pub archive_path: Option<PathBuf>,
     pub metadata_fetched: bool,
     /// Game domain for filtering (e.g., "skyrimspecialedition"). None = show for all games.
@@ -126,6 +153,7 @@ impl DownloadEntry {
             status_msg: "Starting download...".to_string(),
             error_msg: None,
             nexus_ids,
+            nexus_identity_source: NexusIdentitySource::Legacy,
             archive_path: None,
             metadata_fetched: false,
             game_domain,

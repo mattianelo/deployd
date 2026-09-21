@@ -64,7 +64,7 @@ fn nexus_timestamp_suffix(value: &str) -> Option<&str> {
     (suffix.len() == 10 && suffix.bytes().all(|byte| byte.is_ascii_digit())).then_some(suffix)
 }
 
-/// Parse a Nexus mod ID from a conventional downloaded archive filename.
+/// Filename numbers can also be versions; this hint requires verification before a page lookup.
 pub(crate) fn parse_nexus_mod_id(filename: &str) -> Option<i64> {
     let tokens: Vec<_> = filename.split_whitespace().collect();
     for (timestamp_index, token) in tokens.iter().enumerate() {
@@ -111,6 +111,46 @@ fn is_nexus_download_timestamp(value: &str) -> bool {
             .all(|(index, byte)| matches!(index, 4 | 7 | 10 | 13 | 16) || byte.is_ascii_digit())
 }
 
+pub(crate) fn parse_nexus_identity_input(
+    raw: &str,
+    fallback_domain: &str,
+) -> Result<crate::models::download::NexusIds, String> {
+    let raw = raw.trim();
+    let (mod_id, domain) = if let Ok(id) = raw.parse::<i64>() {
+        (id, fallback_domain.to_string())
+    } else {
+        let url = reqwest::Url::parse(raw)
+            .map_err(|_| "Enter a positive mod ID or a Nexus mod-page URL.")?;
+        if !matches!(url.scheme(), "https" | "http")
+            || !matches!(url.host_str(), Some("www.nexusmods.com" | "nexusmods.com"))
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.port().is_some()
+        {
+            return Err("Use a mod-page URL on nexusmods.com.".into());
+        }
+        let parts: Vec<_> = url.path().trim_matches('/').split('/').collect();
+        let [domain, "mods", id] = parts.as_slice() else {
+            return Err("Use a Nexus URL with /game/mods/mod-ID.".into());
+        };
+        let id = id
+            .parse::<i64>()
+            .map_err(|_| "The Nexus mod ID must be a positive number.")?;
+        (id, domain.to_ascii_lowercase())
+    };
+    if mod_id <= 0 {
+        return Err("The Nexus mod ID must be a positive number.".into());
+    }
+    if !crate::core::game::all_nexus_domains().contains(&domain.as_str()) {
+        return Err("This Nexus game is not supported by Deployd.".into());
+    }
+    Ok(crate::models::download::NexusIds {
+        mod_id,
+        file_id: 0,
+        domain,
+    })
+}
+
 /// Parse a positive Nexus mod ID from a bare number or Nexus URL.
 pub(crate) fn parse_nexus_mod_id_from_input(raw: &str) -> Option<i64> {
     let raw = raw.trim();
@@ -127,6 +167,42 @@ pub(crate) fn parse_nexus_mod_id_from_input(raw: &str) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nexus_url_selects_its_own_game_and_ignores_file_query_parameters() {
+        let ids = parse_nexus_identity_input(
+            "https://www.nexusmods.com/masseffectlegendaryedition/mods/23?tab=files&file_id=999",
+            "fallout4",
+        )
+        .unwrap();
+        assert_eq!(ids.mod_id, 23);
+        assert_eq!(ids.file_id, 0);
+        assert_eq!(ids.domain, "masseffectlegendaryedition");
+        assert_eq!(
+            parse_nexus_identity_input("8", "masseffectlegendaryedition")
+                .unwrap()
+                .mod_id,
+            8
+        );
+    }
+
+    #[test]
+    fn identity_input_rejects_unrelated_urls_and_unsupported_games() {
+        for raw in [
+            "0",
+            "-1",
+            "https://example.com/fallout4/mods/12631",
+            "https://www.nexusmods.com.evil.example/fallout4/mods/12631",
+            "https://www.nexusmods.com/fallout4/files/12631",
+            "https://www.nexusmods.com/unknown/mods/1",
+            "https://user:password@www.nexusmods.com/fallout4/mods/12631",
+        ] {
+            assert!(
+                parse_nexus_identity_input(raw, "fallout4").is_err(),
+                "{raw}"
+            );
+        }
+    }
 
     #[test]
     fn extracts_only_ten_digit_nexus_timestamp_suffixes() {

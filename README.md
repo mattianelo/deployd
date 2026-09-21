@@ -315,10 +315,13 @@ Open **Settings** (gear icon) and log in under **Nexus Mods**:
   options. Select a game first and wait for any active operation to finish.
 - **Archive metadata** — Manual metadata refresh uses the same Nexus mod and exact-file details as
   Mod Manager downloads. Installation uses the metadata already stored on the download and does
-  not contact Nexus or request an ID. Clearing metadata restores the archive name and re-detects
-  its Nexus identity when the filename contains one, including one- and two-digit mod IDs. Refreshed metadata remains available after restarting.
-  Rescanning current Nexus filenames matches the page, file label, and version, keeping metadata
-  attached to the correct archive when multiple versions of the same file are present.
+  not contact Nexus or request an ID. Filename-derived mod IDs are suggestions, including short
+  IDs used by some Mass Effect mods. If an archive hash points to a different page, confirm the
+  matching file before Deployd changes its identity. If no hash match verifies the suggestion,
+  confirm a Nexus page before the lookup continues. Use **Change Nexus mod…** in the download's
+  context menu to correct an existing identity; a Nexus URL selects both the game and mod page.
+  Confirmed identities survive rescans and restarts. Clearing metadata restores the archive name
+  and its unverified filename suggestion. Refreshed metadata remains available after restarting.
 - **From Nexus Mods** — Click **Mod Manager Download**; the file downloads into Deployd automatically
 - **FOMOD mods** — A wizard opens automatically if the archive includes a FOMOD installer. Option
   labels remain grouped with their controls, and conditional steps support installers that use an

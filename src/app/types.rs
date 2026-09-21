@@ -96,10 +96,17 @@ pub(crate) struct NexusDownloadMetadata {
     pub(crate) summary: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct NexusIdentityCandidate {
+    pub(crate) ids: crate::models::download::NexusIds,
+    pub(crate) name: String,
+}
+
 #[derive(Debug)]
 pub(crate) enum ManualMetadataResult {
     Resolved(NexusDownloadMetadata),
     NeedsFileId(NexusDownloadMetadata),
+    NeedsIdentity(Vec<NexusIdentityCandidate>),
 }
 
 pub(crate) struct PendingInstall {

@@ -1,15 +1,107 @@
-use adw::prelude::*;
-use gtk::prelude::*;
-use relm4::factory::DynamicIndex;
 use relm4::prelude::*;
 
 use crate::app::types::{ManualMetadataResult, NexusDownloadMetadata};
 use crate::core::game;
-use crate::models::download::NexusIds;
+use crate::models::download::{NexusIdentitySource, NexusIds};
 use crate::models::nexus::{NexusFileEntry, NexusFileUpdate, NexusModInfo};
 
 use super::super::App;
 use super::super::messages::{AppCmdMsg, AppMsg};
+
+pub(super) async fn persist_manual_metadata(
+    tracker: &crate::core::tracker::Tracker,
+    mut entry: crate::models::download::DownloadEntry,
+    metadata: &NexusDownloadMetadata,
+    directory: std::path::PathBuf,
+) -> Result<crate::models::download::DownloadEntry, String> {
+    let ids = entry
+        .nexus_ids
+        .as_mut()
+        .ok_or("Nexus identity is missing")?;
+    ids.domain = metadata.domain.clone();
+    if let Some(file_id) = metadata.file_id {
+        ids.file_id = file_id;
+    }
+    entry.nexus_identity_source = NexusIdentitySource::Confirmed;
+    entry.mod_name = metadata.mod_name.clone();
+    entry.game_domain = Some(metadata.domain.clone());
+    entry.metadata_fetched = metadata.file_id.is_some_and(|id| id > 0)
+        || metadata
+            .nexus_file_name
+            .as_ref()
+            .is_some_and(|name| !name.trim().is_empty());
+    entry.nexus_file_name = metadata.nexus_file_name.clone();
+    entry.nexus_is_primary = metadata.nexus_is_primary;
+    entry.version = metadata.version.clone().or(entry.version);
+    entry.author = metadata.author.clone().or(entry.author);
+    let old_path = entry.archive_path.clone();
+    let entry = tokio::task::spawn_blocking(move || stage_metadata_archive(entry, &directory))
+        .await
+        .map_err(|error| format!("Archive relocation task failed: {error}"))?;
+    if let Err(error) = tracker
+        .persist_fetched_download_metadata(
+            &entry,
+            metadata.latest_version.as_deref(),
+            metadata.summary.as_deref(),
+        )
+        .await
+    {
+        if old_path != entry.archive_path {
+            let new_path = entry.archive_path.clone();
+            let rollback = tokio::task::spawn_blocking(move || -> std::io::Result<()> {
+                if let Some(new) = new_path {
+                    std::fs::remove_file(new)?;
+                }
+                Ok(())
+            })
+            .await;
+            if !matches!(rollback, Ok(Ok(()))) {
+                return Err(format!(
+                    "{error}; archive relocation could not be undone. Rescan Downloads to locate the archive."
+                ));
+            }
+        }
+        return Err(error.to_string());
+    }
+    if old_path != entry.archive_path {
+        let cleanup = tokio::task::spawn_blocking(move || -> std::io::Result<()> {
+            if let Some(old) = old_path {
+                std::fs::remove_file(old)?;
+            }
+            Ok(())
+        })
+        .await;
+        if !matches!(cleanup, Ok(Ok(()))) {
+            eprintln!("deployd: metadata saved; original archive copy remains in Downloads");
+        }
+    }
+    Ok(entry)
+}
+
+fn stage_metadata_archive(
+    mut entry: crate::models::download::DownloadEntry,
+    directory: &std::path::Path,
+) -> crate::models::download::DownloadEntry {
+    if let Some(path) = &entry.archive_path
+        && path.parent() == Some(directory)
+        && let Some(name) = path.file_name()
+        && let Some(domain) = entry.game_domain.as_deref()
+        && crate::core::game::all_nexus_domains().contains(&domain)
+    {
+        let target_dir = directory.join(domain);
+        let target = target_dir.join(name);
+        let relocated = (|| -> std::io::Result<()> {
+            std::fs::create_dir_all(target_dir)?;
+            // Keep the original until the database commits, and refuse target collisions.
+            std::fs::hard_link(path, &target)
+        })();
+        match relocated {
+            Ok(()) => entry.archive_path = Some(target),
+            Err(error) => eprintln!("deployd: keeping archive in its original folder: {error}"),
+        }
+    }
+    entry
+}
 
 pub(crate) fn nexus_download_metadata(
     domain: &str,
@@ -161,6 +253,7 @@ fn match_nexus_file(
         .or_else(|| candidates.into_iter().next())
 }
 
+#[cfg(test)]
 fn mod_identity(mod_id: i64, domain: String) -> NexusIds {
     NexusIds {
         mod_id,
@@ -169,120 +262,58 @@ fn mod_identity(mod_id: i64, domain: String) -> NexusIds {
     }
 }
 
+fn resolve_md5_results(
+    results: Vec<crate::models::nexus::Md5SearchResult>,
+    identity: Option<&NexusIds>,
+    source: NexusIdentitySource,
+    domain: &str,
+) -> (
+    Option<crate::models::nexus::Md5SearchResult>,
+    Vec<crate::app::types::NexusIdentityCandidate>,
+) {
+    let mut results: Vec<_> = results
+        .into_iter()
+        .filter(|hit| {
+            hit.r#mod.mod_id > 0
+                && hit.file_details.file_id > 0
+                && (hit.r#mod.domain_name.is_empty()
+                    || hit.r#mod.domain_name.eq_ignore_ascii_case(domain))
+        })
+        .collect();
+    results.sort_by_key(|hit| (hit.r#mod.mod_id, hit.file_details.file_id));
+    results.dedup_by_key(|hit| (hit.r#mod.mod_id, hit.file_details.file_id));
+    let matches: Vec<_> = results
+        .iter()
+        .enumerate()
+        .filter(|(_, hit)| {
+            identity.is_some_and(|ids| {
+                ids.mod_id == hit.r#mod.mod_id
+                    && (ids.domain.is_empty() || ids.domain.eq_ignore_ascii_case(domain))
+                    && (ids.file_id == 0 || ids.file_id == hit.file_details.file_id)
+            })
+        })
+        .map(|(index, _)| index)
+        .collect();
+    if let [index] = matches.as_slice()
+        && (source == NexusIdentitySource::Confirmed || results.len() == 1)
+    {
+        return (Some(results.remove(*index)), Vec::new());
+    }
+    let candidates = results
+        .into_iter()
+        .map(|hit| crate::app::types::NexusIdentityCandidate {
+            ids: NexusIds {
+                mod_id: hit.r#mod.mod_id,
+                file_id: hit.file_details.file_id,
+                domain: domain.to_string(),
+            },
+            name: format!("{} — {}", hit.r#mod.name, hit.file_details.display_name()),
+        })
+        .collect();
+    (None, candidates)
+}
+
 impl App {
-    pub(crate) fn handle_fetch_download_metadata(
-        &mut self,
-        index: DynamicIndex,
-        root: &adw::ApplicationWindow,
-        sender: &ComponentSender<Self>,
-    ) {
-        let idx = index.current_index();
-        // If the entry has no nexus_ids yet, ask the user for a Nexus URL or mod ID.
-        {
-            let no_nexus_ids = {
-                let guard = self.download.rows.guard();
-                let Some(row) = guard.get(idx) else { return };
-                if row.entry.nexus_ids.is_some() {
-                    None
-                } else {
-                    Some((row.entry.id.clone(), row.entry.game_domain.clone()))
-                }
-            };
-            if let Some((download_id, game_domain)) = no_nexus_ids {
-                let fallback_domain = self
-                    .selected_game()
-                    .and_then(game::nexus_domain)
-                    .unwrap_or("skyrimspecialedition")
-                    .to_string();
-                let domain = game_domain
-                    .filter(|d| !d.is_empty())
-                    .unwrap_or(fallback_domain);
-
-                let text_entry = gtk::Entry::builder()
-                    .placeholder_text("Nexus mod URL or ID  (e.g. 101)")
-                    .hexpand(true)
-                    .activates_default(true)
-                    .margin_top(8)
-                    .margin_bottom(8)
-                    .margin_start(8)
-                    .margin_end(8)
-                    .build();
-
-                let dialog = adw::AlertDialog::builder()
-                    .heading("Enter Nexus Mod ID")
-                    .body("Paste a Nexus mod URL or type the numeric mod ID.")
-                    .build();
-                dialog.set_extra_child(Some(&text_entry));
-                dialog.add_response("cancel", "Cancel");
-                dialog.add_response("fetch", "Fetch");
-                dialog.set_default_response(Some("fetch"));
-                dialog.set_close_response("cancel");
-                dialog.set_response_appearance("fetch", adw::ResponseAppearance::Suggested);
-
-                let input_sender = sender.input_sender().clone();
-                dialog.connect_response(None, move |_, response| {
-                    if response != "fetch" {
-                        return;
-                    }
-                    let raw = text_entry.text().to_string();
-                    let Some(mod_id) =
-                        crate::core::nexus_identity::parse_nexus_mod_id_from_input(&raw)
-                    else {
-                        return;
-                    };
-                    let _ = input_sender.send(AppMsg::Downloads(
-                        crate::app::messages::DownloadsMsg::ConfirmNexusIdEntry(
-                            download_id.clone(),
-                            mod_id,
-                            domain.clone(),
-                        ),
-                    ));
-                });
-                dialog.present(Some(root));
-                return;
-            }
-        }
-
-        let download_id = {
-            let guard = self.download.rows.guard();
-            let Some(row) = guard.get(idx) else { return };
-            row.entry.id.clone()
-        };
-        self.start_nexus_metadata_fetch(download_id, sender);
-    }
-
-    /// Called after the user confirms a Nexus mod ID in the "Enter Nexus Mod ID" dialog.
-    ///
-    /// Updates `nexus_ids` on the entry, persists it, then runs the metadata fetch.
-    pub(crate) fn handle_confirm_nexus_id_entry(
-        &mut self,
-        download_id: String,
-        mod_id: i64,
-        domain: String,
-        sender: &ComponentSender<Self>,
-    ) {
-        let nexus_ids = mod_identity(mod_id, domain);
-
-        let Some(tracker) = self.session.tracker.clone() else {
-            self.push_notification("Nexus identity could not be saved: database unavailable");
-            return;
-        };
-        let persisted_download_id = download_id.clone();
-        sender.oneshot_command(async move {
-            let result = tracker
-                .update_download_nexus_identity(&persisted_download_id, &nexus_ids)
-                .await
-                .map_err(|error| error.to_string());
-            AppCmdMsg::Downloads(
-                crate::app::messages::DownloadsCmdMsg::NexusIdentityPersisted {
-                    download_id,
-                    nexus_ids,
-                    result,
-                },
-            )
-        });
-    }
-
     /// Perform the async Nexus metadata fetch for a download entry identified by ID.
     ///
     /// Looks up the entry in `self.download.all` to collect the required fields,
@@ -291,38 +322,33 @@ impl App {
         &mut self,
         download_id: String,
         sender: &ComponentSender<Self>,
+        use_selected_page: bool,
     ) {
-        let (
-            nexus_mod_id,
-            nexus_file_id,
-            stored_domain,
-            archive_filename,
-            archive_md5,
-            archive_path,
-        ) = {
+        if !self.download_metadata_available() {
+            return;
+        }
+        let (identity, identity_source, stored_domain, archive_filename, archive_md5, archive_path) = {
             let Some(entry) = self.download.all.iter().find(|e| e.id == download_id) else {
                 return;
             };
             if entry.is_active() {
                 return;
             }
-            let Some(NexusIds {
-                mod_id: nexus_mod_id,
-                file_id: nexus_file_id,
-                ref domain,
-            }) = entry.nexus_ids
-            else {
-                return;
-            };
             let archive_filename = entry
                 .archive_path
                 .as_ref()
                 .and_then(|p| p.file_name())
                 .map(|n| n.to_string_lossy().into_owned());
             (
-                nexus_mod_id,
-                nexus_file_id,
-                domain.clone(),
+                entry.nexus_ids.clone(),
+                entry.nexus_identity_source,
+                entry
+                    .nexus_ids
+                    .as_ref()
+                    .map(|ids| ids.domain.clone())
+                    .filter(|domain| !domain.is_empty())
+                    .or_else(|| entry.game_domain.clone())
+                    .unwrap_or_default(),
                 archive_filename,
                 entry.archive_md5.clone(),
                 entry.archive_path.clone(),
@@ -387,12 +413,8 @@ impl App {
                                     crate::app::messages::DownloadsMsg::RateLimitUpdated(rl),
                                 ));
                             }
-                            let matching_hit = results.into_iter().find(|hit| {
-                                hit.r#mod.mod_id == nexus_mod_id
-                                    && (hit.r#mod.domain_name.is_empty()
-                                        || hit.r#mod.domain_name.eq_ignore_ascii_case(&domain))
-                            });
-                            if let Some(hit) = matching_hit {
+                            let (matched, candidates) = resolve_md5_results(results, identity.as_ref(), identity_source, &domain);
+                            if let Some(hit) = matched {
                                 return Ok(ManualMetadataResult::Resolved(
                                     nexus_download_metadata(
                                         &domain,
@@ -404,14 +426,23 @@ impl App {
                                     ),
                                 ));
                             }
+                            if !candidates.is_empty() && !use_selected_page {
+                                return Ok(ManualMetadataResult::NeedsIdentity(candidates));
+                            }
                         }
                         Err(e) => {
                             eprintln!(
-                                "deployd: MD5 metadata lookup failed; trying mod/file lookup: {e:#}"
+                                "deployd: MD5 metadata lookup failed: {e:#}"
                             );
                         }
                     }
                 }
+
+                let Some(identity) = identity.filter(|_| identity_source == NexusIdentitySource::Confirmed) else {
+                    return Ok(ManualMetadataResult::NeedsIdentity(Vec::new()));
+                };
+                let nexus_mod_id = identity.mod_id;
+                let nexus_file_id = identity.file_id;
 
                 let mod_info_result = client.get_mod_info(&domain, nexus_mod_id).await;
                 if let Ok((_, Some(rate_limits))) = &mod_info_result {
@@ -510,6 +541,224 @@ mod tests {
         let partial = nexus_download_metadata(&identity.domain, "Patch", None, None, None, None);
         assert_eq!(partial.file_id, None);
         assert_eq!(partial.domain, "masseffectlegendaryedition");
+    }
+
+    fn hash_hit(mod_id: i64, file_id: i64, domain: &str) -> crate::models::nexus::Md5SearchResult {
+        let mut info = mod_info();
+        info.mod_id = mod_id;
+        info.domain_name = domain.into();
+        let mut file = archived_file();
+        file.file_id = file_id;
+        crate::models::nexus::Md5SearchResult {
+            r#mod: info,
+            file_details: file,
+        }
+    }
+
+    // @variants: both
+    #[test]
+    fn looksmenu_hash_conflict_requires_confirmation_of_the_correct_page() {
+        use crate::models::download::NexusIdentitySource;
+        let name = "LooksMenu v1-6-20-12631-1-6-20-1604483725.7z";
+        let guessed = crate::core::nexus_identity::parse_nexus_mod_id(name).unwrap();
+        assert_eq!(guessed, 6);
+        let identity = super::mod_identity(guessed, "fallout4".into());
+        for source in [
+            NexusIdentitySource::Filename,
+            NexusIdentitySource::Legacy,
+            NexusIdentitySource::Confirmed,
+        ] {
+            let (matched, candidates) = super::resolve_md5_results(
+                vec![hash_hit(12631, 100, "fallout4")],
+                Some(&identity),
+                source,
+                "fallout4",
+            );
+            assert!(matched.is_none());
+            assert_eq!(candidates.len(), 1);
+            assert_eq!(candidates[0].ids.mod_id, 12631);
+            assert_eq!(identity.mod_id, 6);
+        }
+    }
+
+    // @variants: both
+    #[test]
+    fn hash_resolution_keeps_mele_mods_separate() {
+        use crate::models::download::NexusIdentitySource;
+        let domain = "masseffectlegendaryedition";
+        for id in [8, 23] {
+            let identity = super::mod_identity(id, domain.into());
+            let (matched, candidates) = super::resolve_md5_results(
+                vec![hash_hit(id, id * 100, domain)],
+                Some(&identity),
+                NexusIdentitySource::Filename,
+                domain,
+            );
+            assert_eq!(matched.unwrap().r#mod.mod_id, id);
+            assert!(candidates.is_empty());
+        }
+        let identity = super::mod_identity(23, domain.into());
+        let (matched, candidates) = super::resolve_md5_results(
+            vec![hash_hit(8, 800, domain)],
+            Some(&identity),
+            NexusIdentitySource::Confirmed,
+            domain,
+        );
+        assert!(matched.is_none());
+        assert_eq!(candidates[0].ids.mod_id, 8);
+        assert_eq!(identity.mod_id, 23);
+    }
+
+    #[test]
+    fn ambiguous_hashes_only_prefer_a_confirmed_identity() {
+        use crate::models::download::NexusIdentitySource;
+        let identity = super::mod_identity(23, "masseffectlegendaryedition".into());
+        let hits = vec![
+            hash_hit(8, 800, &identity.domain),
+            hash_hit(23, 2300, &identity.domain),
+        ];
+        let (matched, candidates) = super::resolve_md5_results(
+            hits.clone(),
+            Some(&identity),
+            NexusIdentitySource::Filename,
+            &identity.domain,
+        );
+        assert!(matched.is_none());
+        assert_eq!(candidates.len(), 2);
+        let (matched, candidates) = super::resolve_md5_results(
+            hits,
+            Some(&identity),
+            NexusIdentitySource::Confirmed,
+            &identity.domain,
+        );
+        assert_eq!(matched.unwrap().r#mod.mod_id, 23);
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn hash_resolution_rejects_other_games_and_does_not_replace_exact_files() {
+        use crate::models::download::NexusIdentitySource;
+        let mut identity = super::mod_identity(8, "masseffectlegendaryedition".into());
+        identity.file_id = 800;
+        let hits = vec![
+            hash_hit(8, 800, "fallout4"),
+            hash_hit(8, 801, &identity.domain),
+        ];
+        let (matched, candidates) = super::resolve_md5_results(
+            hits,
+            Some(&identity),
+            NexusIdentitySource::Confirmed,
+            &identity.domain,
+        );
+        assert!(matched.is_none());
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].ids.file_id, 801);
+    }
+
+    #[test]
+    fn unidentified_archives_offer_hash_matches_without_adopting_them() {
+        use crate::models::download::NexusIdentitySource;
+        let (matched, candidates) = super::resolve_md5_results(
+            vec![hash_hit(12631, 100, "fallout4")],
+            None,
+            NexusIdentitySource::Filename,
+            "fallout4",
+        );
+        assert!(matched.is_none());
+        assert_eq!(candidates[0].ids.mod_id, 12631);
+        let (matched, candidates) =
+            super::resolve_md5_results(Vec::new(), None, NexusIdentitySource::Legacy, "fallout4");
+        assert!(matched.is_none());
+        assert!(candidates.is_empty());
+    }
+
+    // @variants: both
+    #[tokio::test]
+    async fn metadata_persistence_relocates_archives_without_overwriting_files()
+    -> anyhow::Result<()> {
+        let directory = tempfile::tempdir()?;
+        let tracker = crate::core::tracker::Tracker::open("sqlite::memory:")
+            .await?
+            .tracker;
+        let mut entry = crate::models::download::DownloadEntry::new(
+            "archive".into(),
+            "Archive".into(),
+            Some(super::mod_identity(12, "fallout4".into())),
+        );
+        entry.status = crate::models::download::DownloadStatus::Downloaded;
+        let original = directory.path().join("Archive.7z");
+        std::fs::write(&original, b"archive")?;
+        entry.archive_path = Some(original.clone());
+        tracker.save_download_entry(&entry).await?;
+        let metadata = nexus_download_metadata(
+            "fallout4",
+            "Archive",
+            None,
+            Some(&archived_file()),
+            Some(77),
+            None,
+        );
+        let saved =
+            super::persist_manual_metadata(&tracker, entry, &metadata, directory.path().into())
+                .await
+                .map_err(anyhow::Error::msg)?;
+        let relocated = directory.path().join("fallout4/Archive.7z");
+        assert_eq!(saved.archive_path.as_deref(), Some(relocated.as_path()));
+        assert!(!original.exists());
+        let loaded = tracker.load_download_entries().await?;
+        assert_eq!(loaded[0].archive_path, saved.archive_path);
+        assert_eq!(
+            loaded[0].nexus_identity_source,
+            crate::models::download::NexusIdentitySource::Confirmed
+        );
+        std::fs::write(&original, b"different")?;
+        let mut conflicting = saved;
+        conflicting.id = "second".into();
+        conflicting.archive_path = Some(original.clone());
+        tracker.save_download_entry(&conflicting).await?;
+        let saved = super::persist_manual_metadata(
+            &tracker,
+            conflicting,
+            &metadata,
+            directory.path().into(),
+        )
+        .await
+        .map_err(anyhow::Error::msg)?;
+        assert_eq!(saved.archive_path, Some(original));
+        assert_eq!(std::fs::read(relocated)?, b"archive");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn failed_metadata_commit_restores_the_original_archive() -> anyhow::Result<()> {
+        let directory = tempfile::tempdir()?;
+        let tracker = crate::core::tracker::Tracker::open("sqlite::memory:")
+            .await?
+            .tracker;
+        let mut entry = crate::models::download::DownloadEntry::new(
+            "missing-row".into(),
+            "Archive".into(),
+            Some(super::mod_identity(12, "fallout4".into())),
+        );
+        let original = directory.path().join("Archive.7z");
+        std::fs::write(&original, b"archive")?;
+        entry.archive_path = Some(original.clone());
+        let metadata = nexus_download_metadata(
+            "fallout4",
+            "Archive",
+            None,
+            Some(&archived_file()),
+            Some(77),
+            None,
+        );
+        assert!(
+            super::persist_manual_metadata(&tracker, entry, &metadata, directory.path().into())
+                .await
+                .is_err()
+        );
+        assert_eq!(std::fs::read(original)?, b"archive");
+        assert!(!directory.path().join("fallout4/Archive.7z").exists());
+        Ok(())
     }
 
     fn archived_file() -> NexusFileEntry {

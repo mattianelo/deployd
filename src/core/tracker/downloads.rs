@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use sqlx::{Executor, Sqlite};
+use sqlx::{Executor, Row, Sqlite};
 
 use super::Tracker;
 
@@ -19,7 +19,7 @@ impl Tracker {
              SET mod_name = ?, archive_path = ?, nexus_mod_id = ?, nexus_file_id = ?,
                  nexus_domain = ?, game_domain = ?, metadata_fetched = ?, nexus_file_name = ?,
                  nexus_is_primary = ?, status = ?, archive_hash = ?, archive_md5 = ?,
-                 version = ?, author = ?, hidden = ?
+                 version = ?, author = ?, hidden = ?, nexus_identity_source = ?
              WHERE id = ?",
         )
         .bind(&entry.mod_name)
@@ -42,6 +42,7 @@ impl Tracker {
         .bind(entry.version.as_deref())
         .bind(entry.author.as_deref())
         .bind(entry.hidden)
+        .bind(entry.nexus_identity_source.as_db_str())
         .bind(&entry.id)
         .execute(&mut *tx)
         .await?;
@@ -116,21 +117,30 @@ impl Tracker {
         download_id: &str,
         nexus_ids: &crate::models::download::NexusIds,
     ) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query(
+            "UPDATE download_entries SET metadata_fetched = FALSE, nexus_file_name = NULL,
+                 nexus_is_primary = FALSE, version = NULL, author = NULL
+             WHERE id = ? AND (nexus_mod_id IS NOT ? OR nexus_file_id IS NOT ? OR nexus_domain IS NOT ?)",
+        ).bind(download_id).bind(nexus_ids.mod_id).bind(nexus_ids.file_id).bind(&nexus_ids.domain)
+            .execute(&mut *tx).await?;
         let update = sqlx::query(
             "UPDATE download_entries
-             SET nexus_mod_id = ?, nexus_file_id = ?, nexus_domain = ?
+             SET nexus_mod_id = ?, nexus_file_id = ?, nexus_domain = ?,
+                 nexus_identity_source = 'confirmed'
              WHERE id = ?",
         )
         .bind(nexus_ids.mod_id)
         .bind(nexus_ids.file_id)
         .bind(&nexus_ids.domain)
         .bind(download_id)
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .context("Failed to persist download Nexus identity")?;
         if update.rows_affected() != 1 {
             anyhow::bail!("Download row no longer exists");
         }
+        tx.commit().await?;
         Ok(())
     }
 
@@ -173,88 +183,80 @@ impl Tracker {
         &self,
     ) -> Result<Vec<crate::models::download::DownloadEntry>> {
         use crate::models::download::{DownloadEntry, DownloadStatus, NexusIds};
-        #[allow(clippy::type_complexity)] // Flat SQLx row tuple — a struct would need manual FromRow impl with no real gain.
-        let rows: Vec<(String, String, Option<String>, Option<i64>, Option<i64>, Option<String>, Option<String>, bool, Option<String>, bool, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, bool)> =
-            sqlx::query_as(
-                "SELECT id, mod_name, archive_path, nexus_mod_id, nexus_file_id, nexus_domain, game_domain, metadata_fetched, nexus_file_name, nexus_is_primary, status, archive_hash, archive_md5, version, author, COALESCE(hidden, 0)
-                 FROM download_entries"
-            )
+        let rows = sqlx::query("SELECT *, COALESCE(hidden, 0) AS is_hidden FROM download_entries")
             .fetch_all(&self.pool)
             .await
             .context("Failed to load download entries")?;
-
-        let entries = rows
-            .into_iter()
-            .filter_map(
-                |(
-                    id,
-                    mod_name,
-                    archive_path,
-                    nexus_mod_id,
-                    nexus_file_id,
-                    nexus_domain,
-                    game_domain,
-                    metadata_fetched,
-                    nexus_file_name,
-                    nexus_is_primary,
-                    status_str,
-                    archive_hash,
-                    archive_md5,
-                    version,
-                    author,
-                    hidden,
-                )| {
-                    let mut path = archive_path.map(std::path::PathBuf::from);
-                    let is_installed = status_str.as_deref().unwrap_or("downloaded") == "installed";
-                    let keep_metadata_cache = is_installed
-                        || metadata_fetched
-                        || nexus_file_name.is_some()
-                        || nexus_is_primary
-                        || archive_hash.is_some()
-                        || archive_md5.is_some()
-                        || version.as_ref().is_some_and(|v| !v.is_empty())
-                        || author.as_ref().is_some_and(|a| !a.is_empty());
-                    let path_missing = path.as_ref().is_some_and(|p| !p.exists());
-                    let hidden = hidden || (path_missing && keep_metadata_cache);
-                    if path_missing {
-                        if keep_metadata_cache {
-                            path = None;
-                        } else {
-                            return None;
-                        }
-                    }
-                    let nexus_ids = nexus_mod_id.zip(nexus_file_id).zip(nexus_domain).map(
-                        |((mod_id, file_id), domain)| NexusIds {
-                            mod_id,
-                            file_id,
-                            domain,
-                        },
-                    );
-                    let status =
-                        DownloadStatus::from_db_str(status_str.as_deref().unwrap_or("downloaded"));
-                    let status_msg = status.default_status_msg().to_string();
-                    Some(DownloadEntry {
-                        id,
-                        mod_name,
-                        status,
-                        progress: 1.0,
-                        status_msg,
-                        error_msg: None,
-                        nexus_ids,
-                        archive_path: path,
-                        metadata_fetched,
-                        game_domain,
-                        nexus_file_name,
-                        nexus_is_primary,
-                        archive_hash,
-                        archive_md5,
-                        version: version.filter(|v| !v.is_empty()),
-                        author: author.filter(|a| !a.is_empty()),
-                        hidden,
-                    })
+        let mut entries = Vec::new();
+        for row in rows {
+            let id = row.try_get("id")?;
+            let mod_name = row.try_get("mod_name")?;
+            let archive_path: Option<String> = row.try_get("archive_path")?;
+            let nexus_mod_id: Option<i64> = row.try_get("nexus_mod_id")?;
+            let nexus_file_id: Option<i64> = row.try_get("nexus_file_id")?;
+            let nexus_domain: Option<String> = row.try_get("nexus_domain")?;
+            let game_domain = row.try_get("game_domain")?;
+            let metadata_fetched: bool = row.try_get("metadata_fetched")?;
+            let nexus_file_name: Option<String> = row.try_get("nexus_file_name")?;
+            let nexus_is_primary: bool = row.try_get("nexus_is_primary")?;
+            let status_str: Option<String> = row.try_get("status")?;
+            let archive_hash: Option<String> = row.try_get("archive_hash")?;
+            let archive_md5: Option<String> = row.try_get("archive_md5")?;
+            let version: Option<String> = row.try_get("version")?;
+            let author: Option<String> = row.try_get("author")?;
+            let hidden: bool = row.try_get("is_hidden")?;
+            let nexus_identity_source: String = row.try_get("nexus_identity_source")?;
+            let mut path = archive_path.map(std::path::PathBuf::from);
+            let is_installed = status_str.as_deref().unwrap_or("downloaded") == "installed";
+            let keep_metadata_cache = is_installed
+                || metadata_fetched
+                || nexus_file_name.is_some()
+                || nexus_is_primary
+                || archive_hash.is_some()
+                || archive_md5.is_some()
+                || version.as_ref().is_some_and(|v| !v.is_empty())
+                || author.as_ref().is_some_and(|a| !a.is_empty());
+            let path_missing = path.as_ref().is_some_and(|p| !p.exists());
+            let hidden = hidden || (path_missing && keep_metadata_cache);
+            if path_missing {
+                if keep_metadata_cache {
+                    path = None;
+                } else {
+                    continue;
+                }
+            }
+            let nexus_ids = nexus_mod_id.zip(nexus_file_id).zip(nexus_domain).map(
+                |((mod_id, file_id), domain)| NexusIds {
+                    mod_id,
+                    file_id,
+                    domain,
                 },
-            )
-            .collect();
+            );
+            let status = DownloadStatus::from_db_str(status_str.as_deref().unwrap_or("downloaded"));
+            let status_msg = status.default_status_msg().to_string();
+            entries.push(DownloadEntry {
+                id,
+                mod_name,
+                status,
+                progress: 1.0,
+                status_msg,
+                error_msg: None,
+                nexus_ids,
+                nexus_identity_source: crate::models::download::NexusIdentitySource::from_db_str(
+                    &nexus_identity_source,
+                ),
+                archive_path: path,
+                metadata_fetched,
+                game_domain,
+                nexus_file_name,
+                nexus_is_primary,
+                archive_hash,
+                archive_md5,
+                version: version.filter(|v| !v.is_empty()),
+                author: author.filter(|a| !a.is_empty()),
+                hidden,
+            });
+        }
 
         Ok(entries)
     }
@@ -272,8 +274,8 @@ where
         None => (None, None, None),
     };
     sqlx::query(
-        "INSERT INTO download_entries (id, mod_name, archive_path, nexus_mod_id, nexus_file_id, nexus_domain, game_domain, metadata_fetched, nexus_file_name, nexus_is_primary, status, archive_hash, archive_md5, version, author, hidden)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "INSERT INTO download_entries (id, mod_name, archive_path, nexus_mod_id, nexus_file_id, nexus_domain, game_domain, metadata_fetched, nexus_file_name, nexus_is_primary, status, archive_hash, archive_md5, version, author, hidden, nexus_identity_source)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
             mod_name = excluded.mod_name,
             archive_path = excluded.archive_path,
@@ -289,7 +291,8 @@ where
             archive_md5 = excluded.archive_md5,
             version = excluded.version,
             author = excluded.author,
-            hidden = excluded.hidden",
+            hidden = excluded.hidden,
+            nexus_identity_source = excluded.nexus_identity_source",
     )
     .bind(&entry.id)
     .bind(&entry.mod_name)
@@ -312,6 +315,7 @@ where
     .bind(entry.version.as_deref())
     .bind(entry.author.as_deref())
     .bind(entry.hidden)
+    .bind(entry.nexus_identity_source.as_db_str())
     .execute(executor)
     .await
     .context("Failed to save download entry")?;
@@ -323,6 +327,55 @@ mod tests {
     use super::Tracker;
     use crate::models::download::{DownloadEntry, DownloadStatus, NexusIds};
     use crate::models::mod_entry::{InstallTarget, ModEntry};
+
+    // @variants: both
+    #[tokio::test]
+    async fn corrected_identity_survives_reload_and_clears_unrelated_metadata() -> anyhow::Result<()>
+    {
+        use crate::models::download::NexusIdentitySource;
+        let tracker = Tracker::open("sqlite::memory:").await?.tracker;
+        let mut entry = DownloadEntry::new(
+            "looksmenu".into(),
+            "Wrong page".into(),
+            Some(NexusIds {
+                mod_id: 6,
+                file_id: 0,
+                domain: "fallout4".into(),
+            }),
+        );
+        entry.nexus_identity_source = NexusIdentitySource::Filename;
+        entry.status = DownloadStatus::Downloaded;
+        entry.metadata_fetched = true;
+        entry.version = Some("wrong".into());
+        entry.author = Some("wrong".into());
+        entry.nexus_file_name = Some("wrong".into());
+        tracker.save_download_entry(&entry).await?;
+        let selected = NexusIds {
+            mod_id: 12631,
+            file_id: 0,
+            domain: "fallout4".into(),
+        };
+        tracker
+            .update_download_nexus_identity(&entry.id, &selected)
+            .await?;
+        let loaded = tracker.load_download_entries().await?;
+        assert_eq!(loaded[0].nexus_ids.as_ref(), Some(&selected));
+        assert_eq!(
+            loaded[0].nexus_identity_source,
+            NexusIdentitySource::Confirmed
+        );
+        assert!(!loaded[0].metadata_fetched);
+        assert_eq!(loaded[0].version, None);
+        assert_eq!(loaded[0].author, None);
+        assert_eq!(loaded[0].nexus_file_name, None);
+        assert!(
+            tracker
+                .update_download_nexus_identity("missing", &selected)
+                .await
+                .is_err()
+        );
+        Ok(())
+    }
 
     #[tokio::test]
     async fn fetched_metadata_survives_reload_without_install() -> anyhow::Result<()> {

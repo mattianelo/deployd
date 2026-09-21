@@ -45,7 +45,8 @@ impl App {
             file_id: link.file_id,
             domain: link.domain.clone(),
         });
-        let entry = DownloadEntry::new(download_id.clone(), mod_name, nexus_ids);
+        let mut entry = DownloadEntry::new(download_id.clone(), mod_name, nexus_ids);
+        entry.nexus_identity_source = crate::models::download::NexusIdentitySource::Confirmed;
         self.download.all.push(entry.clone());
         // Push directly to the factory instead of calling rebuild_downloads_view().
         // rebuild_downloads_view() has an early-return guard for active downloads,
@@ -205,6 +206,7 @@ impl App {
                         file_id: link.file_id,
                         domain: link.domain.clone(),
                     }),
+                    nexus_identity_source: crate::models::download::NexusIdentitySource::Confirmed,
                     archive_path: Some(dest.clone()),
                     metadata_fetched: true,
                     game_domain: Some(link.domain.clone()),

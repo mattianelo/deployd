@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Fixed archive metadata lookups treating version numbers in filenames, such as LooksMenu's,
+  as confirmed Nexus mod IDs. Conflicting archive matches now require confirmation, and
+  **Change Nexus mod…** lets you correct an existing identity. Confirmed choices survive
+  rescans and restarts, while short mod IDs remain distinct. Nexus errors now identify the
+  requested game, mod page, and operation.
+
 - Added window-wide archive drag-and-drop with a visible acceptance highlight and the same
   installation options as the **+** button.
 

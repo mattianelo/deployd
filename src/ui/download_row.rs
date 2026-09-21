@@ -18,6 +18,7 @@ pub enum DownloadRowOutput {
     Install(DynamicIndex),
     Reinstall(DynamicIndex),
     FetchMetadata(DynamicIndex),
+    EditIdentity(DynamicIndex),
     ClearMetadata(DynamicIndex),
     Rename(DynamicIndex),
     Pause(DynamicIndex),
@@ -252,8 +253,22 @@ impl FactoryComponent for DownloadRow {
                 .ok();
         });
 
+        let identity_btn = gtk::Button::builder()
+            .label("Change Nexus mod…")
+            .css_classes(["flat"])
+            .build();
+        let identity_idx = index.clone();
+        let identity_sender = sender.clone();
+        let identity_pop = popover.clone();
+        identity_btn.connect_clicked(move |_| {
+            identity_pop.popdown();
+            identity_sender
+                .output(DownloadRowOutput::EditIdentity(identity_idx.clone()))
+                .ok();
+        });
         menu_box.append(&reinstall_btn);
         menu_box.append(&fetch_btn);
+        menu_box.append(&identity_btn);
         menu_box.append(&clear_btn);
         menu_box.append(&hide_btn);
         menu_box.append(&delete_btn);

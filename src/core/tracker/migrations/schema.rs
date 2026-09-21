@@ -103,6 +103,7 @@ pub(in crate::core::tracker) async fn migrate_download_columns(pool: &SqlitePool
         columns.iter().map(|(name,)| name.as_str()).collect();
 
     let new_columns = [
+        ("nexus_identity_source", "TEXT NOT NULL DEFAULT 'legacy'"),
         ("nexus_file_name", "TEXT"),
         ("nexus_is_primary", "BOOLEAN DEFAULT FALSE"),
         ("status", "TEXT DEFAULT 'downloaded'"),
@@ -624,6 +625,32 @@ mod tests {
     use super::*;
 
     use crate::core::tracker::Tracker;
+
+    #[tokio::test]
+    async fn identity_migration_preserves_legacy_ids_without_inventing_provenance() -> Result<()> {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await?;
+        sqlx::query("CREATE TABLE download_entries (id TEXT PRIMARY KEY, nexus_mod_id INTEGER)")
+            .execute(&pool)
+            .await?;
+        sqlx::query("INSERT INTO download_entries VALUES ('looks', 6), ('le1', 23), ('le2', 8)")
+            .execute(&pool)
+            .await?;
+        migrate_download_columns(&pool).await?;
+        migrate_download_columns(&pool).await?;
+        let rows: Vec<(i64, String)> = sqlx::query_as("SELECT nexus_mod_id, nexus_identity_source FROM download_entries ORDER BY nexus_mod_id").fetch_all(&pool).await?;
+        assert_eq!(
+            rows,
+            vec![
+                (6, "legacy".into()),
+                (8, "legacy".into()),
+                (23, "legacy".into())
+            ]
+        );
+        Ok(())
+    }
 
     #[tokio::test]
     async fn backfills_installed_mod_source_metadata_from_download_entries() -> Result<()> {

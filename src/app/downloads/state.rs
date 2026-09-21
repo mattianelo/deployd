@@ -290,6 +290,15 @@ impl App {
         }
     }
 
+    pub(crate) fn download_metadata_available(&mut self) -> bool {
+        if self.download.scan_in_progress {
+            self.show_toast("Wait for the Downloads scan to finish, then try again.");
+            false
+        } else {
+            true
+        }
+    }
+
     pub(crate) fn begin_download_metadata_fetch(&mut self, download_id: &str) {
         if let Some(entry) = self.download.all.iter().find(|e| e.id == download_id)
             && !entry.is_active()

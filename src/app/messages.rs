@@ -277,8 +277,9 @@ pub(crate) enum DownloadsMsg {
     SetShowHiddenDownloads(bool),
     /// (download_id, new_name) — confirmed from the rename dialog
     ConfirmDownloadRename(String, String),
-    /// (download_id, nexus_mod_id, domain) — confirmed from the "enter Nexus URL" dialog
-    ConfirmNexusIdEntry(String, i64, String),
+    /// Confirmed page or exact file chosen in the Nexus identity dialog.
+    ConfirmNexusIdEntry(String, crate::models::download::NexusIds),
+    EditDownloadIdentity(DynamicIndex),
     /// File entry couldn't be matched by filename during a standalone metadata fetch.
     /// Triggers the file ID entry dialog outside of the install flow.
     ShowFileIdDialog {
@@ -613,8 +614,10 @@ pub(crate) enum DownloadsCmdMsg {
         result: Result<(), String>,
     },
     NexusMetadataPersisted {
-        toast: Option<String>,
-        result: Result<(), String>,
+        download_id: String,
+        metadata: crate::app::types::NexusDownloadMetadata,
+        needs_file_id: bool,
+        result: Result<Box<crate::models::download::DownloadEntry>, String>,
     },
     DownloadsDirUpdated(Result<Option<PathBuf>, String>),
     DownloadsScanned(Result<DownloadScanResult, String>),

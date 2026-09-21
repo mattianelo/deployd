@@ -84,6 +84,9 @@ pub(super) fn build_model(
             DownloadRowOutput::FetchMetadata(index) => AppMsg::Downloads(
                 crate::app::messages::DownloadsMsg::FetchDownloadMetadata(index),
             ),
+            DownloadRowOutput::EditIdentity(index) => AppMsg::Downloads(
+                crate::app::messages::DownloadsMsg::EditDownloadIdentity(index),
+            ),
             DownloadRowOutput::ClearMetadata(index) => AppMsg::Downloads(
                 crate::app::messages::DownloadsMsg::ClearDownloadMetadata(index),
             ),
@@ -464,6 +467,7 @@ pub(super) fn build_model(
             global_active_count: 0,
             directory: paths::default_downloads_dir(),
             initial_scan_done: false,
+            scan_in_progress: false,
             sort: DownloadSort::Default,
             filter: DownloadFilter::All,
             show_hidden: false,
