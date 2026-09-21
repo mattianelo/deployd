@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Fixed Purge failing when a managed directory still contains untracked vanilla files.
+  Those files and their directories are preserved; only empty managed directories are removed.
+
 - Fixed unchanged reinstalled plugins being reported as externally cleaned. External File Changes
   now compares independent plugin copies by content and disables actions that do not apply to
   the selected files, including Discard for managed plugins.

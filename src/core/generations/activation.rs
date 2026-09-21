@@ -414,6 +414,11 @@ async fn prepare_files(
         .await?
         .len();
     let deployed = history.tracker.get_deployed_files(&game.id).await?;
+    let directories = deployed
+        .iter()
+        .filter(|file| file.game_rel_original.ends_with('/'))
+        .map(|file| Target::file(&game.engine, &file.game_rel_original))
+        .collect::<Result<BTreeSet<_>>>()?;
     let mut desired: BTreeMap<Target, Node> = outputs
         .iter()
         .map(|output| (output.target.clone(), node(output)))
@@ -461,6 +466,15 @@ async fn prepare_files(
         control.clone(),
     )
     .await?;
+    let directory_game = game.clone();
+    let directory_control = control.clone();
+    let journal = history
+        .lease
+        .blocking(move || {
+            preserve_vanilla_directories(journal, &directory_game, &directories, &directory_control)
+        })
+        .await
+        .context("Deployment directory inspection worker stopped")??;
     if protect {
         for output in outputs.iter().filter(|output| output.content.is_some()) {
             if deployed_targets.contains(&key(&output.target)?) {
@@ -493,6 +507,57 @@ async fn prepare_files(
         .len()
         .saturating_sub(backups_before);
     Ok((journal, backed_up))
+}
+
+fn preserve_vanilla_directories(
+    mut journal: Journal,
+    game: &Game,
+    directories: &BTreeSet<Target>,
+    control: &Control,
+) -> Result<Journal> {
+    let mut remaining = journal
+        .changes
+        .iter()
+        .map(|change| Ok((change.target.resolve(game)?, change.after.clone())))
+        .collect::<Result<BTreeMap<_, _>>>()?;
+    let mut candidates = journal
+        .changes
+        .iter()
+        .enumerate()
+        .filter(|(_, change)| {
+            directories.contains(&change.target)
+                && matches!(change.before, Node::Directory { .. })
+                && change.after == Node::Absent
+        })
+        .map(|(index, change)| Ok((index, change.target.resolve(game)?)))
+        .collect::<Result<Vec<_>>>()?;
+    candidates.sort_by_key(|(_, path)| std::cmp::Reverse(path.components().count()));
+    for (index, path) in candidates {
+        control.check()?;
+        let mut occupied = remaining.iter().any(|(child, node)| {
+            child != &path && child.starts_with(&path) && *node != Node::Absent
+        });
+        for entry in std::fs::read_dir(&path)
+            .with_context(|| format!("Cannot inspect deployed directory '{}'", path.display()))?
+        {
+            control.check()?;
+            let entry = entry.with_context(|| {
+                format!(
+                    "Cannot inspect an entry in deployed directory '{}'",
+                    path.display()
+                )
+            })?;
+            if remaining.get(&entry.path()) != Some(&Node::Absent) {
+                occupied = true;
+            }
+        }
+        if occupied {
+            let change = &mut journal.changes[index];
+            change.after = change.before.clone();
+            remaining.insert(path, change.after.clone());
+        }
+    }
+    Ok(journal)
 }
 
 fn empty_outcome() -> crate::core::deployer::DeployOutcome {
@@ -604,6 +669,147 @@ mod tests {
     use super::*;
 
     // @variants: both
+    #[tokio::test]
+    async fn purge_removes_empty_directories_and_preserves_vanilla_contents() -> Result<()> {
+        for prefix in ["", "../"] {
+            for vanilla in [false, true] {
+                let temp = tempfile::tempdir()?;
+                let (tracker, game, _) = super::super::tests::snapshot_fixture(temp.path()).await?;
+                fs::create_dir_all(game.data_dir())?;
+                let directory = Target::file(&game.engine, &format!("{prefix}Textures/Nested/"))?;
+                let nested = directory.resolve(&game)?;
+                fs::create_dir_all(&nested)?;
+                fs::write(nested.join("Managed.bin"), b"managed")?;
+                if vanilla {
+                    fs::write(nested.join("Vanilla.bin"), b"vanilla")?;
+                }
+                let files = [
+                    "Textures/",
+                    "Textures/Nested/",
+                    "Textures/Nested/Managed.bin",
+                ]
+                .map(|relative| {
+                    let original = format!("{prefix}{relative}");
+                    ModFile {
+                        mod_id: "winner".into(),
+                        game_rel_lowercase: original.to_lowercase(),
+                        game_rel_original: original,
+                        cache_path: temp.path().join("winner/file.txt").display().to_string(),
+                    }
+                });
+                tracker.record_deployed_files(&game.id, &files).await?;
+                let history = History::open(&tracker, &game.id, temp.path(), true).await?;
+                let (journal, _) =
+                    prepare_files(&history, &game, &[], false, Control::default()).await?;
+                journal
+                    .persist(&history, &game, "purge", BTreeMap::new())
+                    .await?;
+                journal.apply(&history, &game, Control::default()).await?;
+                assert!(!nested.join("Managed.bin").exists());
+                assert_eq!(nested.exists(), vanilla);
+                assert_eq!(nested.parent().context("Missing parent")?.exists(), vanilla);
+                if vanilla {
+                    assert_eq!(fs::read(nested.join("Vanilla.bin"))?, b"vanilla");
+                }
+                journal.recover(&history, &game, false).await?;
+                assert_eq!(fs::read(nested.join("Managed.bin"))?, b"managed");
+                if vanilla {
+                    assert_eq!(fs::read(nested.join("Vanilla.bin"))?, b"vanilla");
+                }
+            }
+        }
+        Ok(())
+    }
+
+    // @variants: both
+    #[tokio::test]
+    async fn purge_keeps_directories_needed_by_restored_originals() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let (tracker, game, _) = super::super::tests::snapshot_fixture(temp.path()).await?;
+        let directory = game.data_dir().join("Textures");
+        fs::create_dir_all(&directory)?;
+        let original = temp.path().join("original.bin");
+        fs::write(&original, b"original")?;
+        tracker
+            .save_vanilla_backup(
+                &game.id,
+                "textures/original.bin",
+                "Textures/Original.bin",
+                &original,
+            )
+            .await?;
+        tracker
+            .record_deployed_files(
+                &game.id,
+                &[ModFile {
+                    mod_id: "winner".into(),
+                    game_rel_lowercase: "textures/".into(),
+                    game_rel_original: "Textures/".into(),
+                    cache_path: temp.path().join("winner").display().to_string(),
+                }],
+            )
+            .await?;
+        let history = History::open(&tracker, &game.id, temp.path(), true).await?;
+        let (journal, _) = prepare_files(&history, &game, &[], false, Control::default()).await?;
+        journal
+            .persist(&history, &game, "purge", BTreeMap::new())
+            .await?;
+        journal.apply(&history, &game, Control::default()).await?;
+        assert_eq!(fs::read(directory.join("Original.bin"))?, b"original");
+        journal.recover(&history, &game, false).await?;
+        assert!(directory.is_dir());
+        assert!(!directory.join("Original.bin").exists());
+        Ok(())
+    }
+
+    // @variants: both
+    #[tokio::test]
+    async fn purge_preserves_untracked_symlinks_and_rejects_new_files_after_preparation()
+    -> Result<()> {
+        for added_later in [false, true] {
+            let temp = tempfile::tempdir()?;
+            let (tracker, game, _) = super::super::tests::snapshot_fixture(temp.path()).await?;
+            let directory = game.data_dir().join("Textures");
+            fs::create_dir_all(&directory)?;
+            let vanilla = directory.join("Vanilla.bin");
+            if !added_later {
+                std::os::unix::fs::symlink(temp.path().join("missing"), &vanilla)?;
+            }
+            tracker
+                .record_deployed_files(
+                    &game.id,
+                    &[ModFile {
+                        mod_id: "winner".into(),
+                        game_rel_lowercase: "textures/".into(),
+                        game_rel_original: "Textures/".into(),
+                        cache_path: temp.path().join("winner").display().to_string(),
+                    }],
+                )
+                .await?;
+            let history = History::open(&tracker, &game.id, temp.path(), true).await?;
+            let (journal, _) =
+                prepare_files(&history, &game, &[], false, Control::default()).await?;
+            journal
+                .persist(&history, &game, "purge", BTreeMap::new())
+                .await?;
+            if added_later {
+                fs::write(&vanilla, b"vanilla")?;
+            }
+            assert_eq!(
+                journal
+                    .apply(&history, &game, Control::default())
+                    .await
+                    .is_err(),
+                added_later
+            );
+            assert!(fs::symlink_metadata(&vanilla).is_ok());
+            journal.recover(&history, &game, false).await?;
+            assert!(fs::symlink_metadata(&vanilla).is_ok());
+        }
+        Ok(())
+    }
+
+    // @variants: both
     #[test]
     fn purge_report_counts_restored_files_without_counting_directories() -> Result<()> {
         use serde_json::json;
@@ -644,6 +850,12 @@ mod tests {
             super::super::tests::snapshot_fixture(temp.path()).await?;
         game.engine = GameEngine::Aurora;
         fs::create_dir_all(game.path.join("data"))?;
+        let cached_directory = temp.path().join("winner/Nested");
+        fs::create_dir(&cached_directory)?;
+        sqlx::query("INSERT INTO mod_files(mod_id,game_rel_lowercase,game_rel_original,cache_path) VALUES ('winner','nested/','Nested/',?)")
+            .bind(cached_directory.to_string_lossy().as_ref())
+            .execute(&tracker.pool)
+            .await?;
         tracker.switch_profile(&game.id, &profile).await?;
         tracker.save_to_profile(&profile, &game.id).await?;
         let prepared = prepare(
@@ -661,6 +873,8 @@ mod tests {
             .await?
             .context("Generation was not published")?;
         let live = game.path.join("data/File.txt");
+        let vanilla = game.path.join("data/Nested/Vanilla.bin");
+        fs::write(&vanilla, b"vanilla")?;
         assert_eq!(fs::read(&live)?, b"winner");
         assert_eq!(
             fs::metadata(&live)?.ino(),
@@ -677,6 +891,8 @@ mod tests {
         .await?;
         purge.activate(Control::default()).await?;
         assert!(!live.exists());
+        assert_eq!(fs::read(&vanilla)?, b"vanilla");
+        assert!(tracker.get_deployed_files(&game.id).await?.is_empty());
         let history = History::open(&tracker, &game.id, temp.path(), false).await?;
         let retained = history.load(&id).await?;
         assert!(

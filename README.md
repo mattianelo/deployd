@@ -361,6 +361,9 @@ hardlinks from the mod cache; MELE rebuilds its managed installation using separ
 - **Deploy** — applies your changes to the game folder
 - **Purge** — removes managed mod files and restores backed-up originals
 
+Purge treats untracked files as vanilla and leaves them in place. It removes managed
+directories only when they become empty.
+
 For games other than MELE, when a deployment will replace files supplied by the game, Deployd shows
 the affected paths before making changes. **Protect vanilla game files** is enabled by default and
 can be changed in that warning or under **Settings → Deployment**. Protected originals are verified

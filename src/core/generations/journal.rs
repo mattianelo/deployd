@@ -687,7 +687,9 @@ impl Journal {
                             &control,
                         )?
                     {
-                        apply_node(&store, &path, &change.after, &control)?;
+                        apply_node(&store, &path, &change.after, &control).with_context(|| {
+                            format!("Cannot apply deployment change to '{}'", path.display())
+                        })?;
                     }
                     ensure!(
                         inspect(&path, &control)? == change.after,
