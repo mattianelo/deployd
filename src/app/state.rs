@@ -76,6 +76,7 @@ pub(crate) struct ToolState {
 }
 
 pub(crate) struct UiState {
+    pub(crate) archive_drop: gtk::DropTarget,
     pub(crate) scope_dropdown: gtk::DropDown,
     pub(crate) override_list: gtk::ListBox,
     pub(crate) override_mod_ids: HashSet<String>,

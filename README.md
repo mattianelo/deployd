@@ -310,7 +310,9 @@ Open **Settings** (gear icon) and log in under **Nexus Mods**:
 
 ### 3. Installing Mods
 
-- **Local archive** — Drag-and-drop a `.zip`, `.7z`, or `.rar` onto the mod list, or use the **+** button
+- **Local archive** — Drop one `.zip`, `.7z`, `.rar`, or `.dazip` onto the window, or use the **+** button.
+  The window highlights when it can accept the archive; dropping it opens the usual installation
+  options. Select a game first and wait for any active operation to finish.
 - **Archive metadata** — Manual metadata refresh uses the same Nexus mod and exact-file details as
   Mod Manager downloads. Installation uses the metadata already stored on the download and does
   not contact Nexus or request an ID. Clearing metadata restores the archive name and re-detects

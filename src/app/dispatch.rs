@@ -381,6 +381,11 @@ impl App {
         match msg {
             InstallMsg::InstallClicked => self.handle_install_clicked(root, &sender),
             InstallMsg::FileChosen(path) => self.handle_file_chosen(path, &sender),
+            InstallMsg::ArchiveDropped(path) => {
+                if self.can_drop_archive() {
+                    self.handle_file_chosen(path, &sender);
+                }
+            }
             InstallMsg::PreInstallConfirmed(name, targets, excluded) => {
                 self.handle_pre_install_confirmed(name, targets, excluded, root, &sender)
             }

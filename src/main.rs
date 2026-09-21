@@ -128,6 +128,13 @@ fn main() {
 
     relm4::set_global_css(
         "
+        .archive-drop-highlight {
+            border: 3px solid @accent_color;
+            border-radius: 12px;
+            background-color: alpha(@window_bg_color, 0.94);
+            color: @accent_color;
+            margin: 8px;
+        }
         .drop-above {
             border-top: 3px solid @accent_color;
         }

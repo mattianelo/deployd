@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Added window-wide archive drag-and-drop with a visible acceptance highlight and the same
+  installation options as the **+** button.
+
 - Fixed switching games temporarily showing empty mod and plugin panels while checking game files.
   Saved lists now appear before verification finishes, with a visible checking indicator.
 

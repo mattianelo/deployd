@@ -307,6 +307,7 @@ pub(crate) enum DownloadsMsg {
 pub(crate) enum InstallMsg {
     InstallClicked,
     FileChosen(PathBuf),
+    ArchiveDropped(PathBuf),
     PreInstallConfirmed(
         String,
         HashMap<String, InstallTarget>,

@@ -421,6 +421,10 @@ pub(super) fn build_model(
             override_order_saving: false,
             header,
             bottom_status,
+            archive_drop: gtk::DropTarget::new(
+                gtk::gdk::FileList::static_type(),
+                gtk::gdk::DragAction::empty(),
+            ),
             toast_overlay: adw::ToastOverlay::new(),
             notification_sender: sender.input_sender().clone(),
             notification_list,

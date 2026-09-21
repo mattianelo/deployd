@@ -1,4 +1,5 @@
 mod appearance;
+mod archive_drop;
 mod cache_handlers;
 mod deploy;
 mod deployment_dialog;
@@ -726,6 +727,8 @@ impl Component for App {
         let plugin_snapshots_list = &model.plugins.snapshots_list;
 
         let widgets = view_output!();
+        archive_drop::wire(&root, &model.ui.archive_drop, &sender);
+        model.sync_archive_drop();
         root.set_opacity(0.0);
         gtk::glib::idle_add_local_once({
             let root = root.clone();
@@ -759,6 +762,7 @@ impl Component for App {
         if refresh {
             self.refresh_deployment_status(&sender);
         }
+        self.sync_archive_drop();
         self.ui.header.sender().send(self.header_state()).ok();
         self.ui
             .downloads_pane
@@ -783,6 +787,7 @@ impl Component for App {
         if refresh {
             self.refresh_deployment_status(&sender);
         }
+        self.sync_archive_drop();
         self.ui.header.sender().send(self.header_state()).ok();
         self.ui
             .downloads_pane
