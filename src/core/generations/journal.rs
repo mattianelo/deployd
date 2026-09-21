@@ -159,8 +159,10 @@ impl Applied {
             }
             for change in &journal.changes {
                 let path = change.target.resolve(&verified_game)?;
-                layout::accessible(&verified_game, &change.target, &path, false)?;
-                parents(&path, &verified_game)?;
+                layout::accessible(&verified_game, &change.target, &path, change.after == Node::Absent)?;
+                if change.after != Node::Absent {
+                    parents(&path, &verified_game)?;
+                }
                 ensure!(inspect(&path, &Control::default())? == change.after, "Managed files changed before commitment; recovery information was preserved");
             }
             Ok(())
@@ -802,7 +804,7 @@ impl Journal {
             journal.verify_links(&game)?;
             for change in journal.operations_with(&game, created.as_ref())?.into_iter().rev() {
                 let path = change.path;
-                layout::accessible(&game, &change.target, &path, !committed)?;
+                layout::accessible(&game, &change.target, &path, !committed || change.after == Node::Absent)?;
                 let current = inspect(&path, &control)?;
                 if committed {
                     ensure!(current == change.after, "Committed files changed before recovery finished; recovery information was preserved: {}", path.display());

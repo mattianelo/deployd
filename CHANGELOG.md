@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Fixed Purge rolling back with a misleading restore-access error after removing
+  empty managed directories.
+
 - Fixed Purge failing when a managed directory still contains untracked vanilla files.
   Those files and their directories are preserved; only empty managed directories are removed.
 

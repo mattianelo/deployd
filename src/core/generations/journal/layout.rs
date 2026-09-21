@@ -526,6 +526,30 @@ mod tests {
 
     // @variants: both
     #[tokio::test]
+    async fn removed_targets_allow_missing_parents_but_require_an_authorized_root() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let (_, game, _) = crate::core::generations::tests::snapshot_fixture(temp.path()).await?;
+        fs::create_dir_all(game.data_dir())?;
+        for recorded in ["Nested/Removed.bin", "../Nested/Removed.bin"] {
+            let target = Target::file(&game.engine, recorded)?;
+            let path = target.resolve(&game)?;
+            accessible(&game, &target, &path, true)?;
+            assert!(accessible(&game, &target, &path, false).is_err());
+            let parent = path.parent().context("Missing fixture parent")?;
+            std::os::unix::fs::symlink(temp.path().join("unavailable"), parent)?;
+            assert!(accessible(&game, &target, &path, true).is_err());
+            fs::remove_file(parent)?;
+        }
+        let target = Target::file(&game.engine, "Nested/Removed.bin")?;
+        let path = target.resolve(&game)?;
+        fs::remove_dir(game.data_dir())?;
+        fs::remove_dir(&game.path)?;
+        assert!(accessible(&game, &target, &path, true).is_err());
+        Ok(())
+    }
+
+    // @variants: both
+    #[tokio::test]
     async fn recovers_legacy_parent_and_output_modes_but_preserves_external_changes() -> Result<()>
     {
         use std::os::unix::fs::PermissionsExt;

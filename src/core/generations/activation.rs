@@ -845,68 +845,83 @@ mod tests {
     // @variants: both
     #[tokio::test]
     async fn explicit_activation_retains_complete_sources_and_purge_keeps_history() -> Result<()> {
-        let temp = tempfile::tempdir()?;
-        let (tracker, mut game, profile) =
-            super::super::tests::snapshot_fixture(temp.path()).await?;
-        game.engine = GameEngine::Aurora;
-        fs::create_dir_all(game.path.join("data"))?;
-        let cached_directory = temp.path().join("winner/Nested");
-        fs::create_dir(&cached_directory)?;
-        sqlx::query("INSERT INTO mod_files(mod_id,game_rel_lowercase,game_rel_original,cache_path) VALUES ('winner','nested/','Nested/',?)")
-            .bind(cached_directory.to_string_lossy().as_ref())
-            .execute(&tracker.pool)
+        for keep_vanilla in [false, true] {
+            let temp = tempfile::tempdir()?;
+            let (tracker, mut game, profile) =
+                super::super::tests::snapshot_fixture(temp.path()).await?;
+            game.engine = GameEngine::Aurora;
+            fs::create_dir_all(game.path.join("data"))?;
+            let cached_directory = temp.path().join("winner/Nested");
+            fs::create_dir(&cached_directory)?;
+            sqlx::query("INSERT INTO mod_files(mod_id,game_rel_lowercase,game_rel_original,cache_path) VALUES ('winner','nested/','Nested/',?)")
+                .bind(cached_directory.to_string_lossy().as_ref())
+                .execute(&tracker.pool)
+                .await?;
+            let cached_file = cached_directory.join("Managed.bin");
+            fs::write(&cached_file, b"managed")?;
+            sqlx::query("INSERT INTO mod_files(mod_id,game_rel_lowercase,game_rel_original,cache_path) VALUES ('winner','nested/managed.bin','Nested/Managed.bin',?)")
+                .bind(cached_file.to_string_lossy().as_ref())
+                .execute(&tracker.pool)
+                .await?;
+            tracker.switch_profile(&game.id, &profile).await?;
+            tracker.save_to_profile(&profile, &game.id).await?;
+            let prepared = prepare(
+                &tracker,
+                &game,
+                temp.path(),
+                Some(&profile),
+                false,
+                Control::default(),
+            )
             .await?;
-        tracker.switch_profile(&game.id, &profile).await?;
-        tracker.save_to_profile(&profile, &game.id).await?;
-        let prepared = prepare(
-            &tracker,
-            &game,
-            temp.path(),
-            Some(&profile),
-            false,
-            Control::default(),
-        )
-        .await?;
-        assert!(!game.path.join("data/File.txt").exists());
-        let id = prepared
-            .activate(Control::default())
-            .await?
-            .context("Generation was not published")?;
-        let live = game.path.join("data/File.txt");
-        let vanilla = game.path.join("data/Nested/Vanilla.bin");
-        fs::write(&vanilla, b"vanilla")?;
-        assert_eq!(fs::read(&live)?, b"winner");
-        assert_eq!(
-            fs::metadata(&live)?.ino(),
-            fs::metadata(temp.path().join("winner/file.txt"))?.ino()
-        );
-        let purge = prepare(
-            &tracker,
-            &game,
-            temp.path(),
-            None,
-            false,
-            Control::default(),
-        )
-        .await?;
-        purge.activate(Control::default()).await?;
-        assert!(!live.exists());
-        assert_eq!(fs::read(&vanilla)?, b"vanilla");
-        assert!(tracker.get_deployed_files(&game.id).await?.is_empty());
-        let history = History::open(&tracker, &game.id, temp.path(), false).await?;
-        let retained = history.load(&id).await?;
-        assert!(
-            retained
-                .sources
-                .iter()
-                .any(|source| source.path == "cache/disabled/file.txt")
-        );
-        assert!(
-            retained
-                .sources
-                .iter()
-                .any(|source| source.path == "cache/loser/file.txt")
-        );
+            assert!(!game.path.join("data/File.txt").exists());
+            let id = prepared
+                .activate(Control::default())
+                .await?
+                .context("Generation was not published")?;
+            let live = game.path.join("data/File.txt");
+            let vanilla = game.path.join("data/Nested/Vanilla.bin");
+            if keep_vanilla {
+                fs::write(&vanilla, b"vanilla")?;
+            }
+            assert_eq!(fs::read(&live)?, b"winner");
+            assert_eq!(
+                fs::metadata(&live)?.ino(),
+                fs::metadata(temp.path().join("winner/file.txt"))?.ino()
+            );
+            let purge = prepare(
+                &tracker,
+                &game,
+                temp.path(),
+                None,
+                false,
+                Control::default(),
+            )
+            .await?;
+            purge.activate(Control::default()).await?;
+            assert!(!live.exists());
+            if keep_vanilla {
+                assert_eq!(fs::read(&vanilla)?, b"vanilla");
+            } else {
+                assert!(!game.path.join("data/Nested").exists());
+            }
+            assert!(!game.path.join("data/Nested/Managed.bin").exists());
+            assert!(tracker.get_deployed_files(&game.id).await?.is_empty());
+            let history = History::open(&tracker, &game.id, temp.path(), false).await?;
+            let retained = history.load(&id).await?;
+            assert!(
+                retained
+                    .sources
+                    .iter()
+                    .any(|source| source.path == "cache/disabled/file.txt")
+            );
+            assert!(
+                retained
+                    .sources
+                    .iter()
+                    .any(|source| source.path == "cache/loser/file.txt")
+            );
+        }
         Ok(())
     }
 }
