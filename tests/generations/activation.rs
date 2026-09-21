@@ -171,6 +171,7 @@ async fn coordinator_cancellation_after_file_replacement_restores_previous_conte
                 flag.store(true, Ordering::Release);
             }
         }),
+        ..Control::default()
     };
     assert!(fixture.deploy(None, control).await.is_err());
     assert_eq!(fs::read(fixture.live())?, b"old content");

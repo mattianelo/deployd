@@ -300,10 +300,11 @@ impl SimpleComponent for Header {
                         sync_saves_btn -> gtk::Button {
                             set_icon_name: "view-refresh-symbolic",
                             #[watch]
-                            set_visible: model.state.can_sync_saves,
+                            set_visible: model.state.game_has_save_management && model.state.save_mode_label.starts_with("Saves: Profile"),
                             #[watch]
-                            set_sensitive: !model.state.is_busy,
-                            set_tooltip_text: Some("Sync saves: update profile snapshot from game save directory"),
+                            set_sensitive: !model.state.is_busy && model.state.can_sync_saves,
+                            #[watch]
+                            set_tooltip_text: Some(if model.state.can_sync_saves { "Sync this profile's live saves" } else { "Deploy this profile with Local Saves before syncing; finish any pending recovery first" }),
                             add_css_class: "flat",
                             connect_clicked[sender] => move |_| {
                                     sender.output(HeaderOutput::SyncSaves).ok();

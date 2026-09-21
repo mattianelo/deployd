@@ -499,7 +499,6 @@ impl App {
                     "Adopted {count} cleaned plugin{} into deployd",
                     if count == 1 { "" } else { "s" }
                 ));
-                self.shell.needs_deploy = true;
                 sender.input(AppMsg::Mods(
                     crate::app::messages::ModsMsg::ScanExternalFiles,
                 ));
@@ -524,7 +523,6 @@ impl App {
                     "Restored {count} plugin{} to the cache — Deploy to apply",
                     if count == 1 { "" } else { "s" },
                 ));
-                self.shell.needs_deploy = true;
                 sender.input(AppMsg::Mods(
                     crate::app::messages::ModsMsg::ScanExternalFiles,
                 ));

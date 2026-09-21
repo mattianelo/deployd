@@ -31,6 +31,18 @@ impl App {
     /// True when the active profile uses per-profile saves and a manual sync makes sense.
     pub(crate) fn can_sync_saves(&self) -> bool {
         self.game_has_save_management()
+            && self.shell.deployment_status.as_ref().is_some_and(|status| {
+                !status.recovery_pending
+                    && status
+                        .live_saves
+                        .as_ref()
+                        .and_then(crate::core::save_manager::SaveSetId::profile_id)
+                        == self
+                            .session
+                            .profiles
+                            .get(self.session.active_profile_idx)
+                            .map(|profile| profile.id.as_str())
+            })
             && self
                 .session
                 .profiles

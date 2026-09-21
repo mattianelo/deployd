@@ -21,7 +21,7 @@ impl App {
             is_busy: self.is_busy(),
             busy_message: self.busy_message(),
             deploying: self.shell.deploying,
-            needs_deploy: self.shell.needs_deploy,
+            needs_deploy: self.needs_deploy(),
             deployment_status: self.deployment_status(),
             selection_active: self.selection_mode_active(),
             notification_count: self.notifications_count(),
@@ -254,7 +254,7 @@ impl App {
             rate_limit_status: self.rate_limit_label(),
             rate_limit_visible: self.download.rate_limit.is_some(),
             rate_limit_warning,
-            needs_deploy: self.shell.needs_deploy,
+            needs_deploy: self.needs_deploy(),
             has_games: self.has_games(),
         }
     }

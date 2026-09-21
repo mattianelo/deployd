@@ -45,7 +45,7 @@ pub fn parse_fomod_config(config_path: &Path) -> Result<FomodUiConfig> {
                                                     description: p
                                                         .description
                                                         .as_ref()
-                                                        .map(|d| d.text.clone())
+                                                        .map(|d| display_description(&d.text))
                                                         .unwrap_or_default(),
                                                     type_hint: p
                                                         .type_descriptor
@@ -171,5 +171,34 @@ pub(super) fn parse_group_type(s: &str) -> FomodGroupType {
         "SelectAtMostOne" => FomodGroupType::SelectAtMostOne,
         "SelectAny" => FomodGroupType::SelectAny,
         _ => FomodGroupType::SelectAny,
+    }
+}
+
+fn display_description(text: &str) -> String {
+    text.replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .lines()
+        .map(str::trim)
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_owned()
+}
+
+#[cfg(test)]
+mod display_tests {
+    use super::display_description;
+
+    // @variants: both
+    #[test]
+    fn removes_xml_indentation_and_preserves_paragraphs() {
+        assert_eq!(
+            display_description(
+                "\r\n    First line\r\n      continuation\r\n \r\n    Second paragraph\r\n"
+            ),
+            "First line\ncontinuation\n\nSecond paragraph"
+        );
+        assert_eq!(display_description("Plain text"), "Plain text");
+        assert_eq!(display_description("  \n "), "");
     }
 }

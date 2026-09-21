@@ -1192,6 +1192,7 @@ async fn cancellation_during_historical_verification_creates_no_restored_profile
     let control = Control {
         cancelled,
         progress: Arc::new(move |_, _| signal.store(true, Ordering::Release)),
+        ..Control::default()
     };
     assert!(
         super::restore::restore(&history, &id, "Cancelled", control)

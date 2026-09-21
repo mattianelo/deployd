@@ -396,7 +396,7 @@ fn build_group_widget(
     container.set_margin_bottom(16);
 
     // Group name
-    let name_label = gtk::Label::new(Some(&group.name));
+    let name_label = gtk::Label::new(Some(group.name.trim()));
     name_label.add_css_class("heading");
     name_label.set_halign(gtk::Align::Start);
     name_label.set_margin_start(4);
@@ -439,7 +439,7 @@ fn build_group_widget(
         let labels = gtk::Box::new(gtk::Orientation::Vertical, 2);
         labels.set_hexpand(true);
         let heading = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-        let name = gtk::Label::new(Some(&plugin.name));
+        let name = gtk::Label::new(Some(plugin.name.trim()));
         name.set_halign(gtk::Align::Start);
         name.set_xalign(0.0);
         name.set_ellipsize(gtk::pango::EllipsizeMode::End);
@@ -458,11 +458,11 @@ fn build_group_widget(
         {
             let description = gtk::Label::new(Some(&plugin.description));
             description.add_css_class("dim-label");
-            description.set_halign(gtk::Align::Start);
+            description.set_halign(gtk::Align::Fill);
             description.set_xalign(0.0);
             description.set_wrap(true);
             description.set_wrap_mode(gtk::pango::WrapMode::WordChar);
-            description.set_lines(2);
+            description.set_hexpand(true);
             labels.append(&description);
         }
         row_content.append(&labels);

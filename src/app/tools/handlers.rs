@@ -71,7 +71,10 @@ impl App {
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
-        if self.shell.needs_deploy {
+        if self.needs_deploy()
+            || self.shell.status_loading
+            || self.shell.deployment_status.is_none()
+        {
             self.show_toast("Deploy your mods before launching tools");
             return;
         }

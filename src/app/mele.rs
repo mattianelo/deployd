@@ -231,26 +231,19 @@ impl App {
                 };
                 let purge = preview.purge;
                 self.begin_work(WorkKind::Deploying, "Preparing retained MELE generation...");
-                let cancelled = Arc::new(AtomicBool::new(false));
-                self.ui.mele_operation = Some(mele_dialog::progress(
-                    root,
+                self.deployment_phase(
                     if purge {
-                        "Restoring MELE Game Files"
+                        "Preparing MELE purge…"
                     } else {
-                        "Deploying MELE Profile"
+                        "Preparing MELE deployment…"
                     },
-                    cancelled.clone(),
-                ));
+                    true,
+                );
+                let control = self.deployment_control();
                 self.location_command(sender, async move {
                     let request = preview.into_generation_request();
                     let result = crate::core::generations::activation::prepare_mele(
-                        &tracker,
-                        &cache,
-                        request,
-                        crate::core::generations::content::Control {
-                            cancelled,
-                            progress: Arc::new(|_, _| {}),
-                        },
+                        &tracker, &cache, request, control,
                     )
                     .await
                     .map(Box::new)
@@ -369,7 +362,6 @@ impl App {
                         self.refresh_priority_labels();
                         self.mods.selected.clear();
                         self.mods.selection_dirty = true;
-                        self.shell.needs_deploy = true;
                         for entry in entries {
                             self.handle_cmd_mod_removed(
                                 Ok((entry.id, Vec::new())),

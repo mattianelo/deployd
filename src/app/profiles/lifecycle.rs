@@ -121,6 +121,10 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         self.ui.profile_menu_btn.popdown();
+        if !self.can_sync_saves() {
+            self.push_notification("Deploy this profile with Local Saves before syncing; finish any pending recovery first");
+            return;
+        }
         let dialog = adw::AlertDialog::builder()
             .heading("Sync live saves to this profile?")
             .body("The current profile bank will be replaced, including stored saves that were deleted from the live directory. A recovery point will be created first.")

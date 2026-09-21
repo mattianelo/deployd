@@ -113,6 +113,34 @@ impl Target {
     }
 
     pub(super) fn resolve(&self, game: &Game) -> Result<PathBuf> {
+        self.resolve_with(game, None)
+    }
+
+    pub(super) fn resolve_with(
+        &self,
+        game: &Game,
+        created: Option<&std::collections::BTreeSet<PathBuf>>,
+    ) -> Result<PathBuf> {
+        let destination = self.recorded_path(game)?;
+        if matches!(self, Self::PluginControl { .. } | Self::CustomIni { .. }) {
+            return Ok(destination);
+        }
+        let root = if matches!(self, Self::MeleLauncher { .. }) {
+            game.path
+                .parent()
+                .context("Shared launcher root is unavailable")?
+        } else if destination.starts_with(&game.path) {
+            game.path.as_path()
+        } else {
+            game.wine_prefix
+                .as_deref()
+                .filter(|prefix| destination.starts_with(prefix))
+                .context("Deployment target is outside its authorized roots")?
+        };
+        resolve_casing_with(root, destination.strip_prefix(root)?, created)
+    }
+
+    pub(super) fn recorded_path(&self, game: &Game) -> Result<PathBuf> {
         self.validate(&game.engine)?;
         let data = game::deploy_dir(game);
         let (base, path) = match self {
@@ -129,27 +157,20 @@ impl Target {
             Self::CustomIni { slot } if game.engine == GameEngine::Bethesda => return game::custom_ini_paths(game).get(*slot).cloned().ok_or_else(|| anyhow::anyhow!("Managed INI location is unavailable; restore Wine prefix access")),
             _ => bail!("Historical target belongs to a different engine"),
         };
-        let destination = base.join(relative(path)?);
-        let root = if matches!(self, Self::MeleLauncher { .. }) {
-            game.path
-                .parent()
-                .context("Shared launcher root is unavailable")?
-        } else if destination.starts_with(&game.path) {
-            game.path.as_path()
-        } else if let Some(prefix) = game
-            .wine_prefix
-            .as_deref()
-            .filter(|prefix| destination.starts_with(prefix))
-        {
-            prefix
-        } else {
-            base.as_path()
-        };
-        resolve_casing(root, destination.strip_prefix(root)?)
+        Ok(base.join(relative(path)?))
     }
 }
 
+#[cfg(test)]
 fn resolve_casing(root: &Path, relative: &Path) -> Result<PathBuf> {
+    resolve_casing_with(root, relative, None)
+}
+
+fn resolve_casing_with(
+    root: &Path,
+    relative: &Path,
+    created: Option<&std::collections::BTreeSet<PathBuf>>,
+) -> Result<PathBuf> {
     let mut resolved = root.to_owned();
     for component in relative.components() {
         let Component::Normal(name) = component else {
@@ -180,19 +201,32 @@ fn resolve_casing(root: &Path, relative: &Path) -> Result<PathBuf> {
             }
         };
         let expected = name.to_string_lossy().to_lowercase();
-        let mut matched = None;
+        let mut matched = Vec::new();
         for entry in entries {
             let entry = entry?;
             if entry.file_name().to_string_lossy().to_lowercase() == expected {
-                ensure!(
-                    matched.is_none(),
-                    "Ambiguous filename casing in '{}'; resolve duplicate names before deploying",
-                    resolved.display()
-                );
-                matched = Some(entry.file_name());
+                matched.push(entry.path());
             }
         }
-        resolved.push(matched.as_deref().unwrap_or(name));
+        matched.sort();
+        if matched.len() > 1 {
+            let exact = resolved.join(name);
+            ensure!(
+                created.is_some_and(|created| matched.contains(&exact)
+                    && matched.iter().all(|path| created.contains(path))),
+                "Ambiguous filename casing: {}; conflicting paths were preserved",
+                matched
+                    .iter()
+                    .map(|path| path.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            resolved = exact;
+        } else if let Some(path) = matched.pop() {
+            resolved = path;
+        } else {
+            resolved.push(name);
+        }
     }
     Ok(resolved)
 }

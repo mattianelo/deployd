@@ -120,6 +120,7 @@ fn rejects_cancellation_during_retained_content_verification() -> Result<()> {
     let control = Control {
         cancelled,
         progress: Arc::new(move |_, _| signal.store(true, Ordering::Release)),
+        ..Control::default()
     };
     assert!(store.retain_expected(&source, &identity, &control).is_err());
     store.verify(&identity, &Control::default())?;

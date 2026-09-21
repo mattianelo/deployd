@@ -370,7 +370,16 @@ async fn prepare_inner(
         bank::recover(&super::bank_root(source)?, source)?;
         bank::recover(&super::bank_root(target)?, target)?;
         super::migrate_legacy_profile_bank(source).await?;
-        super::migrate_legacy_profile_bank(target).await?;
+        match fs::symlink_metadata(super::bank_root(target)?) {
+            Ok(metadata) => {
+                ensure!(metadata.is_dir(), "Save-bank storage is not a directory");
+                super::load_bank(target).await?;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                super::migrate_legacy_profile_bank(target).await?;
+            }
+            Err(error) => return Err(error).context("Cannot inspect the target save bank"),
+        }
         control.check()?;
         super::create_backup_from_dir(
             source,
@@ -386,10 +395,19 @@ async fn prepare_inner(
             snapshot.directory.as_path(),
             &control,
         )?;
-        if seed {
+        let target_bank = super::bank_root(target)?;
+        let uninitialized = match fs::symlink_metadata(&target_bank) {
+            Ok(metadata) => {
+                ensure!(metadata.is_dir(), "Save-bank storage is not a directory");
+                false
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
+            Err(error) => return Err(error).context("Cannot inspect the target save bank"),
+        };
+        if seed || (uninitialized && target.profile_id().is_some()) {
             ensure!(
                 target.profile_id().is_some(),
-                "Only a restored profile can seed an isolated save bank"
+                "Only an isolated profile can seed a save bank"
             );
             let bank = super::bank_root(target)?;
             if super::bank_manifest(&bank).try_exists()? {

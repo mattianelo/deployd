@@ -44,7 +44,13 @@ pub(crate) struct App {
 pub(crate) struct ShellState {
     pub(crate) location_recovery: Option<tokio::sync::OwnedRwLockWriteGuard<()>>,
     pub(crate) deploying: bool,
-    pub(crate) needs_deploy: bool,
+    pub(crate) deployment_status: Option<crate::core::generations::status::Status>,
+    pub(crate) deployment_status_error: Option<String>,
+    pub(crate) status_request: u64,
+    pub(crate) operation_id: u64,
+    pub(crate) status_loading: bool,
+    pub(crate) status_inflight: bool,
+    pub(crate) status_context: Option<(String, String)>,
     pub(crate) status_msg: Option<String>,
     pub(crate) work_status: Option<WorkStatus>,
     pub(crate) search_active: bool,
@@ -70,6 +76,7 @@ pub(crate) struct ToolState {
 }
 
 pub(crate) struct UiState {
+    pub(crate) deployment_operation: Option<super::deployment_dialog::Operation>,
     pub(crate) mele_setup: Option<crate::ui::mele_dialog::SetupProgress>,
     pub(crate) mele_operation: Option<adw::AlertDialog>,
     pub(crate) header: Controller<Header>,
@@ -110,6 +117,7 @@ pub(crate) struct SessionState {
     pub(crate) games: Vec<Game>,
     pub(crate) selected_game_idx: usize,
     pub(crate) profiles: Vec<Profile>,
+    pub(crate) profile_game_id: Option<String>,
     pub(crate) active_profile_idx: usize,
     pub(crate) updating_profiles: bool,
     pub(crate) pending_save_profile_idx: Option<usize>,

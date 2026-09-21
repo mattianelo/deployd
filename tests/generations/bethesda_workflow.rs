@@ -687,3 +687,63 @@ async fn bethesda_state_commit_failure_restores_files_links_and_new_directories(
     assert_eq!(count, 0);
     Ok(())
 }
+
+// @variants: both
+#[tokio::test]
+async fn unchanged_live_plugin_configuration_does_not_overwrite_pending_draft_order() -> Result<()>
+{
+    let fixture = Fixture::new().await?;
+    fixture
+        .history
+        .tracker
+        .switch_profile(&fixture.game.id, &fixture.profile)
+        .await?;
+    let previous = super::super::ownership::initialize(&fixture.history).await?;
+    let prepared = draft(&fixture, &fixture.profile, true).await?;
+    super::super::coordinator::activate(
+        &fixture.history,
+        &fixture.game,
+        &prepared.journal,
+        Some(&previous),
+        Some(&state::Deployment {
+            manifest: &prepared.manifest,
+            profile: &fixture.profile,
+            files: &prepared.files,
+        }),
+        &previous.saves,
+        Control::default(),
+    )
+    .await?;
+    sqlx::query("UPDATE plugins SET enabled=0,load_order=42 WHERE id='winner'")
+        .execute(&fixture.history.tracker.pool)
+        .await?;
+    fixture
+        .history
+        .tracker
+        .save_to_profile(&fixture.profile, &fixture.game.id)
+        .await?;
+    super::super::session::reconcile_plugins(&fixture.history.tracker, &fixture.game).await?;
+    let current: (bool, i64) =
+        sqlx::query_as("SELECT enabled,load_order FROM plugins WHERE id='winner'")
+            .fetch_one(&fixture.history.tracker.pool)
+            .await?;
+    assert_eq!(current, (false, 42));
+    let draft: (bool, i64) = sqlx::query_as(
+        "SELECT enabled,load_order FROM profile_plugins WHERE profile_id=? AND plugin_id='winner'",
+    )
+    .bind(&fixture.profile)
+    .fetch_one(&fixture.history.tracker.pool)
+    .await?;
+    assert_eq!(draft, current);
+    assert!(
+        super::super::status::read(
+            &fixture.history.tracker,
+            &fixture.game,
+            &fixture.profile,
+            &fixture.history.cache
+        )
+        .await?
+        .needs_deploy
+    );
+    Ok(())
+}

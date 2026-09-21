@@ -1,6 +1,8 @@
 mod appearance;
 mod cache_handlers;
 mod deploy;
+mod deployment_dialog;
+mod deployment_status;
 mod dispatch;
 mod downloads;
 mod external;
@@ -700,7 +702,18 @@ impl Component for App {
     }
 
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, root: &Self::Root) {
-        self.dispatch_input(msg, sender, root);
+        let refresh = matches!(
+            &msg,
+            AppMsg::Games(_)
+                | AppMsg::Mods(_)
+                | AppMsg::Plugins(_)
+                | AppMsg::Tools(_)
+                | AppMsg::Generations(_)
+        );
+        self.dispatch_input(msg, sender.clone(), root);
+        if refresh {
+            self.refresh_deployment_status(&sender);
+        }
         self.ui.header.sender().send(self.header_state()).ok();
         self.ui
             .downloads_pane
@@ -720,7 +733,11 @@ impl Component for App {
         sender: ComponentSender<Self>,
         root: &Self::Root,
     ) {
-        self.dispatch_command(msg, sender, root);
+        let refresh = deployment_status::affects_status(&msg);
+        self.dispatch_command(msg, sender.clone(), root);
+        if refresh {
+            self.refresh_deployment_status(&sender);
+        }
         self.ui.header.sender().send(self.header_state()).ok();
         self.ui
             .downloads_pane

@@ -185,11 +185,11 @@ impl App {
         }
         // Validate preconditions before showing any dialog.
         if self.session.tracker.is_none() {
-            self.push_notification("Database not ready yet");
+            self.deployment_failure("Database not ready yet");
             return;
         }
         let Some(game) = self.selected_game() else {
-            self.push_notification("No game selected");
+            self.deployment_failure("No game selected");
             return;
         };
         if !game.path.exists() {
@@ -268,11 +268,11 @@ impl App {
             return;
         }
         let Some(tracker) = self.session.tracker.clone() else {
-            self.push_notification("Database not ready yet");
+            self.deployment_failure("Database not ready yet");
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
-            self.push_notification("No game selected");
+            self.deployment_failure("No game selected");
             return;
         };
         if !game.path.exists() {
@@ -283,6 +283,7 @@ impl App {
         }
 
         self.shell.deploying = true;
+        self.deployment_phase("Checking deployment…", true);
         self.begin_work(WorkKind::Deploying, "Checking deployment...");
         self.location_command(sender, async move {
             AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::DeployPreflightDone(
@@ -304,7 +305,7 @@ impl App {
             Ok(preflight) => preflight,
             Err(error) => {
                 self.shell.deploying = false;
-                self.push_notification(&format!("Could not inspect deployment: {error}"));
+                self.deployment_failure(&format!("Could not inspect deployment: {error}"));
                 return;
             }
         };
@@ -313,6 +314,11 @@ impl App {
             self.execute_deploy(preflight.protect_vanilla_files, sender);
             return;
         }
+        if self.deployment_control().check().is_err() {
+            self.handle_deploy_preflight_cancelled();
+            return;
+        }
+        self.pause_deployment_dialog();
         present_vanilla_replacement_dialog(root, sender, preflight);
     }
 
@@ -323,7 +329,7 @@ impl App {
     ) {
         let Some(tracker) = self.session.tracker.clone() else {
             self.shell.deploying = false;
-            self.push_notification("Database not ready yet");
+            self.deployment_failure("Database not ready yet");
             return;
         };
         self.shell.deploying = true;
@@ -349,13 +355,14 @@ impl App {
         self.finish_work(WorkKind::Deploying);
         match result {
             Ok(()) => self.execute_deploy(protect, sender),
-            Err(error) => self.push_notification(&format!(
+            Err(error) => self.deployment_failure(&format!(
                 "Deployment cancelled because the vanilla protection preference could not be saved: {error}"
             )),
         }
     }
 
     pub(crate) fn handle_deploy_preflight_cancelled(&mut self) {
+        self.deployment_result("Deployment cancelled", "No deployment was activated.");
         self.shell.deploying = false;
         self.finish_work(WorkKind::Deploying);
     }
@@ -367,11 +374,11 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         let Some(tracker) = self.session.tracker.clone() else {
-            self.push_notification("Database not ready yet");
+            self.deployment_failure("Database not ready yet");
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
-            self.push_notification("No game selected");
+            self.deployment_failure("No game selected");
             return;
         };
         let Some(profile_id) = self
@@ -380,7 +387,7 @@ impl App {
             .get(self.session.active_profile_idx)
             .map(|profile| profile.id.clone())
         else {
-            self.push_notification("No profile selected");
+            self.deployment_failure("No profile selected");
             return;
         };
         if !game.path.exists() {
@@ -392,12 +399,14 @@ impl App {
         let cache_root = match self.cache_root_for(&game.id) {
             Ok(path) => path,
             Err(error) => {
-                self.push_notification(&format!("Cannot resolve the mod cache: {error}"));
+                self.deployment_failure(&format!("Cannot resolve the mod cache: {error}"));
                 return;
             }
         };
 
         self.shell.deploying = true;
+        self.deployment_phase("Preparing deployment…", true);
+        let control = self.deployment_control();
         self.begin_work(WorkKind::Deploying, "Preparing deployment...");
 
         self.location_command(sender, async move {
@@ -414,7 +423,7 @@ impl App {
                 &cache_root,
                 Some(&profile_id),
                 protect_vanilla_files,
-                crate::core::generations::content::Control::default(),
+                control,
             )
             .await
             .map(Box::new)
@@ -437,13 +446,27 @@ impl App {
             Ok(prepared) => prepared,
             Err(error) => {
                 self.shell.deploying = false;
-                self.push_notification(&format!("Could not prepare deployment: {error}"));
+                if error.contains("Global saves has no initialized save state") {
+                    self.deployment_result(
+                        "Deployment paused",
+                        "Initialize the Global save bank before deploying this profile.",
+                    );
+                    self.pause_deployment_dialog();
+                    self.handle_cmd_save_mode_toggled(Err(error), root, sender);
+                    return;
+                }
+                self.deployment_failure(&format!("Could not prepare deployment: {error}"));
                 return;
             }
         };
+        if self.deployment_control().check().is_err() {
+            self.discard_prepared_generation(*prepared, sender);
+            return;
+        }
+        self.pause_deployment_dialog();
         let purge = prepared.is_purge();
         let (added, removed, changed) = prepared.change_counts();
-        let details = if purge {
+        let mut details = if purge {
             "Purge restores managed game content while retaining deployment history, the mod library, and saves."
                 .to_string()
         } else if added == 0 && removed == 0 && changed == 0 {
@@ -451,6 +474,10 @@ impl App {
         } else {
             format!("Prepared changes: {added} added, {changed} replaced, and {removed} removed.")
         };
+        if let Some(saves) = prepared.save_change_summary() {
+            details.push_str("\n\n");
+            details.push_str(saves);
+        }
         let dialog = adw::AlertDialog::builder()
             .heading(if purge {
                 "Apply purge?"
@@ -491,23 +518,32 @@ impl App {
         prepared: crate::core::generations::activation::Prepared,
         sender: &ComponentSender<Self>,
     ) {
-        self.shell.deploying = false;
+        self.deployment_phase("Discarding the prepared deployment…", false);
+        self.shell.deploying = true;
         self.location_command(sender, async move {
             let result = prepared.discard().await.map_err(|error| error.to_string());
-            AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PrioritySaved(result))
+            AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::PreparedDiscarded(result))
         });
     }
 
     pub(crate) fn apply_prepared_generation(
         &mut self,
-        prepared: crate::core::generations::activation::Prepared,
+        mut prepared: crate::core::generations::activation::Prepared,
         sender: &ComponentSender<Self>,
     ) {
         let purge = prepared.is_purge();
+        self.deployment_phase(
+            if purge {
+                "Purging…"
+            } else {
+                "Activating deployment…"
+            },
+            false,
+        );
+        let control = self.deployment_control();
         let purge_report = prepared.purge_report();
         let profile = prepared.profile_id().map(str::to_owned);
-        let total = prepared.file_count();
-        let (added, removed, changed) = prepared.change_counts();
+        let outcome = prepared.take_outcome();
         self.begin_work(
             if purge {
                 WorkKind::Purging
@@ -518,7 +554,7 @@ impl App {
         );
         self.location_command(sender, async move {
             let result = prepared
-                .activate(crate::core::generations::content::Control::default())
+                .activate(control)
                 .await
                 .map_err(|error| format!("{error:#}"));
             if purge {
@@ -530,15 +566,7 @@ impl App {
                 AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::DeployDone(result.map(
                     |_| DeployCompletion {
                         profile_id,
-                        outcome: crate::core::deployer::DeployOutcome {
-                            files_total: total,
-                            files_added: added + changed,
-                            files_removed: removed,
-                            conflicts_resolved: 0,
-                            vanilla_files_backed_up: 0,
-                            vanilla_files_restored: 0,
-                            warnings: Vec::new(),
-                        },
+                        outcome,
                     },
                 )))
             }
@@ -617,11 +645,11 @@ impl App {
             return;
         }
         let Some(tracker) = self.session.tracker.clone() else {
-            self.push_notification("Database not ready yet");
+            self.deployment_failure("Database not ready yet");
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
-            self.push_notification("No game selected");
+            self.deployment_failure("No game selected");
             return;
         };
         if !game.path.exists() {
@@ -633,12 +661,14 @@ impl App {
         let cache_root = match self.cache_root_for(&game.id) {
             Ok(path) => path,
             Err(error) => {
-                self.push_notification(&format!("Cannot resolve the mod cache: {error}"));
+                self.deployment_failure(&format!("Cannot resolve the mod cache: {error}"));
                 return;
             }
         };
 
         self.shell.deploying = true;
+        self.deployment_phase("Preparing purge…", true);
+        let control = self.deployment_control();
         self.begin_work(WorkKind::Purging, "Preparing purge...");
 
         self.location_command(sender, async move {
@@ -648,7 +678,7 @@ impl App {
                 &cache_root,
                 None,
                 false,
-                crate::core::generations::content::Control::default(),
+                control,
             )
             .await
             .map(Box::new)
@@ -763,7 +793,6 @@ impl App {
         self.finish_work(WorkKind::Deploying);
         match result {
             Ok(completion) => {
-                self.shell.needs_deploy = false;
                 self.session.last_deployed_profile_id = Some(completion.profile_id);
                 self.rebuild_tool_buttons(sender);
                 let outcome = completion.outcome;
@@ -798,7 +827,10 @@ impl App {
                         outcome.vanilla_files_restored
                     ));
                 }
-                self.show_toast(&msg);
+                if !outcome.warnings.is_empty() {
+                    msg.push_str(&format!("\n\n{}", outcome.warnings.join("\n")));
+                }
+                self.deployment_result("Deployment complete", &msg);
                 for warning in outcome.warnings {
                     self.push_notification(&format!("Deployment warning: {warning}"));
                 }
@@ -807,7 +839,7 @@ impl App {
                 ));
             }
             Err(e) => {
-                self.push_notification(&format!("Deploy failed: {e}"));
+                self.deployment_failure(&format!("Deploy failed: {e}"));
             }
         }
     }
@@ -820,15 +852,18 @@ impl App {
         self.finish_work(WorkKind::Purging);
         match result {
             Ok(outcome) => {
-                self.shell.needs_deploy = true;
                 self.session.last_deployed_profile_id = None;
-                self.show_toast(&outcome.message());
+                let mut message = outcome.message();
+                if !outcome.outcome.warnings.is_empty() {
+                    message.push_str(&format!("\n\n{}", outcome.outcome.warnings.join("\n")));
+                }
+                self.deployment_result("Purge complete", &message);
                 for warning in outcome.outcome.warnings {
                     self.push_notification(&format!("Purge warning: {warning}"));
                 }
             }
             Err(e) => {
-                self.push_notification(&format!("Purge failed: {e}"));
+                self.deployment_failure(&format!("Purge failed: {e}"));
             }
         }
     }

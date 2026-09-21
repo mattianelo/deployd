@@ -36,22 +36,6 @@ impl App {
                 sender.input(AppMsg::Mods(
                     crate::app::messages::ModsMsg::ScanExternalFiles,
                 ));
-                // Reload last-deployed profile for the newly selected game.
-                if let (Some(tracker), Some(game)) =
-                    (self.session.tracker.clone(), self.selected_game().cloned())
-                {
-                    let key = format!("last_deployed_profile_{}", game.id);
-                    sender.oneshot_command(async move {
-                        AppCmdMsg::Games(
-                            crate::app::messages::GamesCmdMsg::LastDeployedProfileLoaded(
-                                tracker
-                                    .get_setting(&key)
-                                    .await
-                                    .map_err(|error| error.to_string()),
-                            ),
-                        )
-                    });
-                }
             }
             Err(e) => {
                 self.push_notification(&format!("Load failed: {e}"));
@@ -216,7 +200,6 @@ impl App {
     ) {
         match result {
             Ok(rescan) => {
-                self.shell.needs_deploy = true;
                 if let Some(controller) = &self.ui.mod_properties_dialog {
                     controller
                         .sender()

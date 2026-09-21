@@ -48,6 +48,10 @@ impl App {
         use crate::app::messages::ShellMsg;
 
         match msg {
+            ShellMsg::DeploymentPhase { id, phase } => self.update_deployment_phase(id, phase),
+            ShellMsg::DeploymentProgress { id, done, total } => {
+                self.deployment_progress(id, done, total)
+            }
             ShellMsg::DeployClicked => self.handle_deploy_clicked(root, &sender),
             ShellMsg::DeployConfirmed => self.prepare_deploy(&sender),
             ShellMsg::DeployVanillaConfirmed(protect) => {
@@ -447,6 +451,7 @@ impl App {
         root: &adw::ApplicationWindow,
     ) {
         match msg {
+            AppCmdMsg::DeploymentStatus(update) => self.apply_deployment_status(update, &sender),
             AppCmdMsg::Recovery(msg) => self.handle_recovery_command(msg, &sender, root),
             AppCmdMsg::LocationActivityCompleted(lease, msg) => {
                 self.dispatch_command(*msg, sender, root);
@@ -473,6 +478,13 @@ impl App {
         use crate::app::messages::ShellCmdMsg;
 
         match msg {
+            ShellCmdMsg::PreparedDiscarded(result) => {
+                self.shell.deploying = false;
+                match result {
+                    Ok(()) => self.deployment_result("Deployment cancelled", "The prepared deployment was discarded. Live files and saves were not activated."),
+                    Err(error) => self.deployment_failure(&format!("Could not discard preparation: {error}")),
+                }
+            }
             ShellCmdMsg::Initialized(result) => self.handle_cmd_initialized(*result, &sender),
             ShellCmdMsg::DeployPreflightDone(result) => {
                 self.handle_cmd_deploy_preflight_done(result, root, &sender)
@@ -556,9 +568,6 @@ impl App {
             }
             GamesCmdMsg::SaveBackupMutation(result) => {
                 self.handle_cmd_save_backup_mutation(result, &sender)
-            }
-            GamesCmdMsg::LastDeployedProfileLoaded(id) => {
-                self.handle_cmd_last_deployed_profile_loaded(id)
             }
             GamesCmdMsg::GamesPersisted(result) => self.handle_cmd_games_persisted(result, &sender),
             GamesCmdMsg::GameRemoved { game_id, result } => {

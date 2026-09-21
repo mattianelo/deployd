@@ -63,8 +63,21 @@ pub(super) async fn capture(
     game: &str,
     profile: &str,
 ) -> Result<Vec<Rows>> {
+    capture_state(tx, game, profile, false).await
+}
+
+pub(super) async fn capture_state(
+    tx: &mut Transaction<'_, Sqlite>,
+    game: &str,
+    profile: &str,
+    working: bool,
+) -> Result<Vec<Rows>> {
     let mut result = Vec::new();
-    let mods = "SELECT id FROM mods WHERE game_id = ?1 AND id IN (SELECT mod_id FROM profile_mods WHERE profile_id = ?2)";
+    let mods = if working {
+        "SELECT id FROM mods WHERE game_id = ?1 AND ?2 IS NOT NULL"
+    } else {
+        "SELECT id FROM mods WHERE game_id = ?1 AND id IN (SELECT mod_id FROM profile_mods WHERE profile_id = ?2)"
+    };
     let plugins = format!("SELECT id FROM plugins WHERE mod_id IN ({mods})");
     for table in Table::ALL {
         let predicate = match table {
@@ -78,7 +91,16 @@ pub(super) async fn capture(
             }
             Table::MeleRecipes => "game_id = ?1 AND profile_id = ?2".to_owned(),
         };
-        let query = format!("SELECT * FROM {} WHERE {predicate}", table.name());
+        let query = match table {
+            Table::ProfileMods if working => {
+                "SELECT ?2 AS profile_id,id AS mod_id,enabled,priority FROM mods WHERE game_id=?1"
+                    .into()
+            }
+            Table::ProfilePlugins if working => format!(
+                "SELECT ?2 AS profile_id,id AS plugin_id,enabled,load_order FROM plugins WHERE mod_id IN ({mods})"
+            ),
+            _ => format!("SELECT * FROM {} WHERE {predicate}", table.name()),
+        };
         let mut records = Vec::new();
         for row in sqlx::query(&query)
             .bind(game)

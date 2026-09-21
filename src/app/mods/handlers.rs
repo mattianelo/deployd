@@ -77,7 +77,6 @@ impl App {
             }
         }
         drop(guard);
-        self.shell.needs_deploy = true;
         if self.mods.selection_active {
             self.mods.selection_dirty = true;
         }
@@ -151,7 +150,6 @@ impl App {
         }
 
         drop(guard);
-        self.shell.needs_deploy = true;
         if self.mods.selection_active {
             self.mods.selection_dirty = true;
         }
@@ -233,7 +231,6 @@ impl App {
                 }
             }
         }
-        self.shell.needs_deploy = true;
         if self.mods.selection_active {
             self.mods.selection_dirty = true;
         }
@@ -270,7 +267,6 @@ impl App {
                 }
             }
         }
-        self.shell.needs_deploy = true;
         let game_id = game.id.clone();
         let engine = game.engine.clone();
         let mod_names: HashMap<String, String> = {
@@ -334,7 +330,6 @@ impl App {
                 }
             }
         }
-        self.shell.needs_deploy = true;
         let game_id = game.id.clone();
         let engine = game.engine.clone();
         let mod_names: HashMap<String, String> = {
@@ -771,7 +766,6 @@ impl App {
                 }
             }
         }
-        self.shell.needs_deploy = true;
         self.mods.selection_dirty = true;
 
         let game_id = game.id.clone();
@@ -843,7 +837,6 @@ impl App {
                 }
             }
         }
-        self.shell.needs_deploy = true;
         self.mods.selection_dirty = true;
 
         let game_id = game.id.clone();
@@ -995,8 +988,6 @@ impl App {
                 ))
             });
         }
-
-        self.shell.needs_deploy = true;
         self.mods.selection_dirty = true;
         self.mods.selected.clear();
         self.save_group_positions(sender);

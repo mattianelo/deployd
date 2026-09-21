@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -20,7 +20,11 @@ pub(super) struct Directory {
 
 impl Directory {
     fn resolve(&self, game: &Game) -> Result<PathBuf> {
-        let target = self.target.resolve(game)?;
+        self.resolve_with(game, None)
+    }
+
+    fn resolve_with(&self, game: &Game, created: Option<&BTreeSet<PathBuf>>) -> Result<PathBuf> {
+        let target = self.target.resolve_with(game, created)?;
         let path = target
             .ancestors()
             .nth(self.levels)
@@ -181,6 +185,14 @@ impl Journal {
     }
 
     pub(super) fn validate_layout(&self, game: &Game) -> Result<()> {
+        self.validate_layout_with(game, None)
+    }
+
+    pub(super) fn validate_layout_with(
+        &self,
+        game: &Game,
+        created: Option<&BTreeSet<PathBuf>>,
+    ) -> Result<()> {
         ensure!(
             self.version >= 3 || (self.directories.is_empty() && self.links.is_empty()),
             "Layout recovery requires its versioned journal format"
@@ -199,14 +211,39 @@ impl Journal {
         let changes = self
             .changes
             .iter()
-            .map(|change| change.target.resolve(game))
+            .map(|change| {
+                change
+                    .target
+                    .resolve_with(game, created)
+                    .map(|path| path_key(&path))
+            })
             .collect::<Result<BTreeSet<_>>>()?;
         let mut previous = 0;
         let mut seen = BTreeSet::new();
+        let mut declared = BTreeSet::new();
         for directory in &self.directories {
-            let path = directory.resolve(game)?;
+            let path = directory.resolve_with(game, created)?;
+            let recorded = directory.target.recorded_path(game)?;
+            let recorded = recorded
+                .ancestors()
+                .nth(directory.levels)
+                .context("Invalid journal directory")?;
             ensure!(
-                seen.insert(path.clone()) && !changes.contains(&path),
+                declared.insert(recorded.to_owned()),
+                "Duplicate recorded journal directory"
+            );
+            ensure!(
+                (seen.insert(path.clone()) || created.is_some())
+                    && (!changes.contains(&path_key(&path))
+                        || self
+                            .changes
+                            .iter()
+                            .any(|change| change.before == Node::Absent
+                                && change.after == (Node::Directory { mode: 0o755 })
+                                && change
+                                    .target
+                                    .resolve_with(game, created)
+                                    .is_ok_and(|target| path_key(&target) == path_key(&path)))),
                 "Duplicate journal directory"
             );
             ensure!(self.changes.iter().any(|change| change.target == directory.target && change.after != Node::Absent), "Journal directory has no managed output");
@@ -224,12 +261,12 @@ impl Journal {
         let mut seen = self
             .directories
             .iter()
-            .map(|entry| entry.resolve(game))
+            .map(|entry| entry.resolve(game).map(|path| path_key(&path)))
             .collect::<Result<BTreeSet<_>>>()?;
         let explicit = self
             .changes
             .iter()
-            .map(|change| change.target.resolve(game))
+            .map(|change| change.target.resolve(game).map(|path| path_key(&path)))
             .collect::<Result<BTreeSet<_>>>()?;
         for change in &self.changes {
             let path = change.target.resolve(game)?;
@@ -247,7 +284,7 @@ impl Journal {
                         break;
                     }
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                        if !explicit.contains(parent) && seen.insert(parent.to_owned()) {
+                        if !explicit.contains(&path_key(parent)) && seen.insert(path_key(parent)) {
                             self.directories.push(Directory {
                                 target: change.target.clone(),
                                 levels,
@@ -279,7 +316,7 @@ impl Journal {
         let planned = self
             .directories
             .iter()
-            .map(|entry| entry.resolve(game))
+            .map(|entry| entry.resolve(game).map(|path| path_key(&path)))
             .collect::<Result<BTreeSet<_>>>()?;
         for parent in path.ancestors().skip(1) {
             if parent == root(game, target)? {
@@ -289,13 +326,11 @@ impl Journal {
                 Ok(metadata) => ensure!(metadata.is_dir(), "Deployment parent is redirected"),
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                     ensure!(
-                        planned.contains(parent)
+                        planned.contains(&path_key(parent))
                             || self.changes.iter().any(|change| change
                                 .target
                                 .resolve(game)
-                                .ok()
-                                .as_deref()
-                                == Some(parent)
+                                .is_ok_and(|path| path_key(&path) == path_key(parent))
                                 && matches!(change.after, Node::Directory { .. })),
                         "Unrecorded deployment parent is missing"
                     );
@@ -323,14 +358,46 @@ impl Journal {
         Ok(())
     }
 
+    pub(super) fn recovery_directories(&self, game: &Game) -> Result<BTreeSet<PathBuf>> {
+        let mut created = BTreeSet::new();
+        for directory in &self.directories {
+            let target = directory.target.recorded_path(game)?;
+            let path = target
+                .ancestors()
+                .nth(directory.levels)
+                .context("Invalid journal directory")?;
+            let root = root(game, &directory.target)?;
+            ensure!(
+                directory.levels > 0 && path != root && path.starts_with(root),
+                "Journal directory escapes its authorized root"
+            );
+            ensure!(self.changes.iter().any(|change| change.target == directory.target && change.after != Node::Absent), "Journal directory has no managed output");
+            created.insert(path.to_owned());
+        }
+        for change in &self.changes {
+            if change.before == Node::Absent && matches!(change.after, Node::Directory { .. }) {
+                created.insert(change.target.recorded_path(game)?);
+            }
+        }
+        Ok(created)
+    }
+
     pub(super) fn operations(&self, game: &Game) -> Result<Vec<Operation>> {
+        self.operations_with(game, None)
+    }
+
+    pub(super) fn operations_with(
+        &self,
+        game: &Game,
+        created: Option<&BTreeSet<PathBuf>>,
+    ) -> Result<Vec<Operation>> {
         let mut operations = self
             .changes
             .iter()
             .map(|change| {
                 Ok(Operation {
                     target: change.target.clone(),
-                    path: change.target.resolve(game)?,
+                    path: change.target.resolve_with(game, created)?,
                     before: change.before.clone(),
                     after: change.after.clone(),
                 })
@@ -339,10 +406,13 @@ impl Journal {
         for directory in &self.directories {
             operations.push(Operation {
                 target: directory.target.clone(),
-                path: directory.resolve(game)?,
+                path: directory.resolve_with(game, created)?,
                 before: Node::Absent,
                 after: Node::Directory { mode: 0o755 },
             });
+        }
+        if created.is_none() {
+            canonicalize_operations(&mut operations)?;
         }
         operations.sort_by_key(|operation| {
             let depth = operation.path.components().count();
@@ -361,4 +431,193 @@ pub(super) struct Operation {
     pub(super) path: PathBuf,
     pub(super) before: Node,
     pub(super) after: Node,
+}
+
+fn path_key(path: &Path) -> String {
+    path.to_string_lossy().to_lowercase()
+}
+
+fn canonicalize_operations(operations: &mut Vec<Operation>) -> Result<()> {
+    let mut paths = operations
+        .iter()
+        .map(|operation| operation.path.clone())
+        .collect::<Vec<_>>();
+    paths.sort();
+    let mut spelling = BTreeMap::new();
+    for path in paths {
+        let mut prefix = PathBuf::new();
+        for part in path.components() {
+            let candidate = prefix.join(part);
+            match fs::symlink_metadata(&candidate) {
+                Ok(_) => prefix = candidate,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    let key = (prefix, part.as_os_str().to_string_lossy().to_lowercase());
+                    prefix = spelling.entry(key).or_insert(candidate).clone();
+                }
+                Err(error) => return Err(error).context("Cannot canonicalize deployment layout"),
+            }
+        }
+    }
+    for operation in operations.iter_mut() {
+        let mut canonical = PathBuf::new();
+        for part in operation.path.components() {
+            let key = (
+                canonical.clone(),
+                part.as_os_str().to_string_lossy().to_lowercase(),
+            );
+            canonical = spelling
+                .get(&key)
+                .cloned()
+                .unwrap_or_else(|| canonical.join(part));
+        }
+        operation.path = canonical;
+    }
+    let mut unique = BTreeMap::new();
+    for operation in operations.drain(..) {
+        let key = path_key(&operation.path);
+        if let Some(previous) = unique.get(&key) {
+            let previous: &Operation = previous;
+            ensure!(
+                previous.before == operation.before
+                    && previous.after == operation.after
+                    && matches!(operation.after, Node::Directory { .. }),
+                "Conflicting activation operations at {}",
+                operation.path.display()
+            );
+        } else {
+            unique.insert(key, operation);
+        }
+    }
+    operations.extend(unique.into_values());
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::generations::catalog::History;
+
+    // @variants: both
+    #[tokio::test]
+    async fn mixed_case_missing_parents_share_one_directory_and_roll_back() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let (tracker, game, _) =
+            crate::core::generations::tests::snapshot_fixture(temp.path()).await?;
+        fs::create_dir_all(game.data_dir())?;
+        let history = History::open(&tracker, &game.id, temp.path(), true).await?;
+        let identity = history
+            .retain(temp.path().join("winner/file.txt"), Control::default())
+            .await?;
+        let file = Node::File {
+            identity,
+            mode: 0o644,
+        };
+        let journal = Journal::prepare(
+            &history,
+            &game,
+            vec![
+                (Target::file(&game.engine, "Textures/A.bin")?, file.clone()),
+                (Target::file(&game.engine, "textures/nested/B.bin")?, file),
+                (
+                    Target::file(&game.engine, "TEXTURES/Nested/")?,
+                    Node::Directory { mode: 0o755 },
+                ),
+            ],
+            Control::default(),
+        )
+        .await?;
+        journal
+            .persist(&history, &game, "deploy", BTreeMap::new())
+            .await?;
+        journal.apply(&history, &game, Control::default()).await?;
+        assert_eq!(fs::read_dir(game.data_dir())?.count(), 1);
+        assert_eq!(
+            fs::read(Target::file(&game.engine, "textures/a.bin")?.resolve(&game)?)?,
+            b"winner"
+        );
+        assert_eq!(
+            fs::read(Target::file(&game.engine, "textures/nested/b.bin")?.resolve(&game)?)?,
+            b"winner"
+        );
+        journal.recover(&history, &game, false).await?;
+        assert_eq!(fs::read_dir(game.data_dir())?.count(), 0);
+        Ok(())
+    }
+
+    // @variants: both
+    #[tokio::test]
+    async fn recovers_legacy_case_duplicates_without_discarding_external_edits() -> Result<()> {
+        for scenario in 0..4 {
+            let edited = scenario == 1;
+            let unowned = scenario == 3;
+            let temp = tempfile::tempdir()?;
+            let (tracker, game, _) =
+                crate::core::generations::tests::snapshot_fixture(temp.path()).await?;
+            fs::create_dir_all(game.data_dir())?;
+            let history = History::open(&tracker, &game.id, temp.path(), true).await?;
+            let identity = history
+                .retain(temp.path().join("winner/file.txt"), Control::default())
+                .await?;
+            let first = Target::file(&game.engine, "Textures/A.bin")?;
+            let second = Target::file(&game.engine, "textures/B.bin")?;
+            let file = Node::File {
+                identity,
+                mode: 0o644,
+            };
+            let mut journal = Journal::prepare(
+                &history,
+                &game,
+                vec![(first.clone(), file.clone()), (second.clone(), file)],
+                Control::default(),
+            )
+            .await?;
+            journal.directories = vec![
+                Directory {
+                    target: first,
+                    levels: 1,
+                },
+                Directory {
+                    target: second,
+                    levels: 1,
+                },
+            ];
+            journal
+                .persist(&history, &game, "deploy", BTreeMap::new())
+                .await?;
+            for name in ["Textures", "textures"] {
+                fs::create_dir(game.data_dir().join(name))?;
+            }
+            fs::write(game.data_dir().join("Textures/A.bin"), b"winner")?;
+            fs::write(
+                game.data_dir().join("textures/B.bin"),
+                if edited { b"edited" } else { b"winner" },
+            )?;
+            if scenario == 2 {
+                fs::remove_file(game.data_dir().join("Textures/A.bin"))?;
+                fs::remove_dir(game.data_dir().join("Textures"))?;
+            }
+            if unowned {
+                fs::create_dir(game.data_dir().join("TEXTURES"))?;
+            }
+            assert_eq!(
+                journal.recover(&history, &game, false).await.is_err(),
+                edited || unowned
+            );
+            let pending: i64 =
+                sqlx::query_scalar("SELECT count(*) FROM generation_journals WHERE game_id=?")
+                    .bind(&game.id)
+                    .fetch_one(&tracker.pool)
+                    .await?;
+            assert_eq!(pending, i64::from(edited || unowned));
+            if edited {
+                assert_eq!(fs::read(game.data_dir().join("textures/B.bin"))?, b"edited");
+            } else if unowned {
+                assert!(game.data_dir().join("TEXTURES").is_dir());
+                assert_eq!(fs::read(game.data_dir().join("Textures/A.bin"))?, b"winner");
+            } else {
+                assert_eq!(fs::read_dir(game.data_dir())?.count(), 0);
+            }
+        }
+        Ok(())
+    }
 }

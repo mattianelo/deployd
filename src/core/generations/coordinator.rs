@@ -19,6 +19,7 @@ pub(super) async fn activate(
     control: Control,
 ) -> Result<()> {
     control.check()?;
+    (control.phase)("Verifying prepared deployment…");
     validate(history, game, journal, previous, deployment, saves).await?;
     let inputs = deployment
         .map(|deployment| deployment.manifest.base_inputs.clone())
@@ -43,13 +44,20 @@ pub(super) async fn activate(
         .await?;
     let attempt = async {
         control.check()?;
+        (control.phase)("Activating files and saves…");
         let applied = journal.apply(history, game, control.clone()).await?;
         control.check()?;
+        (control.phase)("Committing deployment…");
         applied
             .commit(history, game, previous, deployment, saves)
             .await
     }
     .await;
+    (control.phase)(if attempt.is_ok() {
+        "Finishing deployment…"
+    } else {
+        "Recovering deployment…"
+    });
     finish(history, game, journal, attempt).await
 }
 

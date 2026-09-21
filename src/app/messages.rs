@@ -37,6 +37,15 @@ pub(crate) enum AppMsg {
 
 #[derive(Debug)]
 pub(crate) enum ShellMsg {
+    DeploymentPhase {
+        id: u64,
+        phase: &'static str,
+    },
+    DeploymentProgress {
+        id: u64,
+        done: u64,
+        total: u64,
+    },
     DeployClicked,
     /// User confirmed deploy after the cross-profile mismatch warning dialog.
     DeployConfirmed,
@@ -412,6 +421,7 @@ impl std::fmt::Debug for PrepareResultMsg {
 
 #[derive(Debug)]
 pub(crate) enum AppCmdMsg {
+    DeploymentStatus(super::deployment_status::Update),
     Generations(super::generations::Cmd),
     Mele(super::mele::Command),
     Recovery(super::location_recovery::RecoveryCmd),
@@ -427,6 +437,7 @@ pub(crate) enum AppCmdMsg {
 
 #[derive(Debug)]
 pub(crate) enum ShellCmdMsg {
+    PreparedDiscarded(Result<(), String>),
     Initialized(Box<Result<InitData, String>>),
     DeployPreflightDone(Result<crate::core::deployer::DeploymentPreflight, String>),
     VanillaProtectionSaved {
@@ -471,8 +482,6 @@ pub(crate) enum GamesCmdMsg {
     ProfileCloned(Result<LoadedData, String>),
     ProfileRenamed(Result<(), String>),
     ProfileDeleted(Result<(LoadedData, Option<String>), String>),
-    /// Last-deployed profile ID loaded from DB settings after a game switch.
-    LastDeployedProfileLoaded(Result<Option<String>, String>),
     /// Result of toggling profile save mode (+ optional save backup/restore op).
     SaveModeToggled(Result<(), String>),
     /// Result of a manual save sync triggered by the user.

@@ -661,3 +661,153 @@ fn restored_drafts_cannot_invent_legacy_live_save_ownership() -> Result<()> {
         },
     )
 }
+
+// @variants: both
+#[test]
+fn first_local_save_deploy_seeds_commits_syncs_and_returns_to_global() -> Result<()> {
+    isolated(
+        "first_local_save_deploy_seeds_commits_syncs_and_returns_to_global",
+        async |root| {
+            let fixture = Fixture::new(root).await?;
+            let previous = fixture.state().await?;
+            sqlx::query("UPDATE profiles SET save_mode='profile' WHERE id=?")
+                .bind(&fixture.profile)
+                .execute(&fixture.history.tracker.pool)
+                .await?;
+            let target = SaveSetId::Profile {
+                game_id: fixture.game.id.clone(),
+                profile_id: fixture.profile.clone(),
+            };
+            assert!(!fixture.bank(&target)?.exists());
+            let (manifest, files, journal) = fixture.capture().await?;
+            let prepared = prepare(
+                &fixture.history,
+                &fixture.game,
+                journal,
+                &manifest,
+                Control::default(),
+            )
+            .await?;
+            assert_eq!(fixture.state().await?, previous);
+            fixture.activate(&manifest, &files, prepared).await?;
+            assert_eq!(fixture.state().await?.saves, target);
+            assert_eq!(
+                fs::read(fixture.live.join("save.dat"))?,
+                b"current progress"
+            );
+            assert_eq!(
+                super::super::session::live_saves(&fixture.history.tracker, &fixture.game).await?,
+                target
+            );
+            fs::write(fixture.live.join("save.dat"), b"new local progress")?;
+            save_manager::sync_save_set(&fixture.game, &target, u64::MAX).await?;
+            assert_eq!(
+                fs::read(fixture.bank(&target)?.join("data/save.dat"))?,
+                b"new local progress"
+            );
+            sqlx::query("UPDATE profiles SET save_mode='global' WHERE id=?")
+                .bind(&fixture.profile)
+                .execute(&fixture.history.tracker.pool)
+                .await?;
+            let (manifest, files, journal) = fixture.capture().await?;
+            let prepared = prepare(
+                &fixture.history,
+                &fixture.game,
+                journal,
+                &manifest,
+                Control::default(),
+            )
+            .await?;
+            fixture.activate(&manifest, &files, prepared).await?;
+            assert_eq!(fixture.state().await?.saves, previous.saves);
+            assert_eq!(
+                fs::read(fixture.live.join("save.dat"))?,
+                b"current progress"
+            );
+            assert_eq!(
+                fs::read(fixture.bank(&target)?.join("data/save.dat"))?,
+                b"new local progress"
+            );
+            Ok(())
+        },
+    )
+}
+
+// @variants: both
+#[test]
+fn first_local_save_commit_failure_preserves_global_ownership_and_live_saves() -> Result<()> {
+    isolated(
+        "first_local_save_commit_failure_preserves_global_ownership_and_live_saves",
+        async |root| {
+            let fixture = Fixture::new(root).await?;
+            let previous = fixture.state().await?;
+            sqlx::query("UPDATE profiles SET save_mode='profile' WHERE id=?")
+                .bind(&fixture.profile)
+                .execute(&fixture.history.tracker.pool)
+                .await?;
+            let (manifest, files, journal) = fixture.capture().await?;
+            let prepared = prepare(
+                &fixture.history,
+                &fixture.game,
+                journal,
+                &manifest,
+                Control::default(),
+            )
+            .await?;
+            sqlx::query("CREATE TRIGGER reject_activation BEFORE INSERT ON generation_activations BEGIN SELECT RAISE(ABORT,'injected commit failure'); END").execute(&fixture.history.tracker.pool).await?;
+            assert!(fixture.activate(&manifest, &files, prepared).await.is_err());
+            assert_eq!(fixture.state().await?, previous);
+            assert_eq!(
+                fs::read(fixture.live.join("save.dat"))?,
+                b"current progress"
+            );
+            let pending: i64 = sqlx::query_scalar("SELECT count(*) FROM generation_journals")
+                .fetch_one(&fixture.history.tracker.pool)
+                .await?;
+            assert_eq!(pending, 0);
+            Ok(())
+        },
+    )
+}
+
+// @variants: both
+#[test]
+fn incomplete_local_bank_is_preserved_instead_of_reseeded() -> Result<()> {
+    isolated(
+        "incomplete_local_bank_is_preserved_instead_of_reseeded",
+        async |root| {
+            let fixture = Fixture::new(root).await?;
+            let previous = fixture.state().await?;
+            let target = SaveSetId::Profile {
+                game_id: fixture.game.id.clone(),
+                profile_id: fixture.profile.clone(),
+            };
+            let bank = fixture.bank(&target)?;
+            fs::create_dir_all(bank.join("data"))?;
+            fs::write(bank.join("data/valuable.dat"), b"preserve this")?;
+            sqlx::query("UPDATE profiles SET save_mode='profile' WHERE id=?")
+                .bind(&fixture.profile)
+                .execute(&fixture.history.tracker.pool)
+                .await?;
+            let (manifest, _, journal) = fixture.capture().await?;
+            assert!(
+                prepare(
+                    &fixture.history,
+                    &fixture.game,
+                    journal,
+                    &manifest,
+                    Control::default()
+                )
+                .await
+                .is_err()
+            );
+            assert_eq!(fixture.state().await?, previous);
+            assert_eq!(fs::read(bank.join("data/valuable.dat"))?, b"preserve this");
+            assert_eq!(
+                fs::read(fixture.live.join("save.dat"))?,
+                b"current progress"
+            );
+            Ok(())
+        },
+    )
+}

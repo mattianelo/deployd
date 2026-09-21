@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+- Fixed first deployment with Local Saves by initializing the isolated bank from live saves while
+  preserving the outgoing bank. Sync now follows the profile that owns the live saves.
+- Made the Deploy highlight follow pending profile and file changes, clear when changes are
+  reverted, and stay neutral for newly added untouched games.
+- Added deployment progress and persistent result dialogs, including cancellation during
+  preparation and actionable recovery details.
+- Prevented mixed-case mod paths from creating duplicate deployment directories, and added safe
+  recovery for interrupted deployments affected by that issue.
+- Preserved pending plugin order when reopening a game whose live plugin configuration is unchanged.
+- Fixed indentation and wrapping of FOMOD option descriptions.
+
 - Reduced MELE preparation work when disabling unchanged mods, while retaining their
   files for history restoration and checking them for corruption.
 - Avoided duplicate history copies of already-retained live files during deployment

@@ -128,7 +128,6 @@ impl App {
             Cmd::Restored(result) => match *result {
                 Ok(data) => {
                     self.apply_loaded_data(data, sender);
-                    self.shell.needs_deploy = true;
                     self.show_toast("History restored as a new profile — Deploy to apply");
                 }
                 Err(error) => {

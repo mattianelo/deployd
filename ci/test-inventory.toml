@@ -2263,7 +2263,7 @@ interface_state = "not_applicable"
 
 [[variant_tests]]
 path = "src/core/generations/tests.rs"
-name = "unchanged_managed_files_are_verified_without_replacing_their_hardlinks"
+name = "unchanged_managed_files_reuse_history_and_preserve_hardlinks"
 variant = "both"
 interface_state = "not_applicable"
 
@@ -3694,5 +3694,125 @@ interface_state = "not_applicable"
 [[variant_tests]]
 path = "src/core/generations/activation.rs"
 name = "purge_report_counts_restored_files_without_counting_directories"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/journal/layout.rs"
+name = "mixed_case_missing_parents_share_one_directory_and_roll_back"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/journal/layout.rs"
+name = "recovers_legacy_case_duplicates_without_discarding_external_edits"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/status.rs"
+name = "deployment_status_tracks_reverted_drafts_and_cache_changes"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/status.rs"
+name = "untouched_game_stays_neutral_until_its_save_mode_changes"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/app/deployment_status.rs"
+name = "stale_requests_games_and_profiles_cannot_replace_current_status"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/saves.rs"
+name = "first_local_save_deploy_seeds_commits_syncs_and_returns_to_global"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/utils/fomod_resolver/parsing.rs"
+name = "removes_xml_indentation_and_preserves_paragraphs"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/mele/frozen/tests.rs"
+name = "corrupt_disabled_content_still_blocks_preparation"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/mele/frozen/tests.rs"
+name = "edited_disabled_packages_are_inspected_and_record_the_new_version"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/mele/frozen/tests.rs"
+name = "invalid_edits_to_disabled_packages_are_not_skipped"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/mele/frozen/tests.rs"
+name = "unchanged_disabled_packages_remain_retained_without_materialization"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/store/tests.rs"
+name = "publishes_only_matching_new_content"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/store/tests.rs"
+name = "rejects_cancellation_during_retained_content_verification"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/store/tests.rs"
+name = "rejects_changed_source_even_when_expected_content_is_retained"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/store/tests.rs"
+name = "rejects_corrupt_retained_content_instead_of_reusing_or_overwriting_it"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/store/tests.rs"
+name = "reuses_verified_content_without_creating_a_staged_copy"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/app/deployment_dialog.rs"
+name = "activation_locks_cancellation_and_results_ignore_late_progress"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/saves.rs"
+name = "first_local_save_commit_failure_preserves_global_ownership_and_live_saves"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/saves.rs"
+name = "incomplete_local_bank_is_preserved_instead_of_reseeded"
+variant = "both"
+interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "tests/generations/bethesda_workflow.rs"
+name = "unchanged_live_plugin_configuration_does_not_overwrite_pending_draft_order"
 variant = "both"
 interface_state = "not_applicable"

@@ -50,7 +50,6 @@ impl App {
             }
         }
         drop(guard);
-        self.shell.needs_deploy = true;
         if self.plugins.selection_active {
             self.plugins.selection_dirty = true;
         }
@@ -134,7 +133,6 @@ impl App {
         glib::idle_add_local_once(move || {
             vadj.set_value(saved_pos);
         });
-        self.shell.needs_deploy = true;
         if self.plugins.selection_active {
             self.plugins.selection_dirty = true;
         }
@@ -174,7 +172,6 @@ impl App {
                 row.plugin.enabled = true;
             }
         }
-        self.shell.needs_deploy = true;
         self.location_command(sender, async move {
             let result = async {
                 tracker.set_all_plugins_enabled(&game.id, true).await?;
@@ -207,7 +204,6 @@ impl App {
                 row.plugin.enabled = false;
             }
         }
-        self.shell.needs_deploy = true;
         self.location_command(sender, async move {
             let result = async {
                 tracker.set_all_plugins_enabled(&game.id, false).await?;
@@ -347,8 +343,6 @@ impl App {
             Ok((sorted_names, dirty)) => {
                 let dirty_count = dirty.len();
                 self.plugins.dirty = dirty;
-
-                self.shell.needs_deploy = true;
                 self.show_toast("Load order sorted by LOOT — deploy to apply");
 
                 if dirty_count > 0 {
@@ -418,7 +412,6 @@ impl App {
         match result {
             Ok(data) => {
                 self.apply_loaded_data(data, sender);
-                self.shell.needs_deploy = true;
             }
             Err(error) => {
                 self.push_notification(&format!("Failed to apply LOOT order: {error}"));
@@ -513,7 +506,6 @@ impl App {
                 plugin_ids.push(row.plugin.id.clone());
             }
         }
-        self.shell.needs_deploy = true;
         self.plugins.selection_dirty = true;
 
         let _game_id = game.id.clone();
@@ -562,7 +554,6 @@ impl App {
                 plugin_ids.push(row.plugin.id.clone());
             }
         }
-        self.shell.needs_deploy = true;
         self.plugins.selection_dirty = true;
 
         self.location_command(sender, async move {

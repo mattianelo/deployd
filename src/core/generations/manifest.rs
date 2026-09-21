@@ -245,12 +245,15 @@ type CachedSourceRow = (String, i64, i64, i64, i64, i64, i64, i64, String);
 type Inventory = BTreeMap<String, (PathBuf, SourceStamp)>;
 type Capture = (Manifest, BTreeMap<String, CachedSource>);
 
-async fn cached_sources(history: &History) -> Result<BTreeMap<String, CachedSource>> {
+async fn cached_sources(
+    tracker: &crate::core::tracker::Tracker,
+    game: &str,
+) -> Result<BTreeMap<String, CachedSource>> {
     let rows: Vec<CachedSourceRow> = sqlx::query_as(
         "SELECT logical_path,device,inode,size,mtime_seconds,mtime_nanoseconds,ctime_seconds,ctime_nanoseconds,sha256 FROM generation_source_identities WHERE game_id=?",
     )
-    .bind(&history.game)
-    .fetch_all(&history.tracker.pool)
+    .bind(game)
+    .fetch_all(&tracker.pool)
     .await?;
     rows.into_iter()
         .map(
@@ -326,7 +329,7 @@ pub(super) async fn capture(
     let mut tx = history.tracker.pool.begin().await?;
     let records = records::capture(&mut tx, &game.id, profile).await?;
     tx.commit().await?;
-    let cached = cached_sources(history).await?;
+    let cached = cached_sources(&history.tracker, &history.game).await?;
     let cache = history.cache.clone();
     let game = game.clone();
     let store = history.store.clone();
@@ -487,4 +490,85 @@ pub(super) async fn capture(
     history.register(&manifest.objects()).await?;
     replace_cached_sources(history, &retained_sources).await?;
     Ok(manifest)
+}
+
+pub(super) async fn sources_match(
+    tracker: &crate::core::tracker::Tracker,
+    game: &Game,
+    cache: &Path,
+    manifest: &Manifest,
+) -> Result<bool> {
+    let cached = cached_sources(tracker, &game.id).await?;
+    let sources = manifest.sources.clone();
+    let cache = cache.to_owned();
+    let mut roots = BTreeMap::new();
+    for source in &sources {
+        let Some(relative) = source.path.strip_prefix("cache/") else {
+            continue;
+        };
+        let id = relative.split('/').next().context("Invalid source root")?;
+        roots.entry(id.to_owned()).or_insert_with(|| cache.join(id));
+    }
+    for rows in &manifest.records {
+        if rows.table == Table::MelePackages {
+            for row in &rows.rows {
+                let record: crate::core::game::mass_effect::library::Record =
+                    serde_json::from_str(records::text(row, "document")?)?;
+                if !record.writable_cache {
+                    roots.insert(
+                        records::text(row, "mod_id")?.to_owned(),
+                        crate::utils::paths::deployd_data_dir()?
+                            .join("mele-sources")
+                            .join(record.package.source_sha256),
+                    );
+                }
+            }
+        }
+    }
+    tokio::task::spawn_blocking(move || -> Result<bool> {
+        let expected: BTreeMap<_, _> = sources
+            .iter()
+            .map(|source| (source.path.as_str(), source))
+            .collect();
+        let mut count = 0;
+        for (id, root) in roots {
+            for entry in walkdir::WalkDir::new(&root).follow_links(false) {
+                let entry = entry.context("Cannot inspect mod sources")?;
+                let suffix = entry.path().strip_prefix(&root)?;
+                let key = if suffix.as_os_str().is_empty() {
+                    format!("cache/{id}")
+                } else {
+                    format!(
+                        "cache/{id}/{}",
+                        suffix.to_str().context("Mod path is not UTF-8")?
+                    )
+                };
+                let Some(expected) = expected.get(key.as_str()) else {
+                    return Ok(false);
+                };
+                count += 1;
+                let metadata = fs::symlink_metadata(entry.path())?;
+                if metadata.permissions().mode() & 0o777 != expected.mode {
+                    return Ok(false);
+                }
+                match &expected.content {
+                    None if metadata.is_dir() => {}
+                    Some(identity) if metadata.is_file() => {
+                        let stamp = SourceStamp::read(&metadata)?;
+                        let actual = match cached.get(&key).filter(|cached| cached.stamp == stamp) {
+                            Some(cached) => cached.identity.clone(),
+                            None => super::content::inspect(entry.path(), &Control::default())?,
+                        };
+                        if actual != *identity {
+                            return Ok(false);
+                        }
+                    }
+                    _ => return Ok(false),
+                }
+            }
+        }
+        Ok(count == sources.len())
+    })
+    .await
+    .context("Deployment status worker stopped")?
 }

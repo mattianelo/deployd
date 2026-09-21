@@ -28,6 +28,7 @@ pub(crate) struct Prepared {
     files: Vec<ModFile>,
     saves: SaveSetId,
     pub(crate) differences: Vec<String>,
+    outcome: crate::core::deployer::DeployOutcome,
 }
 
 #[derive(Debug)]
@@ -109,8 +110,16 @@ impl Prepared {
             .map(|(id, _)| id)
     }
 
-    pub(crate) fn file_count(&self) -> usize {
-        self.files.len()
+    pub(crate) fn take_outcome(&mut self) -> crate::core::deployer::DeployOutcome {
+        std::mem::replace(&mut self.outcome, empty_outcome())
+    }
+
+    pub(crate) fn save_change_summary(&self) -> Option<&'static str> {
+        (self.previous.saves != self.saves).then_some(if self.saves.profile_id().is_some() {
+            "Live saves will switch to this profile's isolated bank. The outgoing saves will be preserved."
+        } else {
+            "Live saves will switch to the shared Global bank. The outgoing profile's saves will be preserved."
+        })
     }
 
     pub(crate) fn change_counts(&self) -> (usize, usize, usize) {
@@ -174,7 +183,9 @@ pub(crate) async fn prepare(
     );
     tracker.ensure_location_ready(&game.id).await?;
     let history = History::open(tracker, &game.id, cache, true).await?;
+    (control.phase)("Recovering interrupted deployment…");
     recovery::recover(&history, game).await?;
+    (control.phase)("Preparing deployment files…");
     let previous = ownership::initialize(&history).await?;
     let old = if profile.is_none() && game.engine == GameEngine::Bethesda {
         match previous.generation.as_deref() {
@@ -204,7 +215,7 @@ pub(crate) async fn prepare(
         .as_ref()
         .map(|manifest| manifest.outputs.clone())
         .unwrap_or_default();
-    let mut journal = prepare_files(
+    let (mut journal, backed_up) = prepare_files(
         &history,
         game,
         &outputs,
@@ -263,6 +274,7 @@ pub(crate) async fn prepare(
     if let Some(manifest) = &manifest
         && game::has_save_management(game)
     {
+        (control.phase)("Preparing saves…");
         let prepared = saves::prepare(&history, game, journal, manifest, control.clone()).await?;
         journal = prepared.journal;
         target_saves = prepared.target;
@@ -283,7 +295,9 @@ pub(crate) async fn prepare(
             )
         })
         .collect();
+    let outcome = deployment_outcome(&game.engine, manifest.as_ref(), &journal, backed_up)?;
     Ok(Prepared {
+        outcome,
         history,
         game: game.clone(),
         journal,
@@ -310,7 +324,9 @@ pub(crate) async fn prepare_mele(
     );
     tracker.ensure_location_ready(&game.id).await?;
     let history = History::open(tracker, &game.id, cache, true).await?;
+    (control.phase)("Recovering interrupted deployment…");
     recovery::recover(&history, &game).await?;
+    (control.phase)("Preparing MELE deployment…");
     let previous = ownership::initialize(&history).await?;
     let data = crate::utils::paths::deployd_data_dir()?;
     let (mut manifest, mut journal) = if purge {
@@ -350,6 +366,7 @@ pub(crate) async fn prepare_mele(
     if let Some(manifest) = &manifest
         && game::has_save_management(&game)
     {
+        (control.phase)("Preparing saves…");
         let prepared = saves::prepare(&history, &game, journal, manifest, control.clone()).await?;
         journal = prepared.journal;
         target_saves = prepared.target;
@@ -370,7 +387,9 @@ pub(crate) async fn prepare_mele(
             )
         })
         .collect();
+    let outcome = deployment_outcome(&game.engine, manifest.as_ref(), &journal, 0)?;
     Ok(Prepared {
+        outcome,
         history,
         game,
         journal,
@@ -388,7 +407,12 @@ async fn prepare_files(
     outputs: &[Output],
     protect: bool,
     control: Control,
-) -> Result<Journal> {
+) -> Result<(Journal, usize)> {
+    let backups_before = history
+        .tracker
+        .get_all_vanilla_backups(&game.id)
+        .await?
+        .len();
     let deployed = history.tracker.get_deployed_files(&game.id).await?;
     let mut desired: BTreeMap<Target, Node> = outputs
         .iter()
@@ -462,7 +486,92 @@ async fn prepare_files(
             .await?;
         }
     }
-    Ok(journal)
+    let backed_up = history
+        .tracker
+        .get_all_vanilla_backups(&game.id)
+        .await?
+        .len()
+        .saturating_sub(backups_before);
+    Ok((journal, backed_up))
+}
+
+fn empty_outcome() -> crate::core::deployer::DeployOutcome {
+    crate::core::deployer::DeployOutcome {
+        files_total: 0,
+        files_added: 0,
+        files_removed: 0,
+        conflicts_resolved: 0,
+        vanilla_files_backed_up: 0,
+        vanilla_files_restored: 0,
+        warnings: Vec::new(),
+    }
+}
+
+fn deployment_outcome(
+    engine: &GameEngine,
+    manifest: Option<&Manifest>,
+    journal: &Journal,
+    backed_up: usize,
+) -> Result<crate::core::deployer::DeployOutcome> {
+    let outputs = manifest
+        .map(|manifest| manifest.outputs.as_slice())
+        .unwrap_or_default();
+    let mut outcome = crate::core::deployer::DeployOutcome {
+        files_total: outputs
+            .iter()
+            .filter(|output| output.content.is_some())
+            .count(),
+        vanilla_files_backed_up: backed_up,
+        ..empty_outcome()
+    };
+    for change in &journal.changes {
+        if change.before == change.after {
+            continue;
+        }
+        match &change.after {
+            Node::File { .. } => {
+                outcome.files_added += 1;
+                if !outputs.iter().any(|output| output.target == change.target) {
+                    outcome.vanilla_files_restored += 1;
+                }
+            }
+            Node::Absent if matches!(change.before, Node::File { .. }) => {
+                outcome.files_removed += 1
+            }
+            _ => {}
+        }
+    }
+    if let Some(manifest) = manifest {
+        use super::records::{Table, text};
+        let enabled: BTreeSet<_> = manifest
+            .records
+            .iter()
+            .filter(|rows| rows.table == Table::ProfileMods)
+            .flat_map(|rows| &rows.rows)
+            .filter(|row| row.get("enabled").and_then(serde_json::Value::as_i64) == Some(1))
+            .map(|row| text(row, "mod_id"))
+            .collect::<Result<_>>()?;
+        let handler = game::engine_handler::handler_for(engine);
+        let mut counts = BTreeMap::<String, usize>::new();
+        for row in manifest
+            .records
+            .iter()
+            .filter(|rows| rows.table == Table::Files)
+            .flat_map(|rows| &rows.rows)
+        {
+            if enabled.contains(text(row, "mod_id")?) {
+                *counts
+                    .entry(
+                        handler
+                            .conflict_key(text(row, "game_rel_lowercase")?)
+                            .to_owned(),
+                    )
+                    .or_default() += 1;
+            }
+        }
+        outcome.conflicts_resolved = counts.values().map(|count| count.saturating_sub(1)).sum();
+    }
+    Ok(outcome)
 }
 
 fn node(output: &Output) -> Node {

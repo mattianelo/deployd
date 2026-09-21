@@ -225,6 +225,19 @@ Problems cleaning empty directories or restoring optional backups appear as warn
 hiding completed work. If moving a game cache fails partway through, Deployd attempts to move the
 already-relocated files back and reports any rollback problem that still needs attention.
 
+Deploy highlights pending changes to the selected profile, including mod and plugin ordering,
+save mode, and changed mod files. Reverting those changes clears the highlight; adding an untouched
+game does not highlight Deploy. Deployment opens a progress dialog and keeps its result or recovery
+details visible until dismissed. Preparation can be cancelled before activation.
+
+Enabling Local Saves takes effect on the next Deploy. A profile's first isolated save bank starts
+with the current live saves, while the outgoing save bank is preserved. Existing banks keep their
+own saves. Sync is available when the selected profile owns the live isolated saves.
+
+Deployment reuses existing filename casing and shares newly created directories across mods with
+different casing. Interrupted deployments preserve recovery information; conflicting files that
+cannot be safely identified are reported by their exact names without discarding external edits.
+
 The header shows the selected editable profile separately from the deployed profile. Open
 **Deploy options → Deployment history** to see retained storage, modification or recovery status,
 restore a generation as a new profile, or delete an unprotected generation. Restoring history does

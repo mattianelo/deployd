@@ -16,6 +16,7 @@ use super::super::messages::{AppCmdMsg, AppMsg};
 
 #[derive(Debug)]
 pub(crate) struct AppliedModProperties {
+    pub(crate) routing_changed: bool,
     pub(crate) mod_id: String,
     pub(crate) name: String,
     pub(crate) notes: String,
@@ -24,7 +25,6 @@ pub(crate) struct AppliedModProperties {
     pub(crate) nexus_id_changed: bool,
     pub(crate) install_target: InstallTarget,
     pub(crate) file_targets: HashMap<String, InstallTarget>,
-    pub(crate) routing_changed: bool,
 }
 
 #[derive(Debug)]
@@ -240,6 +240,7 @@ impl App {
         }
         self.ui.mod_properties_dialog = None;
 
+        self.shell.status_loading |= saved.applied.routing_changed;
         let mod_id = saved.applied.mod_id.clone();
         let name = saved.applied.name.clone();
         let mut guard = self.mods.rows.guard();
@@ -263,8 +264,6 @@ impl App {
             }
         }
         drop(guard);
-
-        self.shell.needs_deploy |= saved.applied.routing_changed;
         if !saved.nexus_update_allowed {
             self.show_toast("Current game has no Nexus domain; Nexus ID was not updated.");
         }

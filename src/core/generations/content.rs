@@ -35,6 +35,7 @@ impl Identity {
 pub(crate) struct Control {
     pub(crate) cancelled: Arc<AtomicBool>,
     pub(crate) progress: Arc<dyn Fn(u64, u64) + Send + Sync>,
+    pub(crate) phase: Arc<dyn Fn(&'static str) + Send + Sync>,
 }
 
 impl Default for Control {
@@ -42,6 +43,7 @@ impl Default for Control {
         Self {
             cancelled: Arc::new(AtomicBool::new(false)),
             progress: Arc::new(|_, _| {}),
+            phase: Arc::new(|_| {}),
         }
     }
 }

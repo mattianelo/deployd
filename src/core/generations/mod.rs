@@ -41,3 +41,5 @@ pub(crate) mod session;
 pub(crate) mod activation;
 
 pub(crate) mod api;
+
+pub(crate) mod status;

@@ -389,6 +389,7 @@ impl App {
             return false;
         }
 
+        self.session.profile_game_id = Some(data.game_id.clone());
         for warning in &data.access_warnings {
             self.push_notification(warning);
         }

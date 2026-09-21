@@ -393,7 +393,6 @@ impl App {
                 for warning in &add_result.warnings {
                     self.push_notification(warning);
                 }
-                self.shell.needs_deploy = true;
                 self.auto_save_profile(sender);
 
                 let (version_from_dl, author_from_dl): (Option<String>, Option<String>) =
@@ -515,7 +514,6 @@ impl App {
 
         match result {
             Ok((mod_name, count)) => {
-                self.shell.needs_deploy = true;
                 self.auto_save_profile(sender);
                 self.reload_mods(sender);
                 self.show_toast(&format!(

@@ -329,7 +329,13 @@ pub(super) fn build_model(
         shell: ShellState {
             location_recovery: None,
             deploying: false,
-            needs_deploy: false,
+            deployment_status: None,
+            deployment_status_error: None,
+            status_request: 0,
+            operation_id: 0,
+            status_loading: false,
+            status_inflight: false,
+            status_context: None,
             status_msg: None,
             work_status: None,
             search_active: false,
@@ -352,6 +358,7 @@ pub(super) fn build_model(
             games,
             selected_game_idx: 0,
             profiles: vec![],
+            profile_game_id: None,
             active_profile_idx: 0,
             updating_profiles: false,
             pending_save_profile_idx: None,
@@ -400,6 +407,7 @@ pub(super) fn build_model(
             pending_mono_tool: None,
         },
         ui: UiState {
+            deployment_operation: None,
             header,
             bottom_status,
             toast_overlay: adw::ToastOverlay::new(),
@@ -943,8 +951,7 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
         let first_launch = !wizard_shown && persisted_games.is_empty();
 
         let last_deployed_profile_id = if let Some(game) = &init_game {
-            tracker
-                .get_setting(&format!("last_deployed_profile_{}", game.id))
+            crate::core::generations::session::deployed_profile(&tracker, &game.id)
                 .await
                 .map_err(|e| format!("Failed to load deployed profile state: {e}"))?
         } else {

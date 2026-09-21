@@ -506,6 +506,14 @@ impl Journal {
     }
 
     pub(super) fn validate(&self, game: &Game) -> Result<()> {
+        self.validate_with(game, None)
+    }
+
+    fn validate_with(
+        &self,
+        game: &Game,
+        created: Option<&std::collections::BTreeSet<std::path::PathBuf>>,
+    ) -> Result<()> {
         ensure!(
             matches!(self.version, 1..=6)
                 && self.game == game.id
@@ -520,7 +528,7 @@ impl Journal {
             saves.validate(&self.id, game)?;
         }
         self.validate_cache()?;
-        self.validate_layout(game)?;
+        self.validate_layout_with(game, created)?;
         self.validate_mele(game)?;
         self.validate_shared(game)?;
         if let Some(dependency) = &self.dependency {
@@ -539,7 +547,7 @@ impl Journal {
         }
         let mut seen = std::collections::BTreeSet::new();
         for change in &self.changes {
-            let destination = change.target.resolve(game)?;
+            let destination = change.target.resolve_with(game, created)?;
             ensure!(
                 seen.insert(destination.to_string_lossy().to_lowercase()),
                 "Duplicate journal destination"
@@ -742,8 +750,13 @@ impl Journal {
         game: &Game,
         committed: bool,
     ) -> Result<()> {
-        self.validate(game)?;
         self.check_record(history, committed).await?;
+        let created = if committed {
+            None
+        } else {
+            Some(self.recovery_directories(game)?)
+        };
+        self.validate_with(game, created.as_ref())?;
         if let Some(shared) = &self.shared {
             shared
                 .change
@@ -785,7 +798,7 @@ impl Journal {
             let game = recovery_game;
             let control = Control::default();
             journal.verify_links(&game)?;
-            for change in journal.operations(&game)?.into_iter().rev() {
+            for change in journal.operations_with(&game, created.as_ref())?.into_iter().rev() {
                 let path = change.path;
                 layout::accessible(&game, &change.target, &path, !committed)?;
                 let current = inspect(&path, &control)?;

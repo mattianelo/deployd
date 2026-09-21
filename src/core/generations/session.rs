@@ -77,6 +77,37 @@ pub(crate) async fn reconcile_plugins(tracker: &Tracker, game: &Game) -> Result<
     let Some(deployed) = deployed else {
         return Ok(());
     };
+    let document: Option<String> = sqlx::query_scalar("SELECT g.manifest FROM generation_game_state s JOIN generations g ON g.game_id=s.game_id AND g.id=s.deployed_generation_id WHERE s.game_id=?")
+        .bind(&game.id).fetch_optional(&tracker.pool).await?;
+    if let Some(document) = document {
+        let manifest: super::manifest::Manifest = serde_json::from_str(&document)?;
+        manifest.validate()?;
+        let game = game.clone();
+        let changed = tokio::task::spawn_blocking(move || -> Result<bool> {
+            for output in manifest.outputs.iter().filter(|output| {
+                matches!(output.target, super::target::Target::PluginControl { .. })
+            }) {
+                let actual =
+                    divergence::live(&game, &output.target, &super::content::Control::default())?;
+                let expected = super::journal::Node::File {
+                    identity: output
+                        .content
+                        .clone()
+                        .context("Plugin configuration has no retained content")?,
+                    mode: output.mode,
+                };
+                if actual != expected {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        })
+        .await
+        .context("Plugin configuration inspection stopped")??;
+        if !changed {
+            return Ok(());
+        }
+    }
     let paths = game::plugins_txt_paths(game);
     let entries = tokio::task::spawn_blocking(move || -> Result<Vec<(String, bool)>> {
         for path in paths {
@@ -117,3 +148,13 @@ async fn import_plugins(
 
 #[cfg(test)]
 mod tests;
+
+pub(crate) async fn deployed_profile(tracker: &Tracker, game: &str) -> Result<Option<String>> {
+    Ok(sqlx::query_scalar::<_, Option<String>>(
+        "SELECT deployed_profile_id FROM generation_game_state WHERE game_id=?",
+    )
+    .bind(game)
+    .fetch_optional(&tracker.pool)
+    .await?
+    .flatten())
+}
