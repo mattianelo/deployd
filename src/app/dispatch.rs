@@ -22,7 +22,7 @@ impl App {
             .is_some_and(|game| self.session.location_blocked.contains(&game.id))
             && requires_game_access(&msg)
         {
-            self.push_notification("This game's folder access needs attention. Open Manage Games → Restore folder access before continuing");
+            self.push_notification("This game needs folder access or deployment recovery. Check its recovery notification for the cause before continuing");
             return;
         }
         match msg {

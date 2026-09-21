@@ -237,6 +237,9 @@ own saves. Sync is available when the selected profile owns the live isolated sa
 Deployment reuses existing filename casing and shares newly created directories across mods with
 different casing. Interrupted deployments preserve recovery information; conflicting files that
 cannot be safely identified are reported by their exact names without discarding external edits.
+Older interrupted deployments with overlapping parent and mod-output folders can recover on
+reopening the game. If recovery needs attention, check the detailed notification: reselecting
+a folder resolves lost access, but does not resolve deployment conflicts.
 
 The header shows the selected editable profile separately from the deployed profile. Open
 **Deploy options → Deployment history** to see retained storage, modification or recovery status,

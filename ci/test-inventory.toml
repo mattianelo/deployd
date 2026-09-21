@@ -3816,3 +3816,9 @@ path = "tests/generations/bethesda_workflow.rs"
 name = "unchanged_live_plugin_configuration_does_not_overwrite_pending_draft_order"
 variant = "both"
 interface_state = "not_applicable"
+
+[[variant_tests]]
+path = "src/core/generations/journal/layout.rs"
+name = "recovers_legacy_parent_and_output_modes_but_preserves_external_changes"
+variant = "both"
+interface_state = "not_applicable"

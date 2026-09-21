@@ -239,7 +239,9 @@ impl Journal {
                             .changes
                             .iter()
                             .any(|change| change.before == Node::Absent
-                                && change.after == (Node::Directory { mode: 0o755 })
+                                && (change.after == (Node::Directory { mode: 0o755 })
+                                    || (created.is_some()
+                                        && matches!(change.after, Node::Directory { .. })))
                                 && change
                                     .target
                                     .resolve_with(game, created)
@@ -413,6 +415,8 @@ impl Journal {
         }
         if created.is_none() {
             canonicalize_operations(&mut operations)?;
+        } else {
+            merge_recovery_directories(&mut operations)?;
         }
         operations.sort_by_key(|operation| {
             let depth = operation.path.components().count();
@@ -435,6 +439,29 @@ pub(super) struct Operation {
 
 fn path_key(path: &Path) -> String {
     path.to_string_lossy().to_lowercase()
+}
+
+fn merge_recovery_directories(operations: &mut Vec<Operation>) -> Result<()> {
+    let mut unique = BTreeMap::<PathBuf, Operation>::new();
+    for operation in operations.drain(..) {
+        if let Some(previous) = unique.get_mut(&operation.path) {
+            ensure!(
+                previous.before == Node::Absent
+                    && operation.before == Node::Absent
+                    && matches!(previous.after, Node::Directory { .. })
+                    && matches!(operation.after, Node::Directory { .. }),
+                "Conflicting recovery operations at {}",
+                operation.path.display()
+            );
+            if inspect(&operation.path, &Control::default())? == operation.after {
+                previous.after = operation.after;
+            }
+        } else {
+            unique.insert(operation.path.clone(), operation);
+        }
+    }
+    operations.extend(unique.into_values());
+    Ok(())
 }
 
 fn canonicalize_operations(operations: &mut Vec<Operation>) -> Result<()> {
@@ -496,6 +523,88 @@ fn canonicalize_operations(operations: &mut Vec<Operation>) -> Result<()> {
 mod tests {
     use super::*;
     use crate::core::generations::catalog::History;
+
+    // @variants: both
+    #[tokio::test]
+    async fn recovers_legacy_parent_and_output_modes_but_preserves_external_changes() -> Result<()>
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        for (mode, external) in [
+            (0o755, false),
+            (0o775, false),
+            (0o700, false),
+            (0o775, true),
+        ] {
+            let temp = tempfile::tempdir()?;
+            let (tracker, game, _) =
+                crate::core::generations::tests::snapshot_fixture(temp.path()).await?;
+            fs::create_dir_all(game.data_dir())?;
+            let history = History::open(&tracker, &game.id, temp.path(), true).await?;
+            let identity = history
+                .retain(temp.path().join("winner/file.txt"), Control::default())
+                .await?;
+            let child = Target::file(&game.engine, "textures/A.bin")?;
+            let mut journal = Journal::prepare(
+                &history,
+                &game,
+                vec![
+                    (
+                        child.clone(),
+                        Node::File {
+                            identity,
+                            mode: 0o644,
+                        },
+                    ),
+                    (
+                        Target::file(&game.engine, "textures/")?,
+                        Node::Directory { mode: 0o775 },
+                    ),
+                ],
+                Control::default(),
+            )
+            .await?;
+            journal.version = 5;
+            journal.directories = vec![Directory {
+                target: child,
+                levels: 1,
+            }];
+            let document = serde_json::to_string(&journal)?;
+            sqlx::query("INSERT INTO generation_journals(id,game_id,kind,document_version,document) VALUES (?,?,'deploy',5,?)")
+                .bind(&journal.id).bind(&game.id).bind(&document)
+                .execute(&tracker.pool).await?;
+            let directory = game.data_dir().join("textures");
+            fs::create_dir(&directory)?;
+            fs::set_permissions(&directory, fs::Permissions::from_mode(mode))?;
+            fs::write(directory.join("A.bin"), b"winner")?;
+            if external {
+                fs::write(directory.join("external.bin"), b"external")?;
+            }
+            let blocked = mode == 0o700 || external;
+            assert_eq!(
+                crate::core::generations::recovery::recover_journal(&history, &game)
+                    .await
+                    .is_err(),
+                blocked
+            );
+            let pending: Option<String> =
+                sqlx::query_scalar("SELECT document FROM generation_journals WHERE game_id=?")
+                    .bind(&game.id)
+                    .fetch_optional(&tracker.pool)
+                    .await?;
+            if blocked {
+                assert_eq!(pending.as_deref(), Some(document.as_str()));
+                assert_eq!(fs::metadata(&directory)?.permissions().mode() & 0o777, mode);
+                if external {
+                    assert_eq!(fs::read(directory.join("external.bin"))?, b"external");
+                }
+            } else {
+                assert!(pending.is_none());
+                assert!(!directory.exists());
+            }
+        }
+        Ok(())
+    }
 
     // @variants: both
     #[tokio::test]

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Fixed recovery of older interrupted deployments that recorded a folder as both a parent
+  and a mod output with different permissions. Recovery failures no longer advise folder
+  reselection as the only remedy.
+
 - Fixed first deployment with Local Saves by initializing the isolated bank from live saves while
   preserving the outgoing bank. Sync now follows the profile that owns the live saves.
 - Made the Deploy highlight follow pending profile and file changes, clear when changes are
