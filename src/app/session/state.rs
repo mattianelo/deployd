@@ -14,6 +14,21 @@ impl App {
         self.session.games.get(self.session.selected_game_idx)
     }
 
+    pub(crate) fn game_shows_plugins(&self) -> bool {
+        self.selected_game()
+            .is_some_and(|game| panel_features(&game.engine).0)
+    }
+
+    pub(crate) fn game_shows_overrides(&self) -> bool {
+        self.selected_game()
+            .is_some_and(|game| panel_features(&game.engine).1)
+    }
+
+    pub(crate) fn game_shows_conflicts(&self) -> bool {
+        self.selected_game()
+            .is_some_and(|game| panel_features(&game.engine).2)
+    }
+
     /// Resolve the effective cache root for a game.
     pub(crate) fn cache_root_for(&self, game_id: &str) -> Result<PathBuf> {
         let custom = self
@@ -77,5 +92,35 @@ impl App {
                 format!("Saves: Profile · {age}")
             }
         }
+    }
+}
+
+fn panel_features(engine: &crate::models::game::GameEngine) -> (bool, bool, bool) {
+    use crate::models::game::GameEngine;
+    match engine {
+        GameEngine::Bethesda => (true, false, true),
+        GameEngine::Eclipse => (false, true, true),
+        GameEngine::Aurora | GameEngine::REDEngine => (false, false, true),
+        GameEngine::MassEffect => (false, false, false),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::panel_features;
+    use crate::models::game::GameEngine;
+
+    // @variants: both
+    #[test]
+    fn game_panels_match_engine_capabilities() {
+        assert_eq!(panel_features(&GameEngine::Bethesda), (true, false, true));
+        assert_eq!(panel_features(&GameEngine::Eclipse), (false, true, true));
+        for engine in [GameEngine::Aurora, GameEngine::REDEngine] {
+            assert_eq!(panel_features(&engine), (false, false, true));
+        }
+        assert_eq!(
+            panel_features(&GameEngine::MassEffect),
+            (false, false, false)
+        );
     }
 }

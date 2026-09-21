@@ -60,6 +60,10 @@ impl App {
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
+        if self.ui.cache_move.is_some() {
+            self.show_toast("Wait for the cache move to finish before closing Deployd");
+            return;
+        }
         if self.download.global_active_count > 0 {
             let body = format!(
                 "{} download(s) are still in progress. Close anyway?",
@@ -132,8 +136,14 @@ impl App {
     }
 
     pub(crate) fn handle_search_scope_changed(&mut self, idx: u32) {
+        if idx != self.ui.scope_dropdown.selected() {
+            return;
+        }
         let next_scope = match idx {
             1 => super::super::types::SearchScope::ModOrder,
+            2 if !self.game_shows_plugins() && !self.game_shows_overrides() => {
+                super::super::types::SearchScope::Downloads
+            }
             2 => super::super::types::SearchScope::PluginOrder,
             3 => super::super::types::SearchScope::Downloads,
             _ => super::super::types::SearchScope::All,

@@ -74,7 +74,9 @@ impl App {
     }
 
     pub(crate) fn is_busy(&self) -> bool {
-        self.ui.mele_setup.is_some()
+        self.ui.cache_move.is_some()
+            || self.ui.override_order_saving
+            || self.ui.mele_setup.is_some()
             || self.install.is_busy()
             || self.shell.deploying
             || self.tools.proton_setup
@@ -239,7 +241,7 @@ impl App {
     }
 
     pub(crate) fn bottom_status_state(&self) -> BottomStatusState {
-        let has_conflicts = self.issues_mods_count() > 0;
+        let has_conflicts = self.game_shows_conflicts() && self.issues_mods_count() > 0;
         let rate_limit_warning = self
             .download
             .rate_limit
@@ -248,7 +250,11 @@ impl App {
         BottomStatusState {
             initializing: self.session.initializing,
             mod_status: self.mod_status_label(),
-            plugin_status: self.plugin_status_label(),
+            plugin_status: if self.game_shows_plugins() {
+                self.plugin_status_label()
+            } else {
+                String::new()
+            },
             conflict_status: self.conflict_count_label(),
             has_conflicts,
             rate_limit_status: self.rate_limit_label(),

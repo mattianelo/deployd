@@ -41,11 +41,6 @@ pub(crate) enum ShellMsg {
         id: u64,
         phase: &'static str,
     },
-    DeploymentProgress {
-        id: u64,
-        done: u64,
-        total: u64,
-    },
     DeployClicked,
     /// User confirmed deploy after the cross-profile mismatch warning dialog.
     DeployConfirmed,
@@ -91,6 +86,11 @@ pub(crate) enum ShellMsg {
 
 #[derive(Debug)]
 pub(crate) enum GamesMsg {
+    CacheMoveProgress {
+        done: usize,
+        total: usize,
+        phase: &'static str,
+    },
     GameSelected(u32),
     ProfileSelected(u32),
     InitializePendingSaveSet,
@@ -153,6 +153,7 @@ pub(crate) enum GamesMsg {
 
 #[derive(Debug)]
 pub(crate) enum ModsMsg {
+    MoveOverride(String, String),
     ReinstallMod(DynamicIndex),
     MoveModTo(usize, usize),
     MoveGroupTo(usize, usize),
@@ -495,7 +496,7 @@ pub(crate) enum GamesCmdMsg {
     ),
     /// Mod or plugin order snapshot deleted; carries updated snapshot list (game_id, kind).
     OrderSnapshotDeleted(Result<(), String>),
-    /// All games have been persisted to DB after Manage Games; safe to select the first game now.
+    /// Game settings have been persisted; refresh the list while retaining selection.
     GamesPersisted(Result<Vec<crate::models::game::GameConfig>, String>),
     GameRemoved {
         game_id: String,
@@ -505,6 +506,10 @@ pub(crate) enum GamesCmdMsg {
 
 #[derive(Debug)]
 pub(crate) enum ModsCmdMsg {
+    OverrideOrderSaved {
+        game_id: String,
+        result: Box<Result<LoadedData, String>>,
+    },
     ModRemoved(
         Result<(String, Vec<String>), String>,
         Option<(i64, i64)>,

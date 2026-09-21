@@ -11,6 +11,12 @@ impl App {
         sender: ComponentSender<Self>,
         root: &adw::ApplicationWindow,
     ) {
+        if self.ui.cache_move.is_some()
+            && (requires_game_access(&msg) || changes_folder_context(&msg))
+        {
+            self.show_toast("Wait for the cache move to finish");
+            return;
+        }
         if self.shell.location_recovery.is_some()
             && (requires_game_access(&msg) || changes_folder_context(&msg))
         {
@@ -49,9 +55,6 @@ impl App {
 
         match msg {
             ShellMsg::DeploymentPhase { id, phase } => self.update_deployment_phase(id, phase),
-            ShellMsg::DeploymentProgress { id, done, total } => {
-                self.deployment_progress(id, done, total)
-            }
             ShellMsg::DeployClicked => self.handle_deploy_clicked(root, &sender),
             ShellMsg::DeployConfirmed => self.prepare_deploy(&sender),
             ShellMsg::DeployVanillaConfirmed(protect) => {
@@ -133,6 +136,9 @@ impl App {
             GamesMsg::CacheDirChangeRequested { game_id, new_dir } => {
                 self.handle_cache_dir_change_requested(game_id, new_dir, &sender)
             }
+            GamesMsg::CacheMoveProgress { done, total, phase } => {
+                self.cache_move_progress(done, total, phase)
+            }
             GamesMsg::CacheDirResetRequested { game_id } => {
                 self.handle_cache_dir_reset_requested(game_id, &sender)
             }
@@ -173,6 +179,7 @@ impl App {
 
         match msg {
             ModsMsg::ReinstallMod(idx) => self.handle_reinstall_mod(idx, &sender),
+            ModsMsg::MoveOverride(first, second) => self.move_override(first, second, &sender),
             ModsMsg::MoveModTo(from, to) => self.handle_move_mod_to(from, to, &sender),
             ModsMsg::MoveGroupTo(from, to) => self.handle_move_group_to(from, to, &sender),
             ModsMsg::MoveSelectedModsTo { selected, from, to } => {
@@ -545,9 +552,9 @@ impl App {
                 game_id,
                 new_dir,
                 result,
-            } => self.handle_cmd_cache_dir_moved(game_id, new_dir, result),
+            } => self.handle_cmd_cache_dir_moved(game_id, new_dir, result, &sender),
             GamesCmdMsg::CacheDirReset { game_id, result } => {
-                self.handle_cmd_cache_dir_reset(game_id, result)
+                self.handle_cmd_cache_dir_reset(game_id, result, &sender)
             }
             GamesCmdMsg::ProfileSwitched(result) => {
                 self.handle_cmd_profile_switched(result, root, &sender)
@@ -591,6 +598,9 @@ impl App {
         use crate::app::messages::ModsCmdMsg;
 
         match msg {
+            ModsCmdMsg::OverrideOrderSaved { game_id, result } => {
+                self.override_order_saved(game_id, *result, &sender)
+            }
             ModsCmdMsg::ModRemoved(result, nexus_ids, mod_name, archive_hash) => {
                 self.handle_cmd_mod_removed(result, nexus_ids, mod_name, archive_hash, &sender)
             }
@@ -774,6 +784,7 @@ fn requires_game_access(msg: &AppMsg) -> bool {
                 | GamesMsg::ManageGamesClosed
                 | GamesMsg::GamesConfigured(_, _)
                 | GamesMsg::SetupProgress(_)
+                | GamesMsg::CacheMoveProgress { .. }
                 | GamesMsg::RemoveCurrentGame
                 | GamesMsg::RemoveGameConfirmed { .. }
                 | GamesMsg::NexusApiKeyUpdated

@@ -87,6 +87,7 @@ impl App {
         groups: &[ModGroup],
         overrides: &HashMap<String, OverrideInfo>,
     ) {
+        let show_conflicts = self.game_shows_conflicts();
         self.mods.selected.clear();
         let mut sorted_groups = groups.to_vec();
         sorted_groups.sort_by(|a, b| {
@@ -139,7 +140,7 @@ impl App {
                 !in_collapsed
             };
 
-            let info = overrides.get(&m.id);
+            let info = show_conflicts.then(|| overrides.get(&m.id)).flatten();
             let reinstall_from_file = m
                 .archive_path
                 .as_ref()
@@ -409,7 +410,9 @@ impl App {
                 scan_complete: data.plugin_scan_complete,
             },
         );
+        self.ui.override_mod_ids = data.override_mod_ids;
         self.populate_mods(data.mods, &data.groups, &data.overrides);
+        self.rebuild_override_panel();
         self.update_profile_list(data.profiles, data.active_profile_idx);
         self.tools.entries = data.tools;
         self.plugins.masters = data.plugin_masters;
@@ -432,6 +435,8 @@ impl App {
                 init.priority_label = format!("#{count}");
             }
         }
+        drop(guard);
+        self.rebuild_override_panel();
     }
 
     pub(crate) fn save_group_positions(&mut self, sender: &ComponentSender<Self>) {

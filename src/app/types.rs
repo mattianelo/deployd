@@ -143,6 +143,7 @@ pub(crate) struct NxmDownloadResult {
 
 #[derive(Debug)]
 pub struct InitData {
+    pub(crate) override_mod_ids: HashSet<String>,
     pub(crate) location_blocked: Vec<String>,
     pub tracker: Tracker,
     pub mods: Vec<ModEntry>,
@@ -186,6 +187,7 @@ pub struct InitData {
 
 #[derive(Debug)]
 pub struct LoadedData {
+    pub(crate) override_mod_ids: HashSet<String>,
     pub(crate) location_accessible: bool,
     pub game_id: String,
     pub mods: Vec<ModEntry>,
@@ -207,6 +209,20 @@ pub struct LoadedData {
     pub plugin_scan_complete: bool,
 }
 
+pub(crate) fn retained_game_index<'a>(
+    selected: Option<&str>,
+    games: impl Iterator<Item = &'a str>,
+) -> Option<usize> {
+    let mut fallback = None;
+    for (index, id) in games.enumerate() {
+        fallback.get_or_insert(index);
+        if selected == Some(id) {
+            return Some(index);
+        }
+    }
+    fallback
+}
+
 pub(crate) fn loaded_game_is_current(selected_game_id: Option<&str>, loaded_game_id: &str) -> bool {
     selected_game_id == Some(loaded_game_id)
 }
@@ -225,7 +241,25 @@ pub(crate) fn download_status_sort_key(status: &crate::models::download::Downloa
 
 #[cfg(test)]
 mod tests {
-    use super::loaded_game_is_current;
+    use super::{loaded_game_is_current, retained_game_index};
+
+    // @variants: both
+    #[test]
+    fn retains_the_selected_game_when_the_list_changes() {
+        assert_eq!(
+            retained_game_index(Some("dao"), ["skyrim", "dao"].into_iter()),
+            Some(1)
+        );
+        assert_eq!(
+            retained_game_index(Some("dao"), ["dao", "skyrim"].into_iter()),
+            Some(0)
+        );
+        assert_eq!(
+            retained_game_index(Some("removed"), ["dao"].into_iter()),
+            Some(0)
+        );
+        assert_eq!(retained_game_index(Some("dao"), [].into_iter()), None);
+    }
 
     // @variants: both
     #[test]

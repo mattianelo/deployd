@@ -76,6 +76,11 @@ pub(crate) struct ToolState {
 }
 
 pub(crate) struct UiState {
+    pub(crate) scope_dropdown: gtk::DropDown,
+    pub(crate) override_list: gtk::ListBox,
+    pub(crate) override_mod_ids: HashSet<String>,
+    pub(crate) override_order_saving: bool,
+    pub(crate) cache_move: Option<super::cache_handlers::CacheMove>,
     pub(crate) deployment_operation: Option<super::deployment_dialog::Operation>,
     pub(crate) mele_setup: Option<crate::ui::mele_dialog::SetupProgress>,
     pub(crate) mele_operation: Option<adw::AlertDialog>,

@@ -44,6 +44,8 @@ impl SimpleComponent for BottomStatus {
             },
 
             gtk::Label {
+                #[watch]
+                set_visible: !model.state.plugin_status.is_empty(),
                 set_label: "\u{00b7}",
                 add_css_class: "caption",
                 add_css_class: "dim-label",

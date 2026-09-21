@@ -141,8 +141,12 @@ content before adding the game. Mod deployment does not edit saves.
 
 Deployd uses libadwaita throughout its primary workflows:
 
-- The main Mod Order and Plugin Order panels use adaptive libadwaita navigation, so wide windows
-  show both panes side by side while narrow windows collapse cleanly.
+- Bethesda games show Mod Order and Plugin Order side by side. Dragon Age: Origins shows an
+  **Overrides** panel: move override mods earlier or later to update their priority in Mod Order.
+  The Witcher games, Mass Effect and Cyberpunk use a single mod list. Mass Effect omits file-conflict
+  indicators because its managed deployment handles those files.
+- Manage Games keeps your selected game when saving settings. Installing a download for another
+  game asks you to select that game first instead of switching automatically.
 - Select Mode is the v2 reorder workflow for Mod Order and Plugin Order. Enter Select Mode before
   selecting rows, dragging items, or changing load order. Dragging a selected plugin moves the
   selected plugin block together. Batch Enable and Disable actions keep Select Mode active so
@@ -163,6 +167,9 @@ Deployd uses libadwaita throughout its primary workflows:
 ### Cache Folder
 
 By default Deployd stores all cached mod files in `~/.local/share/deployd/cache/` (or `$SNAP_USER_COMMON/deployd/cache/` in the Snap). You can relocate a game's cache to any directory via **Settings → Manage Games**, under the "Cache Folder" row for that game.
+
+Cache moves open a progress dialog and refresh the current mod list when finished; no restart is
+needed. The new location appears in Manage Games after it has been saved successfully.
 
 Deployment history is stored beside each game's configured cache and moves with it through a
 recoverable copy-and-verify operation. Historical content uses independent retained copies, so
@@ -227,8 +234,9 @@ already-relocated files back and reports any rollback problem that still needs a
 
 Deploy highlights pending changes to the selected profile, including mod and plugin ordering,
 save mode, and changed mod files. Reverting those changes clears the highlight; adding an untouched
-game does not highlight Deploy. Deployment opens a progress dialog and keeps its result or recovery
-details visible until dismissed. Preparation can be cancelled before activation.
+game does not highlight Deploy. Deployment shows one progress bar advancing through the operation's
+stages, without per-file byte counters. Its result or recovery details stay visible until dismissed.
+Preparation can be cancelled before activation.
 
 Enabling Local Saves takes effect on the next Deploy. A profile's first isolated save bank starts
 with the current live saves, while the outgoing save bank is preserved. Existing banks keep their

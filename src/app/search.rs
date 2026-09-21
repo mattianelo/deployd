@@ -5,6 +5,7 @@ use super::types::{ModFilter, SearchScope};
 
 impl App {
     pub(crate) fn apply_search_filter(&mut self) {
+        self.rebuild_override_panel();
         let query = self.shell.search_text.to_lowercase();
         let empty = query.is_empty();
 

@@ -355,8 +355,12 @@ impl App {
                 .position(|g| g.id == *target_game_id)
             && game_idx != self.session.selected_game_idx
         {
-            self.session.selected_game_idx = game_idx;
-            self.ui.game_dropdown.set_selected(game_idx as u32);
+            self.install.reinstalling = false;
+            self.show_toast(&format!(
+                "Select {} before installing this download",
+                self.session.games[game_idx].title
+            ));
+            return;
         }
 
         // Store nexus_ids for the PendingInstall handoff

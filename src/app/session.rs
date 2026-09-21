@@ -250,7 +250,22 @@ pub(crate) async fn load_game_data(
         })
         .collect();
 
+    let mut override_mod_ids = HashSet::new();
+    if game.engine == crate::models::game::GameEngine::Eclipse {
+        for entry in &mods {
+            let files = tracker
+                .get_mod_files(&entry.id)
+                .await
+                .map_err(|error| error.to_string())?;
+            if files.iter().any(|file| {
+                super::override_panel::is_override(&game.engine, &file.game_rel_original)
+            }) {
+                override_mod_ids.insert(entry.id.clone());
+            }
+        }
+    }
     Ok(LoadedData {
+        override_mod_ids,
         location_accessible: game_folder_accessible && wine_prefix_accessible,
         game_id: game_id.clone(),
         mods,

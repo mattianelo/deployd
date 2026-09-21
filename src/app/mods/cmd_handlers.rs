@@ -142,6 +142,9 @@ impl App {
         result: Result<HashMap<String, OverrideInfo>, String>,
         _sender: &ComponentSender<Self>,
     ) {
+        if !self.game_shows_conflicts() {
+            return;
+        }
         let Ok(overrides) = result else {
             return;
         };
@@ -169,6 +172,8 @@ impl App {
                     info.map_or_else(Vec::new, |i| i.conflicted_by_mod_names.clone());
             }
         }
+        drop(guard);
+        self.rebuild_override_panel();
     }
 
     pub(crate) fn handle_cmd_empty_mod_created(

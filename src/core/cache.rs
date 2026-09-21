@@ -21,12 +21,32 @@ use crate::utils::paths;
 /// Partial failure during the file move (some mods moved, some not) is logged per-mod and
 /// the operation continues — the DB update and setting write only happen when all moves
 /// complete without error.
+#[allow(dead_code)]
 pub async fn move_game_cache(
     tracker: &Tracker,
     game_id: &str,
     game_path: &Path,
     old_cache_root: &Path,
     new_cache_root: &Path,
+) -> Result<()> {
+    move_game_cache_with_progress(
+        tracker,
+        game_id,
+        game_path,
+        old_cache_root,
+        new_cache_root,
+        &|_, _, _| {},
+    )
+    .await
+}
+
+pub(crate) async fn move_game_cache_with_progress(
+    tracker: &Tracker,
+    game_id: &str,
+    game_path: &Path,
+    old_cache_root: &Path,
+    new_cache_root: &Path,
+    progress: &(dyn Fn(usize, usize, &'static str) + Send + Sync),
 ) -> Result<()> {
     validate_same_filesystem(new_cache_root, game_path)?;
 
@@ -38,6 +58,8 @@ pub async fn move_game_cache(
         .await
         .context("Failed to list mods for cache move")?;
 
+    let total = mods.len() + 3;
+    progress(0, total, "Preparing deployment history…");
     let history = crate::core::generations::relocation::prepare(
         tracker,
         game_id,
@@ -46,7 +68,7 @@ pub async fn move_game_cache(
     )
     .await?;
 
-    let moved = match move_cache_directories(&mods, old_cache_root, new_cache_root) {
+    let moved = match move_cache_directories(&mods, old_cache_root, new_cache_root, progress) {
         Ok(moved) => moved,
         Err(error) => {
             if let Some(history) = history {
@@ -56,6 +78,7 @@ pub async fn move_game_cache(
         }
     };
 
+    progress(mods.len() + 1, total, "Saving the new cache location…");
     let old_prefix = old_cache_root.to_string_lossy();
     let new_prefix = new_cache_root.to_string_lossy();
     if let Err(error) = tracker
@@ -77,19 +100,39 @@ pub async fn move_game_cache(
         return Err(cache_move_failure(error, rollback));
     }
 
+    progress(mods.len() + 2, total, "Finishing the cache move…");
     if let Some(history) = history {
         history.finish(tracker).await?;
     }
+    progress(total, total, "Cache move complete");
 
     Ok(())
 }
 
 /// Clear a game's custom cache dir setting and move its mods back to `default_cache_root`.
+#[allow(dead_code)]
 pub async fn reset_game_cache(
     tracker: &Tracker,
     game_id: &str,
     current_cache_root: &Path,
     default_cache_root: &Path,
+) -> Result<()> {
+    reset_game_cache_with_progress(
+        tracker,
+        game_id,
+        current_cache_root,
+        default_cache_root,
+        &|_, _, _| {},
+    )
+    .await
+}
+
+pub(crate) async fn reset_game_cache_with_progress(
+    tracker: &Tracker,
+    game_id: &str,
+    current_cache_root: &Path,
+    default_cache_root: &Path,
+    progress: &(dyn Fn(usize, usize, &'static str) + Send + Sync),
 ) -> Result<()> {
     if current_cache_root == default_cache_root {
         return Ok(());
@@ -103,6 +146,8 @@ pub async fn reset_game_cache(
         .await
         .context("Failed to list mods for cache reset")?;
 
+    let total = mods.len() + 3;
+    progress(0, total, "Preparing deployment history…");
     let history = crate::core::generations::relocation::prepare(
         tracker,
         game_id,
@@ -111,16 +156,18 @@ pub async fn reset_game_cache(
     )
     .await?;
 
-    let moved = match move_cache_directories(&mods, current_cache_root, default_cache_root) {
-        Ok(moved) => moved,
-        Err(error) => {
-            if let Some(history) = history {
-                history.abort(tracker).await?;
+    let moved =
+        match move_cache_directories(&mods, current_cache_root, default_cache_root, progress) {
+            Ok(moved) => moved,
+            Err(error) => {
+                if let Some(history) = history {
+                    history.abort(tracker).await?;
+                }
+                return Err(error);
             }
-            return Err(error);
-        }
-    };
+        };
 
+    progress(mods.len() + 1, total, "Saving the new cache location…");
     let old_prefix = current_cache_root.to_string_lossy();
     let new_prefix = default_cache_root.to_string_lossy();
     if let Err(error) = tracker
@@ -142,9 +189,11 @@ pub async fn reset_game_cache(
         return Err(cache_move_failure(error, rollback));
     }
 
+    progress(mods.len() + 2, total, "Finishing the cache move…");
     if let Some(history) = history {
         history.finish(tracker).await?;
     }
+    progress(total, total, "Cache move complete");
 
     Ok(())
 }
@@ -211,9 +260,11 @@ fn move_cache_directories(
     mods: &[crate::models::mod_entry::ModEntry],
     old_cache_root: &Path,
     new_cache_root: &Path,
+    progress: &(dyn Fn(usize, usize, &'static str) + Send + Sync),
 ) -> Result<Vec<(std::path::PathBuf, std::path::PathBuf)>> {
     let mut moved = Vec::new();
-    for entry in mods {
+    for (index, entry) in mods.iter().enumerate() {
+        progress(index + 1, mods.len() + 3, "Moving cached mods…");
         let source = paths::mod_cache_dir_in(old_cache_root, &entry.id);
         let destination = paths::mod_cache_dir_in(new_cache_root, &entry.id);
         if !source.exists() {
@@ -306,6 +357,65 @@ mod tests {
         }
     }
 
+    // @variants: both
+    #[tokio::test]
+    async fn cache_move_progress_finishes_after_paths_are_saved() -> Result<()> {
+        let temp = tempdir()?;
+        let old = temp.path().join("old");
+        let new = temp.path().join("new");
+        let game = temp.path().join("game");
+        std::fs::create_dir_all(old.join("first"))?;
+        std::fs::create_dir_all(&game)?;
+        std::fs::write(old.join("first/file"), b"contents")?;
+        let tracker = crate::core::tracker::Tracker::open("sqlite::memory:")
+            .await?
+            .tracker;
+        sqlx::query(
+            "INSERT INTO games (id,title,path,data_subdir) VALUES ('game','Game',?,'Data')",
+        )
+        .bind(game.to_string_lossy().as_ref())
+        .execute(&tracker.pool)
+        .await?;
+        tracker.insert_mod(&mod_entry("first", "First", 0)).await?;
+        sqlx::query("INSERT INTO mod_files (mod_id,game_rel_lowercase,game_rel_original,cache_path) VALUES ('first','file','file',?)")
+            .bind(old.join("first/file").to_string_lossy().as_ref()).execute(&tracker.pool).await?;
+        let updates = std::sync::Mutex::new(Vec::new());
+        super::move_game_cache_with_progress(
+            &tracker,
+            "game",
+            &game,
+            &old,
+            &new,
+            &|done, total, _| {
+                updates.lock().unwrap().push((done, total));
+            },
+        )
+        .await?;
+        let updates = updates.into_inner().unwrap();
+        assert_eq!(updates.last(), Some(&(4, 4)));
+        assert!(updates.windows(2).all(|pair| pair[0].0 <= pair[1].0));
+        assert_eq!(
+            tracker.load_game_cache_dirs().await?.get("game"),
+            Some(&new)
+        );
+        assert_eq!(
+            tracker.get_mod_files("first").await?[0].cache_path,
+            new.join("first/file").to_string_lossy()
+        );
+        assert_eq!(std::fs::read(new.join("first/file"))?, b"contents");
+        assert!(!old.join("first").exists());
+
+        let updates = std::sync::Mutex::new(Vec::new());
+        super::reset_game_cache_with_progress(&tracker, "game", &new, &old, &|done, total, _| {
+            updates.lock().unwrap().push((done, total));
+        })
+        .await?;
+        assert_eq!(updates.into_inner().unwrap().last(), Some(&(4, 4)));
+        assert!(!tracker.load_game_cache_dirs().await?.contains_key("game"));
+        assert_eq!(std::fs::read(old.join("first/file"))?, b"contents");
+        Ok(())
+    }
+
     #[test]
     fn rolls_back_partial_cache_move() -> Result<()> {
         let temp = tempdir()?;
@@ -322,10 +432,20 @@ mod tests {
             mod_entry("second", "Second", 1),
         ];
 
-        let error = move_cache_directories(&mods, &old_root, &new_root)
-            .expect_err("the occupied second destination must fail the cache move");
+        let progress = std::sync::Mutex::new(Vec::new());
+        let error = move_cache_directories(&mods, &old_root, &new_root, &|done, total, _| {
+            progress.lock().unwrap().push((done, total));
+        })
+        .expect_err("the occupied second destination must fail the cache move");
 
         assert!(error.to_string().contains("Second"));
+        assert!(
+            progress
+                .into_inner()
+                .unwrap()
+                .iter()
+                .all(|(done, total)| done < total)
+        );
         assert_eq!(std::fs::read(old_root.join("first/file"))?, b"first");
         assert_eq!(std::fs::read(old_root.join("second/file"))?, b"second");
         assert!(!new_root.join("first").exists());

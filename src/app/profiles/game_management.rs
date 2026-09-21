@@ -42,24 +42,9 @@ impl App {
                 ))
             });
         }
-        let count = self.ui.game_model.n_items();
-        for _ in 0..count {
-            self.ui.game_model.remove(0);
-        }
-        self.session.games.clear();
-        for config in configs {
-            self.ui.game_model.append(&config.game.title);
-            self.session.games.push(config.game);
-        }
-        if self.session.games.is_empty() {
-            self.session.selected_game_idx = 0;
-            return;
-        }
-        // Force the reload even when the newly persisted game is already index zero.
-        self.session.selected_game_idx = usize::MAX;
-        sender.input(AppMsg::Games(crate::app::messages::GamesMsg::GameSelected(
-            0,
-        )));
+        let selected_id = self.selected_game().map(|game| game.id.clone());
+        self.session.games = configs.into_iter().map(|config| config.game).collect();
+        self.refresh_game_selection(selected_id.as_deref(), sender);
     }
 
     pub(crate) fn handle_manage_games_clicked(
@@ -169,8 +154,6 @@ impl App {
         });
 
         self.session.pending_new_game_ids.clear();
-        self.session.selected_game_idx = 0;
-        self.ui.game_dropdown.set_selected(0);
     }
 
     pub(crate) fn handle_manage_games_closed(&mut self, sender: &ComponentSender<Self>) {
@@ -178,13 +161,14 @@ impl App {
         if ids.is_empty() {
             return;
         }
+        let selected_id = self.selected_game().map(|game| game.id.clone());
         // Remove the new (unconfirmed) games from the in-memory list and the dropdown.
         for id in &ids {
             if let Some(idx) = self.session.games.iter().position(|g| &g.id == id) {
                 self.session.games.remove(idx);
-                self.ui.game_model.remove(idx as u32);
             }
         }
+        self.refresh_game_selection(selected_id.as_deref(), sender);
         if let Some(tracker) = self.session.tracker.clone() {
             self.location_command(sender, async move {
                 let result: Result<(), String> = async {
@@ -311,19 +295,43 @@ impl App {
         else {
             return;
         };
+        let selected_id = self.selected_game().map(|game| game.id.clone());
         self.session.games.remove(index);
-        self.ui.game_model.remove(index as u32);
         for warning in warnings {
             self.push_notification(&format!("Game removal warning: {warning}"));
         }
-        if self.session.games.is_empty() {
-            return;
+        self.refresh_game_selection(selected_id.as_deref(), sender);
+    }
+
+    fn refresh_game_selection(
+        &mut self,
+        selected_id: Option<&str>,
+        sender: &ComponentSender<Self>,
+    ) {
+        let titles: Vec<&str> = self
+            .session
+            .games
+            .iter()
+            .map(|game| game.title.as_str())
+            .collect();
+        self.ui
+            .game_model
+            .splice(0, self.ui.game_model.n_items(), &titles);
+        let index = super::super::types::retained_game_index(
+            selected_id,
+            self.session.games.iter().map(|game| game.id.as_str()),
+        );
+        self.session.selected_game_idx = usize::MAX;
+        self.ui
+            .game_dropdown
+            .set_selected(index.map_or(gtk::INVALID_LIST_POSITION, |i| i as u32));
+        if let Some(index) = index {
+            self.handle_game_selected(index as u32, sender);
+        } else {
+            self.mods.rows.guard().clear();
+            self.plugins.rows.guard().clear();
+            self.update_profile_list(Vec::new(), 0);
+            self.sync_game_panels();
         }
-        let new_index = index.min(self.session.games.len() - 1);
-        self.session.selected_game_idx = new_index;
-        self.ui.game_dropdown.set_selected(new_index as u32);
-        sender.input(AppMsg::Games(crate::app::messages::GamesMsg::GameSelected(
-            new_index as u32,
-        )));
     }
 }

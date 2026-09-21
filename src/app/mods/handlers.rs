@@ -18,10 +18,24 @@ use super::super::session::load_game_data;
 impl App {
     pub(crate) fn handle_game_selected(&mut self, idx: u32, sender: &ComponentSender<Self>) {
         let new_idx = idx as usize;
-        if new_idx == self.session.selected_game_idx {
+        if idx != self.ui.game_dropdown.selected()
+            || new_idx >= self.session.games.len()
+            || new_idx == self.session.selected_game_idx
+        {
             return;
         }
         self.session.selected_game_idx = new_idx;
+        self.mods.rows.guard().clear();
+        self.plugins.rows.guard().clear();
+        self.ui.override_mod_ids.clear();
+        self.mods.selection_active = false;
+        self.mods.selected.clear();
+        self.plugins.selection_active = false;
+        self.plugins.selected.clear();
+        self.sync_game_panels();
+        if !self.game_shows_conflicts() {
+            self.mods.filter = super::super::types::ModFilter::All;
+        }
         self.mods.pending_external_files.clear();
         self.mods.external_changes_count = 0;
         #[cfg(feature = "loot")]

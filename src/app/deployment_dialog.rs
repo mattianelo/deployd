@@ -1,10 +1,9 @@
 use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::{
-    Arc, Mutex,
+    Arc,
     atomic::{AtomicBool, Ordering},
 };
-use std::time::{Duration, Instant};
 
 use adw::prelude::*;
 use relm4::prelude::*;
@@ -18,7 +17,6 @@ pub(crate) struct Operation {
     id: u64,
     dialog: adw::AlertDialog,
     progress: gtk::ProgressBar,
-    spinner: gtk::Spinner,
     cancel: gtk::Button,
     cancelled: Arc<AtomicBool>,
     phase: Rc<Cell<Phase>>,
@@ -44,11 +42,8 @@ impl App {
             dialog.add_response("close", "Close");
             dialog.set_response_enabled("close", false);
             let content = gtk::Box::new(gtk::Orientation::Vertical, 12);
-            let spinner = gtk::Spinner::new();
-            spinner.start();
-            content.append(&spinner);
             let progress = gtk::ProgressBar::new();
-            progress.set_show_text(true);
+            progress.set_show_text(false);
             content.append(&progress);
             let cancel = gtk::Button::with_label("Cancel");
             let cancelled = Arc::new(AtomicBool::new(false));
@@ -69,7 +64,6 @@ impl App {
                 id: self.shell.operation_id,
                 dialog,
                 progress,
-                spinner,
                 cancel,
                 cancelled,
                 phase,
@@ -83,8 +77,9 @@ impl App {
             });
             operation.dialog.set_body(phase);
             operation.cancel.set_visible(cancellable);
-            operation.progress.set_fraction(0.0);
-            operation.progress.set_text(Some(phase));
+            operation
+                .progress
+                .set_fraction(operation.progress.fraction().max(operation_fraction(phase)));
             operation.dialog.present(Some(&self.ui.toast_overlay));
         }
     }
@@ -95,26 +90,13 @@ impl App {
         };
         let id = operation.id;
         let sender = self.ui.notification_sender.clone();
-        let last = Mutex::new(None::<Instant>);
         let phases = sender.clone();
         Control {
             phase: Arc::new(move |phase| {
                 let _ = phases.send(AppMsg::Shell(ShellMsg::DeploymentPhase { id, phase }));
             }),
             cancelled: operation.cancelled.clone(),
-            progress: Arc::new(move |done, total| {
-                let Ok(mut last) = last.lock() else { return };
-                let now = Instant::now();
-                if last.is_some_and(|time| now.duration_since(time) < Duration::from_millis(100)) {
-                    return;
-                }
-                *last = Some(now);
-                let _ = sender.send(AppMsg::Shell(ShellMsg::DeploymentProgress {
-                    id,
-                    done,
-                    total,
-                }));
-            }),
+            progress: Arc::new(|_, _| {}),
         }
     }
 
@@ -124,22 +106,9 @@ impl App {
             && operation.phase.get().accepts_progress()
         {
             operation.dialog.set_body(phase);
-            operation.progress.set_fraction(0.0);
-            operation.progress.set_text(Some(phase));
-        }
-    }
-
-    pub(crate) fn deployment_progress(&self, id: u64, done: u64, total: u64) {
-        if let Some(operation) = &self.ui.deployment_operation
-            && operation.id == id
-            && operation.phase.get().accepts_progress()
-        {
             operation
                 .progress
-                .set_fraction((done as f64 / total.max(1) as f64).clamp(0.0, 1.0));
-            operation
-                .progress
-                .set_text(Some(&format!("Current file: {done} / {total} bytes")));
+                .set_fraction(operation.progress.fraction().max(operation_fraction(phase)));
         }
     }
 
@@ -155,8 +124,6 @@ impl App {
         }
         if let Some(operation) = &mut self.ui.deployment_operation {
             operation.phase.set(Phase::Finished);
-            operation.spinner.stop();
-            operation.spinner.set_visible(false);
             operation.progress.set_visible(false);
             operation.cancel.set_visible(false);
             operation.dialog.set_heading(Some(heading));
@@ -171,6 +138,19 @@ impl App {
     pub(crate) fn deployment_failure(&mut self, message: &str) {
         self.deployment_result("Deployment stopped", message);
         self.push_notification(message);
+    }
+}
+
+fn operation_fraction(phase: &str) -> f64 {
+    match phase {
+        "Recovering interrupted deployment…" => 0.05,
+        "Preparing deployment files…" | "Preparing MELE deployment…" => 0.15,
+        "Preparing saves…" => 0.5,
+        "Verifying prepared deployment…" => 0.6,
+        "Activating files and saves…" => 0.75,
+        "Committing deployment…" => 0.9,
+        "Finishing deployment…" => 0.95,
+        _ => 0.0,
     }
 }
 
@@ -193,6 +173,27 @@ impl Phase {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // @variants: both
+    #[test]
+    fn deployment_stages_advance_without_claiming_completion() {
+        let phases = [
+            "Checking deployment…",
+            "Recovering interrupted deployment…",
+            "Preparing deployment files…",
+            "Preparing saves…",
+            "Verifying prepared deployment…",
+            "Activating files and saves…",
+            "Committing deployment…",
+            "Finishing deployment…",
+        ];
+        let mut previous = 0.0;
+        for phase in phases {
+            let fraction = operation_fraction(phase);
+            assert!(fraction >= previous && fraction < 1.0);
+            previous = fraction;
+        }
+    }
 
     // @variants: both
     #[test]

@@ -408,6 +408,16 @@ pub(super) fn build_model(
         },
         ui: UiState {
             deployment_operation: None,
+            cache_move: None,
+            scope_dropdown: gtk::DropDown::from_strings(&[
+                "All",
+                "Mod Order",
+                "Plugin Order",
+                "Downloads",
+            ]),
+            override_list: gtk::ListBox::new(),
+            override_mod_ids: HashSet::new(),
+            override_order_saving: false,
             header,
             bottom_status,
             toast_overlay: adw::ToastOverlay::new(),
@@ -499,8 +509,7 @@ pub(super) fn build_model(
         .placeholder_text("Search mods...")
         .hexpand(true)
         .build();
-    let scope_dropdown =
-        gtk::DropDown::from_strings(&["All", "Mod Order", "Plugin Order", "Downloads"]);
+    let scope_dropdown = model.ui.scope_dropdown.clone();
     scope_dropdown.set_selected(0);
     let search_box = gtk::Box::builder()
         .orientation(gtk::Orientation::Horizontal)
@@ -836,6 +845,7 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             vanilla_derived_plugins,
             access_warnings,
             plugin_scan_complete,
+            override_mod_ids,
         ) = if let Some(game) = &init_game {
             let loaded = load_game_data(&tracker, game, GameLoadMode::OpenGame).await?;
             (
@@ -852,6 +862,7 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
                 loaded.vanilla_derived_plugins,
                 loaded.access_warnings,
                 loaded.plugin_scan_complete,
+                loaded.override_mod_ids,
             )
         } else {
             (
@@ -868,6 +879,7 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
                 Default::default(),
                 vec![],
                 true,
+                HashSet::new(),
             )
         };
 
@@ -976,6 +988,7 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
         startup_warnings.extend(access_warnings);
 
         Ok::<_, String>(InitData {
+            override_mod_ids,
             location_blocked,
             tracker,
             mods,

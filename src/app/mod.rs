@@ -16,6 +16,7 @@ mod messages;
 mod mods;
 mod notifications;
 mod order_snapshots;
+mod override_panel;
 mod plugins;
 mod presentation;
 mod profiles;
@@ -118,7 +119,9 @@ impl Component for App {
                             set_vexpand: true,
 
                             adw::NavigationSplitView {
-                        set_collapsed: false,
+                        #[watch]
+                        set_collapsed: !model.game_shows_plugins() && !model.game_shows_overrides(),
+                        set_show_content: false,
                         set_min_sidebar_width: 320.0,
                         set_max_sidebar_width: 1000.0,
                         set_sidebar_width_fraction: 0.5,
@@ -181,6 +184,8 @@ impl Component for App {
                                     },
 
                                     gtk::Button {
+                                        #[watch]
+                                        set_visible: model.game_shows_conflicts(),
                                         #[watch]
                                         set_css_classes: if matches!(model.mods.filter, ModFilter::Issues) {
                                             &["pill", "filter-chip", "suggested-action"]
@@ -435,19 +440,47 @@ impl Component for App {
                         // RIGHT PANEL: Plugin Load Order
                         #[wrap(Some)]
                         set_content = &adw::NavigationPage {
-                            set_title: "Plugin Order",
+                            #[watch]
+                            set_title: if model.game_shows_overrides() { "Overrides" } else { "Plugin Order" },
 
                             #[wrap(Some)]
                             set_child = &gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
 
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Vertical,
+                                set_vexpand: true,
+                                #[watch]
+                                set_visible: model.game_shows_overrides(),
+                                gtk::Label {
+                                    set_label: "Overrides",
+                                    add_css_class: "heading",
+                                    set_margin_all: 8,
+                                    set_halign: gtk::Align::Start,
+                                },
+                                gtk::Label {
+                                    set_label: "Later mods take priority for shared files. Changes also update Mod Order.",
+                                    set_wrap: true,
+                                    set_margin_all: 8,
+                                },
+                                gtk::ScrolledWindow {
+                                    set_vexpand: true,
+                                    set_hscrollbar_policy: gtk::PolicyType::Never,
+                                    #[local_ref]
+                                    override_list -> gtk::ListBox {
+                                        set_selection_mode: gtk::SelectionMode::None,
+                                        add_css_class: "boxed-list",
+                                        set_margin_all: 8,
+                                    },
+                                },
+                            },
                             // Normal mode header
                             gtk::Box {
                                 set_orientation: gtk::Orientation::Horizontal,
                                 set_margin_top: 8,
                                 set_margin_bottom: 4,
                                 #[watch]
-                                set_visible: !model.plugins.selection_active,
+                                set_visible: model.game_shows_plugins() && !model.plugins.selection_active,
 
                                 gtk::Label {
                                     set_label: "Plugin Order",
@@ -594,7 +627,7 @@ impl Component for App {
                                 set_margin_start: 8,
                                 set_margin_end: 8,
                                 #[watch]
-                                set_visible: model.plugins.selection_active,
+                                set_visible: model.game_shows_plugins() && model.plugins.selection_active,
 
                                 gtk::Label {
                                     #[watch]
@@ -613,6 +646,8 @@ impl Component for App {
 
                             #[local_ref]
                             plugin_scroll -> gtk::ScrolledWindow {
+                                #[watch]
+                                set_visible: model.game_shows_plugins(),
                                 set_vexpand: true,
                                 set_hscrollbar_policy: gtk::PolicyType::Never,
 
@@ -626,7 +661,7 @@ impl Component for App {
 
                             adw::StatusPage {
                                 #[watch]
-                                set_visible: model.plugins.managed_count == 0,
+                                set_visible: model.game_shows_plugins() && model.plugins.managed_count == 0,
                                 set_icon_name: Some("application-x-addon-symbolic"),
                                 set_title: "No Plugins",
                                 set_description: Some("Plugin files (.esp/.esm/.esl) will appear here"),
@@ -634,7 +669,7 @@ impl Component for App {
 
                             gtk::ActionBar {
                                 #[watch]
-                                set_revealed: model.plugins.selection_active,
+                                set_revealed: model.game_shows_plugins() && model.plugins.selection_active,
 
                                 pack_start = &gtk::Button {
                                     set_label: "Enable",
@@ -671,6 +706,7 @@ impl Component for App {
         let toast_overlay = &model.ui.toast_overlay;
         let mod_list = model.mods.rows.widget();
         let plugin_list = model.plugins.rows.widget();
+        let override_list = &model.ui.override_list;
         let downloads_pane = model.ui.downloads_pane.widget();
         let bottom_status = model.ui.bottom_status.widget();
         let mod_scroll = &model.mods.scroll;

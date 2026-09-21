@@ -179,6 +179,7 @@ impl App {
                     .unwrap_or(0);
                 self.session.selected_game_idx = target_idx;
                 self.ui.game_dropdown.set_selected(target_idx as u32);
+                self.sync_game_panels();
 
                 self.shell.nexus_username = data.nexus_username.clone();
                 self.shell.nexus_avatar_url = data.nexus_avatar_url.clone();
@@ -216,6 +217,7 @@ impl App {
                     .map(|g| g.id.clone())
                     .collect();
                 let loaded = LoadedData {
+                    override_mod_ids: data.override_mod_ids,
                     location_accessible: data
                         .init_game_id
                         .as_ref()

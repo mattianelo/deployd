@@ -46,6 +46,7 @@ pub struct GameSetupDialog {
 
 #[derive(Debug)]
 pub enum GameSetupMsg {
+    CacheDirsUpdated(HashMap<String, PathBuf>),
     /// Toggle a game's enabled state by list index.
     ToggleEnabled(usize),
     /// Browse for a new game folder for entry at index.
@@ -710,6 +711,10 @@ impl Component for GameSetupDialog {
                 self.rebuild_games(&sender);
             }
 
+            GameSetupMsg::CacheDirsUpdated(dirs) => {
+                self.game_cache_dirs = dirs;
+                self.rebuild_games(&sender);
+            }
             GameSetupMsg::BrowseCacheDir(idx) => {
                 let input = sender.input_sender().clone();
                 sender.oneshot_command(async move {
@@ -732,8 +737,7 @@ impl Component for GameSetupDialog {
                     return;
                 };
                 let game_id = entry.game.id.clone();
-                self.game_cache_dirs.insert(game_id.clone(), path.clone());
-                self.rebuild_games(&sender);
+
                 let _ = sender.output(GameSetupOutput::CacheDirChangeRequested {
                     game_id,
                     new_dir: path,
@@ -745,8 +749,7 @@ impl Component for GameSetupDialog {
                     return;
                 };
                 let game_id = entry.game.id.clone();
-                self.game_cache_dirs.remove(&game_id);
-                self.rebuild_games(&sender);
+
                 let _ = sender.output(GameSetupOutput::CacheDirResetRequested { game_id });
             }
 

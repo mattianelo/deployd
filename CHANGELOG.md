@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Show DAO override packages with ordering controls synchronized with Mod Order. Witcher games,
+  Mass Effect and Cyberpunk now use one mod panel; Mass Effect omits file-conflict indicators.
+- Simplified deployment progress to one bar advancing through the operation's stages.
+- Added cache-move progress dialogs and immediate list refresh after moving or resetting a cache.
+- Preserve the selected game when saving Manage Games or changing the game list. Downloads for
+  another game request an explicit game selection instead of switching automatically.
+
 - Fixed deployment history text being squeezed into single-letter columns by placing
   Restore and Delete buttons below each entry's details.
 
