@@ -69,7 +69,7 @@ pub(crate) async fn read(
             serde_json::from_str(&document).context("Cannot read deployed generation")?;
         manifest.validate()?;
         status.needs_deploy |= status.deployed_profile.as_deref() != Some(profile)
-            || projection(&current) != projection(&manifest.records);
+            || projection(&current)? != projection(&manifest.records)?;
         if !status.needs_deploy {
             status.needs_deploy =
                 !super::manifest::sources_match(tracker, game, cache, &manifest).await?;
@@ -92,8 +92,26 @@ pub(crate) async fn read(
     Ok(status)
 }
 
-fn projection(rows: &[Rows]) -> Vec<(&'static str, BTreeSet<String>)> {
-    rows.iter()
+pub(super) fn projection(rows: &[Rows]) -> Result<Vec<(&'static str, BTreeSet<String>)>> {
+    let mut rows = rows.to_vec();
+    for table in &mut rows {
+        if table.table != Table::MelePackages {
+            continue;
+        }
+        for row in &mut table.rows {
+            let mut record: crate::core::game::mass_effect::library::Record =
+                serde_json::from_str(records::text(row, "document")?)
+                    .context("Cannot read MELE package deployment status")?;
+            // The mods table owns profile selection; this copy reflects import-time state.
+            record.package.enabled = false;
+            row.insert(
+                "document".into(),
+                Value::String(serde_json::to_string(&record)?),
+            );
+        }
+    }
+    Ok(rows
+        .iter()
         .filter_map(|rows| {
             let fields: &[&str] = match rows.table {
                 Table::Profiles => &["save_mode"],
@@ -125,7 +143,7 @@ fn projection(rows: &[Rows]) -> Vec<(&'static str, BTreeSet<String>)> {
                     .collect(),
             ))
         })
-        .collect()
+        .collect())
 }
 
 #[cfg(test)]
@@ -133,6 +151,55 @@ mod tests {
     use super::*;
     use crate::core::generations::{activation, content::Control};
     use crate::models::game::GameEngine;
+
+    // @variants: both
+    #[test]
+    fn mele_import_flags_do_not_hide_profile_or_package_changes() -> Result<()> {
+        let document = serde_json::json!({
+            "version": 1, "target": "LE2",
+            "package": {
+                "id": "package", "source_sha256": "source", "archive_sha256": null,
+                "manifest_version": "9.1", "mod_version": "1.0",
+                "enabled": true, "options": []
+            }
+        });
+        let mut current = vec![
+            Rows {
+                table: Table::Mods,
+                rows: vec![records::Record::from([
+                    ("id".into(), Value::from("package")),
+                    ("enabled".into(), Value::from(0)),
+                    ("priority".into(), Value::from(1)),
+                ])],
+            },
+            Rows {
+                table: Table::MelePackages,
+                rows: vec![records::Record::from([
+                    ("mod_id".into(), Value::from("package")),
+                    ("document".into(), Value::from(document.to_string())),
+                ])],
+            },
+        ];
+        let mut deployed = current.clone();
+        let mut document = document;
+        document["package"]["enabled"] = Value::from(false);
+        deployed[1].rows[0].insert("document".into(), Value::from(document.to_string()));
+        assert_eq!(projection(&current)?, projection(&deployed)?);
+
+        for (field, value) in [("enabled", 1), ("priority", 2)] {
+            let original = current[0].rows[0].insert(field.into(), Value::from(value));
+            assert_ne!(projection(&current)?, projection(&deployed)?);
+            current[0].rows[0].insert(field.into(), original.context("Missing fixture field")?);
+        }
+        assert_eq!(projection(&current)?, projection(&deployed)?);
+
+        document["package"]["options"] = serde_json::json!(["alternative"]);
+        current[1].rows[0].insert("document".into(), Value::from(document.to_string()));
+        assert_ne!(projection(&current)?, projection(&deployed)?);
+        current[1].rows[0].insert("document".into(), Value::from("invalid"));
+        assert!(projection(&current).is_err());
+        Ok(())
+    }
 
     // @variants: both
     #[tokio::test]

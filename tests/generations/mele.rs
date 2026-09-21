@@ -307,7 +307,7 @@ async fn mele_history_restores_complete_sources_and_reuses_outputs_without_a_hel
             fs::create_dir_all(retained.parent().context("Missing source parent")?)?;
             fs::rename(source, &retained)?;
             let record: library::Record = serde_json::from_value(
-                json!({"version":1,"target":format!("LE{number}"),"package":{"id":id,"source_sha256":plan.source_sha256,"archive_sha256":null,"manifest_version":plan.manifest.format,"mod_version":"1.0","enabled":enabled != 0,"options":[]}}),
+                json!({"version":1,"target":format!("LE{number}"),"package":{"id":id,"source_sha256":plan.source_sha256,"archive_sha256":null,"manifest_version":plan.manifest.format,"mod_version":"1.0","enabled":true,"options":[]}}),
             )?;
             sqlx::query("INSERT INTO mods(id,game_id,name,enabled,priority) VALUES (?,?,?,?,?)")
                 .bind(&id)
@@ -388,10 +388,44 @@ async fn mele_history_restores_complete_sources_and_reuses_outputs_without_a_hel
         )
         .await?;
         assert_eq!(fs::read(game.path.join(ENGINE))?, b"winner");
+        let mut tx = tracker.pool.begin().await?;
+        let current = super::records::capture_state(&mut tx, &game.id, &profile, true).await?;
+        tx.rollback().await?;
+        assert_eq!(
+            super::status::projection(&current)?,
+            super::status::projection(&manifest.records)?,
+            "deployed MELE profiles must not retain pending changes"
+        );
         let id = manifest.id()?;
         drop(history);
         tracker.pool.close().await;
         let tracker = Tracker::open(&database).await?.tracker;
+        super::session::initialize(&tracker, &game).await?;
+        assert_eq!(
+            super::session::inspect_live(&tracker, &game).await?,
+            Some(0)
+        );
+        let mut tx = tracker.pool.begin().await?;
+        let reopened = super::records::capture_state(&mut tx, &game.id, &profile, true).await?;
+        tx.rollback().await?;
+        assert_eq!(
+            super::status::projection(&reopened)?,
+            super::status::projection(&manifest.records)?
+        );
+        sqlx::query("UPDATE mods SET enabled=1 WHERE game_id=? AND priority=3")
+            .bind(&game.id)
+            .execute(&tracker.pool)
+            .await?;
+        tracker.pool.close().await;
+        let tracker = Tracker::open(&database).await?.tracker;
+        let mut tx = tracker.pool.begin().await?;
+        let pending = super::records::capture_state(&mut tx, &game.id, &profile, true).await?;
+        tx.rollback().await?;
+        assert_ne!(
+            super::status::projection(&pending)?,
+            super::status::projection(&manifest.records)?,
+            "undeployed MELE changes must survive reopening the game"
+        );
         let history = History::open(&tracker, &game.id, temp.path(), false).await?;
         let ids: Vec<_> = tracker
             .list_mods(&game.id)

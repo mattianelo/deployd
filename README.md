@@ -236,7 +236,9 @@ already-relocated files back and reports any rollback problem that still needs a
 
 Deploy highlights pending changes to the selected profile, including mod and plugin ordering,
 save mode, and changed mod files. Reverting those changes clears the highlight; adding an untouched
-game does not highlight Deploy. Deployment shows one progress bar advancing through the operation's
+game does not highlight Deploy. Switching games preserves pending changes without highlighting
+already deployed profiles, including Mass Effect profiles with disabled mods.
+Deployment shows one progress bar advancing through the operation's
 stages, without per-file byte counters. Its result or recovery details stay visible until dismissed.
 Preparation can be cancelled before activation.
 

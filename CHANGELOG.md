@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Fixed Deploy staying highlighted when reopening a Mass Effect Legendary Edition game
+  after deploying disabled mods. Undeployed profile changes still keep the highlight.
+
 - Fixed archive metadata lookups treating version numbers in filenames, such as LooksMenu's,
   as confirmed Nexus mod IDs. Conflicting archive matches now require confirmation, and
   **Change Nexus mod…** lets you correct an existing identity. Confirmed choices survive
