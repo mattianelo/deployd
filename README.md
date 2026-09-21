@@ -71,6 +71,8 @@ external changes are preserved and must be resolved before deploying again.
 Large texture installations can take time; follow the progress shown in Deployd.
 Repeat MELE deployments reuse verified files already retained in deployment history
 without writing duplicate history copies. Preparation still checks file contents.
+Unchanged disabled MELE mods stay available in history without being copied into
+temporary deployment sources.
 
 ASI/DLL plugins require your approval for each package version and game. Deployd
 never runs archive installers or scripts. Follow the mod author's instructions

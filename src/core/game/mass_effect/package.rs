@@ -895,7 +895,7 @@ pub(super) fn validate_source_name(relative: &str) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn tree_digest(files: &[SourceFile]) -> String {
+pub(crate) fn tree_digest(files: &[SourceFile]) -> String {
     let mut digest = Sha256::new();
     for file in files {
         digest.update(format!(

@@ -434,7 +434,7 @@ impl Journal {
                     );
                     if let Node::File { identity, .. } = &before {
                         ensure!(
-                            store.retain(&path, &preparing)? == *identity,
+                            store.retain_expected(&path, identity, &preparing)? == *identity,
                             "Managed file changed during preparation"
                         );
                         objects.insert(identity.sha256.clone(), identity.size);

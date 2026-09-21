@@ -2,7 +2,7 @@ use std::fs;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use anyhow::Result;
 
@@ -1016,7 +1016,7 @@ async fn damaged_manifests_cannot_reinterpret_sources_or_engine_targets() -> Res
 
 // @variants: both
 #[tokio::test]
-async fn unchanged_managed_files_are_verified_without_replacing_their_hardlinks() -> Result<()> {
+async fn unchanged_managed_files_reuse_history_and_preserve_hardlinks() -> Result<()> {
     use super::journal::{Journal, Node};
     let temp = tempfile::tempdir()?;
     let (tracker, game, _) = snapshot_fixture(temp.path()).await?;
@@ -1027,6 +1027,21 @@ async fn unchanged_managed_files_are_verified_without_replacing_their_hardlinks(
     let mode = fs::metadata(&live)?.permissions().mode() & 0o777;
     let history = History::open(&tracker, &game.id, temp.path(), true).await?;
     let identity = history.retain(live.clone(), Control::default()).await?;
+    let staging = temp.path().join("deployd-history/game/staging");
+    let staged = Arc::new(AtomicBool::new(false));
+    let observed = staged.clone();
+    let control = Control {
+        progress: Arc::new(move |_, _| {
+            if fs::read_dir(&staging)
+                .expect("read staging")
+                .next()
+                .is_some()
+            {
+                observed.store(true, Ordering::Release);
+            }
+        }),
+        ..Control::default()
+    };
     let journal = Journal::prepare(
         &history,
         &game,
@@ -1034,9 +1049,10 @@ async fn unchanged_managed_files_are_verified_without_replacing_their_hardlinks(
             Target::file(&game.engine, "file.txt")?,
             Node::File { identity, mode },
         )],
-        Control::default(),
+        control,
     )
     .await?;
+    assert!(!staged.load(Ordering::Acquire));
     journal
         .persist(&history, &game, "deploy", Default::default())
         .await?;

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Reduced MELE preparation work when disabling unchanged mods, while retaining their
+  files for history restoration and checking them for corruption.
+- Avoided duplicate history copies of already-retained live files during deployment
+  preparation across supported games.
 - Reduced repeat MELE deployment writes by reusing verified files already retained in
   deployment history without creating duplicate temporary history copies.
 - Fixed MELE Deploy preparation rejecting Deployd's required AutoTOC ASI and runtime DLLs when
