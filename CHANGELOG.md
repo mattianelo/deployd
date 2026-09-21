@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Fixed unchanged reinstalled plugins being reported as externally cleaned. External File Changes
+  now compares independent plugin copies by content and disables actions that do not apply to
+  the selected files, including Discard for managed plugins.
+
 - Fixed Deploy staying highlighted when reopening a Mass Effect Legendary Edition game
   after deploying disabled mods. Undeployed profile changes still keep the highlight.
 

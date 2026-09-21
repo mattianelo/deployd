@@ -6,6 +6,25 @@ use relm4::prelude::*;
 
 use crate::core::detector::ExternalFile;
 
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Selection {
+    unmanaged: bool,
+    managed: bool,
+    backup: bool,
+}
+
+impl Selection {
+    fn from_files<'a>(files: impl IntoIterator<Item = &'a ExternalFile>) -> Self {
+        let mut selection = Self::default();
+        for file in files {
+            selection.unmanaged |= !file.is_managed_plugin;
+            selection.managed |= file.is_managed_plugin;
+            selection.backup |= file.is_managed_plugin && file.xedit_backup_path.is_some();
+        }
+        selection
+    }
+}
+
 pub struct AbsorbDialog {
     files: Vec<ExternalFile>,
     file_checks: Vec<gtk::CheckButton>,
@@ -16,12 +35,14 @@ pub struct AbsorbDialog {
     /// Used to conditionally show the "Restore from Backup" button.
     has_xedit_backup: bool,
     window: adw::Window,
+    selection: Selection,
 }
 
 #[derive(Debug)]
 pub enum AbsorbDialogMsg {
     SelectAll,
     SelectNone,
+    SelectionChanged,
     Confirm,
     Discard,
     MarkAsVanilla,
@@ -127,7 +148,9 @@ impl SimpleComponent for AbsorbDialog {
 
                                     add_suffix = &gtk::Button {
                                         set_label: "Discard",
-                                        set_tooltip_text: Some("Discard Selected"),
+                                        #[watch]
+                                        set_sensitive: model.selection.unmanaged,
+                                        set_tooltip_text: Some("Delete selected unmanaged files; managed plugins cannot be discarded"),
                                         set_valign: gtk::Align::Center,
                                         add_css_class: "destructive-action",
                                         connect_clicked => AbsorbDialogMsg::Discard,
@@ -140,6 +163,8 @@ impl SimpleComponent for AbsorbDialog {
 
                                     add_suffix = &gtk::Button {
                                         set_label: "Mark",
+                                        #[watch]
+                                        set_sensitive: model.selection.unmanaged,
                                         set_tooltip_text: Some("Mark as Vanilla"),
                                         set_valign: gtk::Align::Center,
                                         add_css_class: "flat",
@@ -155,6 +180,8 @@ impl SimpleComponent for AbsorbDialog {
 
                                     add_suffix = &gtk::Button {
                                         set_label: "Restore",
+                                        #[watch]
+                                        set_sensitive: model.selection.backup,
                                         set_tooltip_text: Some("Restore from Backup"),
                                         set_valign: gtk::Align::Center,
                                         add_css_class: "flat",
@@ -164,12 +191,14 @@ impl SimpleComponent for AbsorbDialog {
 
                                 add = &adw::ActionRow {
                                     set_title: "Adopt Changes",
-                                    set_subtitle: "Update the Deployd cache with selected cleaned managed plugins",
+                                    set_subtitle: "Keep the selected managed plugin changes for future deployments",
                                     #[watch]
                                     set_visible: model.has_managed_plugins,
 
                                     add_suffix = &gtk::Button {
                                         set_label: "Adopt",
+                                        #[watch]
+                                        set_sensitive: model.selection.managed,
                                         set_tooltip_text: Some("Adopt Changes"),
                                         set_valign: gtk::Align::Center,
                                         add_css_class: "suggested-action",
@@ -185,9 +214,11 @@ impl SimpleComponent for AbsorbDialog {
 
                                     add_suffix = &gtk::Button {
                                         set_label: "Create",
+                                        #[watch]
+                                        set_sensitive: model.selection.unmanaged,
                                         set_tooltip_text: Some("Create Mod"),
                                         set_valign: gtk::Align::Center,
-                                        add_css_class: "suggested-action",
+                                        set_css_classes: if model.has_managed_plugins { &["flat"] } else { &["suggested-action"] },
                                         connect_clicked => AbsorbDialogMsg::Confirm,
                                     },
                                 },
@@ -220,6 +251,7 @@ impl SimpleComponent for AbsorbDialog {
         let has_managed_plugins = files.iter().any(|f| f.is_managed_plugin);
         let has_xedit_backup = files.iter().any(|f| f.xedit_backup_path.is_some());
         let mut model = AbsorbDialog {
+            selection: Selection::from_files(&files),
             files,
             file_checks: Vec::new(),
             has_managed_plugins,
@@ -232,6 +264,10 @@ impl SimpleComponent for AbsorbDialog {
         for file in &model.files {
             let check = gtk::CheckButton::new();
             check.set_active(true);
+            let selection_sender = sender.input_sender().clone();
+            check.connect_toggled(move |_| {
+                let _ = selection_sender.send(AbsorbDialogMsg::SelectionChanged);
+            });
             check.set_valign(gtk::Align::Center);
 
             let row = adw::ActionRow::new();
@@ -243,10 +279,10 @@ impl SimpleComponent for AbsorbDialog {
                 if file.xedit_backup_path.is_some() {
                     // In-place save: both Data and cache already hold the cleaned content;
                     // a backup file is available to undo the clean if needed.
-                    row.set_subtitle("Managed mod — cleaned in-place (backup available)");
+                    row.set_subtitle("Managed plugin — xEdit backup available");
                 } else {
                     // Rename-save: hardlink broken, cache still holds the dirty original.
-                    row.set_subtitle("Managed mod — cleaned externally");
+                    row.set_subtitle("Managed plugin — content modified");
                 }
             } else {
                 // Show the original on-disk casing so the user can distinguish vanilla
@@ -278,7 +314,15 @@ impl SimpleComponent for AbsorbDialog {
     }
 
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
+        self.selection = Selection::from_files(
+            self.files
+                .iter()
+                .zip(&self.file_checks)
+                .filter(|(_, check)| check.is_active())
+                .map(|(file, _)| file),
+        );
         match msg {
+            AbsorbDialogMsg::SelectionChanged => {}
             AbsorbDialogMsg::SelectAll => {
                 for check in &self.file_checks {
                     check.set_active(true);
@@ -290,6 +334,9 @@ impl SimpleComponent for AbsorbDialog {
                 }
             }
             AbsorbDialogMsg::Confirm => {
+                if !self.selection.unmanaged {
+                    return;
+                }
                 // Only absorb non-managed files into a new mod.
                 let file_list: Vec<(PathBuf, PathBuf)> = self
                     .files
@@ -308,6 +355,9 @@ impl SimpleComponent for AbsorbDialog {
                 let _ = sender.output(AbsorbDialogOutput::Selected(file_list));
             }
             AbsorbDialogMsg::Discard => {
+                if !self.selection.unmanaged {
+                    return;
+                }
                 // Only discard non-managed files; managed plugins must use "Adopt Changes"
                 // or "Restore from Backup" — deleting a managed file outright would break
                 // the mod deployment.
@@ -322,6 +372,9 @@ impl SimpleComponent for AbsorbDialog {
                 let _ = sender.output(AbsorbDialogOutput::Discarded(paths));
             }
             AbsorbDialogMsg::MarkAsVanilla => {
+                if !self.selection.unmanaged {
+                    return;
+                }
                 // Only mark non-managed files as vanilla; managed plugins cannot be
                 // treated as vanilla.
                 let files: Vec<ExternalFile> = self
@@ -335,6 +388,9 @@ impl SimpleComponent for AbsorbDialog {
                 let _ = sender.output(AbsorbDialogOutput::MarkedAsVanilla(files));
             }
             AbsorbDialogMsg::AdoptManaged => {
+                if !self.selection.managed {
+                    return;
+                }
                 // Adopt the selected managed plugins: the backend will copy the cleaned
                 // on-disk content into the deployd cache and re-hardlink.
                 let files: Vec<ExternalFile> = self
@@ -348,6 +404,9 @@ impl SimpleComponent for AbsorbDialog {
                 let _ = sender.output(AbsorbDialogOutput::AdoptManagedChanges(files));
             }
             AbsorbDialogMsg::RestoreFromBackup => {
+                if !self.selection.backup {
+                    return;
+                }
                 // Restore selected managed plugins from their xEdit backup.
                 // Only applies to in-place saves that have a backup path recorded.
                 let files: Vec<ExternalFile> = self
@@ -365,5 +424,54 @@ impl SimpleComponent for AbsorbDialog {
                 let _ = sender.output(AbsorbDialogOutput::Cancelled);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn file(managed: bool, backup: bool) -> ExternalFile {
+        ExternalFile {
+            abs_path: PathBuf::from("Example.esp"),
+            game_rel: "example.esp".into(),
+            game_rel_original: "Example.esp".into(),
+            is_managed_plugin: managed,
+            xedit_backup_path: backup.then(|| PathBuf::from("backup/Example.esp")),
+        }
+    }
+
+    // @variants: both
+    #[test]
+    fn managed_plugins_enable_adoption_without_enabling_discard() {
+        let selection = Selection::from_files(&[file(true, false)]);
+        assert!(selection.managed);
+        assert!(!selection.unmanaged);
+        assert!(!selection.backup);
+    }
+
+    #[test]
+    fn clearing_selection_disables_all_file_actions() {
+        assert_eq!(Selection::from_files(&[]), Selection::default());
+    }
+
+    #[test]
+    fn mixed_selections_enable_only_the_applicable_actions() {
+        assert_eq!(
+            Selection::from_files(&[file(false, false)]),
+            Selection {
+                unmanaged: true,
+                managed: false,
+                backup: false
+            }
+        );
+        assert_eq!(
+            Selection::from_files(&[file(false, false), file(true, true)]),
+            Selection {
+                unmanaged: true,
+                managed: true,
+                backup: true
+            }
+        );
     }
 }

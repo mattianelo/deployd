@@ -345,6 +345,11 @@ In the Snap package, access granted to an external downloads folder does not cov
 on that drive. Move a local archive into the configured downloads folder, scan it, and install it
 from the Downloads panel.
 
+External File Changes compares independent plugin copies by content, so reinstalling
+identical content does not count as an external modification. **Discard**
+applies only to selected unmanaged files; managed plugin changes use **Adopt Changes** or,
+when available, **Restore from Backup**.
+
 ### 4. Deployment
 
 Deploy applies your enabled mods in the selected order. Most supported games use

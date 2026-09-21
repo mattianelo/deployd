@@ -228,21 +228,9 @@ fn find_newest_xedit_backup(plugin_backup_dir: &std::path::Path) -> Option<PathB
     newest.map(|(_, p)| p)
 }
 
-/// Check every tracked plugin file for external modification, using two complementary
-/// detection strategies:
-///
-/// 1. **Broken hardlink** (rename-save): the on-disk inode differs from the cache inode.
-///    xEdit's Windows safe-save pattern renames a temp file into place, which creates a
-///    new inode in Data/ while the cache keeps the original.  `xedit_backup_path` is `None`
-///    for these entries (the cache still holds the dirty original, so "Restore from cache"
-///    already works).
-///
-/// 2. **In-place save** (inode unchanged): xEdit overwrites the file without renaming.
-///    Both Data/ and cache share the same (now-cleaned) inode — the inode check finds
-///    nothing. Instead we look for an xEdit backup directory
-///    (`Data/<GameEdit> Backups/<plugin_name>/`) whose presence proves xEdit touched the
-///    plugin.  The most recent backup file is stored in `xedit_backup_path` and can be
-///    used to restore the pre-clean content if needed.
+/// Reinstalling or copying a plugin can break its hardlink without changing content.
+/// Independent copies must differ in content to be reported. Shared inodes retain the
+/// xEdit backup check because an in-place edit changes both the live and cached file.
 pub fn scan_modified_managed_plugins(
     game_id: &str,
     game: &Game,
@@ -270,17 +258,9 @@ pub fn scan_modified_managed_plugins(
             Ok(m) => m,
             Err(_) => continue,
         };
-        let disk_ino = disk_meta.ino();
-        let cache_ino = cache_meta.ino();
-
-        if disk_ino != cache_ino {
-            let should_report = should_report_inode_mismatch(
-                &disk_path,
-                cache_path,
-                &disk_meta,
-                &cache_meta,
-                disk_meta.dev() != cache_meta.dev(),
-            );
+        if disk_meta.dev() != cache_meta.dev() || disk_meta.ino() != cache_meta.ino() {
+            let should_report =
+                should_report_inode_mismatch(&disk_path, cache_path, &disk_meta, &cache_meta);
             match should_report {
                 Ok(true) => {}
                 Ok(false) => continue,
@@ -289,12 +269,10 @@ pub fn scan_modified_managed_plugins(
                     game_rel_original
                 ),
             }
-            // Strategy 1: broken hardlink (rename-save). Cache has the dirty original;
-            // "Restore from cache" works without a backup.
             results.push(ExternalFile {
                 abs_path: disk_path,
                 game_rel: game_rel.clone(),
-                game_rel_original: game_rel.clone(), // already lowercase from DB
+                game_rel_original: game_rel_original.clone(),
                 is_managed_plugin: true,
                 xedit_backup_path: None,
             });
@@ -326,7 +304,7 @@ pub fn scan_modified_managed_plugins(
                 results.push(ExternalFile {
                     abs_path: disk_path,
                     game_rel: game_rel.clone(),
-                    game_rel_original: game_rel.clone(),
+                    game_rel_original: game_rel_original.clone(),
                     is_managed_plugin: true,
                     xedit_backup_path: backup_file,
                 });
@@ -355,12 +333,7 @@ fn should_report_inode_mismatch(
     cache_path: &std::path::Path,
     disk_meta: &std::fs::Metadata,
     cache_meta: &std::fs::Metadata,
-    copied_across_devices: bool,
 ) -> io::Result<bool> {
-    if !copied_across_devices {
-        return Ok(true);
-    }
-
     file_contents_match_with_metadata(disk_path, cache_path, disk_meta, cache_meta)
         .map(|same_content| !same_content)
 }
@@ -405,6 +378,40 @@ mod tests {
 
     use super::{scan_modified_managed_plugins, should_report_inode_mismatch};
 
+    // @variants: both
+    #[test]
+    fn shared_plugins_still_offer_existing_xedit_backups() -> anyhow::Result<()> {
+        let temp = tempdir()?;
+        let game_root = temp.path().join("game");
+        let data_dir = game_root.join("Data");
+        fs::create_dir_all(&data_dir)?;
+        let cache_path = temp.path().join("cache.esp");
+        let live_path = data_dir.join("Example.esp");
+        fs::write(&cache_path, b"original")?;
+        fs::hard_link(&cache_path, &live_path)?;
+        let game = Game {
+            id: "fallout4".into(),
+            title: "Fallout 4".into(),
+            path: game_root,
+            data_subdir: "Data".into(),
+            engine: GameEngine::Bethesda,
+            wine_prefix: None,
+        };
+        let plugins = vec![("example.esp".into(), "Example.esp".into(), cache_path)];
+        assert!(scan_modified_managed_plugins(&game.id, &game, &plugins).is_empty());
+
+        let backup_dir = data_dir.join("FO4Edit Backups/Example.esp/backup");
+        fs::create_dir_all(&backup_dir)?;
+        let backup = backup_dir.join("Example.esp");
+        fs::write(&backup, b"original")?;
+        fs::write(live_path, b"edited in place")?;
+        let modified = scan_modified_managed_plugins(&game.id, &game, &plugins);
+        assert_eq!(modified.len(), 1);
+        assert_eq!(modified[0].xedit_backup_path.as_ref(), Some(&backup));
+        assert_eq!(modified[0].game_rel_original, "Example.esp");
+        Ok(())
+    }
+
     #[test]
     fn copied_managed_plugins_are_not_reported_as_cleaned() -> anyhow::Result<()> {
         let temp = tempdir()?;
@@ -422,7 +429,7 @@ mod tests {
         let cache_meta = fs::metadata(&cache_path)?;
         let disk_meta = fs::metadata(&disk_path)?;
         let unchanged =
-            should_report_inode_mismatch(&disk_path, &cache_path, &disk_meta, &cache_meta, true)?;
+            should_report_inode_mismatch(&disk_path, &cache_path, &disk_meta, &cache_meta)?;
         assert!(
             !unchanged,
             "copy-fallback deployment should remain managed when cache and disk bytes match"
@@ -431,7 +438,7 @@ mod tests {
         fs::write(&disk_path, b"cleaned plugin bytes")?;
         let disk_meta = fs::metadata(&disk_path)?;
         let modified =
-            should_report_inode_mismatch(&disk_path, &cache_path, &disk_meta, &cache_meta, true)?;
+            should_report_inode_mismatch(&disk_path, &cache_path, &disk_meta, &cache_meta)?;
         assert!(
             modified,
             "content changes should still be offered for adoption"
@@ -440,8 +447,10 @@ mod tests {
         Ok(())
     }
 
+    // @variants: both
     #[test]
-    fn same_device_inode_changes_are_reported_without_content_comparison() -> anyhow::Result<()> {
+    fn reinstalling_identical_plugin_content_does_not_report_external_changes() -> anyhow::Result<()>
+    {
         let temp = tempdir()?;
         let game_root = temp.path().join("game");
         let data_dir = game_root.join("Data");
@@ -469,11 +478,16 @@ mod tests {
         )];
 
         let modified = scan_modified_managed_plugins(&game.id, &game, &plugin_files);
-        assert_eq!(
-            modified.len(),
-            1,
-            "same-device inode changes should keep the original hardlink-break detection path"
+        assert!(
+            modified.is_empty(),
+            "an unchanged reinstalled plugin is not an external edit"
         );
+
+        fs::write(&disk_path, b"PLUGIN BYTES")?;
+        let modified = scan_modified_managed_plugins(&game.id, &game, &plugin_files);
+        assert_eq!(modified.len(), 1, "same-size edits must still be detected");
+        assert_eq!(modified[0].game_rel_original, "Example.esp");
+        assert!(modified[0].is_managed_plugin);
 
         Ok(())
     }

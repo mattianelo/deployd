@@ -316,15 +316,21 @@ impl App {
                     .get_vanilla_metadata(&game.id)
                     .await
                     .map_err(|e: anyhow::Error| e.to_string())?;
-                let mut files = detector::scan_external_files(&game, &tracked, &vanilla);
                 let plugin_files = tracker
                     .get_deployed_plugin_files(&game.id)
                     .await
                     .map_err(|e: anyhow::Error| e.to_string())?;
-                let modified_managed =
-                    detector::scan_modified_managed_plugins(&game.id, &game, &plugin_files);
-                files.extend(modified_managed);
-                Ok::<_, String>(files)
+                tokio::task::spawn_blocking(move || {
+                    let mut files = detector::scan_external_files(&game, &tracked, &vanilla);
+                    files.extend(detector::scan_modified_managed_plugins(
+                        &game.id,
+                        &game,
+                        &plugin_files,
+                    ));
+                    files
+                })
+                .await
+                .map_err(|error| format!("External file inspection failed: {error}"))
             }
             .await;
             AppCmdMsg::Mods(crate::app::messages::ModsCmdMsg::ExternalScanDone(result))
