@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Fixed deployment history text being squeezed into single-letter columns by placing
+  Restore and Delete buttons below each entry's details.
+
 - Fixed recovery of older interrupted deployments that recorded a folder as both a parent
   and a mod output with different permissions. Recovery failures no longer advise folder
   reselection as the only remedy.

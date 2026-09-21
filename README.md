@@ -243,10 +243,11 @@ a folder resolves lost access, but does not resolve deployment conflicts.
 
 The header shows the selected editable profile separately from the deployed profile. Open
 **Deploy options → Deployment history** to see retained storage, modification or recovery status,
-restore a generation as a new profile, or delete an unprotected generation. Restoring history does
-not change the game immediately. Live save banks switch only during Deploy, and saves are not part
-of deployment history. External tools require the selected profile to match the deployed
-configuration; after a tool exits, Deployd scans for changes without automatically sorting or
+restore a generation as a new profile, or delete an unprotected generation. Each entry shows its
+name, timestamp and status above its Restore and Delete buttons so the details remain readable.
+Restoring history does not change the game immediately. Live save banks switch only during Deploy,
+and saves are not part of deployment history. External tools require the selected profile to match
+the deployed configuration; after a tool exits, Deployd scans for changes without automatically sorting or
 deploying them. The final Deploy confirmation summarizes file counts without listing internal
 deployment targets. After this version records source identities during a deployment, later
 deployments reuse the retained identities of unchanged mod files so that small library changes do

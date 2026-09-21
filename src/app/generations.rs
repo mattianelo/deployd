@@ -166,9 +166,25 @@ fn show_history(
         list.append(&empty);
     }
     for entry in overview.entries {
-        let row = adw::ActionRow::builder()
-            .title(gtk::glib::markup_escape_text(&entry.name))
-            .subtitle(format!(
+        let content = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(8)
+            .margin_top(12)
+            .margin_bottom(12)
+            .margin_start(12)
+            .margin_end(12)
+            .build();
+        let title = gtk::Label::builder()
+            .label(&entry.name)
+            .xalign(0.0)
+            .wrap(true)
+            .wrap_mode(gtk::pango::WrapMode::WordChar)
+            .selectable(true)
+            .build();
+        title.add_css_class("heading");
+        content.append(&title);
+        let details = gtk::Label::builder()
+            .label(format!(
                 "{}{}{}{}",
                 entry.timestamp,
                 if entry.deployed { " · Deployed" } else { "" },
@@ -179,6 +195,17 @@ fn show_history(
                     ""
                 }
             ))
+            .xalign(0.0)
+            .wrap(true)
+            .wrap_mode(gtk::pango::WrapMode::WordChar)
+            .selectable(true)
+            .build();
+        details.add_css_class("dim-label");
+        content.append(&details);
+        let actions = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(6)
+            .margin_top(4)
             .build();
         let restore = gtk::Button::with_label("Restore as new profile");
         restore.set_valign(gtk::Align::Center);
@@ -206,7 +233,7 @@ fn show_history(
             });
             prompt.present(Some(&parent));
         });
-        row.add_suffix(&restore);
+        actions.append(&restore);
         let delete = gtk::Button::with_label("Delete");
         delete.set_valign(gtk::Align::Center);
         delete.set_sensitive(entry.deletion.is_ok());
@@ -230,7 +257,13 @@ fn show_history(
                 prompt.present(Some(&parent));
             });
         }
-        row.add_suffix(&delete);
+        actions.append(&delete);
+        content.append(&actions);
+        let row = gtk::ListBoxRow::builder()
+            .child(&content)
+            .activatable(false)
+            .selectable(false)
+            .build();
         list.append(&row);
     }
     let scroll = gtk::ScrolledWindow::builder()
