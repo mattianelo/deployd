@@ -49,7 +49,14 @@ pub(super) async fn retain(
         for file in &prepared.snapshot.files {
             control.check()?;
             let identity = history
-                .retain(prepared.source(&file.relative), control.clone())
+                .retain_expected(
+                    prepared.source(&file.relative),
+                    Identity {
+                        size: file.size,
+                        sha256: file.sha256.clone(),
+                    },
+                    control.clone(),
+                )
                 .await?;
             ensure!(
                 identity.sha256 == file.sha256 && identity.size == file.size,
@@ -252,7 +259,7 @@ async fn activation(
             let expected = Identity { size, sha256 };
             ensure!(
                 history
-                    .retain(prepared.source(&path), control.clone())
+                    .retain_expected(prepared.source(&path), expected.clone(), control.clone())
                     .await?
                     == expected,
                 "Prepared MELE restoration output changed"
@@ -287,7 +294,11 @@ async fn activation(
                 };
                 ensure!(
                     history
-                        .retain(game.path.join(&file.relative), control.clone())
+                        .retain_expected(
+                            game.path.join(&file.relative),
+                            expected.clone(),
+                            control.clone()
+                        )
                         .await?
                         == expected,
                     "Previously managed MELE file changed during preparation"

@@ -159,6 +159,36 @@ impl Store {
     }
 
     pub(super) fn retain(&self, source: &Path, control: &Control) -> Result<Identity> {
+        self.retain_checked(source, None, control)
+    }
+
+    pub(super) fn retain_expected(
+        &self,
+        source: &Path,
+        expected: &Identity,
+        control: &Control,
+    ) -> Result<Identity> {
+        control.check()?;
+        expected.validate()?;
+        if self.contains(expected)? {
+            ensure!(
+                content::inspect(source, control)? == *expected,
+                "Source no longer matches prepared content: {}",
+                source.display()
+            );
+            self.verify(expected, control)?;
+            control.check()?;
+            return Ok(expected.clone());
+        }
+        self.retain_checked(source, Some(expected), control)
+    }
+
+    fn retain_checked(
+        &self,
+        source: &Path,
+        expected: Option<&Identity>,
+        control: &Control,
+    ) -> Result<Identity> {
         self.check()?;
         let staging = self.root.join("staging");
         directory(&staging)?;
@@ -171,6 +201,11 @@ impl Store {
             .create_new(true)
             .open(&path)?;
         let identity = content::transfer(source, &mut file, control)?;
+        ensure!(
+            expected.is_none_or(|expected| *expected == identity),
+            "Source no longer matches prepared content: {}",
+            source.display()
+        );
         self.publish(temporary, file, identity, control)
     }
 
@@ -278,3 +313,6 @@ impl Store {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

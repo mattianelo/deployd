@@ -214,6 +214,26 @@ impl History {
         Ok(identity)
     }
 
+    pub(super) async fn retain_expected(
+        &self,
+        source: PathBuf,
+        expected: Identity,
+        control: Control,
+    ) -> Result<Identity> {
+        let store = self.store.clone();
+        let identity = self
+            .lease
+            .blocking(move || store.retain_expected(&source, &expected, &control))
+            .await
+            .context("Prepared content retention worker stopped")??;
+        self.register(&std::collections::BTreeMap::from([(
+            identity.sha256.clone(),
+            identity.size,
+        )]))
+        .await?;
+        Ok(identity)
+    }
+
     pub(super) async fn publish(
         &self,
         tx: &mut Transaction<'_, Sqlite>,

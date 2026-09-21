@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Reduced repeat MELE deployment writes by reusing verified files already retained in
+  deployment history without creating duplicate temporary history copies.
 - Fixed MELE Deploy preparation rejecting Deployd's required AutoTOC ASI and runtime DLLs when
   retaining deployment history.
 - Fixed archive detection missing short Nexus mod IDs, including the MELE community patches.
