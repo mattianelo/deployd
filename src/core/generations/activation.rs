@@ -414,7 +414,7 @@ async fn prepare_files(
         .await?
         .len();
     let deployed = history.tracker.get_deployed_files(&game.id).await?;
-    let directories = deployed
+    let mut directories = deployed
         .iter()
         .filter(|file| file.game_rel_original.ends_with('/'))
         .map(|file| Target::file(&game.engine, &file.game_rel_original))
@@ -433,11 +433,13 @@ async fn prepare_files(
         .iter()
         .map(|file| key(&Target::file(&game.engine, &file.game_rel_original)?))
         .collect::<Result<BTreeSet<_>>>()?;
+    let mut parents = BTreeSet::new();
     for file in deployed {
         let target = Target::file(&game.engine, &file.game_rel_original)?;
         if desired_keys.contains(&key(&target)?) {
             continue;
         }
+        parents.extend(deployment_parents(&target));
         let before = if let Some(backup) = history
             .tracker
             .get_vanilla_backup(&game.id, &file.game_rel_lowercase)
@@ -459,6 +461,47 @@ async fn prepare_files(
             retained_file(history, backup, control.clone()).await?,
         );
     }
+    let directory_game = game.clone();
+    let directory_control = control.clone();
+    let (desired, directories) = history
+        .lease
+        .blocking(move || -> Result<_> {
+            let mut paths = desired
+                .keys()
+                .map(|target| {
+                    target
+                        .resolve(&directory_game)
+                        .map(|path| path.to_string_lossy().to_lowercase())
+                })
+                .collect::<Result<BTreeSet<_>>>()?;
+            let data = game::deploy_dir(&directory_game)
+                .to_string_lossy()
+                .to_lowercase();
+            for target in parents {
+                directory_control.check()?;
+                let path = target.resolve(&directory_game)?;
+                let key = path.to_string_lossy().to_lowercase();
+                if key == data || !paths.insert(key) {
+                    continue;
+                }
+                match std::fs::symlink_metadata(&path) {
+                    Ok(metadata) if metadata.is_dir() => {
+                        directories.insert(target.clone());
+                        desired.insert(target, Node::Absent);
+                    }
+                    Ok(_) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => {
+                        return Err(error).with_context(|| {
+                            format!("Cannot inspect deployment parent '{}'", path.display())
+                        });
+                    }
+                }
+            }
+            Ok((desired, directories))
+        })
+        .await
+        .context("Deployment parent inspection worker stopped")??;
     let journal = Journal::prepare(
         history,
         game,
@@ -507,6 +550,25 @@ async fn prepare_files(
         .len()
         .saturating_sub(backups_before);
     Ok((journal, backed_up))
+}
+
+fn deployment_parents(target: &Target) -> Vec<Target> {
+    let mut target = target.clone();
+    let mut parents = Vec::new();
+    while let Target::Bethesda { path, .. }
+    | Target::Aurora { path, .. }
+    | Target::Eclipse { path, .. }
+    | Target::Redengine { path, .. }
+    | Target::MassEffect { path }
+    | Target::MeleLauncher { path } = &mut target
+    {
+        let Some((parent, _)) = path.rsplit_once('/') else {
+            break;
+        };
+        *path = parent.to_owned();
+        parents.push(target.clone());
+    }
+    parents
 }
 
 fn preserve_vanilla_directories(
@@ -669,10 +731,71 @@ mod tests {
     use super::*;
 
     // @variants: both
+    #[test]
+    fn directory_cleanup_preserves_each_engine_anchor() -> Result<()> {
+        for (engine, recorded, expected) in [
+            (
+                GameEngine::Bethesda,
+                "Textures/Nested/File.bin",
+                vec!["Textures/Nested", "Textures"],
+            ),
+            (
+                GameEngine::Bethesda,
+                "../Tools/Nested/File.bin",
+                vec!["../Tools/Nested", "../Tools"],
+            ),
+            (
+                GameEngine::Aurora,
+                "../system/Mods/File.bin",
+                vec!["../system/Mods", "../system"],
+            ),
+            (
+                GameEngine::Aurora,
+                "../launcher/Mods/File.bin",
+                vec!["../launcher/Mods", "../launcher"],
+            ),
+            (
+                GameEngine::Aurora,
+                "../register/Mods/File.bin",
+                vec!["../register/Mods", "../register"],
+            ),
+            (
+                GameEngine::Eclipse,
+                "~docs~/Mods/Nested/File.bin",
+                vec!["~docs~/Mods/Nested", "~docs~/Mods"],
+            ),
+            (
+                GameEngine::REDEngine,
+                "Mods/Nested/File.bin",
+                vec!["Mods/Nested", "Mods"],
+            ),
+        ] {
+            let target = Target::file(&engine, recorded)?;
+            let parents = deployment_parents(&target);
+            assert_eq!(
+                parents
+                    .iter()
+                    .map(Target::recorded)
+                    .collect::<Result<Vec<_>>>()?,
+                expected
+            );
+            for parent in parents {
+                parent.validate(&engine)?;
+            }
+        }
+        assert!(Target::file(&GameEngine::Bethesda, "~docs~/Mods/File.bin").is_err());
+        assert!(Target::file(&GameEngine::Eclipse, "../Mods/File.bin").is_err());
+        assert!(deployment_parents(&Target::PluginControl { slot: 0 }).is_empty());
+        assert!(deployment_parents(&Target::CustomIni { slot: 0 }).is_empty());
+        Ok(())
+    }
+
+    // @variants: both
     #[tokio::test]
     async fn purge_removes_empty_directories_and_preserves_vanilla_contents() -> Result<()> {
-        for prefix in ["", "../"] {
-            for vanilla in [false, true] {
+        for prefix in ["", "../", "../Data/"] {
+            for (vanilla, explicit) in [(false, false), (false, true), (true, false), (true, true)]
+            {
                 let temp = tempfile::tempdir()?;
                 let (tracker, game, _) = super::super::tests::snapshot_fixture(temp.path()).await?;
                 fs::create_dir_all(game.data_dir())?;
@@ -688,6 +811,8 @@ mod tests {
                     "Textures/Nested/",
                     "Textures/Nested/Managed.bin",
                 ]
+                .into_iter()
+                .filter(|relative| explicit || !relative.ends_with('/'))
                 .map(|relative| {
                     let original = format!("{prefix}{relative}");
                     ModFile {
@@ -696,7 +821,8 @@ mod tests {
                         game_rel_original: original,
                         cache_path: temp.path().join("winner/file.txt").display().to_string(),
                     }
-                });
+                })
+                .collect::<Vec<_>>();
                 tracker.record_deployed_files(&game.id, &files).await?;
                 let history = History::open(&tracker, &game.id, temp.path(), true).await?;
                 let (journal, _) =
@@ -706,6 +832,8 @@ mod tests {
                     .await?;
                 journal.apply(&history, &game, Control::default()).await?;
                 assert!(!nested.join("Managed.bin").exists());
+                assert!(game.path.is_dir());
+                assert!(game.data_dir().is_dir());
                 assert_eq!(nested.exists(), vanilla);
                 assert_eq!(nested.parent().context("Missing parent")?.exists(), vanilla);
                 if vanilla {
@@ -850,16 +978,13 @@ mod tests {
             let (tracker, mut game, profile) =
                 super::super::tests::snapshot_fixture(temp.path()).await?;
             game.engine = GameEngine::Aurora;
-            fs::create_dir_all(game.path.join("data"))?;
+            fs::create_dir_all(game.path.join("data/Unrelated"))?;
             let cached_directory = temp.path().join("winner/Nested");
             fs::create_dir(&cached_directory)?;
-            sqlx::query("INSERT INTO mod_files(mod_id,game_rel_lowercase,game_rel_original,cache_path) VALUES ('winner','nested/','Nested/',?)")
-                .bind(cached_directory.to_string_lossy().as_ref())
-                .execute(&tracker.pool)
-                .await?;
-            let cached_file = cached_directory.join("Managed.bin");
+            fs::create_dir(cached_directory.join("Inner"))?;
+            let cached_file = cached_directory.join("Inner/Managed.bin");
             fs::write(&cached_file, b"managed")?;
-            sqlx::query("INSERT INTO mod_files(mod_id,game_rel_lowercase,game_rel_original,cache_path) VALUES ('winner','nested/managed.bin','Nested/Managed.bin',?)")
+            sqlx::query("INSERT INTO mod_files(mod_id,game_rel_lowercase,game_rel_original,cache_path) VALUES ('winner','nested/inner/managed.bin','Nested/Inner/Managed.bin',?)")
                 .bind(cached_file.to_string_lossy().as_ref())
                 .execute(&tracker.pool)
                 .await?;
@@ -900,12 +1025,13 @@ mod tests {
             .await?;
             purge.activate(Control::default()).await?;
             assert!(!live.exists());
+            assert!(game.path.join("data/Unrelated").is_dir());
             if keep_vanilla {
                 assert_eq!(fs::read(&vanilla)?, b"vanilla");
             } else {
                 assert!(!game.path.join("data/Nested").exists());
             }
-            assert!(!game.path.join("data/Nested/Managed.bin").exists());
+            assert!(!game.path.join("data/Nested/Inner").exists());
             assert!(tracker.get_deployed_files(&game.id).await?.is_empty());
             let history = History::open(&tracker, &game.id, temp.path(), false).await?;
             let retained = history.load(&id).await?;

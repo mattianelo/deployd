@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Purge now removes empty parent folders left behind by deployed mod files, even
+  when those folders were not listed separately in the mod.
+
 - Fixed Purge rolling back with a misleading restore-access error after removing
   empty managed directories.
 

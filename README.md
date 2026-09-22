@@ -362,7 +362,8 @@ hardlinks from the mod cache; MELE rebuilds its managed installation using separ
 - **Purge** — removes managed mod files and restores backed-up originals
 
 Purge treats untracked files as vanilla and leaves them in place. It removes managed
-directories only when they become empty, including nested managed directories.
+directories only when they become empty, including parent folders created for mod
+files. Unrelated folders and deployment roots are left in place.
 
 For games other than MELE, when a deployment will replace files supplied by the game, Deployd shows
 the affected paths before making changes. **Protect vanilla game files** is enabled by default and
