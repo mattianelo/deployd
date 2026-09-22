@@ -421,7 +421,7 @@ pub(super) fn build_model(
             ]),
             override_list: gtk::ListBox::new(),
             override_mod_ids: HashSet::new(),
-            override_order_saving: false,
+            override_saving: false,
             header,
             bottom_status,
             archive_drop: gtk::DropTarget::new(

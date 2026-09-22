@@ -9,25 +9,31 @@ impl App {
         let query = self.shell.search_text.to_lowercase();
         let empty = query.is_empty();
 
-        if self.shell.search_scope == SearchScope::All
-            || self.shell.search_scope == SearchScope::ModOrder
         {
+            let searches_mods = matches!(
+                self.shell.search_scope,
+                SearchScope::All | SearchScope::ModOrder
+            );
+            let dao = self.game_shows_overrides();
             let mod_filter = self.mods.filter;
-            let no_filter = empty && matches!(mod_filter, ModFilter::All);
+            let no_filter = (!searches_mods || empty) && matches!(mod_filter, ModFilter::All);
             let mut in_collapsed_group = false;
             let mut guard = self.mods.rows.guard();
             for i in 0..guard.len() {
                 if let Some(row) = guard.get_mut(i) {
                     if row.is_separator() {
                         in_collapsed_group = row.is_collapsed();
-                        // Hide separators when search or filter chip is active.
-                        row.visible = no_filter;
+                        row.visible = no_filter && !dao;
+                    } else if dao
+                        && row
+                            .mod_id()
+                            .is_some_and(|id| self.ui.override_mod_ids.contains(id))
+                    {
+                        row.visible = false;
                     } else if no_filter {
-                        // No active search/filter: respect group collapse state.
-                        row.visible = !in_collapsed_group;
+                        row.visible = dao || !in_collapsed_group;
                     } else {
-                        // Search or filter active: show all matching mods regardless of group.
-                        let name_match = empty || row.matches_search(&query);
+                        let name_match = !searches_mods || empty || row.matches_search(&query);
                         let filter_match = match mod_filter {
                             ModFilter::All => true,
                             ModFilter::Enabled => {

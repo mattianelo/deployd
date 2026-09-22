@@ -30,6 +30,7 @@ pub(super) struct PlannedFile {
 
 pub(super) fn route_and_plan(
     file_list: Vec<(PathBuf, PathBuf)>,
+    dazip_sources: &[super::DazipSource],
     game: &Game,
     mod_name: &str,
     stripped_wrapper: Option<&str>,
@@ -44,6 +45,24 @@ pub(super) fn route_and_plan(
         &game.data_subdir,
         excluded_files,
     );
+    let file_list = file_list
+        .into_iter()
+        .map(|(source, destination)| {
+            let destination = dazip_sources
+                .iter()
+                .filter(|_| {
+                    destination.components().any(|part| {
+                        Path::new(part.as_os_str())
+                            .extension()
+                            .is_some_and(|extension| extension.eq_ignore_ascii_case("dazip"))
+                    })
+                })
+                .find_map(|root| source.strip_prefix(&root.root).ok())
+                .map(Path::to_path_buf)
+                .unwrap_or(destination);
+            (source, destination)
+        })
+        .collect();
     let handler = crate::core::game::engine_handler::handler_for(&game.engine);
     let file_list =
         handler.route_file_list(game, mod_name, stripped_wrapper, file_list, file_targets)?;

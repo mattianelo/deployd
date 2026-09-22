@@ -30,8 +30,13 @@
 - Fixed switching games temporarily showing empty mod and plugin panels while checking game files.
   Saved lists now appear before verification finishes, with a visible checking indicator.
 
-- Show DAO override packages with ordering controls synchronized with Mod Order. Witcher games,
-  Mass Effect and Cyberpunk now use one mod panel; Mass Effect omits file-conflict indicators.
+- Fixed Dragon Age: Origins panels to manage DAZIP add-ins and loose Override mods separately.
+  Mixed archives split into independent entries, with DAZIP-owned resources kept together.
+  Override entries now have enable/disable, properties, reinstall and removal actions instead
+  of duplicate Mod Order controls. Reinstalling a component preserves its sibling entries
+  and profile settings. Existing mixed installations can be split by reinstalling them.
+- Witcher games, Mass Effect and Cyberpunk now use one mod panel; Mass Effect omits file-conflict
+  indicators.
 - Simplified deployment progress to one bar advancing through the operation's stages.
 - Added cache-move progress dialogs and immediate list refresh after moving or resetting a cache.
 - Preserve the selected game when saving Manage Games or changing the game list. Downloads for

@@ -68,6 +68,7 @@ impl App {
         overrides: &HashMap<String, OverrideInfo>,
     ) {
         let show_conflicts = self.game_shows_conflicts();
+        let show_priority = !self.game_shows_overrides();
         self.mods.selected.clear();
         let mut sorted_groups = groups.to_vec();
         sorted_groups.sort_by(|a, b| {
@@ -121,16 +122,21 @@ impl App {
             };
 
             let info = show_conflicts.then(|| overrides.get(&m.id)).flatten();
-            let reinstall_from_file = m
-                .archive_path
-                .as_ref()
-                .map(|p| !std::path::Path::new(p).starts_with(&self.download.directory))
-                .unwrap_or(false);
+            let reinstall_from_file = m.archive_path.is_some()
+                && (!show_priority
+                    || m.archive_path
+                        .as_ref()
+                        .map(|p| !std::path::Path::new(p).starts_with(&self.download.directory))
+                        .unwrap_or(false));
             mod_display_idx += 1;
             guard.push_back(ModListItemInit {
                 kind: ModListItemKind::Mod(Box::new(ModRowInit {
                     mod_entry: m,
-                    priority_label: format!("#{mod_display_idx}"),
+                    priority_label: if show_priority {
+                        format!("#{mod_display_idx}")
+                    } else {
+                        String::new()
+                    },
                     overrides: info.map_or(0, |i| i.overrides),
                     overridden_by: info.map_or(0, |i| i.overridden_by),
                     override_files: info.map_or_else(Vec::new, |i| i.override_files.clone()),
@@ -435,6 +441,7 @@ impl App {
 
     /// Update the `#N` priority labels for all mod rows in-place after a reorder.
     pub(crate) fn refresh_priority_labels(&mut self) {
+        let show_priority = !self.game_shows_overrides();
         let mut count = 0usize;
         let mut guard = self.mods.rows.guard();
         let len = guard.len();
@@ -443,7 +450,11 @@ impl App {
                 && let crate::ui::mod_list::ModListItemKind::Mod(ref mut init) = item.kind
             {
                 count += 1;
-                init.priority_label = format!("#{count}");
+                init.priority_label = if show_priority {
+                    format!("#{count}")
+                } else {
+                    String::new()
+                };
             }
         }
         drop(guard);

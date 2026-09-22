@@ -16,6 +16,7 @@ pub(crate) enum PrepareResult {
         tmp_dir: TempDir,
     },
     Normal {
+        dazip_sources: Vec<crate::core::installer::DazipSource>,
         file_list: Vec<(PathBuf, PathBuf)>,
         /// Original wrapper dir name stripped by detect_wrapper (e.g. `"modSkipMovies"`).
         /// Used by REDEngine path fixups to preserve the archive's folder name under `Mods/`.
@@ -23,6 +24,7 @@ pub(crate) enum PrepareResult {
         tmp_dir: TempDir,
     },
     Fomod {
+        dazip_sources: Vec<crate::core::installer::DazipSource>,
         config: fomod_resolver::FomodUiConfig,
         config_path: PathBuf,
         tmp_dir: TempDir,
@@ -84,13 +86,17 @@ pub(crate) async fn prepare_mod(
             });
         }
 
-        if is_dazip {
-            dazip::process_dazip_root(extracted_root, &stem)
+        let dazip_sources = if is_dazip {
+            let uid = dazip::process_dazip_root(extracted_root, &stem)
                 .context("Failed to process dazip archive")?;
+            vec![super::DazipSource {
+                root: extracted_root.to_path_buf(),
+                key: format!("dazip:{uid}"),
+            }]
         } else {
             dazip::expand_dazip_files_in_place(extracted_root)
-                .context("Failed to expand nested .dazip files")?;
-        }
+                .context("Failed to expand nested .dazip files")?
+        };
 
         if let Some(config_path) = fomod_resolver::detect_fomod(extracted_root) {
             dlog!("[deployd] FOMOD detected: {}", config_path.display());
@@ -102,6 +108,7 @@ pub(crate) async fn prepare_mod(
                 config.steps.len()
             );
             Ok(PrepareResult::Fomod {
+                dazip_sources,
                 config,
                 config_path,
                 tmp_dir,
@@ -111,6 +118,7 @@ pub(crate) async fn prepare_mod(
                 .context("Failed to resolve file list from extracted archive")?;
             dlog!("[deployd] normal mod: {} files resolved", file_list.len());
             Ok(PrepareResult::Normal {
+                dazip_sources,
                 file_list,
                 stripped_wrapper,
                 tmp_dir,

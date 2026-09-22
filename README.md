@@ -141,8 +141,12 @@ content before adding the game. Mod deployment does not edit saves.
 
 Deployd uses libadwaita throughout its primary workflows:
 
-- Bethesda games show Mod Order and Plugin Order side by side. Dragon Age: Origins shows an
-  **Overrides** panel: move override mods earlier or later to update their priority in Mod Order.
+- Bethesda games show Mod Order and Plugin Order side by side. Dragon Age: Origins has separate
+  **DAZIPs & Tools** and **Overrides** panels. Mixed archives create independent entries for each DAZIP
+  and for loose Override resources; files shipped inside a DAZIP remain with that add-in.
+  Enable, disable, inspect, reinstall, or remove Override entries from their own panel, then
+  **Deploy** to apply changes. Reinstalling one component keeps the other components unchanged.
+  Existing mixed installations keep their files until reinstalled to split them.
   The Witcher games, Mass Effect and Cyberpunk use a single mod list. Mass Effect omits file-conflict
   indicators because its managed deployment handles those files.
 - Switching games shows the saved mod and plugin lists while game-file checks finish in the

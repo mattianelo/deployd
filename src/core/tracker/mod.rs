@@ -3,6 +3,7 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePo
 use std::str::FromStr;
 
 pub mod downloads;
+pub(crate) mod eclipse_packages;
 pub mod files;
 pub mod games;
 mod generations;
@@ -91,6 +92,16 @@ impl Tracker {
                 installed_at TEXT,
                 enabled BOOLEAN DEFAULT TRUE,
                 priority INTEGER DEFAULT 0
+            )",
+        )
+        .execute(&pool)
+        .await?;
+
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS eclipse_packages (
+                mod_id TEXT PRIMARY KEY REFERENCES mods(id) ON DELETE CASCADE,
+                kind TEXT NOT NULL CHECK(kind IN ('dazip', 'override', 'other')),
+                source_key TEXT NOT NULL
             )",
         )
         .execute(&pool)

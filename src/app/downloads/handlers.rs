@@ -465,6 +465,7 @@ impl App {
                         bundled_launcher,
                         tmp_dir,
                     } => Ok(PrepareResultMsg::Normal {
+                        dazip_sources: Default::default(),
                         file_list: Vec::new(),
                         stripped_wrapper: None,
                         mele: Some(plan),
@@ -475,10 +476,12 @@ impl App {
                         archive_path: archive_path_str,
                     }),
                     PrepareResult::Normal {
+                        dazip_sources,
                         file_list,
                         stripped_wrapper,
                         tmp_dir,
                     } => Ok(PrepareResultMsg::Normal {
+                        dazip_sources,
                         mele: None,
                         mele_bundled_launcher: None,
                         file_list,
@@ -489,10 +492,12 @@ impl App {
                         archive_path: archive_path_str,
                     }),
                     PrepareResult::Fomod {
+                        dazip_sources,
                         config,
                         config_path,
                         tmp_dir,
                     } => Ok(PrepareResultMsg::Fomod {
+                        dazip_sources,
                         config,
                         config_path,
                         tmp_dir,

@@ -42,7 +42,15 @@ impl App {
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
-        let idx = index.current_index();
+        self.open_mod_properties_at(index.current_index(), root, sender);
+    }
+
+    pub(crate) fn open_mod_properties_at(
+        &mut self,
+        idx: usize,
+        root: &adw::ApplicationWindow,
+        sender: &ComponentSender<Self>,
+    ) {
         let (
             mod_entry,
             override_files,

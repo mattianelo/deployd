@@ -70,6 +70,9 @@ impl App {
         to: usize,
         sender: &ComponentSender<Self>,
     ) {
+        if self.game_shows_overrides() {
+            return;
+        }
         if self.mods.selection_active
             && self.mods.selected.len() > 1
             && self.mods.selected.contains(&from)
@@ -112,6 +115,9 @@ impl App {
         to: usize,
         sender: &ComponentSender<Self>,
     ) {
+        if self.game_shows_overrides() {
+            return;
+        }
         let mut guard = self.mods.rows.guard();
         let len = guard.len();
         if from >= len || to > len {
@@ -186,6 +192,9 @@ impl App {
         to: usize,
         sender: &ComponentSender<Self>,
     ) {
+        if self.game_shows_overrides() {
+            return;
+        }
         let len = self.mods.rows.guard().len();
         let selected: Vec<usize> = {
             let guard = self.mods.rows.guard();
@@ -261,6 +270,10 @@ impl App {
     }
 
     pub(crate) fn handle_enable_all_mods(&mut self, sender: &ComponentSender<Self>) {
+        if self.game_shows_overrides() {
+            self.set_dao_panel_enabled(true, false, sender);
+            return;
+        }
         let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
@@ -324,6 +337,10 @@ impl App {
     }
 
     pub(crate) fn handle_disable_all_mods(&mut self, sender: &ComponentSender<Self>) {
+        if self.game_shows_overrides() {
+            self.set_dao_panel_enabled(false, false, sender);
+            return;
+        }
         let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
@@ -664,7 +681,10 @@ impl App {
         index: DynamicIndex,
         sender: &ComponentSender<Self>,
     ) {
-        let idx = index.current_index();
+        self.reinstall_mod_at(index.current_index(), sender);
+    }
+
+    pub(crate) fn reinstall_mod_at(&mut self, idx: usize, sender: &ComponentSender<Self>) {
         let archive_path = {
             let guard = self.mods.rows.guard();
             let Some(row) = guard.get(idx) else { return };
@@ -684,6 +704,12 @@ impl App {
             ));
             return;
         }
+        if self.game_shows_overrides()
+            && let Some(entry) = self.mods.rows.get(idx).and_then(|row| row.mod_row())
+        {
+            self.install.replacement =
+                Some(self.replacement_context(&entry.mod_entry.id, entry.mod_entry.priority));
+        }
         self.install.reinstalling = true;
         sender.input(AppMsg::Install(
             crate::app::messages::InstallMsg::FileChosen(path),
@@ -691,6 +717,7 @@ impl App {
     }
 
     pub(crate) fn handle_enter_mod_selection_mode(&mut self) {
+        let allow_drag = !self.game_shows_overrides();
         self.mods.selection_active = true;
         self.mods.selection_dirty = false;
         self.mods.selected.clear();
@@ -698,7 +725,7 @@ impl App {
         for item in g.iter_mut() {
             item.selection_mode = true;
             item.selected = false;
-            item.drag_enabled.set(true);
+            item.drag_enabled.set(allow_drag);
         }
     }
 
@@ -749,6 +776,10 @@ impl App {
     }
 
     pub(crate) fn handle_enable_selected_mods(&mut self, sender: &ComponentSender<Self>) {
+        if self.game_shows_overrides() {
+            self.set_dao_panel_enabled(true, true, sender);
+            return;
+        }
         if self.mods.selected.is_empty() {
             return;
         }
@@ -820,6 +851,10 @@ impl App {
     }
 
     pub(crate) fn handle_disable_selected_mods(&mut self, sender: &ComponentSender<Self>) {
+        if self.game_shows_overrides() {
+            self.set_dao_panel_enabled(false, true, sender);
+            return;
+        }
         if self.mods.selected.is_empty() {
             return;
         }

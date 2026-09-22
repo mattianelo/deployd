@@ -154,6 +154,24 @@ impl App {
         mod_name: &str,
         mod_archive_hash: Option<&str>,
     ) -> Vec<DownloadEntry> {
+        if self.game_shows_overrides()
+            && self
+                .mods
+                .rows
+                .iter()
+                .filter_map(|row| row.mod_row())
+                .any(|row| {
+                    mod_archive_hash
+                        .is_some_and(|hash| row.mod_entry.archive_hash.as_deref() == Some(hash))
+                        || nexus_ids.is_some_and(|(mid, fid)| {
+                            fid != 0
+                                && row.mod_entry.nexus_mod_id == Some(mid)
+                                && row.mod_entry.nexus_file_id == Some(fid)
+                        })
+                })
+        {
+            return Vec::new();
+        }
         // When nexus_file_id == 0 (disk-scanned sentinel, file ID unknown), multiple archives
         // from the same Nexus mod page all share (mod_id, 0). When a mod_archive_hash is
         // available we use it as an exact tiebreaker. Without a hash we fall back to

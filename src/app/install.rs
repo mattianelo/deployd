@@ -132,6 +132,9 @@ impl App {
     }
 
     pub(crate) fn handle_file_chosen(&mut self, path: PathBuf, sender: &ComponentSender<Self>) {
+        if !self.install.reinstalling {
+            self.install.replacement = None;
+        }
         let mod_name = path
             .file_stem()
             .unwrap_or_default()
@@ -230,6 +233,7 @@ impl App {
                         bundled_launcher,
                         tmp_dir,
                     } => Ok(PrepareResultMsg::Normal {
+                        dazip_sources: Default::default(),
                         file_list: Vec::new(),
                         stripped_wrapper: None,
                         mele: Some(plan),
@@ -240,10 +244,12 @@ impl App {
                         archive_path,
                     }),
                     PrepareResult::Normal {
+                        dazip_sources,
                         file_list,
                         stripped_wrapper,
                         tmp_dir,
                     } => Ok(PrepareResultMsg::Normal {
+                        dazip_sources,
                         mele: None,
                         mele_bundled_launcher: None,
                         file_list,
@@ -254,10 +260,12 @@ impl App {
                         archive_path,
                     }),
                     PrepareResult::Fomod {
+                        dazip_sources,
                         config,
                         config_path,
                         tmp_dir,
                     } => Ok(PrepareResultMsg::Fomod {
+                        dazip_sources,
                         config,
                         config_path,
                         tmp_dir,
@@ -409,19 +417,6 @@ impl App {
         let Some(original_file_list) = pending.file_list else {
             return;
         };
-        // Re-scan the staging dir to pick up any modifications the user made
-        // after initial extraction (e.g. moving files into a system/ subfolder).
-        let file_list = {
-            let rescanned = installer::rescan_staged_files(
-                pending.tmp_dir.path(),
-                pending.stripped_wrapper.as_deref(),
-            );
-            if rescanned.is_empty() {
-                original_file_list
-            } else {
-                rescanned
-            }
-        };
         let Some(tracker) = self.session.tracker.clone() else {
             return;
         };
@@ -455,6 +450,19 @@ impl App {
         };
         sender.oneshot_command(async move {
             let result: Result<AddResult, String> = async {
+                let staging_root = pending.tmp_dir.path().to_path_buf();
+                let wrapper = pending.stripped_wrapper.clone();
+                let file_list = tokio::task::spawn_blocking(move || {
+                    let rescanned =
+                        installer::rescan_staged_files(&staging_root, wrapper.as_deref());
+                    if rescanned.is_empty() {
+                        original_file_list
+                    } else {
+                        rescanned
+                    }
+                })
+                .await
+                .map_err(|error| format!("Could not scan staged mod files: {error}"))?;
                 let archive_label = pending
                     .archive_path
                     .clone()
@@ -465,6 +473,11 @@ impl App {
                 );
                 let timing_start = std::time::Instant::now();
                 let mut result = installer::add_mod_with_file_list(installer::AddModRequest {
+                    merging: false,
+                    replacing: replace_info
+                        .as_ref()
+                        .map(|replacement| replacement.mod_id.as_str()),
+                    dazip_sources: &pending.dazip_sources,
                     file_list,
                     game: &pending.game,
                     mod_name: &pending.mod_name,
@@ -487,7 +500,9 @@ impl App {
                     Some(result.files_cached),
                 );
                 drop(pending.tmp_dir);
-                if let Some(replacement) = replace_info.as_ref() {
+                if let Some(replacement) = replace_info.as_ref()
+                    && pending.game.engine != crate::models::game::GameEngine::Eclipse
+                {
                     let old_id = &replacement.mod_id;
                     let old_priority = replacement.priority;
                     tracker
@@ -704,6 +719,11 @@ impl App {
                 );
                 let timing_start = std::time::Instant::now();
                 let mut result = installer::add_mod_with_file_list(installer::AddModRequest {
+                    merging: false,
+                    replacing: replace_info
+                        .as_ref()
+                        .map(|replacement| replacement.mod_id.as_str()),
+                    dazip_sources: &pending.dazip_sources,
                     file_list,
                     game: &pending.game,
                     mod_name: &pending.mod_name,
@@ -731,12 +751,17 @@ impl App {
                 );
                 let json = serde_json::to_string(&serialized_selections)
                     .map_err(|error| error.to_string())?;
-                tracker
-                    .save_fomod_selections(&result.mod_entry.id, &json)
-                    .await
-                    .map_err(|error| error.to_string())?;
+                for entry in std::iter::once(&result.mod_entry).chain(result.additional_mods.iter())
+                {
+                    tracker
+                        .save_fomod_selections(&entry.id, &json)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                }
                 drop(pending.tmp_dir);
-                if let Some(replacement) = replace_info.as_ref() {
+                if let Some(replacement) = replace_info.as_ref()
+                    && pending.game.engine != crate::models::game::GameEngine::Eclipse
+                {
                     let old_id = &replacement.mod_id;
                     let old_priority = replacement.priority;
                     tracker
@@ -909,6 +934,10 @@ impl App {
                     throttled_install_progress(progress_sender, identity.clone(), "Caching"),
                 );
                 let count = installer::merge_files_into_mod(installer::MergeModRequest {
+                    archive_hash: pending.archive_hash,
+                    archive_path: pending.archive_path,
+                    nexus_ids: pending.nexus_ids,
+                    dazip_sources: &pending.dazip_sources,
                     file_list,
                     game: &pending.game,
                     mod_name: &mod_name,

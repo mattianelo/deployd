@@ -1,30 +1,16 @@
 use adw::prelude::*;
 use relm4::prelude::*;
 
-use crate::models::game::GameEngine;
-
 use super::App;
 use super::messages::{AppCmdMsg, AppMsg, ModsCmdMsg, ModsMsg};
 
-pub(super) fn is_override(engine: &GameEngine, path: &str) -> bool {
-    *engine == GameEngine::Eclipse
-        && path
-            .to_ascii_lowercase()
-            .starts_with("packages/core/override/")
-}
-
-fn reordered_priorities(ids: &[String], first: &str, second: &str) -> Option<Vec<(String, i32)>> {
-    let a = ids.iter().position(|id| id == first)?;
-    let b = ids.iter().position(|id| id == second)?;
-    let mut reordered = ids.to_vec();
-    reordered.swap(a, b);
-    Some(
-        reordered
-            .into_iter()
-            .enumerate()
-            .map(|(index, id)| (id, index as i32))
-            .collect(),
-    )
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum OverrideAction {
+    Toggle,
+    Properties,
+    Reinstall,
+    Remove,
+    RemoveConfirmed,
 }
 
 impl App {
@@ -32,7 +18,7 @@ impl App {
         let labels: &[&str] = if self.game_shows_plugins() {
             &["All", "Mod Order", "Plugin Order", "Downloads"]
         } else if self.game_shows_overrides() {
-            &["All", "Mod Order", "Overrides", "Downloads"]
+            &["All", "DAZIPs & Tools", "Overrides", "Downloads"]
         } else {
             &["All", "Mod Order", "Downloads"]
         };
@@ -64,13 +50,13 @@ impl App {
             .collect();
         if entries.is_empty() {
             let row = adw::ActionRow::builder()
-                .title("No override packages")
-                .subtitle("Installed mods containing override files appear here.")
+                .title("No Override mods")
+                .subtitle("Add an archive containing loose Override resources to manage them here.")
                 .build();
             list.append(&row);
         }
         let mut matches = 0;
-        for (index, entry) in entries.iter().enumerate() {
+        for entry in &entries {
             let row = adw::ActionRow::builder()
                 .title(gtk::glib::markup_escape_text(&entry.mod_entry.name))
                 .subtitle(if entry.mod_entry.enabled {
@@ -79,30 +65,42 @@ impl App {
                     "Disabled"
                 })
                 .build();
-            for (icon, tooltip, adjacent) in [
-                ("go-up-symbolic", "Move earlier", index.checked_sub(1)),
+            for (icon, tooltip, action) in [
                 (
-                    "go-down-symbolic",
-                    "Move later",
-                    (index + 1 < entries.len()).then_some(index + 1),
+                    if entry.mod_entry.enabled {
+                        "media-playback-pause-symbolic"
+                    } else {
+                        "media-playback-start-symbolic"
+                    },
+                    if entry.mod_entry.enabled {
+                        "Disable"
+                    } else {
+                        "Enable"
+                    },
+                    OverrideAction::Toggle,
                 ),
+                (
+                    "document-properties-symbolic",
+                    "Properties",
+                    OverrideAction::Properties,
+                ),
+                (
+                    "view-refresh-symbolic",
+                    "Reinstall from archive",
+                    OverrideAction::Reinstall,
+                ),
+                ("user-trash-symbolic", "Remove", OverrideAction::Remove),
             ] {
                 let button = gtk::Button::from_icon_name(icon);
                 button.set_tooltip_text(Some(tooltip));
                 button.set_valign(gtk::Align::Center);
                 button.add_css_class("flat");
-                button.set_sensitive(adjacent.is_some() && !self.ui.override_order_saving);
-                if let Some(adjacent) = adjacent {
-                    let first = entry.mod_entry.id.clone();
-                    let second = entries[adjacent].mod_entry.id.clone();
-                    let sender = self.ui.notification_sender.clone();
-                    button.connect_clicked(move |_| {
-                        let _ = sender.send(AppMsg::Mods(ModsMsg::MoveOverride(
-                            first.clone(),
-                            second.clone(),
-                        )));
-                    });
-                }
+                button.set_sensitive(!self.is_busy() && self.shell.location_recovery.is_none());
+                let id = entry.mod_entry.id.clone();
+                let sender = self.ui.notification_sender.clone();
+                button.connect_clicked(move |_| {
+                    let _ = sender.send(AppMsg::Mods(ModsMsg::OverrideAction(id.clone(), action)));
+                });
                 row.add_suffix(&button);
             }
             let searches_overrides = matches!(
@@ -131,19 +129,13 @@ impl App {
         }
     }
 
-    pub(crate) fn move_override(
+    pub(crate) fn set_dao_panel_enabled(
         &mut self,
-        first: String,
-        second: String,
+        enabled: bool,
+        selected_only: bool,
         sender: &ComponentSender<Self>,
     ) {
-        if !self.game_shows_overrides()
-            || self.is_busy()
-            || self.shell.location_recovery.is_some()
-            || self.ui.override_order_saving
-            || !self.ui.override_mod_ids.contains(&first)
-            || !self.ui.override_mod_ids.contains(&second)
-        {
+        if self.is_busy() || self.shell.location_recovery.is_some() {
             return;
         }
         let (Some(tracker), Some(game)) =
@@ -151,33 +143,28 @@ impl App {
         else {
             return;
         };
-        let ids: Vec<String> = self
+        let ids: Vec<_> = self
             .mods
             .rows
             .iter()
-            .filter_map(|row| row.mod_id().map(str::to_owned))
+            .enumerate()
+            .filter(|(index, _)| !selected_only || self.mods.selected.contains(index))
+            .filter_map(|(_, row)| row.mod_id())
+            .filter(|id| !self.ui.override_mod_ids.contains(*id))
+            .map(str::to_owned)
             .collect();
-        let Some(updates) = reordered_priorities(&ids, &first, &second) else {
-            return;
-        };
-        let cache_root = match self.cache_root_for(&game.id) {
-            Ok(root) => root,
-            Err(error) => {
-                self.push_notification(&format!("Cannot resolve the mod cache: {error}"));
-                return;
-            }
-        };
-        self.ui.override_order_saving = true;
+        let profile_id = self
+            .session
+            .profiles
+            .get(self.session.active_profile_idx)
+            .map(|profile| profile.id.clone());
+        self.ui.override_saving = true;
         self.rebuild_override_panel();
         self.location_command(sender, async move {
             let result = async {
-                tracker.update_priorities(&updates).await?;
-                crate::core::mod_folders::refresh_named_mod_folders(
-                    &tracker,
-                    &game.id,
-                    &cache_root,
-                )
-                .await?;
+                tracker
+                    .set_eclipse_enabled(&ids, enabled, profile_id.as_deref())
+                    .await?;
                 super::session::load_game_data(
                     &tracker,
                     &game,
@@ -188,82 +175,164 @@ impl App {
             }
             .await
             .map_err(|error| error.to_string());
-            AppCmdMsg::Mods(ModsCmdMsg::OverrideOrderSaved {
+            AppCmdMsg::Mods(ModsCmdMsg::OverrideChanged {
                 game_id: game.id,
                 result: Box::new(result),
             })
         });
     }
 
-    pub(crate) fn override_order_saved(
+    pub(crate) fn handle_override_action(
+        &mut self,
+        id: String,
+        action: OverrideAction,
+        root: &adw::ApplicationWindow,
+        sender: &ComponentSender<Self>,
+    ) {
+        if !self.game_shows_overrides()
+            || self.is_busy()
+            || self.shell.location_recovery.is_some()
+            || !self.ui.override_mod_ids.contains(&id)
+        {
+            return;
+        }
+        let Some(index) = self
+            .mods
+            .rows
+            .iter()
+            .position(|row| row.mod_id() == Some(&id))
+        else {
+            return;
+        };
+        match action {
+            OverrideAction::Properties => {
+                self.open_mod_properties_at(index, root, sender);
+                return;
+            }
+            OverrideAction::Reinstall => {
+                self.reinstall_mod_at(index, sender);
+                return;
+            }
+            OverrideAction::Remove => {
+                let dialog = adw::AlertDialog::builder()
+                    .heading("Remove Override Mod?")
+                    .body("This removes the cached Override mod. Deploy afterward to update game files. Other packages from the same archive are kept.")
+                    .build();
+                dialog.add_response("cancel", "Cancel");
+                dialog.add_response("remove", "Remove");
+                dialog.set_close_response("cancel");
+                dialog.set_response_appearance("remove", adw::ResponseAppearance::Destructive);
+                let input = sender.input_sender().clone();
+                dialog.connect_response(None, move |_, response| {
+                    if response == "remove" {
+                        let _ = input.send(AppMsg::Mods(ModsMsg::OverrideAction(
+                            id.clone(),
+                            OverrideAction::RemoveConfirmed,
+                        )));
+                    }
+                });
+                dialog.present(Some(root));
+                return;
+            }
+            OverrideAction::Toggle | OverrideAction::RemoveConfirmed => {}
+        }
+        let (Some(tracker), Some(game)) =
+            (self.session.tracker.clone(), self.selected_game().cloned())
+        else {
+            return;
+        };
+        let enabled = self
+            .mods
+            .rows
+            .get(index)
+            .and_then(|row| row.mod_row())
+            .is_some_and(|row| row.mod_entry.enabled);
+        let Some(entry) = self
+            .mods
+            .rows
+            .get(index)
+            .and_then(|row| row.mod_row())
+            .map(|row| row.mod_entry.clone())
+        else {
+            return;
+        };
+        if matches!(action, OverrideAction::RemoveConfirmed) {
+            let cache = match self.cache_root_for(&game.id) {
+                Ok(root) => crate::utils::paths::mod_cache_dir_in(&root, &id),
+                Err(error) => {
+                    self.push_notification(&format!("Cannot resolve mod cache: {error}"));
+                    return;
+                }
+            };
+            self.ui.override_saving = true;
+            self.rebuild_override_panel();
+            self.location_command(sender, async move {
+                let result = async {
+                    tracker.remove_eclipse_mod(&id).await?;
+                    let warning = tokio::task::spawn_blocking(move || {
+                        super::install::cleanup::remove_mod_cache(&cache)
+                    })
+                    .await?;
+                    anyhow::Ok((id, warning.into_iter().collect()))
+                }
+                .await
+                .map_err(|error| error.to_string());
+                AppCmdMsg::Mods(ModsCmdMsg::ModRemoved(
+                    result,
+                    entry.nexus_mod_id.zip(entry.nexus_file_id),
+                    entry.name,
+                    entry.archive_hash,
+                ))
+            });
+            return;
+        }
+        let profile_id = self
+            .session
+            .profiles
+            .get(self.session.active_profile_idx)
+            .map(|profile| profile.id.clone());
+        self.ui.override_saving = true;
+        self.rebuild_override_panel();
+        self.location_command(sender, async move {
+            let result = async {
+                tracker
+                    .set_eclipse_enabled(&[id], !enabled, profile_id.as_deref())
+                    .await?;
+                super::session::load_game_data(
+                    &tracker,
+                    &game,
+                    super::session::GameLoadMode::Refresh,
+                )
+                .await
+                .map_err(anyhow::Error::msg)
+            }
+            .await
+            .map_err(|error| error.to_string());
+            AppCmdMsg::Mods(ModsCmdMsg::OverrideChanged {
+                game_id: game.id,
+                result: Box::new(result),
+            })
+        });
+    }
+
+    pub(crate) fn override_changed(
         &mut self,
         game_id: String,
         result: Result<super::types::LoadedData, String>,
         sender: &ComponentSender<Self>,
     ) {
-        self.ui.override_order_saving = false;
+        self.ui.override_saving = false;
         match result {
             Ok(data) => {
                 self.apply_loaded_data(data, sender);
             }
             Err(error) => {
-                self.push_notification(&format!("Could not refresh override order: {error}"));
+                self.push_notification(&format!("Could not update Override mod: {error}"));
                 if self.selected_game().is_some_and(|game| game.id == game_id) {
                     self.reload_mods(sender);
                 }
             }
         }
         self.rebuild_override_panel();
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // @variants: both
-    #[test]
-    fn only_eclipse_override_files_populate_the_panel() {
-        for engine in [
-            GameEngine::Bethesda,
-            GameEngine::Aurora,
-            GameEngine::REDEngine,
-            GameEngine::MassEffect,
-        ] {
-            assert!(!is_override(&engine, "packages/core/override/mod/file.gda"));
-        }
-        assert!(is_override(
-            &GameEngine::Eclipse,
-            "Packages/Core/Override/file.gda"
-        ));
-        for path in [
-            "addins/mod/file",
-            "~docs~/file",
-            "../system/file",
-            "../launcher/file",
-            "../register/file",
-            "../file",
-            "packages/core/override-other/file",
-        ] {
-            assert!(!is_override(&GameEngine::Eclipse, path));
-        }
-    }
-
-    // @variants: both
-    #[test]
-    fn reordering_overrides_preserves_other_mod_slots() {
-        let ids: Vec<String> = ["first", "addin", "second"]
-            .into_iter()
-            .map(str::to_owned)
-            .collect();
-        assert_eq!(
-            reordered_priorities(&ids, "first", "second"),
-            Some(vec![
-                ("second".into(), 0),
-                ("addin".into(), 1),
-                ("first".into(), 2)
-            ])
-        );
-        assert!(reordered_priorities(&ids, "missing", "second").is_none());
     }
 }

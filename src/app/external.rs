@@ -406,6 +406,7 @@ impl App {
         self.mods.pending_external_files.clear();
         self.mods.external_changes_count = 0;
         self.install.pending = Some(PendingInstall {
+            dazip_sources: Default::default(),
             mele: None,
             mele_bundled_launcher: None,
             tmp_dir,

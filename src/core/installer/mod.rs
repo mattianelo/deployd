@@ -1,6 +1,13 @@
 mod cache;
 mod dazip;
 mod deployment;
+mod eclipse;
+
+#[derive(Debug, Clone)]
+pub(crate) struct DazipSource {
+    pub(crate) root: std::path::PathBuf,
+    pub(crate) key: String,
+}
 mod file_list;
 mod inspection;
 mod paths;
@@ -57,6 +64,7 @@ use crate::utils::paths as utils_paths;
 
 #[derive(Debug)]
 pub struct AddResult {
+    pub(crate) additional_mods: Vec<ModEntry>,
     pub mod_entry: ModEntry,
     pub files_cached: usize,
     pub plugins_found: Vec<String>,
@@ -64,6 +72,9 @@ pub struct AddResult {
 }
 
 pub(crate) struct AddModRequest<'a> {
+    pub(crate) merging: bool,
+    pub(crate) replacing: Option<&'a str>,
+    pub(crate) dazip_sources: &'a [DazipSource],
     pub(crate) file_list: Vec<(PathBuf, PathBuf)>,
     pub(crate) game: &'a Game,
     pub(crate) mod_name: &'a str,
@@ -79,7 +90,13 @@ pub(crate) struct AddModRequest<'a> {
 }
 
 pub(crate) async fn add_mod_with_file_list(request: AddModRequest<'_>) -> Result<AddResult> {
+    if request.game.engine == GameEngine::Eclipse {
+        return eclipse::add_components(request).await;
+    }
     let AddModRequest {
+        merging: _,
+        replacing: _,
+        dazip_sources,
         file_list,
         game,
         mod_name,
@@ -97,6 +114,7 @@ pub(crate) async fn add_mod_with_file_list(request: AddModRequest<'_>) -> Result
 
     let plan = deployment::route_and_plan(
         file_list,
+        dazip_sources,
         game,
         mod_name,
         stripped_wrapper.as_deref(),
@@ -181,6 +199,7 @@ pub(crate) async fn add_mod_with_file_list(request: AddModRequest<'_>) -> Result
     }
 
     Ok(AddResult {
+        additional_mods: Vec::new(),
         mod_entry,
         files_cached: mod_files.len(),
         plugins_found,
@@ -189,6 +208,10 @@ pub(crate) async fn add_mod_with_file_list(request: AddModRequest<'_>) -> Result
 }
 
 pub(crate) struct MergeModRequest<'a> {
+    pub(crate) archive_hash: Option<String>,
+    pub(crate) archive_path: Option<String>,
+    pub(crate) nexus_ids: Option<NexusIds>,
+    pub(crate) dazip_sources: &'a [DazipSource],
     pub(crate) file_list: Vec<(PathBuf, PathBuf)>,
     pub(crate) game: &'a Game,
     pub(crate) mod_name: &'a str,
@@ -202,7 +225,32 @@ pub(crate) struct MergeModRequest<'a> {
 }
 
 pub(crate) async fn merge_files_into_mod(request: MergeModRequest<'_>) -> Result<usize> {
+    if request.game.engine == GameEngine::Eclipse {
+        return eclipse::add_components(AddModRequest {
+            merging: true,
+            replacing: Some(request.existing_mod_id),
+            dazip_sources: request.dazip_sources,
+            file_list: request.file_list,
+            game: request.game,
+            mod_name: request.mod_name,
+            tracker: request.tracker,
+            cache_root: request.cache_root,
+            nexus_ids: request.nexus_ids,
+            archive_hash: request.archive_hash,
+            archive_path: request.archive_path,
+            file_targets: request.file_targets,
+            stripped_wrapper: request.stripped_wrapper,
+            excluded_files: request.excluded_files,
+            on_progress: request.on_progress,
+        })
+        .await
+        .map(|result| result.files_cached);
+    }
     let MergeModRequest {
+        archive_hash: _,
+        archive_path: _,
+        nexus_ids: _,
+        dazip_sources,
         file_list,
         game,
         mod_name,
@@ -216,6 +264,7 @@ pub(crate) async fn merge_files_into_mod(request: MergeModRequest<'_>) -> Result
     } = request;
     let plan = deployment::route_and_plan(
         file_list,
+        dazip_sources,
         game,
         mod_name,
         stripped_wrapper.as_deref(),
@@ -335,6 +384,9 @@ mod tests {
         };
         let tracker = Tracker::open("sqlite::memory:").await?.tracker;
         let result = add_mod_with_file_list(AddModRequest {
+            merging: false,
+            replacing: None,
+            dazip_sources: &[],
             file_list: vec![(source.clone(), "DLC/DLC_MOD_EXAMPLE/file.pcc".into())],
             game: &game,
             mod_name: "Example",

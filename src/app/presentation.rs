@@ -70,13 +70,13 @@ impl App {
 
     /// True when the mod list has no mod rows (only separators or empty).
     pub(crate) fn has_no_mods(&self) -> bool {
-        !self.mods.rows.iter().any(|item| !item.is_separator())
+        self.primary_mods_count(false) == 0
     }
 
     pub(crate) fn is_busy(&self) -> bool {
         self.session.game_load.is_pending()
             || self.ui.cache_move.is_some()
-            || self.ui.override_order_saving
+            || self.ui.override_saving
             || self.ui.mele_setup.is_some()
             || self.install.is_busy()
             || self.shell.deploying
@@ -170,6 +170,19 @@ impl App {
             ),
             None => String::new(),
         }
+    }
+
+    pub(crate) fn primary_mods_count(&self, enabled_only: bool) -> usize {
+        self.mods
+            .rows
+            .iter()
+            .filter_map(|row| row.mod_row())
+            .filter(|row| {
+                (!self.game_shows_overrides()
+                    || !self.ui.override_mod_ids.contains(&row.mod_entry.id))
+                    && (!enabled_only || row.mod_entry.enabled)
+            })
+            .count()
     }
 
     pub(crate) fn total_mods_count(&self) -> usize {

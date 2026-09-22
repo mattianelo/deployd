@@ -182,7 +182,9 @@ impl App {
 
         match msg {
             ModsMsg::ReinstallMod(idx) => self.handle_reinstall_mod(idx, &sender),
-            ModsMsg::MoveOverride(first, second) => self.move_override(first, second, &sender),
+            ModsMsg::OverrideAction(id, action) => {
+                self.handle_override_action(id, action, root, &sender)
+            }
             ModsMsg::MoveModTo(from, to) => self.handle_move_mod_to(from, to, &sender),
             ModsMsg::MoveGroupTo(from, to) => self.handle_move_group_to(from, to, &sender),
             ModsMsg::MoveSelectedModsTo { selected, from, to } => {
@@ -615,8 +617,8 @@ impl App {
         use crate::app::messages::ModsCmdMsg;
 
         match msg {
-            ModsCmdMsg::OverrideOrderSaved { game_id, result } => {
-                self.override_order_saved(game_id, *result, &sender)
+            ModsCmdMsg::OverrideChanged { game_id, result } => {
+                self.override_changed(game_id, *result, &sender)
             }
             ModsCmdMsg::ModRemoved(result, nexus_ids, mod_name, archive_hash) => {
                 self.handle_cmd_mod_removed(result, nexus_ids, mod_name, archive_hash, &sender)

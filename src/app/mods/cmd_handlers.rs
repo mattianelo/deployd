@@ -54,6 +54,7 @@ impl App {
         archive_hash: Option<String>,
         sender: &ComponentSender<Self>,
     ) {
+        self.ui.override_saving = false;
         match result {
             Ok((mod_id, warnings)) => {
                 let index = {

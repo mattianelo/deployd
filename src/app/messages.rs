@@ -153,7 +153,7 @@ pub(crate) enum GamesMsg {
 
 #[derive(Debug)]
 pub(crate) enum ModsMsg {
-    MoveOverride(String, String),
+    OverrideAction(String, super::override_panel::OverrideAction),
     ReinstallMod(DynamicIndex),
     MoveModTo(usize, usize),
     MoveGroupTo(usize, usize),
@@ -366,6 +366,7 @@ pub(crate) enum ToolsMsg {
 
 pub(crate) enum PrepareResultMsg {
     Normal {
+        dazip_sources: Vec<crate::core::installer::DazipSource>,
         mele: Option<Box<crate::core::game::mass_effect::package::PackagePlan>>,
         mele_bundled_launcher: Option<crate::core::game::mass_effect::launcher::Bundled>,
         file_list: Vec<(PathBuf, PathBuf)>,
@@ -376,6 +377,7 @@ pub(crate) enum PrepareResultMsg {
         archive_path: Option<String>,
     },
     Fomod {
+        dazip_sources: Vec<crate::core::installer::DazipSource>,
         config: fomod_resolver::FomodUiConfig,
         config_path: PathBuf,
         tmp_dir: TempDir,
@@ -516,7 +518,7 @@ pub(crate) enum GamesCmdMsg {
 
 #[derive(Debug)]
 pub(crate) enum ModsCmdMsg {
-    OverrideOrderSaved {
+    OverrideChanged {
         game_id: String,
         result: Box<Result<LoadedData, String>>,
     },

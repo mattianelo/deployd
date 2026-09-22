@@ -257,6 +257,7 @@ async fn import_in(
         )
         .await?;
     Ok(AddResult {
+        additional_mods: Vec::new(),
         mod_entry: entry,
         files_cached: files.len(),
         plugins_found: Vec::new(),

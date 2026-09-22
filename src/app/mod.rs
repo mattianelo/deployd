@@ -133,7 +133,8 @@ impl Component for App {
                         // LEFT PANEL: Mod Order
                         #[wrap(Some)]
                         set_sidebar = &adw::NavigationPage {
-                            set_title: "Mod Order",
+                            #[watch]
+                            set_title: if model.game_shows_overrides() { "DAZIPs & Tools" } else { "Mod Order" },
 
                             #[wrap(Some)]
                             set_child = &gtk::Box {
@@ -150,7 +151,8 @@ impl Component for App {
                                 set_visible: !model.mods.selection_active,
 
                                 gtk::Label {
-                                    set_label: "Mod Order",
+                                    #[watch]
+                                    set_label: if model.game_shows_overrides() { "DAZIPs & Tools" } else { "Mod Order" },
                                     add_css_class: "heading",
                                     set_halign: gtk::Align::Start,
                                     set_margin_start: 8,
@@ -171,7 +173,7 @@ impl Component for App {
                                             &["pill", "filter-chip"]
                                         },
                                         #[watch]
-                                        set_label: &format!("All ({})", model.total_mods_count()),
+                                        set_label: &format!("All ({})", model.primary_mods_count(false)),
                                         connect_clicked => AppMsg::Mods(crate::app::messages::ModsMsg::SetModFilter(ModFilter::All)),
                                     },
 
@@ -183,7 +185,7 @@ impl Component for App {
                                             &["pill", "filter-chip"]
                                         },
                                         #[watch]
-                                        set_label: &format!("Enabled ({})", model.enabled_mods_count()),
+                                        set_label: &format!("Enabled ({})", model.primary_mods_count(true)),
                                         connect_clicked => AppMsg::Mods(crate::app::messages::ModsMsg::SetModFilter(ModFilter::Enabled)),
                                     },
 
@@ -241,7 +243,8 @@ impl Component for App {
 
                                             gtk::Button {
                                                 set_icon_name: "checkbox-checked-symbolic",
-                                                set_label: "Enable all mods",
+                                                #[watch]
+                                                set_label: if model.game_shows_overrides() { "Enable all DAZIPs and tools" } else { "Enable all mods" },
                                                 add_css_class: "flat",
                                                 connect_clicked[sender] => move |btn| {
                                                     sender.input(AppMsg::Mods(crate::app::messages::ModsMsg::EnableAllMods));
@@ -256,7 +259,8 @@ impl Component for App {
 
                                             gtk::Button {
                                                 set_icon_name: "checkbox-symbolic",
-                                                set_label: "Disable all mods",
+                                                #[watch]
+                                                set_label: if model.game_shows_overrides() { "Disable all DAZIPs and tools" } else { "Disable all mods" },
                                                 add_css_class: "flat",
                                                 connect_clicked[sender] => move |btn| {
                                                     sender.input(AppMsg::Mods(crate::app::messages::ModsMsg::DisableAllMods));
@@ -276,7 +280,7 @@ impl Component for App {
                                                 #[watch]
                                                 set_sensitive: !model.is_busy(),
                                                 #[watch]
-                                                set_visible: !model.is_busy(),
+                                                set_visible: !model.is_busy() && !model.game_shows_overrides(),
                                                 connect_clicked[sender] => move |btn| {
                                                     sender.input(AppMsg::Mods(crate::app::messages::ModsMsg::CreateGroup("New Group".to_string())));
                                                     if let Some(popover) = btn
@@ -288,9 +292,14 @@ impl Component for App {
                                                 },
                                             },
 
-                                            gtk::Separator {},
+                                            gtk::Separator {
+                                                #[watch]
+                                                set_visible: !model.game_shows_overrides(),
+                                            },
 
                                             gtk::Label {
+                                                #[watch]
+                                                set_visible: !model.game_shows_overrides(),
                                                 set_label: "Save snapshot",
                                                 set_halign: gtk::Align::Start,
                                                 add_css_class: "caption",
@@ -299,10 +308,14 @@ impl Component for App {
 
                                             #[local_ref]
                                             mod_snapshot_save_entry -> gtk::Entry {
+                                                #[watch]
+                                                set_visible: !model.game_shows_overrides(),
                                                 set_placeholder_text: Some("e.g. Pre-DLC run"),
                                             },
 
                                             gtk::Button {
+                                                #[watch]
+                                                set_visible: !model.game_shows_overrides(),
                                                 set_label: "Save",
                                                 add_css_class: "suggested-action",
                                                 connect_clicked[sender, mod_snapshot_save_entry] => move |btn| {
@@ -320,9 +333,14 @@ impl Component for App {
                                                 },
                                             },
 
-                                            gtk::Separator {},
+                                            gtk::Separator {
+                                                #[watch]
+                                                set_visible: !model.game_shows_overrides(),
+                                            },
 
                                             gtk::Label {
+                                                #[watch]
+                                                set_visible: !model.game_shows_overrides(),
                                                 set_label: "Restore snapshot",
                                                 set_halign: gtk::Align::Start,
                                                 add_css_class: "caption",
@@ -330,6 +348,8 @@ impl Component for App {
                                             },
 
                                             gtk::ScrolledWindow {
+                                                #[watch]
+                                                set_visible: !model.game_shows_overrides(),
                                                 set_min_content_height: 40,
                                                 set_max_content_height: 200,
                                                 set_hscrollbar_policy: gtk::PolicyType::Never,
@@ -391,6 +411,7 @@ impl Component for App {
                                 #[watch]
                                 set_title: if model.session.game_load.loading_library() { "Loading Mods…" }
                                     else if model.session.game_load.failed() { "Could Not Load Mods" }
+                                    else if model.game_shows_overrides() { "No DAZIPs or tools" }
                                     else if model.has_games() { "No Mods" } else { "No Games Detected" },
                                 #[watch]
                                 set_description: Some(
@@ -408,8 +429,8 @@ impl Component for App {
                             adw::StatusPage {
                                 #[watch]
                                 set_visible: matches!(model.mods.filter, ModFilter::Enabled)
-                                    && model.enabled_mods_count() == 0
-                                    && model.total_mods_count() > 0,
+                                    && model.primary_mods_count(true) == 0
+                                    && model.primary_mods_count(false) > 0,
                                 set_icon_name: Some("checkbox-checked-symbolic"),
                                 set_title: "No Enabled Mods",
                                 set_description: Some("Select mods and use the action bar to enable them."),
@@ -418,7 +439,7 @@ impl Component for App {
                                 #[watch]
                                 set_visible: matches!(model.mods.filter, ModFilter::Issues)
                                     && model.issues_mods_count() == 0
-                                    && model.total_mods_count() > 0,
+                                    && model.primary_mods_count(false) > 0,
                                 set_icon_name: Some("emblem-ok-symbolic"),
                                 set_title: "No Conflicts",
                                 set_description: Some("No mods override each other's files."),
@@ -469,7 +490,7 @@ impl Component for App {
                                     set_halign: gtk::Align::Start,
                                 },
                                 gtk::Label {
-                                    set_label: "Later mods take priority for shared files. Changes also update Mod Order.",
+                                    set_label: "Loose Override resources. Enable, disable, or remove them independently of DAZIP add-ins. Deploy to apply changes.",
                                     set_wrap: true,
                                     set_margin_all: 8,
                                 },

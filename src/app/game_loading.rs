@@ -106,20 +106,15 @@ async fn read_library(tracker: &Tracker, game: &Game) -> Result<Library, String>
         .compute_overrides(&game.id, game::handler_for(&game.engine), &names)
         .await
         .map_err(|error| error.to_string())?;
-    let mut override_mod_ids = HashSet::new();
-    if game.engine == crate::models::game::GameEngine::Eclipse {
-        for entry in &mods {
-            let files = tracker
-                .get_mod_files(&entry.id)
-                .await
-                .map_err(|error| error.to_string())?;
-            if files.iter().any(|file| {
-                super::override_panel::is_override(&game.engine, &file.game_rel_original)
-            }) {
-                override_mod_ids.insert(entry.id.clone());
-            }
-        }
-    }
+    let override_mod_ids = if game.engine == crate::models::game::GameEngine::Eclipse {
+        tracker
+            .eclipse_override_ids(&game.id)
+            .await
+            .map_err(|error| error.to_string())?
+    } else {
+        HashSet::new()
+    };
+
     Ok(Library {
         mods,
         plugins,

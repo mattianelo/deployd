@@ -89,8 +89,15 @@ pub const DOCS_PREFIX: &str = "~docs~/";
 ///   full relative structure preserved. The outer mod-name wrapper is already
 ///   stripped upstream by `file_list::detect_wrapper`.
 pub fn route_path(rel: &str) -> String {
+    let normalized = rel.replace('\\', "/");
+    let rel = normalized.as_str();
     let lower = rel.to_lowercase();
-    if lower.starts_with("addins/")
+    if lower.starts_with("override/") {
+        return format!("packages/core/override/{}", &rel[9..]);
+    }
+
+    if lower.starts_with(DOCS_PREFIX)
+        || lower.starts_with("addins/")
         || lower.starts_with("packages/")
         || lower.starts_with("settings/")
     {
@@ -110,9 +117,13 @@ fn is_tool_file(lower_path: &str) -> bool {
 }
 
 pub fn is_tool_mod(file_list: &[(PathBuf, PathBuf)]) -> bool {
-    file_list
-        .iter()
-        .any(|(_, dest)| is_tool_file(&dest.to_string_lossy().to_lowercase()))
+    file_list.iter().any(|(_, dest)| {
+        let lower = dest
+            .to_string_lossy()
+            .replace('\\', "/")
+            .to_ascii_lowercase();
+        !lower.starts_with("addins/") && !lower.starts_with("packages/") && is_tool_file(&lower)
+    })
 }
 
 /// Route tool mod files to `~docs~/<mod_name>/` so they land together in the Documents folder.
@@ -205,6 +216,40 @@ pub fn write_addins_xml(da_dir: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // @variants: appimage, snap
+    #[test]
+    fn override_wrapper_routes_once_and_documents_anchor_stays_intact() {
+        assert_eq!(
+            route_path("Override/Mod/armor.gda"),
+            "packages/core/override/Mod/armor.gda"
+        );
+        assert_eq!(
+            route_path("Override\\Mod\\armor.gda"),
+            "packages/core/override/Mod/armor.gda"
+        );
+        assert_eq!(
+            route_path("~docs~/Compiler/config.xml"),
+            "~docs~/Compiler/config.xml"
+        );
+    }
+
+    // @variants: appimage, snap
+    #[test]
+    fn dazip_executables_are_not_relocated_as_tools() {
+        assert!(!is_tool_mod(&[(
+            PathBuf::from("source"),
+            PathBuf::from("AddIns/example/native.dll")
+        )]));
+        assert!(!is_tool_mod(&[(
+            PathBuf::from("source"),
+            PathBuf::from("packages/core/override/native.dll")
+        )]));
+        assert!(is_tool_mod(&[(
+            PathBuf::from("source"),
+            PathBuf::from("Compiler.exe")
+        )]));
+    }
 
     #[test]
     fn bare_file_goes_into_override() {

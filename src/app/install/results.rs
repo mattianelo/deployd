@@ -24,6 +24,7 @@ impl App {
         }
         match result {
             Ok(PrepareResultMsg::Normal {
+                dazip_sources,
                 mele,
                 mele_bundled_launcher,
                 file_list,
@@ -53,6 +54,7 @@ impl App {
                     return;
                 }
                 self.install.pending = Some(PendingInstall {
+                    dazip_sources,
                     mele,
                     mele_bundled_launcher,
                     tmp_dir,
@@ -80,9 +82,22 @@ impl App {
                     .as_ref()
                     .and_then(|p| p.nexus_ids.as_ref())
                     .map(|n| (n.mod_id, n.file_id));
-                let existing = hash_existing.or_else(|| {
-                    nexus_ids.and_then(|(mid, fid)| self.find_installed_mod_by_nexus_id(mid, fid))
-                });
+                let existing = self
+                    .install
+                    .replacement
+                    .as_ref()
+                    .map(|replacement| {
+                        (
+                            replacement.mod_id.clone(),
+                            replacement.mod_name.clone(),
+                            replacement.priority,
+                        )
+                    })
+                    .or(hash_existing)
+                    .or_else(|| {
+                        nexus_ids
+                            .and_then(|(mid, fid)| self.find_installed_mod_by_nexus_id(mid, fid))
+                    });
                 if let Some((old_mod_id, old_mod_name, old_priority)) = existing {
                     if self.install.reinstalling {
                         self.install.reinstalling = false;
@@ -136,6 +151,7 @@ impl App {
                 }
             }
             Ok(PrepareResultMsg::Fomod {
+                dazip_sources,
                 config,
                 config_path,
                 tmp_dir,
@@ -152,6 +168,7 @@ impl App {
                     return;
                 };
                 self.install.pending = Some(PendingInstall {
+                    dazip_sources,
                     mele: None,
                     mele_bundled_launcher: None,
                     tmp_dir,
@@ -179,9 +196,22 @@ impl App {
                     .as_ref()
                     .and_then(|p| p.nexus_ids.as_ref())
                     .map(|n| (n.mod_id, n.file_id));
-                let existing = hash_existing.or_else(|| {
-                    nexus_ids.and_then(|(mid, fid)| self.find_installed_mod_by_nexus_id(mid, fid))
-                });
+                let existing = self
+                    .install
+                    .replacement
+                    .as_ref()
+                    .map(|replacement| {
+                        (
+                            replacement.mod_id.clone(),
+                            replacement.mod_name.clone(),
+                            replacement.priority,
+                        )
+                    })
+                    .or(hash_existing)
+                    .or_else(|| {
+                        nexus_ids
+                            .and_then(|(mid, fid)| self.find_installed_mod_by_nexus_id(mid, fid))
+                    });
                 if let Some((old_mod_id, old_mod_name, old_priority)) = existing {
                     if self.install.reinstalling {
                         self.install.reinstalling = false;
@@ -265,6 +295,7 @@ impl App {
                 }
             }
             Err(failure) => {
+                self.install.replacement = None;
                 self.install.set_stage(InstallStage::Failed);
                 self.finish_current_work();
                 self.install.reinstalling = false;
@@ -406,32 +437,35 @@ impl App {
                 if let (Some(tracker), Some(game)) =
                     (self.session.tracker.clone(), self.selected_game().cloned())
                 {
-                    let mod_id = add_result.mod_entry.id.clone();
-                    let installed_mod = add_result.mod_entry.clone();
+                    let mut installed_mods = add_result.additional_mods.clone();
+                    installed_mods.push(add_result.mod_entry.clone());
                     self.location_command(sender, async move {
                         let result = async {
-                            if let Some(ref version) = version_from_dl {
-                                tracker
-                                    .set_mod_installed_version(&mod_id, version)
+                            for installed_mod in &installed_mods {
+                                let mod_id = &installed_mod.id;
+                                if let Some(ref version) = version_from_dl {
+                                    tracker
+                                        .set_mod_installed_version(mod_id, version)
+                                        .await
+                                        .map_err(|error| error.to_string())?;
+                                }
+                                if let Some(ref author) = author_from_dl {
+                                    tracker
+                                        .set_mod_author(mod_id, author)
+                                        .await
+                                        .map_err(|error| error.to_string())?;
+                                }
+                                if let Err(error) =
+                                    crate::app::downloads::updates::refresh_nexus_update_for_mod(
+                                        &tracker,
+                                        installed_mod,
+                                    )
                                     .await
-                                    .map_err(|error| error.to_string())?;
-                            }
-                            if let Some(ref author) = author_from_dl {
-                                tracker
-                                    .set_mod_author(&mod_id, author)
-                                    .await
-                                    .map_err(|error| error.to_string())?;
-                            }
-                            if let Err(error) =
-                                crate::app::downloads::updates::refresh_nexus_update_for_mod(
-                                    &tracker,
-                                    &installed_mod,
-                                )
-                                .await
-                            {
-                                eprintln!(
-                                    "deployd: failed to refresh Nexus update for installed mod: {error}"
-                                );
+                                {
+                                    eprintln!(
+                                        "deployd: failed to refresh Nexus update for installed mod: {error}"
+                                    );
+                                }
                             }
                             load_game_data(
                                 &tracker,
