@@ -26,6 +26,29 @@ fn component_for(
         .to_string_lossy()
         .replace('\\', "/")
         .to_ascii_lowercase();
+    if !lower.contains('/') {
+        let companion = roots
+            .iter()
+            .find(|root| {
+                root.key.strip_prefix("dazip:").is_some_and(|uid| {
+                    lower == format!("usermanifest_{}.xml", uid.to_ascii_lowercase())
+                })
+            })
+            .or_else(|| {
+                let first = roots.first()?;
+                (roots.iter().all(|root| root.key == first.key)
+                    && (super::is_ignorable_file(&lower)
+                        || lower.ends_with("readme.txt")
+                        || lower.ends_with("affected files list.txt")))
+                .then_some(first)
+            });
+        if let Some(root) = companion {
+            return EclipseComponent {
+                kind: "dazip".into(),
+                source_key: root.key.clone(),
+            };
+        }
+    }
     if lower.starts_with("addins/") {
         EclipseComponent {
             kind: "dazip".into(),

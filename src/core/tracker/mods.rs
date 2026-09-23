@@ -149,7 +149,7 @@ impl Tracker {
                     nexus_mod_id, nexus_file_id, nexus_domain, version, author,
                     nexus_description, latest_version, nexus_file_name, nexus_is_primary,
                     archive_md5, install_target, notes
-             FROM mods WHERE game_id = ? ORDER BY priority ASC",
+             FROM mods WHERE game_id = ? ORDER BY priority ASC, id DESC",
         )
         .bind(game_id)
         .fetch_all(&self.pool)

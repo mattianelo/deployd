@@ -59,11 +59,15 @@ impl App {
         for entry in &entries {
             let row = adw::ActionRow::builder()
                 .title(gtk::glib::markup_escape_text(&entry.mod_entry.name))
-                .subtitle(if entry.mod_entry.enabled {
-                    "Enabled"
-                } else {
-                    "Disabled"
-                })
+                .subtitle(format!(
+                    "{} · {}",
+                    entry.priority_label,
+                    if entry.mod_entry.enabled {
+                        "Enabled"
+                    } else {
+                        "Disabled"
+                    }
+                ))
                 .build();
             for (icon, tooltip, action) in [
                 (
@@ -324,10 +328,12 @@ impl App {
         self.ui.override_saving = false;
         match result {
             Ok(data) => {
-                self.apply_loaded_data(data, sender);
+                if self.apply_loaded_data(data, sender) && self.mods.selection_active {
+                    self.mods.selection_dirty = true;
+                }
             }
             Err(error) => {
-                self.push_notification(&format!("Could not update Override mod: {error}"));
+                self.push_notification(&format!("Could not update DAO library: {error}"));
                 if self.selected_game().is_some_and(|game| game.id == game_id) {
                     self.reload_mods(sender);
                 }

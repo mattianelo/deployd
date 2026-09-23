@@ -1,6 +1,7 @@
 mod appearance;
 mod archive_drop;
 mod cache_handlers;
+mod dao_order;
 mod deploy;
 mod deployment_dialog;
 mod deployment_status;

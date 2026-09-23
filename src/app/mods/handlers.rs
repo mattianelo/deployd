@@ -70,9 +70,6 @@ impl App {
         to: usize,
         sender: &ComponentSender<Self>,
     ) {
-        if self.game_shows_overrides() {
-            return;
-        }
         if self.mods.selection_active
             && self.mods.selected.len() > 1
             && self.mods.selected.contains(&from)
@@ -83,6 +80,10 @@ impl App {
             return;
         }
 
+        if self.game_shows_overrides() {
+            self.move_dao_primary(&[from], to, sender);
+            return;
+        }
         let mut guard = self.mods.rows.guard();
         let len = guard.len();
         let Some(to) = item_destination(from, to, len) else {
@@ -193,6 +194,7 @@ impl App {
         sender: &ComponentSender<Self>,
     ) {
         if self.game_shows_overrides() {
+            self.move_dao_primary(&selected, to, sender);
             return;
         }
         let len = self.mods.rows.guard().len();
@@ -717,7 +719,6 @@ impl App {
     }
 
     pub(crate) fn handle_enter_mod_selection_mode(&mut self) {
-        let allow_drag = !self.game_shows_overrides();
         self.mods.selection_active = true;
         self.mods.selection_dirty = false;
         self.mods.selected.clear();
@@ -725,7 +726,7 @@ impl App {
         for item in g.iter_mut() {
             item.selection_mode = true;
             item.selected = false;
-            item.drag_enabled.set(allow_drag);
+            item.drag_enabled.set(true);
         }
     }
 

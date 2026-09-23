@@ -100,6 +100,123 @@ impl Fixture {
 
 // @variants: appimage, snap
 #[tokio::test]
+async fn reordered_dao_components_persist_only_to_the_selected_profile() -> Result<()> {
+    let fixture = Fixture::new().await?;
+    let profile = fixture
+        .tracker
+        .ensure_default_profile(&fixture.game.id)
+        .await?;
+    let result = fixture.install(None, false, &HashSet::new()).await?;
+    let other = fixture
+        .tracker
+        .create_profile(&fixture.game.id, "Other")
+        .await?;
+    fixture
+        .tracker
+        .save_to_profile(&other, &fixture.game.id)
+        .await?;
+    let ids = vec![
+        result.additional_mods[0].id.clone(),
+        result.mod_entry.id.clone(),
+    ];
+    fixture
+        .tracker
+        .set_eclipse_order(&fixture.game.id, &profile.id, &ids)
+        .await?;
+    assert_eq!(
+        fixture
+            .tracker
+            .list_mods(&fixture.game.id)
+            .await?
+            .into_iter()
+            .map(|entry| entry.id)
+            .collect::<Vec<_>>(),
+        ids
+    );
+    let saved: Vec<String> =
+        sqlx::query_scalar("SELECT mod_id FROM profile_mods WHERE profile_id=? ORDER BY priority")
+            .bind(&profile.id)
+            .fetch_all(&fixture.tracker.pool)
+            .await?;
+    assert_eq!(saved, ids);
+    let saved_other: Vec<String> =
+        sqlx::query_scalar("SELECT mod_id FROM profile_mods WHERE profile_id=? ORDER BY priority")
+            .bind(&other)
+            .fetch_all(&fixture.tracker.pool)
+            .await?;
+    assert_eq!(saved_other, vec![ids[1].clone(), ids[0].clone()]);
+    assert!(
+        fixture
+            .tracker
+            .set_eclipse_order(
+                &fixture.game.id,
+                &profile.id,
+                &[ids[0].clone(), ids[0].clone()]
+            )
+            .await
+            .is_err()
+    );
+    sqlx::query("CREATE TRIGGER fail_dao_order BEFORE UPDATE ON profile_mods BEGIN SELECT RAISE(ABORT,'injected failure'); END")
+        .execute(&fixture.tracker.pool).await?;
+    let reverse = vec![ids[1].clone(), ids[0].clone()];
+    assert!(
+        fixture
+            .tracker
+            .set_eclipse_order(&fixture.game.id, &profile.id, &reverse)
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        fixture
+            .tracker
+            .list_mods(&fixture.game.id)
+            .await?
+            .into_iter()
+            .map(|entry| entry.id)
+            .collect::<Vec<_>>(),
+        ids
+    );
+    Ok(())
+}
+
+// @variants: appimage, snap
+#[tokio::test]
+async fn addin_companion_documents_do_not_create_a_phantom_override_component() -> Result<()> {
+    let mut fixture = Fixture::new().await?;
+    fixture
+        .files
+        .retain(|(source, _)| source.starts_with(&fixture.roots[0].root));
+    for name in [
+        "QUDAO Fixpack v3.5 Readme.txt",
+        "QUDAO Fixpack v3.5 Affected Files List.txt",
+        "UserManifest_example.xml",
+    ] {
+        let source = fixture.temp.path().join(name);
+        std::fs::write(&source, b"companion metadata")?;
+        fixture.files.push((source, name.into()));
+    }
+    let result = fixture.install(None, false, &HashSet::new()).await?;
+    assert!(result.additional_mods.is_empty());
+    assert!(
+        fixture
+            .tracker
+            .eclipse_override_ids(&fixture.game.id)
+            .await?
+            .is_empty()
+    );
+    assert_eq!(
+        fixture
+            .tracker
+            .get_mod_files(&result.mod_entry.id)
+            .await?
+            .len(),
+        5
+    );
+    Ok(())
+}
+
+// @variants: appimage, snap
+#[tokio::test]
 async fn splits_loose_overrides_without_detaching_dazip_resources() -> Result<()> {
     let fixture = Fixture::new().await?;
     let result = fixture.install(None, false, &HashSet::new()).await?;

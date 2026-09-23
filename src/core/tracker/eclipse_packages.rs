@@ -19,6 +19,45 @@ pub(crate) struct EclipseInstall {
 }
 
 impl Tracker {
+    pub(crate) async fn set_eclipse_order(
+        &self,
+        game: &str,
+        profile: &str,
+        ids: &[String],
+    ) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        let active: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM profiles WHERE id=? AND game_id=? AND is_active=1)",
+        )
+        .bind(profile)
+        .bind(game)
+        .fetch_one(&mut *tx)
+        .await?;
+        ensure!(active, "Selected DAO profile changed; reload its mod order");
+        let stored: HashSet<String> = sqlx::query_scalar("SELECT id FROM mods WHERE game_id=?")
+            .bind(game)
+            .fetch_all(&mut *tx)
+            .await?
+            .into_iter()
+            .collect();
+        ensure!(
+            stored.len() == ids.len() && stored == ids.iter().cloned().collect(),
+            "DAO library changed; reload before reordering"
+        );
+        for (priority, id) in ids.iter().enumerate() {
+            let priority = i32::try_from(priority)?;
+            sqlx::query("UPDATE mods SET priority=? WHERE id=? AND game_id=?")
+                .bind(priority)
+                .bind(id)
+                .bind(game)
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query("INSERT INTO profile_mods(profile_id,mod_id,enabled,priority) SELECT ?,id,enabled,priority FROM mods WHERE id=? ON CONFLICT(profile_id,mod_id) DO UPDATE SET priority=excluded.priority")
+                .bind(profile).bind(id).execute(&mut *tx).await?;
+        }
+        tx.commit().await.context("Could not save DAO mod order")
+    }
+
     pub(crate) async fn eclipse_component(&self, mod_id: &str) -> Result<Option<EclipseComponent>> {
         let row = sqlx::query_as::<_, (String, String)>(
             "SELECT kind, source_key FROM eclipse_packages WHERE mod_id = ?",

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Fixed accompanying DAZIP documents, including Qwinn's fixpack readme and user
+  manifest, creating a spurious Override component on new installs.
+- Restored reordering in Dragon Age: Origins' DAZIPs & Tools panel, with saved
+  profile priorities and priority numbers across both panels. Conflict colors now
+  agree with deployment when existing mods have equal priorities.
 - Fixed Dragon Age: Origins deployment corrupting BOM-prefixed AddIns.xml and
   DAZIP registrations, which could make DLC and mods disappear in game.
 - Stopping management now clears the game's mod list, profiles, deployment history

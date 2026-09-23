@@ -311,6 +311,7 @@ impl Tracker {
                     .4
                     .cmp(&all_files[a].4)
                     .then_with(|| all_files[a].0.cmp(&all_files[b].0))
+                    .then_with(|| all_files[a].1.cmp(&all_files[b].1))
             });
 
             // Deduplicate by mod_id: keep only the highest-priority file per mod.
@@ -380,6 +381,29 @@ mod tests {
     use crate::core::game::engine_handler::handler_for;
     use crate::models::game::GameEngine;
     use crate::models::mod_entry::{InstallTarget, ModEntry};
+
+    // @variants: both
+    #[tokio::test]
+    async fn equal_priority_dao_conflicts_match_deployment_and_visible_order() -> Result<()> {
+        let tracker = make_tracker().await;
+        for id in ["a", "b"] {
+            tracker.insert_mod(&mod_entry(id, id, 0)).await?;
+            insert_file(&tracker, id, "addins/example/manifest.xml").await;
+        }
+        let result = tracker
+            .compute_overrides("g", handler_for(&GameEngine::Eclipse), &HashMap::new())
+            .await?;
+        assert_eq!(result["a"].overrides, 1);
+        assert_eq!(result["b"].overridden_by, 1);
+        let order: Vec<_> = tracker
+            .list_mods("g")
+            .await?
+            .into_iter()
+            .map(|entry| entry.id)
+            .collect();
+        assert_eq!(order, ["b", "a"]);
+        Ok(())
+    }
 
     async fn make_tracker() -> Tracker {
         let tracker = Tracker::open("sqlite::memory:")
