@@ -8,6 +8,21 @@ use super::super::App;
 use super::super::messages::{AppCmdMsg, AppMsg};
 
 impl App {
+    fn reload_download_statuses(&self, sender: &ComponentSender<Self>) {
+        if let Some(tracker) = self.session.tracker.clone() {
+            sender.oneshot_command(async move {
+                AppCmdMsg::Downloads(
+                    crate::app::messages::DownloadsCmdMsg::DownloadStatusesReloaded(
+                        tracker
+                            .load_download_entries()
+                            .await
+                            .map_err(|error| error.to_string()),
+                    ),
+                )
+            });
+        }
+    }
+
     pub(crate) fn handle_remove_current_game(
         &mut self,
         root: &adw::ApplicationWindow,
@@ -45,6 +60,7 @@ impl App {
         let selected_id = self.selected_game().map(|game| game.id.clone());
         self.session.games = configs.into_iter().map(|config| config.game).collect();
         self.refresh_game_selection(selected_id.as_deref(), sender);
+        self.reload_download_statuses(sender);
     }
 
     pub(crate) fn handle_manage_games_clicked(
@@ -194,12 +210,13 @@ impl App {
     ) {
         let dialog = adw::AlertDialog::builder()
             .heading("Stop managing this game?")
-            .body("Deployment history is always retained and can be deleted explicitly from Deployment history. Choose whether to keep or permanently delete the editable mod cache.")
+            .body("This clears Deployd’s mod list, profiles, deployment history and installed download status. Game files, saves and downloaded archives stay untouched. Choose whether to keep or permanently delete the editable mod cache.")
             .build();
         dialog.add_response("cancel", "Cancel");
-        dialog.add_response("remove", "Remove, keep data");
-        dialog.add_response("remove-delete", "Remove & delete mod cache");
+        dialog.add_response("remove", "Reset, keep cached files");
+        dialog.add_response("remove-delete", "Reset & delete mod cache");
         dialog.set_close_response("cancel");
+        dialog.set_response_appearance("remove", adw::ResponseAppearance::Destructive);
         dialog.set_response_appearance("remove-delete", adw::ResponseAppearance::Destructive);
         let s = sender.input_sender().clone();
         dialog.connect_response(None, move |_, response| match response {
@@ -301,6 +318,7 @@ impl App {
             self.push_notification(&format!("Game removal warning: {warning}"));
         }
         self.refresh_game_selection(selected_id.as_deref(), sender);
+        self.reload_download_statuses(sender);
     }
 
     fn refresh_game_selection(

@@ -147,6 +147,9 @@ Deployd uses libadwaita throughout its primary workflows:
   Enable, disable, inspect, reinstall, or remove Override entries from their own panel, then
   **Deploy** to apply changes. Reinstalling one component keeps the other components unchanged.
   Existing mixed installations keep their files until reinstalled to split them.
+  DAZIP deployment preserves existing DLC registrations, including BOM-prefixed
+  AddIns.xml files. An already-damaged registration file needs repair or restoration
+  from a valid backup before deployment can continue.
   The Witcher games, Mass Effect and Cyberpunk use a single mod list. Mass Effect omits file-conflict
   indicators because its managed deployment handles those files.
 - Switching games shows the saved mod and plugin lists while game-file checks finish in the
@@ -297,6 +300,12 @@ On first launch, Deployd shows a **Welcome Wizard** that walks you through addin
 4. Click **Finish** — your games are saved and ready to use
 
 Both the installation folder and Wine prefix are required for each game. To add or remove games later, go to **Settings → Manage Games**.
+
+Stopping management clears the game's mod list, profiles, deployment history and
+installed-download status, so re-adding the game starts fresh. Existing game files,
+saves and downloaded archives stay untouched. Removing a game lets you keep or
+delete its cached mod files; unchecking it in Manage Games keeps them. Complete any
+pending deployment or save recovery before removing the game.
 
 Supported titles: **Skyrim SE**, **Fallout 4**, **Fallout: New Vegas**, **Starfield**, **The Witcher 3**, **Cyberpunk 2077**, **The Witcher 1**, **Dragon Age: Origins**
 

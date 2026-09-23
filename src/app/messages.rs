@@ -623,6 +623,7 @@ pub(crate) enum DownloadsCmdMsg {
     },
     DownloadsDirUpdated(Result<Option<PathBuf>, String>),
     DownloadsScanned(Result<DownloadScanResult, String>),
+    DownloadStatusesReloaded(Result<Vec<crate::models::download::DownloadEntry>, String>),
 }
 
 #[derive(Debug)]

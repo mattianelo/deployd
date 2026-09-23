@@ -18,6 +18,7 @@ pub mod mods;
 pub mod order_snapshots;
 pub mod plugins;
 pub mod profiles;
+mod removal;
 pub mod settings;
 pub mod vanilla;
 pub mod vanilla_backups;

@@ -20,6 +20,7 @@ impl Tracker {
         baselines: &[crate::core::game::mass_effect::baseline::Baseline],
         family: Option<(&str, &crate::core::game::mass_effect::family::Family)>,
     ) -> Result<()> {
+        let _lease = crate::core::generations::operation::Lease::acquire().await?;
         let mut transaction = self
             .pool
             .begin()
@@ -87,14 +88,7 @@ impl Tracker {
             super::mele_families::insert(&mut transaction, game_id, family).await?;
         }
         for game_id in hidden_ids {
-            sqlx::query(
-                "INSERT INTO games (id, hidden) VALUES (?, 1)
-                 ON CONFLICT(id) DO UPDATE SET hidden = 1",
-            )
-            .bind(game_id)
-            .execute(&mut *transaction)
-            .await
-            .with_context(|| format!("Failed to hide game '{game_id}'"))?;
+            super::removal::reset(&mut transaction, game_id).await?;
         }
         if let Some(first) = configs.first() {
             sqlx::query(
@@ -241,50 +235,18 @@ impl Tracker {
         game_id: &str,
         delete_mods: bool,
     ) -> Result<Vec<String>> {
+        let _lease = crate::core::generations::operation::Lease::acquire().await?;
         let mut transaction = self
             .pool
             .begin()
             .await
             .context("Failed to begin game removal")?;
-        let mod_ids: Vec<String> = if delete_mods {
-            sqlx::query_scalar("SELECT id FROM mods WHERE game_id = ?")
-                .bind(game_id)
-                .fetch_all(&mut *transaction)
-                .await
-                .context("Failed to list mods for game removal")?
-        } else {
-            Vec::new()
-        };
-        for mod_id in &mod_ids {
-            sqlx::query("DELETE FROM plugins WHERE mod_id = ?")
-                .bind(mod_id)
-                .execute(&mut *transaction)
-                .await
-                .with_context(|| format!("Failed to delete plugins for mod '{mod_id}'"))?;
-            sqlx::query("DELETE FROM mod_files WHERE mod_id = ?")
-                .bind(mod_id)
-                .execute(&mut *transaction)
-                .await
-                .with_context(|| format!("Failed to delete files for mod '{mod_id}'"))?;
-            sqlx::query("DELETE FROM mods WHERE id = ?")
-                .bind(mod_id)
-                .execute(&mut *transaction)
-                .await
-                .with_context(|| format!("Failed to delete mod '{mod_id}'"))?;
-        }
-        sqlx::query(
-            "INSERT INTO games (id, hidden) VALUES (?, 1)
-             ON CONFLICT(id) DO UPDATE SET hidden = 1",
-        )
-        .bind(game_id)
-        .execute(&mut *transaction)
-        .await
-        .context("Failed to hide removed game")?;
+        let mod_ids = super::removal::reset(&mut transaction, game_id).await?;
         transaction
             .commit()
             .await
             .context("Failed to commit game removal")?;
-        Ok(mod_ids)
+        Ok(if delete_mods { mod_ids } else { Vec::new() })
     }
 
     /// Return the IDs of all games the user has explicitly hidden.

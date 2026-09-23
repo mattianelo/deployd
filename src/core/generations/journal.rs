@@ -334,7 +334,11 @@ impl Journal {
             for change in &journal.changes {
                 control.check()?;
                 let path = change.target.resolve(&game)?;
-                journal.prepared_parents(&game, &change.target)?;
+                if change.before != Node::Absent || change.after != Node::Absent {
+                    journal.prepared_parents(&game, &change.target)?;
+                } else {
+                    layout::accessible(&game, &change.target, &path, true)?;
+                }
                 ensure!(inspect(&path, &control)? == change.before,
                     "Managed files changed after preparation; prepare deployment again");
             }
@@ -672,8 +676,12 @@ impl Journal {
                     control.check()?;
                     let path = change.path;
                     journal.verify_links(&game)?;
-                    layout::accessible(&game, &change.target, &path, false)?;
-                    parents(&path, &game)?;
+                    let already_absent =
+                        change.before == Node::Absent && change.after == Node::Absent;
+                    layout::accessible(&game, &change.target, &path, already_absent)?;
+                    if !already_absent {
+                        parents(&path, &game)?;
+                    }
                     ensure!(
                         inspect(&path, &control)? == change.before,
                         "Managed file changed since preparation; activation stopped: {}",

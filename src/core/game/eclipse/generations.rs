@@ -10,12 +10,13 @@ struct Entry {
 }
 
 fn entries(xml: &str) -> Result<Vec<Entry>> {
-    let mut reader = Reader::from_str(xml);
+    let offset = xml.len() - xml.trim_start_matches('\u{feff}').len();
+    let mut reader = Reader::from_str(&xml[offset..]);
     let mut depth = 0_usize;
     let mut active = None;
     let mut entries = Vec::new();
     loop {
-        let start = usize::try_from(reader.buffer_position())?;
+        let start = offset + usize::try_from(reader.buffer_position())?;
         match reader.read_event()? {
             Event::Start(element) | Event::Empty(element)
                 if matches!(element.name().as_ref(), b"AddInItem" | b"AddIn")
@@ -41,7 +42,7 @@ fn entries(xml: &str) -> Result<Vec<Entry>> {
                     .next()
                     .context("Add-in registration is missing its UID")?;
                 ensure!(!uid.is_empty(), "Add-in registration has an empty UID");
-                let end = usize::try_from(reader.buffer_position())?;
+                let end = offset + usize::try_from(reader.buffer_position())?;
                 if xml[..end].ends_with("/>") {
                     entries.push(Entry {
                         uid,
@@ -62,7 +63,7 @@ fn entries(xml: &str) -> Result<Vec<Entry>> {
                     let (uid, start, _) = active.take().context("Missing add-in XML entry")?;
                     entries.push(Entry {
                         uid,
-                        range: start..usize::try_from(reader.buffer_position())?,
+                        range: start..offset + usize::try_from(reader.buffer_position())?,
                     });
                 }
             }
@@ -108,12 +109,13 @@ pub(crate) fn render(
             output.replace_range(entry.range, "");
         }
     }
-    let mut reader = Reader::from_str(&output);
+    let offset = output.len() - output.trim_start_matches('\u{feff}').len();
+    let mut reader = Reader::from_str(&output[offset..]);
     let mut depth = 0_usize;
     let mut insertion = None;
     let mut empty = None;
     loop {
-        let start = usize::try_from(reader.buffer_position())?;
+        let start = offset + usize::try_from(reader.buffer_position())?;
         match reader.read_event()? {
             Event::Start(element) => {
                 if depth == 0 {
@@ -129,7 +131,7 @@ pub(crate) fn render(
                     element.name().as_ref() == b"AddInsList" && empty.is_none(),
                     "AddIns.xml has an unsupported root"
                 );
-                empty = Some(start..usize::try_from(reader.buffer_position())?);
+                empty = Some(start..offset + usize::try_from(reader.buffer_position())?);
             }
             Event::End(_) => {
                 depth = depth.checked_sub(1).context("Unbalanced AddIns.xml")?;
@@ -157,6 +159,8 @@ pub(crate) fn render(
         let insertion = insertion.context("AddIns.xml has no AddInsList root")?;
         output.insert_str(insertion, &inner);
     }
+    entries(&output)
+        .context("Generated AddIns.xml is invalid; existing registrations were preserved")?;
     Ok(output)
 }
 
@@ -179,6 +183,50 @@ mod tests {
             render(Some(&rendered), &BTreeSet::new(), &desired)?,
             rendered
         );
+        Ok(())
+    }
+
+    // @variants: both
+    #[test]
+    fn preserves_bom_and_dlc_when_registering_mods() -> Result<()> {
+        let xml = "\u{feff}<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<AddInsList>\r\n  <AddInItem UID=\"official\"><Name>Édition</Name></AddInItem>\r\n</AddInsList>";
+        let desired = registrations(
+            b"\xef\xbb\xbf<Manifest><AddInItem UID=\"mod\"><Name>Mod</Name></AddInItem></Manifest>",
+        )?;
+        assert_eq!(
+            desired["mod"],
+            "<AddInItem UID=\"mod\"><Name>Mod</Name></AddInItem>"
+        );
+        let rendered = render(Some(xml), &BTreeSet::new(), &desired)?;
+        assert!(rendered.starts_with('\u{feff}'));
+        let actual = registrations(rendered.as_bytes())?;
+        assert_eq!(actual.len(), 2);
+        assert_eq!(
+            actual["official"],
+            "<AddInItem UID=\"official\"><Name>Édition</Name></AddInItem>"
+        );
+        assert_eq!(actual["mod"], desired["mod"]);
+        assert_eq!(
+            render(Some(&rendered), &BTreeSet::new(), &desired)?,
+            rendered
+        );
+        let removed = render(
+            Some(&rendered),
+            &BTreeSet::from(["mod".into()]),
+            &BTreeMap::new(),
+        )?;
+        assert_eq!(registrations(removed.as_bytes())?.len(), 1);
+        Ok(())
+    }
+
+    // @variants: both
+    #[test]
+    fn expands_bom_prefixed_empty_lists_and_rejects_invalid_generated_entries() -> Result<()> {
+        let desired = registrations(b"<Manifest><AddInItem UID=\"mod\"/></Manifest>")?;
+        let rendered = render(Some("\u{feff}<AddInsList/>"), &BTreeSet::new(), &desired)?;
+        assert_eq!(registrations(rendered.as_bytes())?, desired);
+        let invalid = BTreeMap::from([("mod".into(), "<AddInItem UID=\"mod\">".into())]);
+        assert!(render(None, &BTreeSet::new(), &invalid).is_err());
         Ok(())
     }
 

@@ -107,7 +107,9 @@ pub(super) async fn prepare(
                 .transpose()?;
             Ok((
                 if needed {
-                    engine::render(current.as_deref(), &previous, &desired)?.into_bytes()
+                    engine::render(current.as_deref(), &previous, &desired)
+                        .context("Cannot update Settings/AddIns.xml; restore a valid backup if its XML is damaged")?
+                        .into_bytes()
                 } else {
                     Vec::new()
                 },
@@ -164,4 +166,123 @@ pub(super) async fn prepare(
         manifest.outputs.sort_by(|a, b| a.target.cmp(&b.target));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // @variants: both
+    #[tokio::test]
+    async fn deployment_preserves_dlc_registration_and_rollback_restores_original_bytes()
+    -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let (tracker, mut game, profile) =
+            super::super::tests::snapshot_fixture(temp.path()).await?;
+        game.engine = GameEngine::Eclipse;
+        game.id = "dragon-age".into();
+        game.data_subdir = "Documents/BioWare/Dragon Age".into();
+        sqlx::query("UPDATE profiles SET game_id='dragon-age'")
+            .execute(&tracker.pool)
+            .await?;
+        sqlx::query("UPDATE mods SET game_id='dragon-age'")
+            .execute(&tracker.pool)
+            .await?;
+        game.wine_prefix = Some(temp.path().join("prefix"));
+        fs::create_dir_all(temp.path().join("prefix/drive_c/users/steamuser/Documents"))?;
+        fs::write(temp.path().join("prefix/system.reg"), "")?;
+        fs::create_dir_all(crate::core::game::deploy_dir(&game).join("Settings"))?;
+        let xml = "\u{feff}<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<AddInsList>\r\n<AddInItem UID=\"official\"><Name>DLC</Name></AddInItem>\r\n</AddInsList>";
+        let config = crate::core::game::deploy_dir(&game).join("Settings/AddIns.xml");
+        fs::write(&config, xml)?;
+        fs::write(
+            temp.path().join("winner/file.txt"),
+            "\u{feff}<Manifest><AddInItem UID=\"mod\"><Name>Mod</Name></AddInItem></Manifest>",
+        )?;
+        sqlx::query("UPDATE mod_files SET game_rel_lowercase='addins/mod/manifest.xml',game_rel_original='AddIns/mod/Manifest.xml'")
+            .execute(&tracker.pool).await?;
+        let history = History::open(&tracker, &game.id, temp.path(), true).await?;
+        let (manifest, _, mut journal) =
+            super::super::state_tests::unpublished(&history, &game, &profile).await?;
+        let mut manifest = Some(manifest);
+        prepare(
+            &history,
+            &game,
+            &mut manifest,
+            &mut journal,
+            Control::default(),
+        )
+        .await?;
+        journal
+            .verify_prepared(&history, &game, Vec::new(), Control::default())
+            .await?;
+        journal
+            .persist(&history, &game, "deploy", Default::default())
+            .await?;
+        let _applied = journal.apply(&history, &game, Control::default()).await?;
+        let registered = engine::registrations(&fs::read(&config)?)?;
+        assert_eq!(registered.len(), 2);
+        assert_eq!(
+            registered["official"],
+            "<AddInItem UID=\"official\"><Name>DLC</Name></AddInItem>"
+        );
+        assert!(registered.contains_key("mod"));
+        journal.recover(&history, &game, false).await?;
+        assert_eq!(fs::read_to_string(config)?, xml);
+        Ok(())
+    }
+
+    // @variants: both
+    #[tokio::test]
+    async fn already_absent_old_targets_do_not_require_recreating_their_parents() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let (tracker, mut game, _) = super::super::tests::snapshot_fixture(temp.path()).await?;
+        game.engine = GameEngine::Eclipse;
+        game.id = "dragon-age".into();
+        game.data_subdir = "Documents/BioWare/Dragon Age".into();
+        sqlx::query("UPDATE profiles SET game_id='dragon-age'")
+            .execute(&tracker.pool)
+            .await?;
+        sqlx::query("UPDATE mods SET game_id='dragon-age'")
+            .execute(&tracker.pool)
+            .await?;
+        game.wine_prefix = Some(temp.path().join("prefix"));
+        fs::create_dir_all(temp.path().join("prefix/drive_c/users/steamuser/Documents"))?;
+        fs::write(temp.path().join("prefix/system.reg"), "")?;
+        fs::create_dir_all(crate::core::game::deploy_dir(&game))?;
+        let history = History::open(&tracker, &game.id, temp.path(), true).await?;
+        let target = Target::file(&game.engine, "AddIns/removed/Manifest.xml")?;
+        let journal = Journal::prepare(
+            &history,
+            &game,
+            vec![(target.clone(), Node::Absent)],
+            Control::default(),
+        )
+        .await?;
+        journal
+            .verify_prepared(&history, &game, Vec::new(), Control::default())
+            .await?;
+        journal
+            .persist(&history, &game, "purge", Default::default())
+            .await?;
+        let _applied = journal.apply(&history, &game, Control::default()).await?;
+        journal.recover(&history, &game, false).await?;
+        assert!(!crate::core::game::deploy_dir(&game).join("AddIns").exists());
+        fs::create_dir_all(crate::core::game::deploy_dir(&game).join("AddIns/removed"))?;
+        fs::write(target.resolve(&game)?, b"external")?;
+        assert!(
+            journal
+                .verify_prepared(&history, &game, Vec::new(), Control::default())
+                .await
+                .is_err()
+        );
+        fs::remove_dir_all(temp.path().join("prefix"))?;
+        assert!(
+            journal
+                .verify_prepared(&history, &game, Vec::new(), Control::default())
+                .await
+                .is_err()
+        );
+        Ok(())
+    }
 }

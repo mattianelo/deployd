@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- Fixed Dragon Age: Origins deployment corrupting BOM-prefixed AddIns.xml and
+  DAZIP registrations, which could make DLC and mods disappear in game.
+- Stopping management now clears the game's mod list, profiles, deployment history
+  and installed-download status. Re-adding it starts fresh; game files, saves and
+  downloaded archives are preserved. Cached mod files can be kept or deleted.
+- Fixed deployment failing on already-missing old mod files whose parent folders
+  had also been removed.
+
 - Purge now removes empty parent folders left behind by deployed mod files, even
   when those folders were not listed separately in the mod.
 

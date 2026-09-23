@@ -386,6 +386,7 @@ impl Component for GameSetupDialog {
 
         // ── List page ─────────────────────────────────────────────────────────
         games_section.set_title("Your Games");
+        games_section.set_description(Some("Unchecking a game resets its mod list, profiles and deployment history when you save. Game files, saves, archives and cached files are kept."));
         games_section.add(&games_list);
 
         let add_game_btn = gtk::Button::with_label("Add a Game…");

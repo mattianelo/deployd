@@ -4,6 +4,18 @@ use crate::models::download::{DownloadEntry, DownloadStatus, NexusIds};
 
 use super::super::App;
 
+fn refresh_installed_statuses(entries: &mut [DownloadEntry], saved: &[DownloadEntry]) {
+    for entry in entries
+        .iter_mut()
+        .filter(|entry| entry.status == DownloadStatus::Installed)
+    {
+        if let Some(saved) = saved.iter().find(|saved| saved.id == entry.id) {
+            entry.status = saved.status.clone();
+            entry.status_msg = saved.status.default_status_msg().to_owned();
+        }
+    }
+}
+
 fn replaced_download_index(
     entries: &[DownloadEntry],
     replacement: &crate::app::state::ReplacementContext,
@@ -31,6 +43,21 @@ fn replaced_download_index(
 }
 
 impl App {
+    pub(crate) fn handle_download_statuses_reloaded(
+        &mut self,
+        result: Result<Vec<DownloadEntry>, String>,
+    ) {
+        match result {
+            Ok(entries) => {
+                refresh_installed_statuses(&mut self.download.all, &entries);
+                self.rebuild_downloads_view();
+            }
+            Err(error) => {
+                self.push_notification(&format!("Could not refresh download status: {error}"))
+            }
+        }
+    }
+
     pub(crate) fn reset_installed_download_after_replacement(
         &mut self,
         replacement: &crate::app::state::ReplacementContext,
@@ -345,7 +372,7 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::replaced_download_index;
+    use super::{refresh_installed_statuses, replaced_download_index};
     use crate::app::state::ReplacementContext;
     use crate::models::download::{DownloadEntry, DownloadStatus, NexusIds};
 
@@ -389,5 +416,32 @@ mod tests {
             Some(0)
         );
         assert_eq!(replacement.priority, 7);
+    }
+    // @variants: both
+    #[test]
+    fn reset_refreshes_installed_badges_without_interrupting_active_downloads() {
+        let mut entries: Vec<_> = ["reset", "other", "active"]
+            .into_iter()
+            .map(|id| {
+                let mut entry = DownloadEntry::new(id.into(), id.into(), None);
+                entry.status = DownloadStatus::Installed;
+                entry.status_msg = "Installed".into();
+                entry
+            })
+            .collect();
+        entries[2].status = DownloadStatus::Downloading;
+        entries[2].status_msg = "Downloading...".into();
+        let mut saved = entries.clone();
+        saved[0].status = DownloadStatus::Downloaded;
+        saved[2].status = DownloadStatus::Downloaded;
+        refresh_installed_statuses(&mut entries, &saved);
+        assert_eq!(entries[0].status, DownloadStatus::Downloaded);
+        assert_eq!(
+            entries[0].status_msg,
+            DownloadStatus::Downloaded.default_status_msg()
+        );
+        assert_eq!(entries[1].status, DownloadStatus::Installed);
+        assert_eq!(entries[2].status, DownloadStatus::Downloading);
+        assert_eq!(entries[2].status_msg, "Downloading...");
     }
 }

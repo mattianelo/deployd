@@ -736,6 +736,9 @@ impl App {
             ),
             DownloadsCmdMsg::DownloadsDirUpdated(dir) => self.handle_cmd_downloads_dir_updated(dir),
             DownloadsCmdMsg::DownloadsScanned(result) => self.handle_cmd_downloads_scanned(result),
+            DownloadsCmdMsg::DownloadStatusesReloaded(result) => {
+                self.handle_download_statuses_reloaded(result)
+            }
         }
     }
 

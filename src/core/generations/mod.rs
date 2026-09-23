@@ -6,7 +6,7 @@ mod divergence;
 mod eclipse;
 mod manifest;
 mod mele;
-mod operation;
+pub(crate) mod operation;
 mod ownership;
 mod records;
 mod store;

@@ -5,14 +5,14 @@ use anyhow::{Context, Result};
 use tokio::sync::{Mutex, OwnedMutexGuard, OwnedRwLockReadGuard};
 use tokio::task::JoinHandle;
 
-pub(super) struct Lease {
+pub(crate) struct Lease {
     // Field drop order keeps the next history operation behind location release.
     _location: OwnedRwLockReadGuard<()>,
     _history: OwnedMutexGuard<()>,
 }
 
 impl Lease {
-    pub(super) async fn acquire() -> Result<Arc<Self>> {
+    pub(crate) async fn acquire() -> Result<Arc<Self>> {
         static OPERATIONS: OnceLock<Arc<Mutex<()>>> = OnceLock::new();
         let history = OPERATIONS
             .get_or_init(|| Arc::new(Mutex::new(())))
