@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [3.0.1]
+
 - Fixed accompanying DAZIP documents, including Qwinn's fixpack readme and user
   manifest, creating a spurious Override component on new installs.
 - Restored reordering in Dragon Age: Origins' DAZIPs & Tools panel, with saved
