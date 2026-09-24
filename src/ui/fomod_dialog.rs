@@ -34,7 +34,7 @@ pub struct FomodDialog {
     config: FomodUiConfig,
     extracted_root: PathBuf,
     current_step: usize,
-    /// selections[step_idx][group_idx] = set of selected plugin indices
+    /// `selections[step_idx][group_idx]` = set of selected plugin indices
     selections: Vec<Vec<HashSet<usize>>>,
     /// Container for dynamic step content
     content_box: gtk::Box,

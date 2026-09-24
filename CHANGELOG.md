@@ -1,8 +1,11 @@
 # Changelog
 
-## [Unreleased]
-
 ## [3.0.1]
+
+- Fixed a TLS 1.3 handshake validation vulnerability affecting HTTPS and Nexus SSO
+  connections (RUSTSEC-2026-0285).
+- Updated a shared synchronization dependency to fix a memory-safety issue and
+  replace its withdrawn release.
 
 - Fixed accompanying DAZIP documents, including Qwinn's fixpack readme and user
   manifest, creating a spurious Override component on new installs.

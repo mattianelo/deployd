@@ -44,6 +44,8 @@ sha2 = "0.10"
 dirs = "5"
 
 # Nexus API
+# Constrain the shared HTTPS and SSO TLS stack to the RUSTSEC-2026-0285 fix.
+rustls = { version = "=0.23.45", default-features = false }
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
 ashpd = { version = "0.13", features = ["documents", "file_chooser", "trash"] }
 futures-util = "0.3"

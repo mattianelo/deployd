@@ -452,6 +452,8 @@ Launch modding tools through the package-managed runtime from the **Tools** pane
 
 Deployd treats downloaded archives and installer metadata as untrusted input. Keep the application
 updated so archive, XML, and network-parser security fixes are applied with new releases.
+HTTPS downloads and Nexus SSO use a TLS implementation patched to reject TLS 1.3
+handshake messages received at the wrong encryption level.
 
 ---
 

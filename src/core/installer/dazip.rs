@@ -12,14 +12,14 @@ use crate::dlog;
 /// Two DAZIP layouts are supported:
 ///
 /// **Contents format** (standard DAO DAZIP):
-/// ```
+/// ```text
 /// Contents/addins/<uid>/…   → AddIns/<uid>/…
 /// Contents/packages/…       → packages/…
 /// Manifest.xml              → AddIns/<uid>/manifest.xml
 /// ```
 ///
 /// **Legacy format**:
-/// ```
+/// ```text
 /// package/…   → AddIns/<uid>/…
 /// manifest.xml
 /// ```

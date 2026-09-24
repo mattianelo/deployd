@@ -56,7 +56,7 @@ pub fn snap_wine_mono_cache_dir() -> Result<PathBuf> {
     Ok(deployd_data_dir()?.join("wine-runtime"))
 }
 
-/// Deployd cache root: <data>/deployd/cache
+/// Deployd cache root: `<data>/deployd/cache`
 pub fn cache_root() -> Result<PathBuf> {
     Ok(deployd_data_dir()?.join("cache"))
 }
@@ -80,12 +80,12 @@ pub fn named_mods_dir_in(root: &Path) -> PathBuf {
     root.join("named_mods")
 }
 
-/// Per-profile save storage root: <data>/deployd/saves
+/// Per-profile save storage root: `<data>/deployd/saves`
 pub fn saves_root() -> Result<PathBuf> {
     Ok(deployd_data_dir()?.join("saves"))
 }
 
-/// Database path: <data>/deployd/deployd.db
+/// Database path: `<data>/deployd/deployd.db`
 pub fn db_path() -> Result<PathBuf> {
     Ok(deployd_data_dir()?.join("deployd.db"))
 }
