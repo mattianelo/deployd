@@ -1,5 +1,10 @@
 # Changelog
 
+## [3.0.3]
+
+- Replaces the unpublished 3.0.2 release, including its fixes for valid Mass Effect
+  Legendary Edition M3M packages targeting game-specific assets.
+
 ## [3.0.2]
 
 - Fixed valid Mass Effect Legendary Edition M3M packages being rejected when
