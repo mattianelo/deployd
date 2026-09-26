@@ -21,7 +21,7 @@
       with original-file protection. Experimental Mass Effect Legendary Edition support
       lets you install, manage and restore mods for all three games.
     </p>
-    <p>Version 3.0.1.</p>
+    <p>Version 3.0.2.</p>
     <ul>
       <li>Supports Skyrim SE, Fallout 4, Fallout: New Vegas, Starfield, The Witcher 3, and Cyberpunk 2077</li>
       <li>Experimental mod installation and profile rebuilding for Mass Effect Legendary Edition</li>
@@ -73,6 +73,13 @@
   </screenshots>
 
   <releases>
+    <release version="3.0.2" date="2026-09-26" type="development">
+      <description>
+        <p>Fixes valid Mass Effect Legendary Edition M3M packages being rejected for
+        game-specific assets, including LE3 Startup.pcc, LE2 startup localizations,
+        and LE1/LE2 localized menu and plot-map packages.</p>
+      </description>
+    </release>
     <release version="3.0.1" date="2026-09-24" type="development">
       <description>
         <p>Fixes Dragon Age: Origins registration preservation and separates DAZIPs from
