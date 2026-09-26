@@ -84,13 +84,13 @@ fn stage(sources: Sources, parent: &Path, control: &Control) -> Result<Prepared>
             "M3M preparation must be separate from every source folder"
         );
     }
+    let game = sources.plans.first().context("Missing M3M plan")?.game;
     ensure!(
         !sources.plans.is_empty()
             && sources.plans.len() <= 1024
-            && sources.packages.len() <= m3m::TARGETS.len(),
+            && sources.packages.len() <= m3m::targets(game).len(),
         "Invalid M3M preparation inputs"
     );
-    let game = sources.plans.first().context("Missing M3M plan")?.game;
     ensure!(
         sources.plans.iter().all(|plan| plan.game == game),
         "M3M preparation mixes game targets"
@@ -113,7 +113,7 @@ fn stage(sources: Sources, parent: &Path, control: &Control) -> Result<Prepared>
                     .current
                     .path
                     .strip_prefix("CookedPCConsole/")
-                    .is_some_and(|name| m3m::TARGETS.contains(&name)
+                    .is_some_and(|name| m3m::targets(game).contains(&name)
                         || jobs::compiler_bases(game).contains(&name))
                 && available
                     .insert(target.current.path.clone(), target)

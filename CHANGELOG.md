@@ -2,6 +2,10 @@
 
 ## [3.0.1]
 
+- Fixed valid MELE merge mods being rejected for LE3's `Startup.pcc`, including
+  the Community Framework and Patch options-scaling fix. LE2 startup localizations
+  and LE1/LE2 localized menu and plot-map targets are also recognized.
+
 - Fixed a TLS 1.3 handshake validation vulnerability affecting HTTPS and Nexus SSO
   connections (RUSTSEC-2026-0285).
 - Updated a shared synchronization dependency to fix a memory-safety issue and

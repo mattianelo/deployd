@@ -173,7 +173,7 @@ impl Job {
                 scripts,
                 jobs,
             } => {
-                pairs(targets, m3m::TARGETS.len())?;
+                pairs(targets, m3m::targets(*game).len())?;
                 ensure!(
                     dependencies.len() <= 8
                         && assets.len() <= 1024
@@ -262,7 +262,7 @@ impl Job {
             Self::Shaders { .. } => path == super::super::m3gs::TARGET,
             Self::Plot { .. } => name == "PlotManager.pcc",
             Self::Tables { .. } => m3da::TARGETS.contains(&name),
-            Self::M3m { .. } => m3m::TARGETS.contains(&name),
+            Self::M3m { game, .. } => m3m::targets(*game).contains(&name),
             Self::Config { .. } => name
                 .strip_prefix("Coalesced_")
                 .and_then(|name| name.strip_suffix(".bin"))
@@ -627,6 +627,44 @@ mod tests {
             .validate()
             .is_err()
         );
+        Ok(())
+    }
+
+    // @variants: both
+    #[test]
+    fn validates_asset_targets_against_the_selected_game() -> Result<()> {
+        let build = |game, name: &str| {
+            let path = format!("CookedPCConsole/{name}");
+            Job::M3m {
+                game,
+                targets: vec![target(&path)],
+                dependencies: Vec::new(),
+                assets: vec![input("Assets/Options.pcc")],
+                scripts: Vec::new(),
+                jobs: vec![M3mOperation {
+                    target: path,
+                    entry: "GUI_SF_Options.Options".into(),
+                    kind: M3mKind::Asset,
+                    input: "Assets/Options.pcc".into(),
+                    source_entry: "GUI_SF_Options.Options".into(),
+                    allow_new: false,
+                }],
+            }
+        };
+        for game in [Target::Le1, Target::Le2, Target::Le3] {
+            for name in m3m::targets(game) {
+                build(game, name).validate()?;
+            }
+            for name in ["Startup.pcc", "Startup_FRA.pcc", "EntryMenu_LOC_PLPC.pcc"] {
+                let expected = matches!(
+                    (game, name),
+                    (Target::Le3, "Startup.pcc")
+                        | (Target::Le2, "Startup_FRA.pcc")
+                        | (Target::Le1, "EntryMenu_LOC_PLPC.pcc")
+                );
+                assert_eq!(build(game, name).validate().is_ok(), expected);
+            }
+        }
         Ok(())
     }
 

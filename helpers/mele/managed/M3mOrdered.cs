@@ -47,7 +47,7 @@ internal static class M3mOrdered
     {
         var game = Game(request);
         if (request.Protocol != 1 || request.Operation != "mele-m3m-ordered"
-            || request.Targets is null || request.Targets.Length < 1 || request.Targets.Length > M3mAssets.Targets.Length
+            || request.Targets is null || request.Targets.Length < 1 || request.Targets.Length > M3mAssets.Targets(game).Length
             || request.Dependencies is null || request.Dependencies.Length > 8
             || request.Assets is null || request.Assets.Length > 1024
             || request.Scripts is null || request.Scripts.Length > 4096
@@ -79,7 +79,7 @@ internal static class M3mOrdered
             Count(target.Original);
             Count(target.Current);
             if (target.Original.Path != target.Current.Path || !targets.Add(target.Current.Path)
-                || !IsTarget(target.Current.Path))
+                || !IsTarget(game, target.Current.Path))
                 throw new InvalidDataException("Invalid or duplicate M3M target.");
         }
         foreach (var input in request.Dependencies)
@@ -134,8 +134,8 @@ internal static class M3mOrdered
             throw new InvalidDataException("M3M inputs include unused files or omit required compiler dependencies.");
     }
 
-    private static bool IsTarget(string path) => path.StartsWith("CookedPCConsole/", StringComparison.Ordinal)
-        && path.Split('/').Length == 2 && M3mAssets.Targets.Contains(Path.GetFileName(path), StringComparer.Ordinal);
+    private static bool IsTarget(MEGame game, string path) => path.StartsWith("CookedPCConsole/", StringComparison.Ordinal)
+        && path.Split('/').Length == 2 && M3mAssets.Targets(game).Contains(Path.GetFileName(path), StringComparer.Ordinal);
 
     internal static OutputFile[] Execute(M3mRequest request, CancellationToken cancellation, Action<int, int> progress)
     {

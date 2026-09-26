@@ -1681,6 +1681,25 @@ mod tests {
 
     // @variants: both
     #[test]
+    #[ignore = "requires the maintainer-supplied LE3 Community Framework and Patch 1.7.9 directory"]
+    fn inspects_supplied_le3_community_patch_startup_merge() -> Result<()> {
+        let root = Path::new("modTesting/LE3 Community Framework and Patch-13-1-7-9-1777095412");
+        let plan = PackagePlan::inspect(root, Some(Target::Le3))?;
+        assert_eq!(plan.m3m.len(), 10);
+        let options = plan
+            .m3m
+            .iter()
+            .find(|merge| merge.source.relative == "MergeMods/optionsScalingFix.m3m")
+            .context("Missing options scaling merge")?;
+        assert_eq!(options.game, Target::Le3);
+        assert_eq!(options.files[0].target_candidates, ["Startup.pcc"]);
+        assert_eq!(options.files[0].changes[0].entry, "GUI_SF_Options.Options");
+        plan.verify_sources(root)?;
+        Ok(())
+    }
+
+    // @variants: both
+    #[test]
     #[ignore = "requires the maintainer-supplied Community Patch 2.0 directory"]
     fn inspects_supplied_community_patch_without_modifying_it() -> Result<()> {
         let root = Path::new("modTesting/LE1 Community Patch");

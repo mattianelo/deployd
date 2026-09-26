@@ -17,14 +17,42 @@ internal sealed record AssetMergeRequest(int Protocol, string Operation, string 
 
 internal static class M3mAssets
 {
-    internal static readonly string[] Targets =
+    private static readonly string[] Le1Targets =
     {
-        "Core.pcc", "Engine.pcc", "GameFramework.pcc", "WwiseAudio.pcc", "IpDrv.pcc", "GFxUI.pcc", "PlotManagerMap.pcc",
-        "SFXOnlineFoundation.pcc", "SFXGame.pcc", "SFXStrategicAI.pcc", "SFXGameContent_Powers.pcc",
-        "PlotManager.pcc", "PlotManagerDLC_UNC.pcc", "BIOC_Materials.pcc", "SFXWorldResources.pcc",
-        "SFXVehicleResources.pcc", "EntryMenu.pcc",
-        "Startup_DE.pcc", "Startup_ES.pcc", "Startup_FE.pcc", "Startup_FR.pcc", "Startup_GE.pcc", "Startup_IE.pcc", "Startup_INT.pcc",
-        "Startup_IT.pcc", "Startup_JA.pcc", "Startup_PL.pcc", "Startup_PLPC.pcc", "Startup_RA.pcc", "Startup_RU.pcc",
+        "Core.pcc", "Engine.pcc", "IpDrv.pcc", "GFxUI.pcc",
+        "PlotManagerMap.pcc", "PlotManagerMap_LOC_INT.pcc", "SFXOnlineFoundation.pcc", "SFXGame.pcc",
+        "SFXStrategicAI.pcc", "SFXGameContent_Powers.pcc", "PlotManager.pcc", "PlotManagerDLC_UNC.pcc",
+        "BIOC_Materials.pcc", "SFXWorldResources.pcc", "SFXVehicleResources.pcc", "Startup_DE.pcc",
+        "Startup_ES.pcc", "Startup_FE.pcc", "Startup_FR.pcc", "Startup_GE.pcc",
+        "Startup_IE.pcc", "Startup_INT.pcc", "Startup_IT.pcc", "Startup_JA.pcc",
+        "Startup_PL.pcc", "Startup_PLPC.pcc", "Startup_RA.pcc", "Startup_RU.pcc",
+        "EntryMenu.pcc", "EntryMenu_LOC_DE.pcc", "EntryMenu_LOC_FR.pcc", "EntryMenu_LOC_INT.pcc",
+        "EntryMenu_LOC_IT.pcc", "EntryMenu_LOC_PLPC.pcc", "EntryMenu_LOC_RA.pcc",
+    };
+
+    private static readonly string[] Le2Targets =
+    {
+        "Core.pcc", "Engine.pcc", "IpDrv.pcc", "GFxUI.pcc",
+        "WwiseAudio.pcc", "SFXOnlineFoundation.pcc", "PlotManagerMap.pcc", "PlotManagerMap_LOC_INT.pcc",
+        "SFXGame.pcc", "Startup_DEU.pcc", "Startup_ESN.pcc", "Startup_FRA.pcc",
+        "Startup_INT.pcc", "Startup_ITA.pcc", "Startup_JPN.pcc", "Startup_POL.pcc",
+        "Startup_RUS.pcc", "EntryMenu.pcc", "EntryMenu_LOC_DEU.pcc", "EntryMenu_LOC_FRA.pcc",
+        "EntryMenu_LOC_INT.pcc", "EntryMenu_LOC_ITA.pcc", "EntryMenu_LOC_POL.pcc",
+    };
+
+    private static readonly string[] Le3Targets =
+    {
+        "Core.pcc", "Engine.pcc", "GameFramework.pcc", "IpDrv.pcc",
+        "GFxUI.pcc", "WwiseAudio.pcc", "SFXOnlineFoundation.pcc", "SFXGame.pcc",
+        "Startup.pcc", "EntryMenu.pcc",
+    };
+
+    internal static string[] Targets(MEGame game) => game switch
+    {
+        MEGame.LE1 => Le1Targets,
+        MEGame.LE2 => Le2Targets,
+        MEGame.LE3 => Le3Targets,
+        _ => throw new InvalidDataException("M3M requires a Legendary Edition game."),
     };
 
     internal static AssetMergeRequest ReadRequest(string path)
@@ -43,7 +71,7 @@ internal static class M3mAssets
     internal static void Validate(AssetMergeRequest request)
     {
         if (request.Protocol != 1 || request.Operation != "le1-m3m-assets"
-            || request.Targets is null || request.Targets.Length < 1 || request.Targets.Length > Targets.Length
+            || request.Targets is null || request.Targets.Length < 1 || request.Targets.Length > Le1Targets.Length
             || request.Assets is null || request.Assets.Length is < 1 or > 1024
             || request.Merges is null || request.Merges.Length is < 1 or > 4096)
             throw new InvalidDataException("Invalid or unsupported asset merge request.");
@@ -68,7 +96,7 @@ internal static class M3mAssets
         foreach (var input in request.Targets)
             if (!input.Path.StartsWith("CookedPCConsole/", StringComparison.Ordinal)
                 || input.Path.Split('/').Length != 2
-                || !Targets.Contains(Path.GetFileName(input.Path), StringComparer.OrdinalIgnoreCase)
+                || !Le1Targets.Contains(Path.GetFileName(input.Path), StringComparer.OrdinalIgnoreCase)
                 || !targets.Add(input.Path))
                 throw new InvalidDataException("Invalid or duplicate asset merge target.");
         foreach (var input in request.Assets)

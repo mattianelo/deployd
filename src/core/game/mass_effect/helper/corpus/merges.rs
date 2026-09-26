@@ -297,6 +297,112 @@ async fn supervises_real_community_patch_m3m_prepared_in_rust() -> Result<()> {
     Ok(())
 }
 
+// @variants: both
+#[tokio::test]
+#[ignore = "Requires the Linux helper/reference tests and supplied LE3 game and Community Patch"]
+async fn supervises_supplied_le3_options_scaling_merge() -> Result<()> {
+    let game = Path::new("modTesting/Mass Effect Legendary Edition/Game/ME3");
+    let mut corpus = Corpus::for_game(game)?;
+    let package = corpus._root.path().join("package");
+    let preparation = corpus._root.path().join("preparation");
+    fs::create_dir(&preparation)?;
+    let source = corpus.copy(
+        Path::new("modTesting/LE3 Community Framework and Patch-13-1-7-9-1777095412"),
+        (
+            "MergeMods/optionsScalingFix.m3m",
+            41577,
+            "57d0bfe4d20e44122e76f8aac18bdd508ad50d8dd7dba665c9218bebf69eda6f",
+        ),
+        &package,
+        "MergeMods/optionsScalingFix.m3m",
+    )?;
+    let plan = format_m3m::inspect(
+        &package,
+        &SourceFile {
+            relative: source.path,
+            size: source.size,
+            sha256: source.sha256,
+        },
+        Target::Le3,
+    )?;
+    let specification = (
+        "CookedPCConsole/Startup.pcc",
+        13595946,
+        "bd083d5a3cb9efe864350f7efa13084ffc4dbd6d77fd628c8fb57f8d59a44962",
+    );
+    let original_root = corpus
+        .inputs
+        .original
+        .clone()
+        .context("Missing original root")?;
+    let original = corpus.copy(
+        &game.join("BioGame"),
+        specification,
+        &original_root,
+        specification.0,
+    )?;
+    let current = corpus.copy(
+        &game.join("BioGame"),
+        specification,
+        &corpus.inputs.candidate.clone(),
+        specification.0,
+    )?;
+    let prepared = m3m::prepare(
+        m3m::Sources {
+            package,
+            original: original_root,
+            candidate: corpus.inputs.candidate.clone(),
+            packages: vec![TargetPackage { original, current }],
+            plans: vec![plan],
+        },
+        preparation,
+        Arc::new(AtomicBool::new(false)),
+    )
+    .await?;
+    corpus.inputs.candidate = prepared.root().to_path_buf();
+    let result = corpus.run(prepared.job.clone()).await;
+    corpus.verify()?;
+    let output = result?;
+    assert_eq!(output.files.len(), 1);
+    assert_eq!(output.files[0].path, specification.0);
+    assert_ne!(output.files[0].sha256, specification.2);
+    record(&corpus, &output, "merged")?;
+    let verification = corpus._root.path().join("verification");
+    fs::create_dir(&verification)?;
+    let mut request: serde_json::Value =
+        serde_json::from_slice(&fs::read(output.stage.path().join("request.json"))?)?;
+    request["output_root"] = serde_json::to_value(&verification)?;
+    fs::write(
+        corpus._root.path().join("semantic-request.json"),
+        serde_json::to_vec(&request)?,
+    )?;
+    let previous = corpus._root.path().join("previous");
+    for input in prepared.job.inputs() {
+        let destination = previous.join(&input.path);
+        fs::create_dir_all(destination.parent().context("Missing previous parent")?)?;
+        fs::copy(prepared.root().join(&input.path), destination)?;
+    }
+    let mut repeated = prepared.job.clone();
+    if let Job::M3m { targets, .. } = &mut repeated {
+        targets[0].current = output.files[0].clone();
+    }
+    fs::copy(
+        output.root().join(specification.0),
+        previous.join(specification.0),
+    )?;
+    corpus.inputs.candidate = previous;
+    let again = corpus.run(repeated).await?;
+    record(&corpus, &again, "reapplied")?;
+    reference(&corpus, "--community-patch-m3m").await?;
+    corpus.verify()?;
+    for input in prepared.job.inputs() {
+        files::identity(prepared.root(), input, &tests::control())?;
+    }
+    drop((output, again));
+    assert_eq!(fs::read_dir(&corpus.staging)?.count(), 0);
+    Ok(())
+}
+
 const MERGES: &[(&str, u64, &str)] = &[
     (
         "HUDFixes",

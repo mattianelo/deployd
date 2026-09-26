@@ -67,6 +67,10 @@ struct Corpus {
 
 impl Corpus {
     fn new() -> Result<Self> {
+        Self::for_game(Path::new(GAME))
+    }
+
+    fn for_game(game: &Path) -> Result<Self> {
         let root = tempfile::tempdir_in("/build/mele")?;
         for directory in ["game", "input", "original", "staging"] {
             fs::create_dir(root.path().join(directory))?;
@@ -97,7 +101,7 @@ impl Corpus {
             sources: Vec::new(),
             _root: root,
         };
-        corpus.copy(Path::new(GAME), CODEC, &corpus.inputs.game.clone(), CODEC.0)?;
+        corpus.copy(game, CODEC, &corpus.inputs.game.clone(), CODEC.0)?;
         Ok(corpus)
     }
 

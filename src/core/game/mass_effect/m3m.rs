@@ -16,38 +16,84 @@ const MAX_CONTAINER: usize = 512 * 1024 * 1024;
 const MAX_MANIFEST: usize = 4 * 1024 * 1024;
 const MAX_ASSET: usize = 128 * 1024 * 1024;
 const MAX_DICTIONARY: u32 = 16 * 1024 * 1024;
-pub(super) const TARGETS: &[&str] = &[
-    "Core.pcc",
-    "Engine.pcc",
-    "GameFramework.pcc",
-    "WwiseAudio.pcc",
-    "IpDrv.pcc",
-    "GFxUI.pcc",
-    "PlotManagerMap.pcc",
-    "SFXOnlineFoundation.pcc",
-    "SFXGame.pcc",
-    "SFXStrategicAI.pcc",
-    "SFXGameContent_Powers.pcc",
-    "PlotManager.pcc",
-    "PlotManagerDLC_UNC.pcc",
-    "BIOC_Materials.pcc",
-    "SFXWorldResources.pcc",
-    "SFXVehicleResources.pcc",
-    "Startup_DE.pcc",
-    "Startup_ES.pcc",
-    "Startup_FE.pcc",
-    "Startup_FR.pcc",
-    "Startup_GE.pcc",
-    "Startup_IE.pcc",
-    "Startup_INT.pcc",
-    "Startup_IT.pcc",
-    "Startup_JA.pcc",
-    "Startup_PL.pcc",
-    "Startup_PLPC.pcc",
-    "Startup_RA.pcc",
-    "Startup_RU.pcc",
-    "EntryMenu.pcc",
-];
+pub(super) fn targets(game: Target) -> &'static [&'static str] {
+    match game {
+        Target::Le1 => &[
+            "Core.pcc",
+            "Engine.pcc",
+            "IpDrv.pcc",
+            "GFxUI.pcc",
+            "PlotManagerMap.pcc",
+            "PlotManagerMap_LOC_INT.pcc",
+            "SFXOnlineFoundation.pcc",
+            "SFXGame.pcc",
+            "SFXStrategicAI.pcc",
+            "SFXGameContent_Powers.pcc",
+            "PlotManager.pcc",
+            "PlotManagerDLC_UNC.pcc",
+            "BIOC_Materials.pcc",
+            "SFXWorldResources.pcc",
+            "SFXVehicleResources.pcc",
+            "Startup_DE.pcc",
+            "Startup_ES.pcc",
+            "Startup_FE.pcc",
+            "Startup_FR.pcc",
+            "Startup_GE.pcc",
+            "Startup_IE.pcc",
+            "Startup_INT.pcc",
+            "Startup_IT.pcc",
+            "Startup_JA.pcc",
+            "Startup_PL.pcc",
+            "Startup_PLPC.pcc",
+            "Startup_RA.pcc",
+            "Startup_RU.pcc",
+            "EntryMenu.pcc",
+            "EntryMenu_LOC_DE.pcc",
+            "EntryMenu_LOC_FR.pcc",
+            "EntryMenu_LOC_INT.pcc",
+            "EntryMenu_LOC_IT.pcc",
+            "EntryMenu_LOC_PLPC.pcc",
+            "EntryMenu_LOC_RA.pcc",
+        ],
+        Target::Le2 => &[
+            "Core.pcc",
+            "Engine.pcc",
+            "IpDrv.pcc",
+            "GFxUI.pcc",
+            "WwiseAudio.pcc",
+            "SFXOnlineFoundation.pcc",
+            "PlotManagerMap.pcc",
+            "PlotManagerMap_LOC_INT.pcc",
+            "SFXGame.pcc",
+            "Startup_DEU.pcc",
+            "Startup_ESN.pcc",
+            "Startup_FRA.pcc",
+            "Startup_INT.pcc",
+            "Startup_ITA.pcc",
+            "Startup_JPN.pcc",
+            "Startup_POL.pcc",
+            "Startup_RUS.pcc",
+            "EntryMenu.pcc",
+            "EntryMenu_LOC_DEU.pcc",
+            "EntryMenu_LOC_FRA.pcc",
+            "EntryMenu_LOC_INT.pcc",
+            "EntryMenu_LOC_ITA.pcc",
+            "EntryMenu_LOC_POL.pcc",
+        ],
+        Target::Le3 => &[
+            "Core.pcc",
+            "Engine.pcc",
+            "GameFramework.pcc",
+            "IpDrv.pcc",
+            "GFxUI.pcc",
+            "WwiseAudio.pcc",
+            "SFXOnlineFoundation.pcc",
+            "SFXGame.pcc",
+            "Startup.pcc",
+            "EntryMenu.pcc",
+        ],
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct M3mPlan {
@@ -332,7 +378,8 @@ fn parse(data: &[u8], source: SourceFile, target: Target) -> Result<M3mPlan> {
     let mut files = Vec::new();
     let mut change_count = 0;
     for file in manifest.files {
-        let target_candidates = target_candidates(&file.filename, file.applytoalllocalizations)?;
+        let target_candidates =
+            target_candidates(target, &file.filename, file.applytoalllocalizations)?;
         ensure!(!file.changes.is_empty(), "Empty M3M target changes");
         change_count += file.changes.len();
         ensure!(change_count <= 4096, "M3M exceeds its change count limit");
@@ -357,21 +404,27 @@ fn parse(data: &[u8], source: SourceFile, target: Target) -> Result<M3mPlan> {
     })
 }
 
-fn target_candidates(name: &str, all_localizations: bool) -> Result<Vec<String>> {
-    let target = TARGETS
+fn target_candidates(game: Target, name: &str, all_localizations: bool) -> Result<Vec<String>> {
+    let targets = targets(game);
+    let target = targets
         .iter()
         .find(|target| target.eq_ignore_ascii_case(name))
         .with_context(|| format!("Unsupported M3M target '{name}'"))?;
     if !all_localizations {
         return Ok(vec![(*target).to_owned()]);
     }
-    ensure!(
-        target.starts_with("Startup_"),
-        "Unsupported localized M3M target"
-    );
-    Ok(TARGETS
+    let prefix = if target.starts_with("Startup_") {
+        "Startup_"
+    } else if target.starts_with("EntryMenu_LOC_") {
+        "EntryMenu_LOC_"
+    } else if target.starts_with("PlotManagerMap_LOC_") {
+        "PlotManagerMap_LOC_"
+    } else {
+        anyhow::bail!("Unsupported localized M3M target");
+    };
+    Ok(targets
         .iter()
-        .filter(|target| target.starts_with("Startup_"))
+        .filter(|target| target.starts_with(prefix))
         .map(|target| (*target).to_owned())
         .collect())
 }
@@ -665,6 +718,137 @@ mod tests {
             },
             Target::Le1,
         )
+    }
+
+    // @variants: both
+    #[test]
+    fn accepts_game_specific_startup_and_localized_asset_targets() -> Result<()> {
+        for (game, names) in [
+            (
+                Target::Le1,
+                vec!["PlotManagerMap_LOC_INT.pcc", "EntryMenu_LOC_PLPC.pcc"],
+            ),
+            (
+                Target::Le2,
+                vec![
+                    "Startup_DEU.pcc",
+                    "Startup_ESN.pcc",
+                    "Startup_FRA.pcc",
+                    "Startup_ITA.pcc",
+                    "Startup_JPN.pcc",
+                    "Startup_POL.pcc",
+                    "Startup_RUS.pcc",
+                    "PlotManagerMap_LOC_INT.pcc",
+                    "EntryMenu_LOC_FRA.pcc",
+                ],
+            ),
+            (Target::Le3, vec!["Startup.pcc"]),
+        ] {
+            for name in names {
+                let value = json!({"game": game, "files": [{"filename": name.to_lowercase(),
+                "changes": [{"entryname": "GUI_SF_Options.Options", "assetupdate": {
+                    "assetname": "OptionsScalingFix.pcc", "entryname": "GUI_SF_Options.Options"
+                }}]}]});
+                for data in [
+                    container(
+                        &value.to_string(),
+                        &[("OptionsScalingFix.pcc", &[0xc1, 0x83, 0x2a, 0x9e])],
+                    ),
+                    v2(
+                        &value.to_string(),
+                        &[("OptionsScalingFix.pcc", &[0xc1, 0x83, 0x2a, 0x9e], true)],
+                    )?,
+                ] {
+                    let source = SourceFile {
+                        relative: "Options.m3m".into(),
+                        size: data.len() as u64,
+                        sha256: digest(&data),
+                    };
+                    let plan = parse(&data, source, game)?;
+                    assert_eq!(plan.files[0].target_candidates, [name]);
+                    assert!(matches!(
+                        plan.files[0].changes[0].operations[0],
+                        Operation::Asset { .. }
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    // @variants: both
+    #[test]
+    fn expands_only_the_selected_games_localization_family() -> Result<()> {
+        assert_eq!(
+            target_candidates(Target::Le2, "startup_fra.PCC", true)?,
+            ["DEU", "ESN", "FRA", "INT", "ITA", "JPN", "POL", "RUS"]
+                .map(|code| format!("Startup_{code}.pcc"))
+        );
+        assert_eq!(
+            target_candidates(Target::Le1, "EntryMenu_LOC_INT.pcc", true)?,
+            ["DE", "FR", "INT", "IT", "PLPC", "RA"].map(|code| format!("EntryMenu_LOC_{code}.pcc"))
+        );
+        assert_eq!(
+            target_candidates(Target::Le2, "EntryMenu_LOC_INT.pcc", true)?,
+            ["DEU", "FRA", "INT", "ITA", "POL"].map(|code| format!("EntryMenu_LOC_{code}.pcc"))
+        );
+        assert_eq!(
+            target_candidates(Target::Le1, "PlotManagerMap_LOC_INT.pcc", true)?,
+            ["PlotManagerMap_LOC_INT.pcc"]
+        );
+        assert!(target_candidates(Target::Le3, "Startup.pcc", true).is_err());
+        Ok(())
+    }
+
+    // @variants: both
+    #[test]
+    fn rejects_other_games_targets_and_noncanonical_package_names() {
+        for (game, names) in [
+            (
+                Target::Le1,
+                vec![
+                    "Startup.pcc",
+                    "Startup_FRA.pcc",
+                    "EntryMenu_LOC_DEU.pcc",
+                    "GameFramework.pcc",
+                ],
+            ),
+            (
+                Target::Le2,
+                vec![
+                    "Startup.pcc",
+                    "Startup_DE.pcc",
+                    "EntryMenu_LOC_PLPC.pcc",
+                    "BIOC_Materials.pcc",
+                ],
+            ),
+            (
+                Target::Le3,
+                vec![
+                    "Startup_INT.pcc",
+                    "EntryMenu_LOC_INT.pcc",
+                    "PlotManagerMap.pcc",
+                ],
+            ),
+        ] {
+            for name in names.into_iter().chain([
+                "EngineTest.pcc",
+                "Startup_MOD_TEST_INT.pcc",
+                "Startup.pcc.extra",
+                "../Startup.pcc",
+                "../system/Startup.pcc",
+                "~docs~/Startup.pcc",
+                "Mods/Startup.pcc",
+                "CookedPCConsole/Startup.pcc",
+            ]) {
+                for localized in [false, true] {
+                    assert!(
+                        target_candidates(game, name, localized).is_err(),
+                        "{game:?}: {name}"
+                    );
+                }
+            }
+        }
     }
 
     // @variants: both

@@ -70,6 +70,33 @@ internal static class OrderedM3mTests
         foreach (string game in new[] { "LE2", "LE3" })
             M3mOrdered.Validate(request with { Game = game, Assets = new[] { asset }, Scripts = Array.Empty<InputFile>(),
                 Jobs = new[] { new M3mJob(file.Path, "Example", "asset", asset.Path, "Example", false) } });
+        foreach (var game in new[] { MEGame.LE1, MEGame.LE2, MEGame.LE3 })
+        {
+            foreach (string name in EntryImporter.FilesSafeToImportFrom(game).Append("EntryMenu.pcc"))
+                Require(M3mAssets.Targets(game).Contains(name, StringComparer.OrdinalIgnoreCase),
+                    $"Missing upstream M3M target for {game}: {name}");
+            foreach (string name in M3mAssets.Targets(game))
+            {
+                var target = file with { Path = "CookedPCConsole/" + name };
+                M3mOrdered.Validate(request with { Game = game.ToString(),
+                    Targets = new[] { new TargetPackage(target, target) }, Assets = new[] { asset },
+                    Scripts = Array.Empty<InputFile>(),
+                    Jobs = new[] { new M3mJob(target.Path, "Example", "asset", asset.Path, "Example", false) } });
+            }
+            foreach (string name in new[] { "Startup.pcc", "Startup_FRA.pcc", "EntryMenu_LOC_PLPC.pcc",
+                "EngineTest.pcc", "Startup_MOD_TEST_INT.pcc", "Startup.pcc.extra" })
+            {
+                var target = file with { Path = "CookedPCConsole/" + name };
+                var candidate = request with { Game = game.ToString(),
+                    Targets = new[] { new TargetPackage(target, target) }, Assets = new[] { asset },
+                    Scripts = Array.Empty<InputFile>(),
+                    Jobs = new[] { new M3mJob(target.Path, "Example", "asset", asset.Path, "Example", false) } };
+                bool valid = (game, name) is (MEGame.LE3, "Startup.pcc")
+                    or (MEGame.LE2, "Startup_FRA.pcc") or (MEGame.LE1, "EntryMenu_LOC_PLPC.pcc");
+                if (valid) M3mOrdered.Validate(candidate);
+                else Reject(() => M3mOrdered.Validate(candidate));
+            }
+        }
         foreach (string code in new[] { "DE", "ES", "FE", "FR", "GE", "IE", "INT", "IT", "JA", "PL", "PLPC", "RA", "RU" })
         {
             var localized = file with { Path = $"CookedPCConsole/Startup_{code}.pcc" };
@@ -81,7 +108,7 @@ internal static class OrderedM3mTests
             Reject(() => M3mOrdered.Validate(request with { Targets = new[] { new TargetPackage(localized, localized) },
                 Jobs = new[] { job with { Target = localized.Path } } }));
         }
-        var combinedTargets = M3mAssets.Targets.Select(name => file with { Path = "CookedPCConsole/" + name }).ToArray();
+        var combinedTargets = M3mAssets.Targets(MEGame.LE1).Select(name => file with { Path = "CookedPCConsole/" + name }).ToArray();
         M3mOrdered.Validate(request with { Targets = combinedTargets.Select(target => new TargetPackage(target, target)).ToArray(),
             Assets = new[] { asset }, Scripts = Array.Empty<InputFile>(),
             Jobs = combinedTargets.Select(target => new M3mJob(target.Path, "Example", "asset", asset.Path, "Example", false)).ToArray() });
@@ -181,7 +208,7 @@ internal static class OrderedM3mTests
 
     internal static void VerifyStartupCorpus(string root)
     {
-        foreach (string name in M3mAssets.Targets.Where(name => name.StartsWith("Startup_", StringComparison.Ordinal)))
+        foreach (string name in M3mAssets.Targets(MEGame.LE1).Where(name => name.StartsWith("Startup_", StringComparison.Ordinal)))
         {
             VerifyCorpus(Path.Combine(root, Path.GetFileNameWithoutExtension(name)));
             Console.WriteLine($"Localized Startup corpus passed: {name}");

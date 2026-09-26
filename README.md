@@ -47,6 +47,8 @@ include Community Patch, cosmetic and content mods, raw and precompiled M3TO
 textures (such as No Headgear for Squadmates, ALOT and ISL), shader mods, squadmate outfits, LE2 DLC configuration
 options and LE2 email additions.
 Deployd reports unsupported packages before installation.
+M3M merges support LE3's startup package, LE2's localized startup packages,
+and LE1/LE2 localized menu and plot-map packages.
 
 1. Add a **clean installation** containing all three games and select its Wine prefix
    separately. Deployd treats this installation as your restoration point. Initial
