@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.0.2]
+
+- Fixed valid Mass Effect Legendary Edition M3M packages being rejected when
+  they target game-specific assets, including LE3 `Startup.pcc`, LE2 startup
+  localizations, and LE1/LE2 localized menu and plot-map packages.
+
 ## [3.0.1]
 
 - Fixed valid MELE merge mods being rejected for LE3's `Startup.pcc`, including
