@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Fixed Snap builds missing the appearance editor's bundled license notices.
+
 - Added an appearance editor for Legendary Edition live saves, with hairstyle,
   accessory, texture and material fields, TSE/Gibbed preset imports, RON exports
   and pre-edit backups. Visual previews and face-shape controls are not included.

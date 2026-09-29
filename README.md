@@ -118,6 +118,9 @@ that those asset names exist in the game. Default Shepard saves need an explicit
 imported custom preset before individual fields can be edited. External saves,
 inactive save banks, face-shape sliders and other save fields are not editable.
 
+The appearance editor includes Trilogy Save Editor attribution and license text
+in its license dialog, available in both AppImage and Snap.
+
 **Limitations:** MEM textures and portable MELE profile transfers are
 not supported. Launcher executable replacements and launcher installer choices are
 also unsupported. Restore existing MEM textures to clean game

@@ -25,7 +25,7 @@ class PackageSourceTests(unittest.TestCase):
         for relative in package_source.INPUTS:
             path = self.source / relative
             path.parent.mkdir(parents=True, exist_ok=True)
-            if relative in {"src", "data", "helpers/mele"}:
+            if relative in {"src", "data", "licenses", "helpers/mele"}:
                 path.mkdir(exist_ok=True)
                 (path / "input.txt").write_text("original")
             else:
@@ -57,6 +57,23 @@ class PackageSourceTests(unittest.TestCase):
         package_source.copy_source(self.source, self.output)
         self.assertFalse((self.output / "src/deleted.rs").exists())
         self.assertEqual((self.output / "src/input.txt").read_text(), "new")
+
+    def test_embedded_appearance_licenses_survive_both_snap_source_copies(self):
+        builder = self.root / "builder"
+        part = builder / "parts/deployd/src"
+        package_source.copy_source(ROOT, builder)
+        package_source.copy_source(builder, part)
+        for filename in (
+            "Trilogy-Save-Editor-NOTICE.txt",
+            "Trilogy-Save-Editor-CeCILL-2.1.txt",
+        ):
+            with self.subTest(filename=filename):
+                expected = (ROOT / "licenses" / filename).read_bytes()
+                self.assertTrue(expected)
+                for source in (builder, part):
+                    included = source / "src/ui/../../licenses" / filename
+                    self.assertEqual(included.read_bytes(), expected)
+        self.assertFalse((part / "docs").exists())
 
     def test_missing_input_preserves_the_previous_source_copy(self):
         package_source.copy_source(self.source, self.output)
