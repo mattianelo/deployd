@@ -178,7 +178,7 @@ impl App {
                     .and_then(|id| self.session.games.iter().position(|g| g.id == id))
                     .unwrap_or(0);
                 self.session.selected_game_idx = target_idx;
-                self.ui.game_dropdown.set_selected(target_idx as u32);
+                self.ui.game_selection.set_selected(target_idx as u32);
                 self.sync_game_panels();
 
                 self.shell.nexus_username = data.nexus_username.clone();
@@ -481,20 +481,10 @@ impl App {
                 {
                     p.name = new_name;
                 }
-                let names: Vec<&str> = self
-                    .session
-                    .profiles
-                    .iter()
-                    .map(|p| p.name.as_str())
-                    .collect();
-                self.session.updating_profiles = true;
-                self.ui
-                    .profile_model
-                    .splice(0, self.ui.profile_model.n_items(), &names);
-                self.ui
-                    .profile_dropdown
-                    .set_selected(self.session.active_profile_idx as u32);
-                self.session.updating_profiles = false;
+                self.update_profile_list(
+                    self.session.profiles.clone(),
+                    self.session.active_profile_idx,
+                );
                 self.show_toast("Profile renamed");
             }
             Err(e) => {

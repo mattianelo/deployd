@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- Legendary Edition games now appear together in an expandable game-picker group.
+  Trilogy profiles share a save-mode choice while keeping separate mod lists and
+  save-bank portions for LE1, LE2 and LE3. Existing profiles can be grouped
+  explicitly without losing unmatched profiles, save banks or backups.
+- Each Legendary Edition game deploys independently and switches its own saves
+  only on success. Profile or save-only changes reuse unchanged installed mods
+  without rerunning their transformations.
+
 - Wine-prefix setup, changes and access recovery now accept either the prefix
   itself or its containing folder. Snap requests access to the containing folder
   when needed to retain access after Proton replaces the prefix.

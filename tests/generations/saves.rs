@@ -811,3 +811,252 @@ fn incomplete_local_bank_is_preserved_instead_of_reseeded() -> Result<()> {
         },
     )
 }
+
+// @variants: both
+#[test]
+fn trilogy_deploys_switch_saves_independently_without_reinstalling_mods() -> Result<()> {
+    isolated(
+        "trilogy_deploys_switch_saves_independently_without_reinstalling_mods",
+        |root| async move {
+            use super::super::{activation, journal::Journal, manifest::Output, target::Target};
+            use crate::core::game::mass_effect::{
+                application::Request, baseline, generations::Snapshot, journal::Journal as Mele,
+                library, package::SourceFile,
+            };
+            use crate::models::game::{GameConfig, GameEngine};
+            use crate::models::profile::SaveMode;
+            use crate::utils::location::{FolderRole, FolderSelection, SelectedLocation};
+            use std::os::unix::fs::MetadataExt;
+
+            let tracker = crate::core::tracker::Tracker::open("sqlite::memory:")
+                .await?
+                .tracker;
+            let family = root.join("family");
+            let prefix = root.join("prefix");
+            let cache = root.join("cache");
+            fs::create_dir_all(&cache)?;
+            fs::create_dir_all(family.join("Game/Launcher"))?;
+            fs::write(
+                family.join("Game/Launcher/MassEffectLauncher.exe"),
+                b"launcher",
+            )?;
+            fs::write(family.join("Game/Launcher/bink2w64.dll"), b"bink")?;
+            let mut configs = Vec::new();
+            let relative = "BioGame/CookedPCConsole/Engine.pcc";
+            for number in 1..=3 {
+                let game = Game {
+                    id: format!("mass-effect-le{number}"),
+                    title: format!("LE{number}"),
+                    path: family.join(format!("Game/ME{number}")),
+                    data_subdir: "BioGame".into(),
+                    engine: GameEngine::MassEffect,
+                    wine_prefix: Some(prefix.clone()),
+                };
+                fs::create_dir_all(game.path.join("Binaries/Win64"))?;
+                fs::create_dir_all(game.path.join("BioGame/CookedPCConsole"))?;
+                fs::write(
+                    game.path
+                        .join(format!("Binaries/Win64/MassEffect{number}.exe")),
+                    b"executable",
+                )?;
+                fs::write(game.path.join(relative), b"original")?;
+                let live = prefix.join(format!("drive_c/users/test/Documents/BioWare/Mass Effect Legendary Edition/Save/ME{number}"));
+                fs::create_dir_all(&live)?;
+                fs::write(live.join("save.dat"), format!("LE{number} progress"))?;
+                configs.push(GameConfig {
+                    game,
+                    custom: true,
+                    locations: vec![
+                        FolderSelection {
+                            role: FolderRole::Game,
+                            location: SelectedLocation {
+                                root: family.clone(),
+                                host_hint: None,
+                            },
+                            relative: format!("Game/ME{number}").into(),
+                        },
+                        FolderSelection {
+                            role: FolderRole::Prefix,
+                            location: SelectedLocation {
+                                root: prefix.clone(),
+                                host_hint: None,
+                            },
+                            relative: Default::default(),
+                        },
+                    ],
+                });
+            }
+            baseline::configure(&tracker, &configs, &[], std::sync::Arc::new(|_| {})).await?;
+            for config in &configs {
+                tracker
+                    .set_setting(
+                        &format!("cache_dir_{}", config.game.id),
+                        cache.to_str().context("Invalid test cache")?,
+                    )
+                    .await?;
+            }
+
+            let first = tracker.ensure_default_profile(&configs[0].game.id).await?;
+            for config in &configs {
+                let game = &config.game;
+                let profile = tracker
+                    .get_active_profile(&game.id)
+                    .await?
+                    .context("Missing initial trilogy member")?
+                    .id;
+                let history = History::open(&tracker, &game.id, &cache, true).await?;
+                let previous = super::super::ownership::initialize(&history).await?;
+                let data = paths::deployd_data_dir()?;
+                let mut manifest =
+                    manifest::capture(&history, game, &profile, data.clone(), Control::default())
+                        .await?;
+                let payload = root.join("payload");
+                fs::write(&payload, b"installed output")?;
+                let identity = history.retain(payload, Control::default()).await?;
+                let baseline = tracker
+                    .load_mele_baseline(&game.id)
+                    .await?
+                    .context("Missing baseline")?;
+                let recipe = library::desired(&tracker, game, "INT".into(), false).await?;
+                let snapshot = Snapshot {
+                    recipe,
+                    removals: Default::default(),
+                    required: Vec::new(),
+                    files: vec![SourceFile {
+                        relative: relative.into(),
+                        size: identity.size,
+                        sha256: identity.sha256.clone(),
+                    }],
+                };
+                let id = uuid::Uuid::new_v4().to_string();
+                let engine: Mele = serde_json::from_value(
+                    serde_json::json!({"version":5,"id":id,"game_id":game.id,"baseline":baseline.sha256,"previous":null,"desired":snapshot.state(id.clone(),profile.clone()),"operations":[{"path":relative,"before":{"size":8,"sha256":super::super::content::inspect(&game.path.join(relative),&Control::default())?.sha256},"after":{"size":identity.size,"sha256":identity.sha256}}],"directories":[]}),
+                )?;
+                let mut journal = Journal::prepare(
+                    &history,
+                    game,
+                    vec![(
+                        Target::MassEffect {
+                            path: relative.into(),
+                        },
+                        Node::File {
+                            identity: identity.clone(),
+                            mode: 0o644,
+                        },
+                    )],
+                    Control::default(),
+                )
+                .await?;
+                journal.attach_mele(game, engine)?;
+                let shared = super::super::shared::prepare(
+                    &history,
+                    game,
+                    snapshot.recipe.clone(),
+                    data,
+                    Control::default(),
+                )
+                .await?;
+                journal.attach_game_shared(&history, game, shared).await?;
+                manifest.version = 2;
+                manifest.mele = Some(snapshot);
+                manifest.shared_revision =
+                    super::super::shared::identity(journal.dependency.as_ref())?;
+                manifest.outputs.push(Output {
+                    target: Target::MassEffect {
+                        path: relative.into(),
+                    },
+                    content: Some(identity),
+                    mode: 0o644,
+                    mod_id: None,
+                });
+                coordinator::activate(
+                    &history,
+                    game,
+                    &journal,
+                    Some(&previous),
+                    Some(&Deployment {
+                        manifest: &manifest,
+                        profile: &profile,
+                        files: &[],
+                    }),
+                    &SaveSetId::Global {
+                        game_id: game.id.clone(),
+                    },
+                    Control::default(),
+                )
+                .await?;
+            }
+            let cloned = tracker
+                .clone_profile(&first.id, "Second playthrough", &configs[0].game.id)
+                .await?;
+            tracker
+                .set_profile_save_mode(&cloned, SaveMode::ProfileSpecific)
+                .await?;
+            tracker.switch_profile(&configs[0].game.id, &cloned).await?;
+            for (index, config) in configs.iter().enumerate() {
+                let game = &config.game;
+                let profile = tracker
+                    .get_active_profile(&game.id)
+                    .await?
+                    .context("Missing selected trilogy member")?
+                    .id;
+                let metadata = fs::metadata(game.path.join(relative))?;
+                let request = Request {
+                    game: game.clone(),
+                    profile: profile.clone(),
+                    language: "INT".into(),
+                    purge: false,
+                    repair: false,
+                };
+                let prepared =
+                    activation::prepare_unchanged(&tracker, &cache, &request, Control::default())
+                        .await?
+                        .context("Unchanged mods should bypass the helper")?;
+                assert_eq!(prepared.change_counts(), (0, 0, 0));
+                if index == 1 {
+                    sqlx::query("CREATE TRIGGER fail_second BEFORE UPDATE ON generation_game_state WHEN NEW.game_id='mass-effect-le2' BEGIN SELECT RAISE(FAIL,'injected'); END").execute(&tracker.pool).await?;
+                    assert!(prepared.activate(Control::default()).await.is_err());
+                    sqlx::query("DROP TRIGGER fail_second")
+                        .execute(&tracker.pool)
+                        .await?;
+                    assert!(
+                        super::super::session::live_saves(&tracker, game)
+                            .await?
+                            .profile_id()
+                            .is_none()
+                    );
+                } else {
+                    prepared.activate(Control::default()).await?;
+                    assert_eq!(
+                        super::super::session::live_saves(&tracker, game)
+                            .await?
+                            .profile_id(),
+                        Some(profile.as_str())
+                    );
+                }
+                let after = fs::metadata(game.path.join(relative))?;
+                assert_eq!(
+                    (metadata.ino(), metadata.mtime(), metadata.mtime_nsec()),
+                    (after.ino(), after.mtime(), after.mtime_nsec())
+                );
+                if index == 0 {
+                    for untouched in &configs[1..] {
+                        assert!(
+                            super::super::session::live_saves(&tracker, &untouched.game)
+                                .await?
+                                .profile_id()
+                                .is_none()
+                        );
+                    }
+                }
+            }
+            assert_eq!(
+                super::super::session::live_saves(&tracker, &configs[0].game)
+                    .await?
+                    .profile_id(),
+                Some(cloned.as_str())
+            );
+            Ok(())
+        },
+    )
+}

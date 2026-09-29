@@ -341,7 +341,7 @@ impl App {
         );
         self.session.selected_game_idx = usize::MAX;
         self.ui
-            .game_dropdown
+            .game_selection
             .set_selected(index.map_or(gtk::INVALID_LIST_POSITION, |i| i as u32));
         if let Some(index) = index {
             self.handle_game_selected(index as u32, sender);

@@ -177,3 +177,33 @@ impl Journal {
         files::cleanup(&storage(data, &self.game_id, &self.id), self)
     }
 }
+
+impl Journal {
+    pub(crate) async fn reselect(tracker: &Tracker, game: &Game, profile: String) -> Result<Self> {
+        let previous = tracker
+            .mele_deployment(&game.id)
+            .await?
+            .context("No MELE deployment is available to reuse")?;
+        let baseline = tracker
+            .load_mele_baseline(&game.id)
+            .await?
+            .context("MELE restoration baseline is unavailable")?;
+        let mut desired = previous.clone();
+        desired.generation = Uuid::new_v4().to_string();
+        desired.profile = profile;
+        let journal = Self {
+            version: 6,
+            id: desired.generation.clone(),
+            game_id: game.id.clone(),
+            baseline: baseline.sha256.clone(),
+            previous: Some(previous),
+            desired,
+            family: None,
+            missing_components: Vec::new(),
+            operations: Vec::new(),
+            directories: Vec::new(),
+        };
+        journal.validate(game, &baseline)?;
+        Ok(journal)
+    }
+}

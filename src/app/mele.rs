@@ -198,23 +198,45 @@ impl App {
                 let progress = Arc::from(super::progress::throttled_mele_progress(
                     sender.input_sender().clone(),
                 ));
+                let cache = self.cache_root_for(&game.id);
                 self.location_command(sender, async move {
+                    let cache = match cache {
+                        Ok(cache) => cache,
+                        Err(error) => {
+                            return AppCmdMsg::Mele(Command::Preview(Err(format!("{error:#}"))));
+                        }
+                    };
+                    let request = application::Request {
+                        game,
+                        profile,
+                        language,
+                        purge,
+                        repair,
+                    };
+                    let control = crate::core::generations::content::Control {
+                        cancelled: cancelled.clone(),
+                        ..Default::default()
+                    };
+                    match crate::core::generations::activation::prepare_unchanged(
+                        &tracker, &cache, &request, control,
+                    )
+                    .await
+                    {
+                        Ok(Some(prepared)) => {
+                            return AppCmdMsg::Mele(Command::GenerationPrepared(Ok(Box::new(
+                                prepared,
+                            ))));
+                        }
+                        Ok(None) => {}
+                        Err(error) => {
+                            return AppCmdMsg::Mele(Command::Preview(Err(format!("{error:#}"))));
+                        }
+                    }
                     AppCmdMsg::Mele(Command::Preview(
-                        application::preview(
-                            tracker,
-                            application::Request {
-                                game,
-                                profile,
-                                language,
-                                purge,
-                                repair,
-                            },
-                            cancelled,
-                            progress,
-                        )
-                        .await
-                        .map(Box::new)
-                        .map_err(|error| format!("{error:#}")),
+                        application::preview(tracker, request, cancelled, progress)
+                            .await
+                            .map(Box::new)
+                            .map_err(|error| format!("{error:#}")),
                     ))
                 });
             }

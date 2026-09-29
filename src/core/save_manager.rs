@@ -516,18 +516,21 @@ async fn replace_bank_from_dir(save_set: &SaveSetId, source: &Path) -> Result<Sa
 }
 
 async fn load_bank(save_set: &SaveSetId) -> Result<SaveBankManifest> {
-    let root = bank_root(save_set)?;
-    if !bank_manifest(&root).exists() {
+    load_bank_at(&bank_root(save_set)?, save_set).await
+}
+
+async fn load_bank_at(root: &Path, save_set: &SaveSetId) -> Result<SaveBankManifest> {
+    if !bank_manifest(root).exists() {
         bail!(
             "{} has no initialized save state. Initialize it from the current live saves, change its save mode, or cancel the switch.",
             save_set.display_name()
         );
     }
-    let manifest: SaveBankManifest = read_json(&bank_manifest(&root)).await?;
+    let manifest: SaveBankManifest = read_json(&bank_manifest(root)).await?;
     if manifest.schema_version != SAVE_SCHEMA_VERSION || manifest.save_set != *save_set {
         bail!("The target save bank has incompatible metadata");
     }
-    verify_tree(&bank_data(&root), &manifest.files).await?;
+    verify_tree(&bank_data(root), &manifest.files).await?;
     Ok(manifest)
 }
 
@@ -853,17 +856,33 @@ pub async fn clone_profile_bank(game_id: &str, source_id: &str, target_id: &str)
         profile_id: target_id.to_string(),
     };
     migrate_legacy_profile_bank(&source).await?;
-    let source_manifest = load_bank(&source).await?;
     let source_root = bank_root(&source)?;
+    let target_root = bank_root(&target)?;
+    clone_bank_at(&source_root, &target_root, &source, &target).await
+}
+
+async fn clone_bank_at(
+    source_root: &Path,
+    target_root: &Path,
+    source: &SaveSetId,
+    target: &SaveSetId,
+) -> Result<()> {
+    if !tokio::fs::try_exists(source_root).await? {
+        anyhow::ensure!(
+            !tokio::fs::try_exists(target_root).await?,
+            "The cloned save bank already exists"
+        );
+        return Ok(());
+    }
+    let source_manifest = load_bank_at(source_root, source).await?;
     let target_manifest = SaveBankManifest {
         save_set: target.clone(),
         captured_at: Utc::now().to_rfc3339(),
         ..source_manifest
     };
-    let target_root = bank_root(&target)?;
-    copy_tree(&bank_data(&source_root), &bank_data(&target_root)).await?;
-    verify_tree(&bank_data(&target_root), &target_manifest.files).await?;
-    write_json(&bank_manifest(&target_root), &target_manifest).await
+    copy_tree(&bank_data(source_root), &bank_data(target_root)).await?;
+    verify_tree(&bank_data(target_root), &target_manifest.files).await?;
+    write_json(&bank_manifest(target_root), &target_manifest).await
 }
 
 pub async fn delete_profile_save_data(game_id: &str, profile_id: &str) -> Result<()> {
@@ -965,6 +984,47 @@ mod tests {
     async fn write_file(path: &Path, bytes: &[u8]) -> Result<()> {
         tokio::fs::create_dir_all(path.parent().unwrap()).await?;
         tokio::fs::write(path, bytes).await?;
+        Ok(())
+    }
+
+    // @variants: both
+    #[tokio::test]
+    async fn cloning_preserves_uninitialized_portions_and_rejects_damaged_banks() -> Result<()> {
+        let temp = tempdir()?;
+        let source = SaveSetId::Profile {
+            game_id: "game".into(),
+            profile_id: "source".into(),
+        };
+        let target = SaveSetId::Profile {
+            game_id: "game".into(),
+            profile_id: "target".into(),
+        };
+        let source_root = bank_root_in(temp.path(), &source)?;
+        let target_root = bank_root_in(temp.path(), &target)?;
+        clone_bank_at(&source_root, &target_root, &source, &target).await?;
+        assert!(!target_root.exists());
+        tokio::fs::create_dir_all(&source_root).await?;
+        assert!(
+            clone_bank_at(&source_root, &target_root, &source, &target)
+                .await
+                .is_err()
+        );
+        assert!(!target_root.exists());
+        tokio::fs::create_dir_all(bank_data(&source_root)).await?;
+        write_json(
+            &bank_manifest(&source_root),
+            &SaveBankManifest {
+                schema_version: SAVE_SCHEMA_VERSION,
+                save_set: source.clone(),
+                captured_at: Utc::now().to_rfc3339(),
+                files: Vec::new(),
+            },
+        )
+        .await?;
+        clone_bank_at(&source_root, &target_root, &source, &target).await?;
+        let cloned = load_bank_at(&target_root, &target).await?;
+        assert!(cloned.files.is_empty());
+        assert_eq!(cloned.save_set, target);
         Ok(())
     }
 

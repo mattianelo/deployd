@@ -1,4 +1,5 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, ensure};
+use sqlx::{Sqlite, Transaction};
 
 use crate::models::profile::{Profile, SaveMode};
 
@@ -20,6 +21,9 @@ impl Tracker {
 
     /// Atomically create a new profile and snapshot all current mods/plugins as disabled.
     pub async fn create_clean_profile(&self, game_id: &str, name: &str) -> Result<String> {
+        if let Some(id) = self.create_trilogy_profile(game_id, name, true).await? {
+            return Ok(id);
+        }
         let id = uuid::Uuid::new_v4().to_string();
         let mut tx = self.pool.begin().await?;
 
@@ -65,6 +69,12 @@ impl Tracker {
         new_name: &str,
         game_id: &str,
     ) -> Result<String> {
+        if let Some(id) = self
+            .clone_trilogy_profile(source_profile_id, new_name, game_id)
+            .await?
+        {
+            return Ok(id);
+        }
         let mut final_name = new_name.to_string();
         let mut counter = 2u32;
         loop {
@@ -125,8 +135,9 @@ impl Tracker {
 
     /// Rename an existing profile.
     pub async fn rename_profile(&self, profile_id: &str, new_name: &str) -> Result<()> {
-        sqlx::query("UPDATE profiles SET name = ? WHERE id = ?")
+        sqlx::query("UPDATE profiles SET name = ? WHERE id = ? OR id IN (SELECT profile_id FROM mele_profile_members WHERE group_id=(SELECT group_id FROM mele_profile_members WHERE profile_id=?))")
             .bind(new_name)
+            .bind(profile_id)
             .bind(profile_id)
             .execute(&self.pool)
             .await
@@ -136,8 +147,8 @@ impl Tracker {
 
     /// List all profiles for a game.
     pub async fn list_profiles(&self, game_id: &str) -> Result<Vec<Profile>> {
-        let rows = sqlx::query_as::<_, (String, String, bool, String)>(
-            "SELECT id, name, is_active, save_mode FROM profiles WHERE game_id = ? ORDER BY name",
+        let rows = sqlx::query_as::<_, (String, String, bool, String, bool)>(
+            "SELECT id, name, is_active, save_mode, EXISTS(SELECT 1 FROM mele_profile_members WHERE profile_id=profiles.id) FROM profiles WHERE game_id = ? ORDER BY name",
         )
         .bind(game_id)
         .fetch_all(&self.pool)
@@ -146,7 +157,8 @@ impl Tracker {
 
         Ok(rows
             .into_iter()
-            .map(|(id, name, is_active, save_mode)| Profile {
+            .map(|(id, name, is_active, save_mode, trilogy)| Profile {
+                trilogy,
                 id,
                 name,
                 is_active,
@@ -158,8 +170,8 @@ impl Tracker {
 
     /// Get the active profile for a game (if any).
     pub async fn get_active_profile(&self, game_id: &str) -> Result<Option<Profile>> {
-        let row = sqlx::query_as::<_, (String, String, bool, String)>(
-            "SELECT id, name, is_active, save_mode FROM profiles
+        let row = sqlx::query_as::<_, (String, String, bool, String, bool)>(
+            "SELECT id, name, is_active, save_mode, EXISTS(SELECT 1 FROM mele_profile_members WHERE profile_id=profiles.id) FROM profiles
              WHERE game_id = ? AND is_active = TRUE LIMIT 1",
         )
         .bind(game_id)
@@ -167,13 +179,16 @@ impl Tracker {
         .await
         .context("Failed to query active profile")?;
 
-        Ok(row.map(|(id, name, is_active, save_mode)| Profile {
-            id,
-            name,
-            is_active,
-            save_mode: SaveMode::from_db(&save_mode),
-            save_synced_at: None,
-        }))
+        Ok(
+            row.map(|(id, name, is_active, save_mode, trilogy)| Profile {
+                trilogy,
+                id,
+                name,
+                is_active,
+                save_mode: SaveMode::from_db(&save_mode),
+                save_synced_at: None,
+            }),
+        )
     }
 
     /// Resolve the profile used by the most recent successful deploy for this game.
@@ -224,8 +239,9 @@ impl Tracker {
 
     /// Update the save mode for a profile.
     pub async fn set_profile_save_mode(&self, profile_id: &str, mode: SaveMode) -> Result<()> {
-        sqlx::query("UPDATE profiles SET save_mode = ? WHERE id = ?")
+        sqlx::query("UPDATE profiles SET save_mode = ? WHERE id = ? OR id IN (SELECT profile_id FROM mele_profile_members WHERE group_id=(SELECT group_id FROM mele_profile_members WHERE profile_id=?))")
             .bind(mode.to_db())
+            .bind(profile_id)
             .bind(profile_id)
             .execute(&self.pool)
             .await
@@ -236,107 +252,25 @@ impl Tracker {
     /// Save the current mods/plugins state into the given profile (snapshot).
     pub async fn save_to_profile(&self, profile_id: &str, game_id: &str) -> Result<()> {
         let mut tx = self.pool.begin().await?;
-
-        sqlx::query("DELETE FROM profile_mods WHERE profile_id = ?")
-            .bind(profile_id)
-            .execute(&mut *tx)
-            .await?;
-        sqlx::query("DELETE FROM profile_plugins WHERE profile_id = ?")
-            .bind(profile_id)
-            .execute(&mut *tx)
-            .await?;
-
-        sqlx::query(
-            "INSERT INTO profile_mods (profile_id, mod_id, enabled, priority)
-             SELECT ?, id, enabled, priority FROM mods WHERE game_id = ?",
-        )
-        .bind(profile_id)
-        .bind(game_id)
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query(
-            "INSERT INTO profile_plugins (profile_id, plugin_id, enabled, load_order)
-             SELECT ?, p.id, p.enabled, p.load_order
-             FROM plugins p JOIN mods m ON p.mod_id = m.id
-             WHERE m.game_id = ?",
-        )
-        .bind(profile_id)
-        .bind(game_id)
-        .execute(&mut *tx)
-        .await?;
-
-        tx.commit()
-            .await
-            .context("Failed to save profile snapshot")?;
-        Ok(())
+        snapshot(&mut tx, profile_id, game_id).await?;
+        tx.commit().await.context("Failed to update profile")
     }
 
     /// Switch to a profile: load its state into the live mods/plugins tables.
     pub async fn switch_profile(&self, game_id: &str, profile_id: &str) -> Result<()> {
+        if self.select_trilogy_profile(game_id, profile_id).await? {
+            return Ok(());
+        }
         let mut tx = self.pool.begin().await?;
-
-        sqlx::query("UPDATE profiles SET is_active = FALSE WHERE game_id = ?")
-            .bind(game_id)
-            .execute(&mut *tx)
-            .await?;
-        sqlx::query("UPDATE profiles SET is_active = TRUE WHERE id = ?")
-            .bind(profile_id)
-            .execute(&mut *tx)
-            .await?;
-
-        sqlx::query(
-            "UPDATE mods SET enabled = pm.enabled, priority = pm.priority
-             FROM profile_mods pm
-             WHERE mods.id = pm.mod_id AND pm.profile_id = ? AND mods.game_id = ?",
-        )
-        .bind(profile_id)
-        .bind(game_id)
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query(
-            "UPDATE mods SET enabled = 0
-             WHERE game_id = ?
-               AND id NOT IN (SELECT mod_id FROM profile_mods WHERE profile_id = ?)",
-        )
-        .bind(game_id)
-        .bind(profile_id)
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query(
-            "UPDATE plugins SET enabled = pp.enabled, load_order = pp.load_order
-             FROM profile_plugins pp
-             WHERE plugins.id = pp.plugin_id AND pp.profile_id = ?
-               AND plugins.mod_id IN (SELECT id FROM mods WHERE game_id = ?)",
-        )
-        .bind(profile_id)
-        .bind(game_id)
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query(
-            "UPDATE plugins SET enabled = (
-                SELECT COALESCE(pm.enabled, 0)
-                FROM profile_mods pm
-                WHERE pm.mod_id = plugins.mod_id AND pm.profile_id = ?
-             )
-             WHERE plugins.mod_id IN (SELECT id FROM mods WHERE game_id = ?)
-               AND plugins.id NOT IN (SELECT plugin_id FROM profile_plugins WHERE profile_id = ?)",
-        )
-        .bind(profile_id)
-        .bind(game_id)
-        .bind(profile_id)
-        .execute(&mut *tx)
-        .await?;
-
-        tx.commit().await.context("Failed to switch profile")?;
-        Ok(())
+        select(&mut tx, game_id, profile_id).await?;
+        tx.commit().await.context("Failed to update profile")
     }
 
     /// Delete a profile and its snapshot data (CASCADE handles profile_mods/profile_plugins).
     pub async fn delete_profile(&self, profile_id: &str) -> Result<()> {
+        if self.delete_trilogy_profile(profile_id).await? {
+            return Ok(());
+        }
         let mut tx = self.pool.begin().await?;
         sqlx::query("DELETE FROM profile_mods WHERE profile_id = ?")
             .bind(profile_id)
@@ -380,6 +314,13 @@ impl Tracker {
             });
         }
 
+        if let Some(id) = self.create_initial_trilogy_profile(game_id).await? {
+            self.switch_profile(game_id, &id).await?;
+            return self
+                .get_active_profile(game_id)
+                .await?
+                .context("Trilogy profile was not selected");
+        }
         let id = self.create_profile(game_id, "Default").await?;
         sqlx::query("UPDATE profiles SET is_active = TRUE WHERE id = ?")
             .bind(&id)
@@ -389,11 +330,126 @@ impl Tracker {
         Ok(Profile {
             id,
             name: "Default".to_string(),
+            trilogy: false,
             is_active: true,
             save_mode: SaveMode::Global,
             save_synced_at: None,
         })
     }
+}
+
+pub(super) async fn snapshot(
+    tx: &mut Transaction<'_, Sqlite>,
+    profile_id: &str,
+    game_id: &str,
+) -> Result<()> {
+    let belongs: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM profiles WHERE id=? AND game_id=?)")
+            .bind(profile_id)
+            .bind(game_id)
+            .fetch_one(&mut **tx)
+            .await?;
+    ensure!(belongs, "The profile is no longer available for this game");
+    sqlx::query("DELETE FROM profile_mods WHERE profile_id = ?")
+        .bind(profile_id)
+        .execute(&mut **tx)
+        .await?;
+    sqlx::query("DELETE FROM profile_plugins WHERE profile_id = ?")
+        .bind(profile_id)
+        .execute(&mut **tx)
+        .await?;
+
+    sqlx::query(
+        "INSERT INTO profile_mods (profile_id, mod_id, enabled, priority)
+             SELECT ?, id, enabled, priority FROM mods WHERE game_id = ?",
+    )
+    .bind(profile_id)
+    .bind(game_id)
+    .execute(&mut **tx)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO profile_plugins (profile_id, plugin_id, enabled, load_order)
+             SELECT ?, p.id, p.enabled, p.load_order
+             FROM plugins p JOIN mods m ON p.mod_id = m.id
+             WHERE m.game_id = ?",
+    )
+    .bind(profile_id)
+    .bind(game_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
+pub(super) async fn select(
+    tx: &mut Transaction<'_, Sqlite>,
+    game_id: &str,
+    profile_id: &str,
+) -> Result<()> {
+    let belongs: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM profiles WHERE id=? AND game_id=?)")
+            .bind(profile_id)
+            .bind(game_id)
+            .fetch_one(&mut **tx)
+            .await?;
+    ensure!(belongs, "The profile is no longer available for this game");
+    sqlx::query("UPDATE profiles SET is_active = FALSE WHERE game_id = ?")
+        .bind(game_id)
+        .execute(&mut **tx)
+        .await?;
+    sqlx::query("UPDATE profiles SET is_active = TRUE WHERE id = ?")
+        .bind(profile_id)
+        .execute(&mut **tx)
+        .await?;
+
+    sqlx::query(
+        "UPDATE mods SET enabled = pm.enabled, priority = pm.priority
+             FROM profile_mods pm
+             WHERE mods.id = pm.mod_id AND pm.profile_id = ? AND mods.game_id = ?",
+    )
+    .bind(profile_id)
+    .bind(game_id)
+    .execute(&mut **tx)
+    .await?;
+
+    sqlx::query(
+        "UPDATE mods SET enabled = 0
+             WHERE game_id = ?
+               AND id NOT IN (SELECT mod_id FROM profile_mods WHERE profile_id = ?)",
+    )
+    .bind(game_id)
+    .bind(profile_id)
+    .execute(&mut **tx)
+    .await?;
+
+    sqlx::query(
+        "UPDATE plugins SET enabled = pp.enabled, load_order = pp.load_order
+             FROM profile_plugins pp
+             WHERE plugins.id = pp.plugin_id AND pp.profile_id = ?
+               AND plugins.mod_id IN (SELECT id FROM mods WHERE game_id = ?)",
+    )
+    .bind(profile_id)
+    .bind(game_id)
+    .execute(&mut **tx)
+    .await?;
+
+    sqlx::query(
+        "UPDATE plugins SET enabled = (
+                SELECT COALESCE(pm.enabled, 0)
+                FROM profile_mods pm
+                WHERE pm.mod_id = plugins.mod_id AND pm.profile_id = ?
+             )
+             WHERE plugins.mod_id IN (SELECT id FROM mods WHERE game_id = ?)
+               AND plugins.id NOT IN (SELECT plugin_id FROM profile_plugins WHERE profile_id = ?)",
+    )
+    .bind(profile_id)
+    .bind(game_id)
+    .bind(profile_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
 }
 
 #[cfg(test)]

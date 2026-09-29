@@ -114,51 +114,14 @@ pub(super) fn build_model(
     // Build dropdown model (StringList allows dynamic updates after wizard completes)
     let game_names: Vec<&str> = games.iter().map(|g| g.title.as_str()).collect();
     let game_model = gtk::StringList::new(&game_names);
-    let game_dropdown = gtk::DropDown::new(Some(game_model.clone()), None::<gtk::Expression>);
-
-    // Constrain the dropdown button label so it never widens the window
-    let game_factory = gtk::SignalListItemFactory::new();
-    game_factory.connect_setup(|_, item| {
-        let label = gtk::Label::builder()
-            .max_width_chars(25)
-            .ellipsize(gtk::pango::EllipsizeMode::End)
-            .xalign(0.0_f32)
-            .build();
-        if let Some(list_item) = item.downcast_ref::<gtk::ListItem>() {
-            list_item.set_child(Some(&label));
-        }
+    let game_selection = gtk::SingleSelection::new(Some(game_model.clone()));
+    let input = sender.input_sender().clone();
+    game_selection.connect_selected_notify(move |selection| {
+        let _ = input.send(AppMsg::Games(crate::app::messages::GamesMsg::GameSelected(
+            selection.selected(),
+        )));
     });
-    game_factory.connect_bind(|_, item| {
-        let Some(list_item) = item.downcast_ref::<gtk::ListItem>() else {
-            return;
-        };
-        if let Some(s) = list_item.item().and_downcast::<gtk::StringObject>()
-            && let Some(lbl) = list_item.child().and_downcast::<gtk::Label>()
-        {
-            lbl.set_text(&s.string());
-        }
-    });
-    game_dropdown.set_factory(Some(&game_factory));
-
-    // Popup list shows full titles without truncation
-    let game_list_factory = gtk::SignalListItemFactory::new();
-    game_list_factory.connect_setup(|_, item| {
-        let label = gtk::Label::builder().xalign(0.0_f32).build();
-        if let Some(list_item) = item.downcast_ref::<gtk::ListItem>() {
-            list_item.set_child(Some(&label));
-        }
-    });
-    game_list_factory.connect_bind(|_, item| {
-        let Some(list_item) = item.downcast_ref::<gtk::ListItem>() else {
-            return;
-        };
-        if let Some(s) = list_item.item().and_downcast::<gtk::StringObject>()
-            && let Some(lbl) = list_item.child().and_downcast::<gtk::Label>()
-        {
-            lbl.set_text(&s.string());
-        }
-    });
-    game_dropdown.set_list_factory(Some(&game_list_factory));
+    let game_picker = gtk::MenuButton::new();
 
     let profile_model = gtk::StringList::new(&[]);
     let profile_dropdown = gtk::DropDown::new(Some(profile_model.clone()), None::<gtk::Expression>);
@@ -230,7 +193,7 @@ pub(super) fn build_model(
             },
             nexus_user_btn: nexus_user_btn.clone(),
             nexus_avatar_widget: nexus_avatar_widget.clone(),
-            game_dropdown: game_dropdown.clone(),
+            game_picker: game_picker.clone(),
             profile_dropdown: profile_dropdown.clone(),
             profile_menu_btn: profile_menu_btn.clone(),
             profile_rename_btn: profile_rename_btn.clone(),
@@ -249,14 +212,14 @@ pub(super) fn build_model(
             HeaderOutput::NexusLoginClicked => {
                 AppMsg::Shell(crate::app::messages::ShellMsg::NexusLoginClicked)
             }
-            HeaderOutput::GameSelected(index) => {
-                AppMsg::Games(crate::app::messages::GamesMsg::GameSelected(index))
-            }
             HeaderOutput::RemoveCurrentGame => {
                 AppMsg::Games(crate::app::messages::GamesMsg::RemoveCurrentGame)
             }
             HeaderOutput::ProfileSelected(index) => {
                 AppMsg::Games(crate::app::messages::GamesMsg::ProfileSelected(index))
+            }
+            HeaderOutput::GroupTrilogyProfiles => {
+                AppMsg::Games(crate::app::messages::GamesMsg::GroupTrilogyProfiles)
             }
             HeaderOutput::NewProfileClicked => {
                 AppMsg::Games(crate::app::messages::GamesMsg::NewProfileClicked)
@@ -438,7 +401,8 @@ pub(super) fn build_model(
             profile_model,
             profile_dropdown,
             game_model,
-            game_dropdown,
+            game_selection,
+            game_picker,
             pre_install_dialog: None,
             mele_operation: None,
             mele_setup: None,

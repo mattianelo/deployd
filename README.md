@@ -42,7 +42,8 @@ The Nexus Mods page remains available for users who prefer that distribution cha
 
 ### Mass Effect Legendary Edition (experimental)
 
-Manage LE1, LE2 and LE3 with separate mod libraries and profiles. Supported mods
+Manage LE1, LE2 and LE3 under one expandable Legendary Edition entry, with
+trilogy profiles and separate mod lists for each game. Supported mods
 include Community Patch, cosmetic and content mods, raw and precompiled M3TO
 textures (such as No Headgear for Squadmates, ALOT and ISL), shader mods, squadmate outfits, LE2 DLC configuration
 options and LE2 email additions.
@@ -55,10 +56,27 @@ and LE1/LE2 localized menu and plot-map packages.
    setup can take several minutes and shows progress for each game.
 2. Select a game, install a mod archive and choose its options.
 3. Enable and order your mods, then choose **Deploy**, select the game language and
-   confirm once. Deployd prepares and applies the profile as one operation.
+   confirm once. Deployd applies only that game's configuration. Other games'
+   successful deployments stay in place if this deployment fails.
 4. Deploy again after disabling, removing, reordering or switching profiles.
+   When only the profile or save bank changes, unchanged installed mods are
+   verified and reused without running their transformations again.
    **Purge** restores managed game files while keeping your mod library. Reinstall
    an archive to change its options or contents.
+
+Trilogy profiles share their name, selection and **Global / Profile-specific**
+save-bank choice. Each game keeps its own portion of the bank: its live saves
+switch only when that game's Deploy succeeds. Selecting a profile alone does not
+switch any live saves. Save backups and manual sync apply to the selected game.
+
+For existing installations, choose **Group trilogy profiles…** in the profile
+menu and explicitly select one existing profile for each game and a shared save
+mode. Their save banks and backups are preserved; unmatched profiles remain
+available as **ungrouped** profiles. New profiles cover all three games. Cloning
+copies all three configurations and, for isolated profiles, their save banks.
+Keep another trilogy profile before deleting one, and deploy it in any game
+still using the deleted profile's isolated saves first. Restored deployment-history profiles remain
+ungrouped until you explicitly pair them with profiles for the other games.
 
 Place required mods before the mods that need them. Mod list order controls file
 replacements; DLC priority is set by mod authors and does not change when you
@@ -139,8 +157,8 @@ content before adding the game. Mod deployment does not edit saves.
 - **Nexus Mods Integration** — SSO login, NXM deep links, one-click update checking,
   and manual Nexus Mod ID and installed-version correction from Mod Properties
 - **FOMOD Installer** — Full wizard with conditional steps, image previews, and DLC-aware auto-selection
-- **Mod Profiles** — Per-game editable configurations; selecting a profile does not change game
-  files or live saves until you explicitly choose **Deploy**
+- **Mod Profiles** — Editable configurations, shared across the MELE trilogy; selecting a
+  profile does not change game files or live saves until you explicitly choose **Deploy**
 - **Deployment History** — Every successful Deploy retains the complete profile configuration and
   installed content needed to restore it as a new editable profile, including disabled mods and
   conflict-losing files. History remains after ordinary profile or mod deletion and excludes saves

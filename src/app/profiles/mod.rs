@@ -4,3 +4,5 @@ pub mod lifecycle;
 mod settings;
 pub mod ui_misc;
 mod welcome;
+
+mod trilogy;

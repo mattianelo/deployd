@@ -15,6 +15,7 @@ pub(crate) enum OverrideAction {
 
 impl App {
     pub(crate) fn sync_game_panels(&mut self) {
+        self.refresh_grouped_game_picker();
         let labels: &[&str] = if self.game_shows_plugins() {
             &["All", "Mod Order", "Plugin Order", "Downloads"]
         } else if self.game_shows_overrides() {

@@ -344,12 +344,22 @@ impl App {
         self.session.profiles = profiles;
         self.session.active_profile_idx = active_idx;
 
-        let names: Vec<&str> = self
+        let mele = self
+            .selected_game()
+            .is_some_and(|game| game.engine == crate::models::game::GameEngine::MassEffect);
+        let labels: Vec<String> = self
             .session
             .profiles
             .iter()
-            .map(|p| p.name.as_str())
+            .map(|p| {
+                if mele && !p.trilogy {
+                    format!("{} (ungrouped)", p.name)
+                } else {
+                    p.name.clone()
+                }
+            })
             .collect();
+        let names: Vec<&str> = labels.iter().map(String::as_str).collect();
         self.ui
             .profile_model
             .splice(0, self.ui.profile_model.n_items(), &names);

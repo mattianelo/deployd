@@ -25,6 +25,7 @@ impl SaveMode {
 
 #[derive(Debug, Clone)]
 pub struct Profile {
+    pub(crate) trilogy: bool,
     pub id: String,
     pub name: String,
     pub is_active: bool,

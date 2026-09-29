@@ -18,7 +18,7 @@ use super::super::session::load_game_data;
 impl App {
     pub(crate) fn handle_game_selected(&mut self, idx: u32, sender: &ComponentSender<Self>) {
         let new_idx = idx as usize;
-        if idx != self.ui.game_dropdown.selected()
+        if idx != self.ui.game_selection.selected()
             || new_idx >= self.session.games.len()
             || new_idx == self.session.selected_game_idx
         {
@@ -26,7 +26,7 @@ impl App {
         }
         if self.is_busy() && !self.session.game_load.is_pending() {
             self.ui
-                .game_dropdown
+                .game_selection
                 .set_selected(self.session.selected_game_idx as u32);
             self.show_toast("Wait for the current operation to finish before switching games");
             return;

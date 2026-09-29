@@ -43,6 +43,7 @@ pub(super) async fn reset(tx: &mut Transaction<'_, Sqlite>, game: &str) -> Resul
         "DELETE FROM profile_mods WHERE mod_id IN (SELECT id FROM mods WHERE game_id=?)",
         "DELETE FROM mod_files WHERE mod_id IN (SELECT id FROM mods WHERE game_id=?)",
         "DELETE FROM mods WHERE game_id=?",
+        "DELETE FROM mele_profile_groups WHERE id IN (SELECT group_id FROM mele_profile_members WHERE game_id=?)",
         "DELETE FROM profiles WHERE game_id=?",
         "DELETE FROM mod_groups WHERE game_id=?",
         "DELETE FROM order_snapshots WHERE game_id=?",

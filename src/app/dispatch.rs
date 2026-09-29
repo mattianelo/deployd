@@ -120,6 +120,10 @@ impl App {
         use crate::app::messages::GamesMsg;
 
         match msg {
+            GamesMsg::GroupTrilogyProfiles => self.load_trilogy_candidates(&sender),
+            GamesMsg::ApplyTrilogyProfiles(game, mapping) => {
+                self.apply_trilogy_mapping(game, mapping, &sender)
+            }
             GamesMsg::GameSelected(idx) => self.handle_game_selected(idx, &sender),
             GamesMsg::ProfileSelected(idx) => self.handle_profile_selected(idx, &sender),
             GamesMsg::InitializePendingSaveSet => self.handle_initialize_pending_save_set(&sender),
@@ -569,6 +573,23 @@ impl App {
         use crate::app::messages::GamesCmdMsg;
 
         match msg {
+            GamesCmdMsg::TrilogyCandidates(game, result) => {
+                self.show_trilogy_mapping(game, result, root, &sender)
+            }
+            GamesCmdMsg::TrilogyGrouped(game, result) => match result {
+                Ok(()) => {
+                    if self
+                        .selected_game()
+                        .is_some_and(|selected| selected.id == game)
+                    {
+                        self.reload_mods(&sender);
+                    }
+                    self.show_toast("Trilogy profiles grouped; live saves will follow each game's next successful Deploy");
+                }
+                Err(error) => {
+                    self.push_notification(&format!("Could not group trilogy profiles: {error}"))
+                }
+            },
             GamesCmdMsg::LocationAccessChecked(result) => match result {
                 Ok(blocked) => self.session.location_blocked = blocked.into_iter().collect(),
                 Err(error) => {

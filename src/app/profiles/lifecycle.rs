@@ -53,7 +53,9 @@ impl App {
         let Some(profile) = self.session.profiles.get(self.session.active_profile_idx) else {
             return;
         };
-        let body = if profile.save_mode == SaveMode::ProfileSpecific {
+        let body = if profile.trilogy {
+            "This permanently deletes this trilogy profile's three mod configurations, all three portions of its isolated save bank, and their backups. Global saves are kept. Games still using its isolated saves must deploy another profile first. This cannot be undone."
+        } else if profile.save_mode == SaveMode::ProfileSpecific {
             "This permanently deletes the profile configuration, its isolated save bank, and every save backup owned by it. This cannot be undone."
         } else {
             "This permanently deletes the profile configuration. Shared Global saves are not deleted. This cannot be undone."
@@ -95,6 +97,18 @@ impl App {
                 "Return to Global saves?",
                 "This changes the selected profile. On its next Deploy, Deployd will preserve this profile's saves and switch to the shared Global state.",
             ),
+        };
+        let body = if profile.trilogy {
+            match profile.save_mode {
+                SaveMode::Global => {
+                    "This enables an isolated trilogy save bank for this profile. Each game's portion is initialized from its current live saves on that game's next successful Deploy. Other games keep their deployed saves until they deploy successfully."
+                }
+                SaveMode::ProfileSpecific => {
+                    "This selects Global saves for the trilogy profile. Each game preserves its isolated saves and switches to its portion of the Global bank on that game's next successful Deploy."
+                }
+            }
+        } else {
+            body
         };
         let dialog = adw::AlertDialog::builder()
             .heading(heading)
@@ -323,6 +337,7 @@ impl App {
         };
 
         let new_name = format!("{} (Copy)", source_profile.name);
+        let games = self.session.games.clone();
 
         self.location_command(sender, async move {
             let result = async {
@@ -330,40 +345,66 @@ impl App {
                     .save_to_profile(&source_profile.id, &game.id)
                     .await
                     .map_err(|e| e.to_string())?;
-                if source_profile.save_mode == SaveMode::ProfileSpecific
-                    && crate::core::generations::session::live_saves(&tracker, &game)
-                        .await
-                        .map_err(|error| error.to_string())?
-                        .profile_id()
-                        == Some(source_profile.id.as_str())
-                {
-                    let backup_cap = save_manager::configured_backup_cap_bytes(&tracker).await;
-                    let source_set = save_manager::SaveSetId::for_profile(
-                        &game.id,
-                        &source_profile.id,
-                        &source_profile.save_mode,
-                    );
-                    save_manager::capture_save_set(
-                        &game,
-                        &source_set,
-                        save_manager::BackupTrigger::Clone,
-                        backup_cap,
-                    )
+                let source_parts = tracker
+                    .profile_parts(&source_profile.id)
                     .await
                     .map_err(|e| e.to_string())?;
+                for (game_id, source_id) in &source_parts {
+                    if source_profile.save_mode == SaveMode::ProfileSpecific
+                        && tracker
+                            .profile_has_live_saves(source_id)
+                            .await
+                            .map_err(|e| e.to_string())?
+                    {
+                        let member = games.iter().find(|g| &g.id == game_id).ok_or_else(|| {
+                            "Restore the missing trilogy game before cloning its saves".to_string()
+                        })?;
+                        let backup_cap = save_manager::configured_backup_cap_bytes(&tracker).await;
+                        let source_set = save_manager::SaveSetId::for_profile(
+                            game_id,
+                            source_id,
+                            &source_profile.save_mode,
+                        );
+                        save_manager::capture_save_set(
+                            member,
+                            &source_set,
+                            save_manager::BackupTrigger::Clone,
+                            backup_cap,
+                        )
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    }
                 }
                 let new_id = tracker
                     .clone_profile(&source_profile.id, &new_name, &game.id)
                     .await
                     .map_err(|e| e.to_string())?;
-                if source_profile.save_mode == SaveMode::ProfileSpecific
-                    && let Err(error) =
-                        save_manager::clone_profile_bank(&game.id, &source_profile.id, &new_id)
-                            .await
+                let target_parts = tracker
+                    .profile_parts(&new_id)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                for ((game_id, source_id), (target_game, target_id)) in
+                    source_parts.iter().zip(&target_parts)
                 {
-                    let _ = tracker.delete_profile(&new_id).await;
-                    let _ = save_manager::delete_profile_save_data(&game.id, &new_id).await;
-                    return Err(error.to_string());
+                    if game_id != target_game {
+                        return Err("Cloned profile has inconsistent trilogy membership".into());
+                    }
+                    if source_profile.save_mode == SaveMode::ProfileSpecific
+                        && let Err(error) =
+                            save_manager::clone_profile_bank(game_id, source_id, target_id).await
+                    {
+                        tracker.delete_profile(&new_id).await.map_err(|cleanup| {
+                            format!("{error}; cloned profile cleanup failed: {cleanup}")
+                        })?;
+                        for (game, id) in &target_parts {
+                            save_manager::delete_profile_save_data(game, id)
+                                .await
+                                .map_err(|cleanup| {
+                                    format!("{error}; cloned save cleanup failed: {cleanup}")
+                                })?;
+                        }
+                        return Err(error.to_string());
+                    }
                 }
                 tracker
                     .switch_profile(&game.id, &new_id)
@@ -389,24 +430,31 @@ impl App {
         let Some(game) = self.selected_game().cloned() else {
             return;
         };
-        let delete_id = self.session.profiles[self.session.active_profile_idx]
-            .id
-            .clone();
+        let deleting = &self.session.profiles[self.session.active_profile_idx];
+        let delete_id = deleting.id.clone();
+        let trilogy = deleting.trilogy;
         let Some(target_profile) = self
             .session
             .profiles
             .iter()
-            .find(|profile| profile.id != delete_id)
+            .find(|profile| profile.id != delete_id && (!trilogy || profile.trilogy))
             .cloned()
         else {
+            self.show_toast("Create another trilogy profile before deleting this one");
             return;
         };
 
         self.location_command(sender, async move {
             let result = async {
-                crate::core::generations::session::can_delete_profile(&tracker, &delete_id)
+                let parts = tracker
+                    .profile_parts(&delete_id)
                     .await
-                    .map_err(|error| error.to_string())?;
+                    .map_err(|e| e.to_string())?;
+                for (_, id) in &parts {
+                    crate::core::generations::session::can_delete_profile(&tracker, id)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                }
                 tracker
                     .switch_profile(&game.id, &target_profile.id)
                     .await
@@ -420,10 +468,17 @@ impl App {
                         })?;
                     return Err(error.to_string());
                 }
-                let cleanup_warning = save_manager::delete_profile_save_data(&game.id, &delete_id)
-                    .await
-                    .err()
-                    .map(|error| error.to_string());
+                let mut warnings = Vec::new();
+                for (game_id, id) in &parts {
+                    if let Err(error) = save_manager::delete_profile_save_data(game_id, id).await {
+                        warnings.push(format!("{game_id}: {error}"));
+                    }
+                    tracker
+                        .ensure_default_profile(game_id)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                }
+                let cleanup_warning = (!warnings.is_empty()).then(|| warnings.join("; "));
                 tracker
                     .ensure_default_profile(&game.id)
                     .await

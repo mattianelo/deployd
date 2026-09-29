@@ -71,8 +71,13 @@ impl App {
         let Some(profile) = self.session.profiles.get(self.session.active_profile_idx) else {
             return "Saves: Global".to_string();
         };
+        let scope = if profile.trilogy {
+            "Trilogy saves"
+        } else {
+            "Saves"
+        };
         match &profile.save_mode {
-            SaveMode::Global => "Saves: Global".to_string(),
+            SaveMode::Global => format!("{scope}: Global"),
             SaveMode::ProfileSpecific => {
                 let age = match profile.save_synced_at {
                     None => "never synced".to_string(),
@@ -89,7 +94,11 @@ impl App {
                         }
                     }
                 };
-                format!("Saves: Profile · {age}")
+                if profile.trilogy {
+                    format!("{scope}: Profile · this game {age}")
+                } else {
+                    format!("{scope}: Profile · {age}")
+                }
             }
         }
     }

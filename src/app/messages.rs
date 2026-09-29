@@ -87,6 +87,8 @@ pub(crate) enum ShellMsg {
 
 #[derive(Debug)]
 pub(crate) enum GamesMsg {
+    GroupTrilogyProfiles,
+    ApplyTrilogyProfiles(String, crate::core::tracker::trilogy_profiles::Mapping),
     CacheMoveProgress {
         done: usize,
         total: usize,
@@ -476,6 +478,11 @@ pub(crate) enum ShellCmdMsg {
 
 #[derive(Debug)]
 pub(crate) enum GamesCmdMsg {
+    TrilogyCandidates(
+        String,
+        Result<Vec<crate::core::tracker::trilogy_profiles::Candidate>, String>,
+    ),
+    TrilogyGrouped(String, Result<(), String>),
     LibraryLoaded {
         request: super::game_loading::Request,
         result: Result<super::game_loading::Library, String>,

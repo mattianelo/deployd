@@ -1,3 +1,6 @@
+mod reuse;
+pub(crate) use reuse::prepare_unchanged;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 

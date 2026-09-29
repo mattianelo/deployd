@@ -49,7 +49,7 @@ pub(crate) struct HeaderInit {
     pub(crate) state: HeaderState,
     pub(crate) nexus_user_btn: gtk::MenuButton,
     pub(crate) nexus_avatar_widget: adw::Avatar,
-    pub(crate) game_dropdown: gtk::DropDown,
+    pub(crate) game_picker: gtk::MenuButton,
     pub(crate) profile_dropdown: gtk::DropDown,
     pub(crate) profile_menu_btn: gtk::MenuButton,
     pub(crate) profile_rename_btn: gtk::MenuButton,
@@ -70,10 +70,10 @@ pub(crate) struct Header {
 pub(crate) enum HeaderOutput {
     NexusLogoutClicked,
     NexusLoginClicked,
-    GameSelected(u32),
     RemoveCurrentGame,
     ProfileSelected(u32),
     NewProfileClicked,
+    GroupTrilogyProfiles,
     CloneProfileClicked,
     DeleteProfileClicked,
     ToggleProfileSaveMode,
@@ -194,14 +194,10 @@ impl SimpleComponent for Header {
             },
 
             #[local_ref]
-            pack_start = game_dropdown -> gtk::DropDown {
-                set_selected: 0,
+            pack_start = game_picker -> gtk::MenuButton {
                 add_css_class: "flat",
                 #[watch]
                 set_visible: model.state.has_games && !model.state.initializing,
-                connect_selected_notify[sender] => move |dd| {
-                    sender.output(HeaderOutput::GameSelected(dd.selected())).ok();
-                }
             },
 
             pack_start = &gtk::Button {
@@ -285,6 +281,17 @@ impl SimpleComponent for Header {
                                 },
                             },
 
+                        },
+
+                        gtk::Button {
+                            set_label: "Group trilogy profiles…",
+                            #[watch]
+                            set_visible: model.state.mele,
+                            #[watch]
+                            set_sensitive: !model.state.is_busy,
+                            connect_clicked[sender] => move |_| {
+                                sender.output(HeaderOutput::GroupTrilogyProfiles).ok();
+                            },
                         },
 
                         #[local_ref]
@@ -686,7 +693,7 @@ impl SimpleComponent for Header {
             state,
             nexus_user_btn,
             nexus_avatar_widget,
-            game_dropdown,
+            game_picker,
             profile_dropdown,
             profile_menu_btn,
             profile_rename_btn,
@@ -700,7 +707,7 @@ impl SimpleComponent for Header {
         } = init;
         let nexus_user_btn = &nexus_user_btn;
         let nexus_avatar_widget = &nexus_avatar_widget;
-        let game_dropdown = &game_dropdown;
+        let game_picker = &game_picker;
         let profile_dropdown = &profile_dropdown;
         let profile_menu_btn = &profile_menu_btn;
         let profile_rename_btn = &profile_rename_btn;
