@@ -97,7 +97,28 @@ Start MELE setup with a clean, unmodded game installation. Earlier experimental
 standalone launcher records are not migrated; use fresh MELE state and reinstall mods
 from their archives.
 
-**Limitations:** MEM textures, headmorphs and portable MELE profile transfers are
+Use **Edit appearance…** in the profile menu to select an LE1, LE2 or LE3 live
+save and change hairstyle/accessory asset names, texture references and material
+values. The editor shows which save set owns the file and creates a backup before
+saving. Close the game before editing. Existing face shape is preserved when
+editing these fields; importing a complete preset replaces its face shape too.
+
+Import TSE RON or Gibbed headmorph presets, and export presets as RON. Presets without
+a game identity require an explicit target-game choice; Deployd does not convert
+presets between games. Mixed mod archives keep game assets and presets separate:
+install the assets normally, then choose **Use appearance preset…** to apply a preset
+to a selected save. Installing, deploying or purging a mod never edits saves.
+Bundled presets remain available during the current session; importing another
+archive with presets replaces that selection. Export presets or reopen the original
+archive to reuse them later.
+
+There is no visual preview or installed-asset browser. Copy asset names from the
+mod author's instructions and install its required files; Deployd does not verify
+that those asset names exist in the game. Default Shepard saves need an explicitly
+imported custom preset before individual fields can be edited. External saves,
+inactive save banks, face-shape sliders and other save fields are not editable.
+
+**Limitations:** MEM textures and portable MELE profile transfers are
 not supported. Launcher executable replacements and launcher installer choices are
 also unsupported. Restore existing MEM textures to clean game
 content before adding the game. Mod deployment does not edit saves.

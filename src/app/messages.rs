@@ -23,6 +23,7 @@ use crate::models::download::DownloadFilter;
 
 #[derive(Debug)]
 pub(crate) enum AppMsg {
+    EditAppearance,
     Generations(super::generations::Msg),
     Mele(super::mele::Msg),
     Recovery(super::location_recovery::RecoveryMsg),
@@ -365,10 +366,12 @@ pub(crate) enum ToolsMsg {
 }
 
 pub(crate) enum PrepareResultMsg {
+    Presets(Vec<crate::core::game::mass_effect::appearance::morph::Preset>),
     Normal {
+        presets: Vec<crate::core::game::mass_effect::appearance::morph::Preset>,
         dazip_sources: Vec<crate::core::installer::DazipSource>,
         mele: Option<Box<crate::core::game::mass_effect::package::PackagePlan>>,
-        mele_bundled_launcher: Option<crate::core::game::mass_effect::launcher::Bundled>,
+        mele_bundled_launcher: Option<Box<crate::core::game::mass_effect::launcher::Bundled>>,
         file_list: Vec<(PathBuf, PathBuf)>,
         stripped_wrapper: Option<String>,
         tmp_dir: TempDir,
@@ -413,6 +416,9 @@ impl PrepareFailure {
 impl std::fmt::Debug for PrepareResultMsg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            PrepareResultMsg::Presets(presets) => {
+                f.debug_tuple("Presets").field(&presets.len()).finish()
+            }
             PrepareResultMsg::Normal { mod_name, .. } => f
                 .debug_struct("Normal")
                 .field("mod_name", mod_name)
@@ -628,6 +634,11 @@ pub(crate) enum DownloadsCmdMsg {
 
 #[derive(Debug)]
 pub(crate) enum InstallCmdMsg {
+    PresetsReady(
+        InstallIdentity,
+        Vec<crate::core::game::mass_effect::appearance::morph::Preset>,
+        Box<Result<Option<crate::models::download::DownloadEntry>, String>>,
+    ),
     ModAdded(
         InstallIdentity,
         Box<Result<AddResult, String>>,

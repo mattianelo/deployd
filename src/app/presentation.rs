@@ -17,6 +17,12 @@ impl App {
             profile_count: self.session.profiles.len(),
             save_mode_label: self.save_mode_label(),
             game_has_save_management: self.game_has_save_management(),
+            appearance_presets: self.selected_game().is_some_and(|game| {
+                self.session
+                    .appearance_presets
+                    .get(&game.id)
+                    .is_some_and(|p| !p.is_empty())
+            }),
             can_sync_saves: self.can_sync_saves(),
             is_busy: self.is_busy(),
             busy_message: self.busy_message(),

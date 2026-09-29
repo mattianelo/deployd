@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+- Added an appearance editor for Legendary Edition live saves, with hairstyle,
+  accessory, texture and material fields, TSE/Gibbed preset imports, RON exports
+  and pre-edit backups. Visual previews and face-shape controls are not included.
+- Bundled headmorph presets now open separately from game-file installation.
+  Applying a preset requires selecting a save and explicitly saving the edit.
+
 ## [3.0.3]
 
 - Replaces the unpublished 3.0.2 release, including its fixes for valid Mass Effect

@@ -117,6 +117,8 @@ pub(crate) struct UiState {
 }
 
 pub(crate) struct SessionState {
+    pub(crate) appearance_presets:
+        HashMap<String, Vec<crate::core::game::mass_effect::appearance::morph::Preset>>,
     pub(crate) game_load: super::game_loading::State,
     pub(crate) location_blocked: HashSet<String>,
     pub(crate) initializing: bool,

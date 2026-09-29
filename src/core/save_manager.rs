@@ -13,6 +13,7 @@ use crate::models::profile::SaveMode;
 use crate::utils::{paths, snap};
 
 pub(crate) mod activation;
+pub(crate) mod appearance;
 mod location_recovery;
 pub(crate) use location_recovery::rebase_location_journal;
 
@@ -313,6 +314,7 @@ pub fn last_save_sync_time(game_id: &str, profile_id: &str) -> Option<std::time:
 }
 
 fn validate_live_save_access(game: &Game) -> Result<PathBuf> {
+    appearance::ensure_idle(game)?;
     validate_live_save_access_with(game, |prefix| {
         snap::validate_selected_folder(prefix, snap::SelectedFolderKind::WinePrefix)
     })

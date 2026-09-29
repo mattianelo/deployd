@@ -1,4 +1,5 @@
 pub mod absorb_dialog;
+pub(crate) mod appearance_editor;
 pub(crate) mod bottom_status;
 pub mod download_row;
 pub(crate) mod downloads_pane;

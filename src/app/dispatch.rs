@@ -36,6 +36,23 @@ impl App {
         }
         match msg {
             AppMsg::Generations(msg) => self.handle_generation(msg, &sender),
+            AppMsg::EditAppearance => {
+                if self.is_busy() {
+                    self.push_notification("Finish the current operation before editing saves");
+                    return;
+                }
+                if let (Some(tracker), Some(game)) =
+                    (self.session.tracker.clone(), self.selected_game().cloned())
+                {
+                    let presets = self
+                        .session
+                        .appearance_presets
+                        .get(&game.id)
+                        .cloned()
+                        .unwrap_or_default();
+                    crate::ui::appearance_editor::show(root, tracker, game, presets);
+                }
+            }
             AppMsg::Mele(msg) => self.handle_mele(msg, &sender, root),
             AppMsg::Recovery(msg) => self.handle_recovery(msg, &sender, root),
             AppMsg::Shell(msg) => self.dispatch_shell_input(msg, sender, root),
@@ -754,6 +771,9 @@ impl App {
             InstallCmdMsg::ModAdded(identity, result, replacement) => {
                 self.handle_cmd_mod_added(&identity, *result, replacement, &sender)
             }
+            InstallCmdMsg::PresetsReady(identity, presets, result) => {
+                self.handle_presets_ready(&identity, presets, *result, &sender);
+            }
             InstallCmdMsg::ModPrepared(identity, result) => {
                 self.handle_cmd_mod_prepared(&identity, *result, root, &sender)
             }
@@ -788,7 +808,7 @@ fn requires_game_access(msg: &AppMsg) -> bool {
     use crate::app::messages::{DownloadsMsg, GamesMsg, ShellMsg, ToolsMsg};
     match msg {
         AppMsg::Generations(message) => !matches!(message, super::generations::Msg::Open),
-        AppMsg::Mods(_) | AppMsg::Plugins(_) | AppMsg::Install(_) => true,
+        AppMsg::EditAppearance | AppMsg::Mods(_) | AppMsg::Plugins(_) | AppMsg::Install(_) => true,
         AppMsg::Tools(ToolsMsg::LaunchTool(_)) => true,
         AppMsg::Mele(msg) => !matches!(
             msg,

@@ -12,6 +12,54 @@ use crate::app::types::PendingInstall;
 use crate::core::installer::AddResult;
 
 impl App {
+    pub(crate) fn handle_presets_ready(
+        &mut self,
+        identity: &InstallIdentity,
+        presets: Vec<crate::core::game::mass_effect::appearance::morph::Preset>,
+        result: Result<Option<crate::models::download::DownloadEntry>, String>,
+        sender: &ComponentSender<Self>,
+    ) {
+        if !self.install.accepts(identity) {
+            return;
+        }
+        self.install.replacement = None;
+        self.install.pending = None;
+        self.install.reinstalling = false;
+        self.install.nexus_ids = None;
+        self.install.fomod_selections = None;
+        self.finish_current_work();
+        match result {
+            Ok(entry) => {
+                if let Some(entry) = entry {
+                    self.update_download_status(&entry.id, entry.status, &entry.status_msg);
+                }
+                self.install.active_download_id = None;
+                self.install.set_stage(InstallStage::Succeeded);
+                self.session
+                    .appearance_presets
+                    .insert(identity.game_id.clone(), presets);
+                if self
+                    .selected_game()
+                    .is_some_and(|game| game.id == identity.game_id)
+                {
+                    sender.input(AppMsg::EditAppearance);
+                }
+            }
+            Err(error) => {
+                self.install.set_stage(InstallStage::Failed);
+                if let Some(id) = self.install.active_download_id.take() {
+                    self.update_download_status(
+                        &id,
+                        crate::models::download::DownloadStatus::Failed,
+                        "Could not finish preset import",
+                    );
+                }
+                self.push_notification(&format!("Could not finish preset import: {error}"));
+            }
+        }
+        self.install.invalidate();
+    }
+
     pub(crate) fn handle_cmd_mod_prepared(
         &mut self,
         identity: &InstallIdentity,
@@ -23,7 +71,41 @@ impl App {
             return;
         }
         match result {
+            Ok(PrepareResultMsg::Presets(presets)) => {
+                let entry = self
+                    .install
+                    .active_download_id
+                    .as_ref()
+                    .and_then(|id| self.download.all.iter().find(|entry| &entry.id == id))
+                    .cloned();
+                let tracker = self.session.tracker.clone();
+                let identity = identity.clone();
+                sender.oneshot_command(async move {
+                    let result = async {
+                        if let Some(mut entry) = entry {
+                            entry.status = crate::models::download::DownloadStatus::Downloaded;
+                            entry.status_msg = "Appearance presets ready".into();
+                            let tracker =
+                                tracker.ok_or("Download storage is unavailable".to_string())?;
+                            tracker
+                                .save_download_entry(&entry)
+                                .await
+                                .map_err(|e| e.to_string())?;
+                            Ok(Some(entry))
+                        } else {
+                            Ok(None)
+                        }
+                    }
+                    .await;
+                    AppCmdMsg::Install(crate::app::messages::InstallCmdMsg::PresetsReady(
+                        identity,
+                        presets,
+                        Box::new(result),
+                    ))
+                });
+            }
             Ok(PrepareResultMsg::Normal {
+                presets,
                 dazip_sources,
                 mele,
                 mele_bundled_launcher,
@@ -53,10 +135,16 @@ impl App {
                     self.push_notification("This MELE archive targets another game. Select its game and install the archive again.");
                     return;
                 }
+                if !presets.is_empty() {
+                    self.session
+                        .appearance_presets
+                        .insert(game.id.clone(), presets);
+                    self.push_notification("Bundled face presets are available under Use appearance preset. Installing this mod does not edit saves.");
+                }
                 self.install.pending = Some(PendingInstall {
                     dazip_sources,
                     mele,
-                    mele_bundled_launcher,
+                    mele_bundled_launcher: mele_bundled_launcher.map(|bundled| *bundled),
                     tmp_dir,
                     mod_name: mod_name.clone(),
                     game,

@@ -1,3 +1,4 @@
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -10,7 +11,9 @@ use crate::utils::fomod_resolver;
 use super::{dazip, file_list};
 
 pub(crate) enum PrepareResult {
+    Presets(Vec<crate::core::game::mass_effect::appearance::morph::Preset>),
     MassEffect {
+        presets: Vec<crate::core::game::mass_effect::appearance::morph::Preset>,
         plan: Box<crate::core::game::mass_effect::package::PackagePlan>,
         bundled_launcher: Option<crate::core::game::mass_effect::launcher::Bundled>,
         tmp_dir: TempDir,
@@ -68,10 +71,18 @@ pub(crate) async fn prepare_mod(
         let extracted_root = tmp_dir.path();
         dlog!("[deployd] extracted to: {}", extracted_root.display());
 
-        reject_headmorphs(extracted_root)?;
         if manual_target.is_some()
             || crate::core::game::mass_effect::package::discover_manifest(extracted_root)?.is_some()
         {
+            let presets =
+                crate::core::game::mass_effect::appearance::archive::separate(extracted_root)?;
+            if !presets.is_empty()
+                && !crate::core::game::mass_effect::appearance::archive::has_payload(
+                    extracted_root,
+                )?
+            {
+                return Ok(PrepareResult::Presets(presets));
+            }
             let plan = crate::core::game::mass_effect::package::PackagePlan::inspect(
                 extracted_root,
                 manual_target,
@@ -80,12 +91,14 @@ pub(crate) async fn prepare_mod(
             let bundled_launcher =
                 crate::core::game::mass_effect::launcher::inspect_bundle(extracted_root)?;
             return Ok(PrepareResult::MassEffect {
+                presets,
                 plan: Box::new(plan),
                 bundled_launcher,
                 tmp_dir,
             });
         }
 
+        reject_headmorphs(extracted_root)?;
         let dazip_sources = if is_dazip {
             let uid = dazip::process_dazip_root(extracted_root, &stem)
                 .context("Failed to process dazip archive")?;
@@ -132,18 +145,26 @@ pub(crate) async fn prepare_mod(
 fn reject_headmorphs(root: &Path) -> Result<()> {
     for entry in walkdir::WalkDir::new(root).follow_links(false).min_depth(1) {
         let entry = entry.context("Cannot inspect archive contents")?;
-        if entry
+        let extension = entry
             .path()
             .extension()
-            .and_then(|extension| extension.to_str())
-            .is_some_and(|extension| {
-                ["headmorph", "me2headmorph", "me3headmorph"]
-                    .iter()
-                    .any(|known| extension.eq_ignore_ascii_case(known))
-            })
-        {
+            .and_then(|s| s.to_str())
+            .unwrap_or_default();
+        let named = ["headmorph", "me2headmorph", "me3headmorph"]
+            .iter()
+            .any(|known| extension.eq_ignore_ascii_case(known));
+        let ron = if entry.file_type().is_file() && extension.eq_ignore_ascii_case("ron") {
+            let mut bytes = Vec::new();
+            std::fs::File::open(entry.path())?
+                .take(16 * 1024 * 1024 + 1)
+                .read_to_end(&mut bytes)?;
+            crate::core::game::mass_effect::appearance::morph::parse(&bytes, String::new()).is_ok()
+        } else {
+            false
+        };
+        if named || ron {
             anyhow::bail!(
-                "Headmorph support is deferred. This input cannot be installed as ordinary game files; no saves were modified"
+                "Select a Mass Effect Legendary Edition game to import headmorphs in the appearance editor; no saves were modified"
             );
         }
     }
@@ -200,6 +221,92 @@ mod tests {
         }
         std::fs::write(temp.path().join("normal.pcc"), b"fixture")?;
         reject_headmorphs(temp.path())?;
+        Ok(())
+    }
+    // @variants: both
+    #[tokio::test]
+    async fn routes_preset_only_and_mixed_archives_without_deploying_headmorphs() -> Result<()> {
+        use crate::core::game::mass_effect::Target;
+        use std::io::Write;
+        for mixed in [false, true] {
+            let temp = tempfile::tempdir()?;
+            let archive = temp.path().join("hair.zip");
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(&archive)?);
+            zip.start_file(
+                "face.me2headmorph",
+                zip::write::SimpleFileOptions::default(),
+            )?;
+            zip.write_all(include_bytes!(
+                "../../../tests/fixtures/appearance/GibbedME2.me2headmorph"
+            ))?;
+            if mixed {
+                zip.start_file(
+                    "BioGame/CookedPCConsole/Hair.pcc",
+                    zip::write::SimpleFileOptions::default(),
+                )?;
+                zip.write_all(b"game mesh")?;
+            }
+            zip.finish()?;
+            match prepare_mod(&archive, Some(Target::Le2), None, None).await? {
+                PrepareResult::Presets(presets) => {
+                    assert!(!mixed);
+                    assert_eq!(presets.len(), 1);
+                }
+                PrepareResult::MassEffect {
+                    presets,
+                    plan,
+                    tmp_dir,
+                    ..
+                } => {
+                    assert!(mixed);
+                    assert_eq!(presets.len(), 1);
+                    assert_eq!(plan.files.len(), 1);
+                    assert!(plan.files[0].source.ends_with("Hair.pcc"));
+                    plan.verify_sources(tmp_dir.path())?;
+                }
+                _ => anyhow::bail!("Appearance archive entered generic installation"),
+            }
+            assert!(prepare_mod(&archive, None, None, None).await.is_err());
+        }
+        Ok(())
+    }
+    #[test]
+    fn distinguishes_headmorph_ron_from_unrelated_ron_for_other_games() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        std::fs::write(temp.path().join("ordinary.ron"), b"(setting: true)")?;
+        reject_headmorphs(temp.path())?;
+        let preset = crate::core::game::mass_effect::appearance::morph::parse(
+            include_bytes!("../../../tests/fixtures/appearance/GibbedME2.me2headmorph"),
+            "preset".into(),
+        )?;
+        std::fs::write(temp.path().join("face.ron"), preset.morph.export()?)?;
+        assert!(reject_headmorphs(temp.path()).is_err());
+        Ok(())
+    }
+
+    // @variants: both
+    #[tokio::test]
+    async fn rejects_manifest_mappings_that_deploy_presets_as_game_files() -> Result<()> {
+        use crate::core::game::mass_effect::Target;
+        use std::io::Write;
+        let temp = tempfile::tempdir()?;
+        let archive = temp.path().join("mapped.zip");
+        let mut zip = zip::ZipWriter::new(std::fs::File::create(&archive)?);
+        zip.start_file(
+            "face.me2headmorph",
+            zip::write::SimpleFileOptions::default(),
+        )?;
+        zip.write_all(include_bytes!(
+            "../../../tests/fixtures/appearance/GibbedME2.me2headmorph"
+        ))?;
+        zip.start_file("moddesc.ini", zip::write::SimpleFileOptions::default())?;
+        zip.write_all(b"[ModManager]\ncmmver=9.2\n[ModInfo]\ngame=LE2\nmodname=Mapped\nmodver=1.0\nmoddev=Author\nmoddesc=Content\n[BASEGAME]\nmoddir=.\nnewfiles=face.me2headmorph\nreplacefiles=BioGame/CookedPCConsole/Hair.pcc\n")?;
+        zip.finish()?;
+        assert!(
+            prepare_mod(&archive, Some(Target::Le2), None, None)
+                .await
+                .is_err()
+        );
         Ok(())
     }
 }

@@ -27,6 +27,7 @@ pub(crate) struct HeaderState {
     pub(crate) profile_count: usize,
     pub(crate) save_mode_label: String,
     pub(crate) game_has_save_management: bool,
+    pub(crate) appearance_presets: bool,
     pub(crate) can_sync_saves: bool,
     pub(crate) is_busy: bool,
     pub(crate) busy_message: String,
@@ -78,6 +79,7 @@ pub(crate) enum HeaderOutput {
     ToggleProfileSaveMode,
     SyncSaves,
     ManageSaveBackups,
+    EditAppearance,
     DeployClicked,
     OpenDeploymentFolder,
     DeploymentHistory,
@@ -313,6 +315,28 @@ impl SimpleComponent for Header {
                                 },
                         },
 
+                        gtk::Button {
+                            set_label: "Edit appearance…",
+                            #[watch]
+                            set_visible: model.state.mele,
+                            #[watch]
+                            set_sensitive: !model.state.is_busy,
+                            add_css_class: "flat",
+                            connect_clicked[sender] => move |_| {
+                                sender.output(HeaderOutput::EditAppearance).ok();
+                            },
+                        },
+                        gtk::Button {
+                            set_label: "Use appearance preset…",
+                            #[watch]
+                            set_visible: model.state.mele && model.state.appearance_presets,
+                            #[watch]
+                            set_sensitive: !model.state.is_busy,
+                            add_css_class: "flat",
+                            connect_clicked[sender] => move |_| {
+                                sender.output(HeaderOutput::EditAppearance).ok();
+                            },
+                        },
                         gtk::Button {
                             set_label: "Manage save backups…",
                             #[watch]

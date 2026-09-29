@@ -1,0 +1,10 @@
+Trilogy Save Editor by Karlitos (KarlitosVII)
+https://github.com/KarlitosVII/trilogy-save-editor
+Reference revision: 6451f23d1fba62358328dce4e87733970f36ebf1
+
+Deployd appearance save-format layouts and compatibility fixtures are derived
+from Trilogy Save Editor, licensed under CeCILL version 2.1.
+Deployd distributes the combined work under GPL-3.0-only pursuant to
+CeCILL 2.1 article 5.3.4. The original license accompanies this notice.
+The bounded parser, byte-preserving editor and application integration
+are Deployd modifications. No game meshes or textures are included.

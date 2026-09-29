@@ -460,7 +460,9 @@ impl App {
                 );
                 let mod_name = suggested_name;
                 match prepare {
+                    PrepareResult::Presets(presets) => Ok(PrepareResultMsg::Presets(presets)),
                     PrepareResult::MassEffect {
+                        presets,
                         plan,
                         bundled_launcher,
                         tmp_dir,
@@ -469,7 +471,8 @@ impl App {
                         file_list: Vec::new(),
                         stripped_wrapper: None,
                         mele: Some(plan),
-                        mele_bundled_launcher: bundled_launcher,
+                        presets,
+                        mele_bundled_launcher: bundled_launcher.map(Box::new),
                         tmp_dir,
                         mod_name,
                         archive_hash,
@@ -483,6 +486,7 @@ impl App {
                     } => Ok(PrepareResultMsg::Normal {
                         dazip_sources,
                         mele: None,
+                        presets: Vec::new(),
                         mele_bundled_launcher: None,
                         file_list,
                         stripped_wrapper,

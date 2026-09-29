@@ -211,6 +211,7 @@ pub(super) fn build_model(
                 profile_count: 0,
                 save_mode_label: "Saves: Global".to_string(),
                 game_has_save_management: false,
+                appearance_presets: false,
                 can_sync_saves: false,
                 is_busy: false,
                 busy_message: "Working...".to_string(),
@@ -270,6 +271,7 @@ pub(super) fn build_model(
                 AppMsg::Games(crate::app::messages::GamesMsg::ToggleProfileSaveMode)
             }
             HeaderOutput::SyncSaves => AppMsg::Games(crate::app::messages::GamesMsg::SyncSaves),
+            HeaderOutput::EditAppearance => AppMsg::EditAppearance,
             HeaderOutput::ManageSaveBackups => {
                 AppMsg::Games(crate::app::messages::GamesMsg::ManageSaveBackups)
             }
@@ -355,6 +357,7 @@ pub(super) fn build_model(
             color_scheme_idx: 0,
         },
         session: SessionState {
+            appearance_presets: Default::default(),
             game_load: super::game_loading::State::default(),
             location_blocked: HashSet::new(),
             initializing: true,

@@ -106,6 +106,9 @@ pub(crate) async fn load_game_data(
             &active_profile.id,
             &active_profile.save_mode,
         );
+        save_manager::appearance::recover(tracker, game)
+            .await
+            .map_err(|e| e.to_string())?;
         save_manager::recover_interrupted_transition(game, &active_set)
             .await
             .map_err(|e| e.to_string())?;
