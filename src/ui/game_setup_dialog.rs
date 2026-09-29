@@ -199,7 +199,7 @@ impl GameSetupDialog {
         let prefix_btn = gtk::Button::from_icon_name("folder-symbolic");
         prefix_btn.set_valign(gtk::Align::Center);
         prefix_btn.add_css_class("flat");
-        prefix_btn.set_tooltip_text(Some("Change folder…"));
+        prefix_btn.set_tooltip_text(Some("Select the Wine prefix or its containing folder…"));
         {
             let input = sender.input_sender().clone();
             prefix_btn.connect_clicked(move |_| {
@@ -476,6 +476,8 @@ impl Component for GameSetupDialog {
         new_path_entry.add_suffix(&path_browse_btn);
 
         let prefix_browse_btn = gtk::Button::from_icon_name("folder-symbolic");
+        prefix_browse_btn
+            .set_tooltip_text(Some("Select the Wine prefix or its containing folder…"));
         prefix_browse_btn.set_valign(gtk::Align::Center);
         prefix_browse_btn.add_css_class("flat");
         {
@@ -673,14 +675,9 @@ impl Component for GameSetupDialog {
 
             GameSetupMsg::BrowsePrefix(idx) => {
                 let input = sender.input_sender().clone();
-                sender.oneshot_command(async move {
-                    match crate::utils::portal::select_location(
-                        "Select Wine Prefix Folder",
-                        None,
-                        SelectedFolderKind::WinePrefix,
-                    )
-                    .await
-                    {
+                let window = root.clone();
+                gtk::glib::spawn_future_local(async move {
+                    match crate::ui::prefix_picker::select(&window).await {
                         Ok(Some(location)) => {
                             let _ = input.send(GameSetupMsg::PrefixChosen(
                                 idx,
@@ -818,14 +815,9 @@ impl Component for GameSetupDialog {
 
             GameSetupMsg::BrowseNewPrefix => {
                 let input = sender.input_sender().clone();
-                sender.oneshot_command(async move {
-                    match crate::utils::portal::select_location(
-                        "Select Wine Prefix Folder",
-                        None,
-                        SelectedFolderKind::WinePrefix,
-                    )
-                    .await
-                    {
+                let window = root.clone();
+                gtk::glib::spawn_future_local(async move {
+                    match crate::ui::prefix_picker::select(&window).await {
                         Ok(Some(location)) => {
                             let _ = input.send(GameSetupMsg::NewPrefixChosen(
                                 location.root,

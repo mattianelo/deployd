@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Wine-prefix setup, changes and access recovery now accept either the prefix
+  itself or its containing folder. Snap requests access to the containing folder
+  when needed to retain access after Proton replaces the prefix.
+
+- Appearance editing now identifies a Steam compatdata folder selected instead
+  of its Wine prefix and distinguishes missing save paths from Snap restrictions.
+
 - Fixed Snap builds missing the appearance editor's bundled license notices.
 
 - Added an appearance editor for Legendary Edition live saves, with hairstyle,

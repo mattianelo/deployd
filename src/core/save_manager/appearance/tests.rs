@@ -3,6 +3,41 @@ use std::{future::Future, process::Command};
 use super::*;
 use crate::models::game::{GameConfig, GameEngine};
 
+// @variants: both
+#[test]
+fn distinguishes_wrong_prefix_missing_saves_and_confined_escapes() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let compatdata = temp.path().join("1328670");
+    let prefix = compatdata.join("pfx");
+    let relative = "drive_c/users/steamuser/Documents/Save";
+    fs::create_dir_all(prefix.join(relative))?;
+    for confined in [false, true] {
+        let error =
+            resolve_save_root(&compatdata, &compatdata.join(relative), confined).unwrap_err();
+        assert!(error.to_string().contains("Deployd will use pfx inside it"));
+        assert!(resolve_save_root(&prefix, &prefix.join(relative), confined).is_ok());
+        let error = resolve_save_root(&prefix, &prefix.join("missing"), confined).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("Cannot resolve the live save directory")
+        );
+        assert!(!error.to_string().contains("outside"));
+    }
+    let external = temp.path().join("external");
+    fs::create_dir(&external)?;
+    let linked = prefix.join("linked-saves");
+    std::os::unix::fs::symlink(&external, &linked)?;
+    assert_eq!(resolve_save_root(&prefix, &linked, false)?, external);
+    let error = resolve_save_root(&prefix, &linked, true).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("outside the granted Wine prefix")
+    );
+    Ok(())
+}
+
 fn isolated<F: Future<Output = Result<()>>>(
     name: &str,
     run: impl FnOnce(PathBuf) -> F,

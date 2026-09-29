@@ -49,27 +49,143 @@ pub(crate) async fn select_location(
 }
 
 pub(crate) async fn select_prefix_recovery_location(
-    title: &str,
     previous: &crate::utils::location::SelectedLocation,
 ) -> Result<Option<crate::utils::location::SelectedLocation>> {
     let (initial, child) = prefix_recovery_parent(previous)?;
-    let Some(path) = select_folder_path(title, initial.as_deref()).await? else {
+    let Some((parent, selected_child)) = select_prefix_parent(initial.as_deref()).await? else {
         return Ok(None);
     };
-    let parent = crate::utils::location::SelectedLocation::capture(path).await;
-    let location = append_selected_child(parent, &child);
+    anyhow::ensure!(
+        selected_child
+            .as_ref()
+            .is_none_or(|selected| selected == &child),
+        "Select the original Wine prefix or its containing folder"
+    );
+    let location = select_prefix_child(parent, child.clone())
+        .await
+        .with_context(|| {
+            format!(
+                "The selected folder does not contain the saved Wine prefix '{}'",
+                child.to_string_lossy()
+            )
+        })?;
+    Ok(Some(location))
+}
+
+pub(crate) async fn select_prefix_parent(
+    initial: Option<&Path>,
+) -> Result<Option<(crate::utils::location::SelectedLocation, Option<OsString>)>> {
+    let Some(selected) = select_location(
+        "Select the Wine prefix or its containing folder",
+        initial,
+        crate::utils::snap::SelectedFolderKind::WinePrefix,
+    )
+    .await?
+    else {
+        return Ok(None);
+    };
+    let path = selected.root.clone();
+    let direct = tokio::task::spawn_blocking(move || path.join("drive_c").is_dir()).await?;
+    if !direct {
+        return Ok(Some((selected, None)));
+    }
+    let (initial, child) = prefix_recovery_parent(&selected)?;
+    let parent =
+        if let Some(parent) = granted_prefix_parent(&selected, crate::utils::snap::is_snap())? {
+            parent
+        } else {
+            let Some(parent) = select_location(
+                "Keep prefix access after Proton updates — allow its containing folder",
+                initial.as_deref(),
+                crate::utils::snap::SelectedFolderKind::WinePrefix,
+            )
+            .await?
+            else {
+                return Ok(None);
+            };
+            parent
+        };
+    let prefix = select_prefix_child(parent.clone(), child.clone()).await?;
+    prefix.validate_identity(&selected)?;
+    Ok(Some((parent, Some(child))))
+}
+
+fn granted_prefix_parent(
+    selected: &crate::utils::location::SelectedLocation,
+    confined: bool,
+) -> Result<Option<crate::utils::location::SelectedLocation>> {
+    let parent_granted = match split_document_portal_path(&selected.root) {
+        Some((_, relative)) => !relative.as_os_str().is_empty(),
+        None => !confined,
+    };
+    if !parent_granted {
+        return Ok(None);
+    }
+    Ok(Some(crate::utils::location::SelectedLocation {
+        root: selected
+            .root
+            .parent()
+            .context("The Wine prefix has no containing folder")?
+            .to_path_buf(),
+        host_hint: selected
+            .host_hint
+            .as_deref()
+            .and_then(Path::parent)
+            .map(Path::to_path_buf),
+    }))
+}
+
+pub(crate) fn prefix_children(parent: &Path) -> Result<Vec<OsString>> {
+    anyhow::ensure!(
+        !parent.join("drive_c").is_dir(),
+        "You selected the Wine prefix itself. Select its containing folder instead; for Steam, select the numbered folder containing pfx"
+    );
+    let mut children = Vec::new();
+    for (index, entry) in std::fs::read_dir(parent)?.enumerate() {
+        anyhow::ensure!(
+            index < 4096,
+            "Too many folders; select the folder directly containing the Wine prefix"
+        );
+        let entry = entry?;
+        if entry.path().join("drive_c").is_dir() {
+            validate_prefix_child(parent, &entry.file_name())?;
+            children.push(entry.file_name());
+        }
+    }
+    children.sort();
+    anyhow::ensure!(
+        !children.is_empty(),
+        "No Wine prefix was found directly inside this folder. Select the folder containing pfx or your custom Wine prefix"
+    );
+    Ok(children)
+}
+
+fn validate_prefix_child(parent: &Path, child: &OsStr) -> Result<PathBuf> {
+    let path = crate::utils::location::resolve_relative(parent, Path::new(child))?;
+    anyhow::ensure!(
+        path.join("drive_c").is_dir(),
+        "The selected child is not a Wine prefix containing drive_c"
+    );
+    crate::core::location_recovery::require_contained(parent, &path)?;
+    crate::core::location_recovery::require_contained(&path, &path.join("drive_c"))?;
+    Ok(path)
+}
+
+pub(crate) async fn select_prefix_child(
+    parent: crate::utils::location::SelectedLocation,
+    child: OsString,
+) -> Result<crate::utils::location::SelectedLocation> {
+    let location = tokio::task::spawn_blocking(move || -> Result<_> {
+        validate_prefix_child(&parent.root, &child)?;
+        Ok(append_selected_child(parent, &child))
+    })
+    .await??;
     validate_location(
         &location,
         crate::utils::snap::SelectedFolderKind::WinePrefix,
     )
-    .await
-    .with_context(|| {
-        format!(
-            "The selected folder does not contain the saved Wine prefix '{}'",
-            child.to_string_lossy()
-        )
-    })?;
-    Ok(Some(location))
+    .await?;
+    Ok(location)
 }
 
 async fn select_folder_path(title: &str, initial: Option<&Path>) -> Result<Option<PathBuf>> {
@@ -375,5 +491,123 @@ mod tests {
         let (initial, child) = prefix_recovery_parent(&previous).expect("derive child");
         assert_eq!(initial, None);
         assert_eq!(child, "custom-prefix");
+    }
+
+    // @variants: both
+    #[test]
+    fn finds_prefix_children_without_treating_the_parent_as_a_prefix() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        std::fs::create_dir_all(temp.path().join("pfx/drive_c"))?;
+        std::fs::create_dir(temp.path().join("shadercache"))?;
+        assert_eq!(prefix_children(temp.path())?, vec![OsString::from("pfx")]);
+        assert!(prefix_children(&temp.path().join("pfx")).is_err());
+        std::fs::create_dir_all(temp.path().join("custom-prefix/drive_c"))?;
+        assert_eq!(
+            prefix_children(temp.path())?,
+            vec![OsString::from("custom-prefix"), OsString::from("pfx")]
+        );
+        std::fs::remove_dir_all(temp.path().join("pfx"))?;
+        assert_eq!(
+            prefix_children(temp.path())?,
+            vec![OsString::from("custom-prefix")]
+        );
+        Ok(())
+    }
+
+    // @variants: snap
+    #[test]
+    fn reuses_only_parents_inside_existing_document_grants() -> Result<()> {
+        for root in [
+            "/run/user/1000/doc/grant/1328670/pfx",
+            "/run/user/1000/doc/by-app/io.deployd/grant/1328670/pfx",
+        ] {
+            let selected = crate::utils::location::SelectedLocation {
+                root: root.into(),
+                host_hint: Some("/games/1328670/pfx".into()),
+            };
+            let parent = granted_prefix_parent(&selected, true)?.expect("existing parent grant");
+            assert_eq!(parent.root, Path::new(root).parent().unwrap());
+            assert_eq!(append_selected_child(parent, OsStr::new("pfx")), selected);
+        }
+        for root in [
+            "/run/user/1000/doc/grant/pfx",
+            "/run/user/1000/doc/by-app/io.deployd/grant/pfx",
+            "/games/1328670/pfx",
+        ] {
+            let selected = crate::utils::location::SelectedLocation {
+                root: root.into(),
+                host_hint: Some("/games/1328670/pfx".into()),
+            };
+            assert!(granted_prefix_parent(&selected, true)?.is_none());
+            if is_document_path(&selected.root) {
+                assert!(granted_prefix_parent(&selected, false)?.is_none());
+            }
+        }
+        Ok(())
+    }
+
+    // @variants: appimage
+    #[tokio::test]
+    async fn direct_and_containing_folder_selections_resolve_to_the_same_prefix() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        std::fs::create_dir_all(temp.path().join("pfx/drive_c"))?;
+        std::fs::create_dir_all(temp.path().join("another/drive_c"))?;
+        let selected = crate::utils::location::SelectedLocation {
+            root: temp.path().join("pfx"),
+            host_hint: Some(temp.path().join("pfx")),
+        };
+        let parent = granted_prefix_parent(&selected, false)?.expect("direct parent");
+        let (_, child) = prefix_recovery_parent(&selected)?;
+        assert_eq!(select_prefix_child(parent, child).await?, selected);
+        Ok(())
+    }
+
+    // @variants: both
+    #[test]
+    fn rejects_missing_prefixes_and_children_outside_the_grant() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let parent = temp.path().join("selected");
+        let outside = temp.path().join("outside");
+        std::fs::create_dir(&parent)?;
+        std::fs::create_dir_all(outside.join("drive_c"))?;
+        assert!(prefix_children(&parent).is_err());
+        assert!(validate_prefix_child(&parent, OsStr::new("../outside")).is_err());
+        std::os::unix::fs::symlink(&outside, parent.join("linked-prefix"))?;
+        assert!(prefix_children(&parent).is_err());
+        std::fs::remove_file(parent.join("linked-prefix"))?;
+        std::fs::create_dir(parent.join("pfx"))?;
+        std::os::unix::fs::symlink(outside.join("drive_c"), parent.join("pfx/drive_c"))?;
+        assert!(prefix_children(&parent).is_err());
+        Ok(())
+    }
+
+    // @variants: both
+    #[tokio::test]
+    async fn setup_and_recovery_keep_the_same_child_and_host_identity() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        std::fs::create_dir_all(temp.path().join("pfx/drive_c"))?;
+        let parent = crate::utils::location::SelectedLocation {
+            root: temp.path().to_path_buf(),
+            host_hint: Some("/games/compatdata/1328670".into()),
+        };
+        let setup = select_prefix_child(parent.clone(), OsString::from("pfx")).await?;
+        let (initial, child) = prefix_recovery_parent(&setup)?;
+        assert_eq!(initial, parent.host_hint);
+        assert_eq!(setup.root, temp.path().join("pfx"));
+        assert_eq!(
+            setup.host_hint,
+            Some("/games/compatdata/1328670/pfx".into())
+        );
+        std::fs::remove_dir_all(temp.path().join("pfx"))?;
+        assert!(
+            select_prefix_child(parent.clone(), child.clone())
+                .await
+                .is_err()
+        );
+        std::fs::create_dir_all(temp.path().join("pfx/drive_c"))?;
+        let recovered = select_prefix_child(parent, child).await?;
+        assert_eq!(recovered, setup);
+        assert!(recovered.validate_identity(&setup)?);
+        Ok(())
     }
 }

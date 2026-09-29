@@ -102,6 +102,11 @@ save and change hairstyle/accessory asset names, texture references and material
 values. The editor shows which save set owns the file and creates a backup before
 saving. Close the game before editing. Existing face shape is preserved when
 editing these fields; importing a complete preset replaces its face shape too.
+When setting or reconnecting a Wine prefix, select either the **prefix itself**
+or its **containing folder**. For Steam, either `pfx` or its numbered compatdata
+parent works. Deployd asks which prefix to use if the parent contains several.
+If Snap grants only the prefix, a second folder chooser requests its containing
+folder to keep access after Proton replaces the prefix.
 
 Import TSE RON or Gibbed headmorph presets, and export presets as RON. Presets without
 a game identity require an explicit target-game choice; Deployd does not convert

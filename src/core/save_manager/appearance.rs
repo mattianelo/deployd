@@ -87,19 +87,39 @@ fn root(game: &Game) -> Result<PathBuf> {
             crate::utils::snap::SelectedFolderKind::WinePrefix,
         )
     })?;
-    let root = if crate::utils::snap::is_snap() {
-        crate::core::location_recovery::require_contained(
-            game.wine_prefix.as_deref().context("No Wine prefix")?, &root,
-        ).context("The save directory resolves outside the granted Wine prefix; editing that location is not supported in the Snap")?;
-        root
-    } else {
-        fs::canonicalize(root).context("Cannot access the configured live save directory")?
-    };
+    let root = resolve_save_root(
+        game.wine_prefix.as_deref().context("No Wine prefix")?,
+        &root,
+        crate::utils::snap::is_snap(),
+    )?;
     ensure!(
         fs::symlink_metadata(&root)?.is_dir(),
         "The live save folder is not a directory"
     );
     Ok(root)
+}
+
+fn resolve_save_root(prefix: &Path, save: &Path, confined: bool) -> Result<PathBuf> {
+    ensure!(
+        prefix.join("drive_c").is_dir() || !prefix.join("pfx/drive_c").is_dir(),
+        "The configured Wine prefix points to a Steam compatdata folder instead of its pfx child. Open Settings → Manage Games, change the Wine prefix and select the containing numbered folder; Deployd will use pfx inside it"
+    );
+    let resolved = fs::canonicalize(save).with_context(|| {
+        format!(
+            "Cannot resolve the live save directory '{}'. Check the configured Wine prefix and its Documents folder",
+            save.display()
+        )
+    })?;
+    if confined {
+        let prefix = fs::canonicalize(prefix).context("Cannot resolve the granted Wine prefix")?;
+        ensure!(
+            resolved.starts_with(prefix),
+            "The save directory resolves outside the granted Wine prefix; editing that location is not supported in the Snap"
+        );
+        Ok(save.to_path_buf())
+    } else {
+        Ok(resolved)
+    }
 }
 
 fn resolve(root: &Path, relative: &Path) -> Result<PathBuf> {

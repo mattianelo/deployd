@@ -150,11 +150,8 @@ impl App {
                             .await
                         }
                         FolderRole::Prefix => {
-                            crate::utils::portal::select_prefix_recovery_location(
-                                "Restore prefix access — select the folder containing the prefix",
-                                &record.selection,
-                            )
-                            .await
+                            crate::utils::portal::select_prefix_recovery_location(&record.selection)
+                                .await
                         }
                     };
                     AppCmdMsg::Recovery(RecoveryCmd::Selected(
@@ -215,7 +212,7 @@ impl App {
                 let instruction = match role {
                     FolderRole::Game => "Select the original game folder",
                     FolderRole::Prefix => {
-                        "Select the folder containing the original Wine prefix. Deployd will reconnect the prefix inside it so replacing the prefix does not invalidate access again"
+                        "Select the original Wine prefix or its containing folder (for Steam, pfx or its numbered parent). Deployd will retain access through the containing folder so replacing the prefix does not invalidate access again"
                     }
                 };
                 let body = format!(
@@ -229,7 +226,7 @@ impl App {
                 dialog.add_response("cancel", "Cancel");
                 let select_label = match role {
                     FolderRole::Game => "Select original folder",
-                    FolderRole::Prefix => "Select containing folder",
+                    FolderRole::Prefix => "Select prefix or containing folder",
                 };
                 dialog.add_response("select", select_label);
                 dialog.set_close_response("cancel");

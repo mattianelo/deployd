@@ -1,6 +1,68 @@
 use super::*;
 use crate::models::game::{Game, GameConfig, GameEngine};
 
+// @variants: both
+#[tokio::test]
+async fn keeps_all_mele_games_bound_to_the_prefix_child_through_reconnection() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let tracker = Tracker::open("sqlite::memory:").await?.tracker;
+    let mut locations = Vec::new();
+    for grant in ["original", "reconnected"] {
+        let root = temp.path().join(grant).join("1328670");
+        std::fs::create_dir_all(root.join("pfx/drive_c"))?;
+        locations.push(
+            crate::utils::portal::select_prefix_child(
+                SelectedLocation {
+                    root,
+                    host_hint: Some("/games/compatdata/1328670".into()),
+                },
+                "pfx".into(),
+            )
+            .await?,
+        );
+    }
+    let configs: Vec<_> = (1..=3)
+        .map(|index| GameConfig {
+            game: Game {
+                id: format!("mass-effect-le{index}"),
+                title: format!("LE{index}"),
+                path: temp.path().join(format!("Game/ME{index}")),
+                data_subdir: "BioGame".into(),
+                engine: GameEngine::MassEffect,
+                wine_prefix: Some(locations[0].root.clone()),
+            },
+            custom: true,
+            locations: vec![FolderSelection {
+                role: FolderRole::Prefix,
+                location: locations[0].clone(),
+                relative: PathBuf::new(),
+            }],
+        })
+        .collect();
+    tracker.persist_game_configs(&configs, &[]).await?;
+    let previous = tracker
+        .folder_location("mass-effect-le1", FolderRole::Prefix)
+        .await?;
+    assert_eq!(previous.bindings.len(), 3);
+    let pending = tracker
+        .commit_location_recovery(&previous, &locations[1], false)
+        .await?;
+    assert_eq!(pending.changes.len(), 3);
+    for game in tracker.load_persisted_games().await? {
+        assert_eq!(
+            game.wine_prefix.as_deref(),
+            Some(locations[1].root.as_path())
+        );
+        assert!(game.wine_prefix.as_ref().unwrap().ends_with("1328670/pfx"));
+    }
+    let recovered = tracker
+        .folder_location("mass-effect-le3", FolderRole::Prefix)
+        .await?;
+    assert_eq!(recovered.id, previous.id);
+    assert_eq!(recovered.selection.host_hint, previous.selection.host_hint);
+    Ok(())
+}
+
 async fn family(tracker: &Tracker) -> Result<LocationRecord> {
     let location = SelectedLocation {
         root: "/run/user/1000/doc/old/MELE".into(),
