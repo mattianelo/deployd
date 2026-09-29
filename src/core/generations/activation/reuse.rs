@@ -35,6 +35,14 @@ pub(crate) async fn prepare_unchanged(
     let mut manifest = history
         .load_with_control(generation, control.clone())
         .await?;
+    if manifest.version < 2 {
+        return Ok(None);
+    }
+    normalize_routes(
+        &mut current,
+        cache,
+        &crate::utils::paths::deployd_data_dir()?,
+    )?;
     let Some(snapshot) = &manifest.mele else {
         return Ok(None);
     };
@@ -152,6 +160,56 @@ pub(crate) async fn prepare_unchanged(
     }))
 }
 
+fn normalize_routes(tables: &mut [records::Rows], cache: &Path, data: &Path) -> Result<()> {
+    let mut roots = BTreeMap::new();
+    for row in tables
+        .iter()
+        .filter(|rows| rows.table == records::Table::MelePackages)
+        .flat_map(|rows| &rows.rows)
+    {
+        let record: library::Record = serde_json::from_str(records::text(row, "document")?)?;
+        record.validate()?;
+        let id = records::text(row, "mod_id")?;
+        roots.insert(
+            id.to_owned(),
+            if record.writable_cache {
+                cache.join(id)
+            } else {
+                data.join("mele-sources").join(record.package.source_sha256)
+            },
+        );
+    }
+    for row in tables
+        .iter_mut()
+        .filter(|rows| rows.table == records::Table::Files)
+        .flat_map(|rows| &mut rows.rows)
+    {
+        let id = records::text(row, "mod_id")?;
+        let root = roots
+            .get(id)
+            .context("MELE file routing has no source package")?;
+        let suffix = Path::new(records::text(row, "cache_path")?)
+            .strip_prefix(root)
+            .context(
+                "MELE file routing is outside its source package; reinstall the affected mod",
+            )?;
+        let mut logical = Path::new("cache").join(id);
+        if !suffix.as_os_str().is_empty() {
+            logical.push(suffix);
+        }
+        row.insert(
+            "cache_path".into(),
+            Value::String(
+                logical
+                    .to_str()
+                    .context("MELE source path is not UTF-8")?
+                    .to_owned(),
+            ),
+        );
+    }
+    Ok(())
+}
+
 fn same_mods(current: &[records::Rows], deployed: &[records::Rows]) -> Result<bool> {
     let mods = |rows| -> Result<Vec<_>> {
         Ok(status::projection(rows)?
@@ -159,13 +217,87 @@ fn same_mods(current: &[records::Rows], deployed: &[records::Rows]) -> Result<bo
             .filter(|(table, _)| *table != "profiles" && *table != "mele_recipes")
             .collect())
     };
-    Ok(mods(current)? == mods(deployed)?)
+    let routes = |tables: &[records::Rows]| -> Result<BTreeMap<_, _>> {
+        tables
+            .iter()
+            .filter(|rows| rows.table == records::Table::Files)
+            .flat_map(|rows| &rows.rows)
+            .map(|row| {
+                Ok((
+                    (
+                        records::text(row, "mod_id")?.to_owned(),
+                        records::text(row, "game_rel_lowercase")?.to_owned(),
+                    ),
+                    records::text(row, "cache_path")?.to_owned(),
+                ))
+            })
+            .collect()
+    };
+    Ok(mods(current)? == mods(deployed)? && routes(current)? == routes(deployed)?)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use records::{Rows, Table};
+
+    // @variants: both
+    #[test]
+    fn absolute_routes_match_retained_sources_but_routing_changes_do_not() -> Result<()> {
+        for writable in [false, true] {
+            let cache = Path::new("/cache");
+            let data = Path::new("/data");
+            let id = "00000000-0000-0000-0000-000000000001";
+            let hash = "a".repeat(64);
+            let root = if writable {
+                cache.join(id)
+            } else {
+                data.join("mele-sources").join(&hash)
+            };
+            let mut current = vec![Rows {
+                table: Table::MelePackages,
+                rows: vec![BTreeMap::from([
+                    ("mod_id".into(), Value::String(id.into())),
+                    ("document".into(), Value::String(serde_json::json!({"version":3,"target":"LE1","writable_cache":writable,"package":{"id":id,"source_sha256":hash,"archive_sha256":null,"manifest_version":"9.1","mod_version":"1.0","enabled":true,"options":[]}}).to_string())),
+                ])],
+            }, Rows {
+                table: Table::Files,
+                rows: vec![BTreeMap::from([
+                    ("mod_id".into(), Value::String(id.into())),
+                    ("game_rel_original".into(), Value::String("BioGame/Test.pcc".into())),
+                    ("game_rel_lowercase".into(), Value::String("biogame/test.pcc".into())),
+                    ("cache_path".into(), Value::String(root.join("source.pcc").to_string_lossy().into_owned())),
+                ])],
+            }];
+            let mut retained = current.clone();
+            retained[1].rows[0].insert(
+                "cache_path".into(),
+                Value::String("cache/00000000-0000-0000-0000-000000000001/source.pcc".into()),
+            );
+            normalize_routes(&mut current, cache, data)?;
+            assert!(same_mods(&current, &retained)?);
+            current[1].rows[0].insert(
+                "cache_path".into(),
+                Value::String("cache/00000000-0000-0000-0000-000000000001/other.pcc".into()),
+            );
+            assert!(!same_mods(&current, &retained)?);
+            current[1].rows[0].insert(
+                "cache_path".into(),
+                Value::String("/outside/source.pcc".into()),
+            );
+            assert!(normalize_routes(&mut current, cache, data).is_err());
+            current[1].rows[0].insert(
+                "cache_path".into(),
+                Value::String(root.to_string_lossy().into_owned()),
+            );
+            normalize_routes(&mut current, cache, data)?;
+            assert_eq!(
+                records::text(&current[1].rows[0], "cache_path")?,
+                "cache/00000000-0000-0000-0000-000000000001"
+            );
+        }
+        Ok(())
+    }
 
     // @variants: both
     #[test]

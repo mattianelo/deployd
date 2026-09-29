@@ -60,7 +60,8 @@ and LE1/LE2 localized menu and plot-map packages.
    successful deployments stay in place if this deployment fails.
 4. Deploy again after disabling, removing, reordering or switching profiles.
    When only the profile or save bank changes, unchanged installed mods are
-   verified and reused without running their transformations again.
+   verified and reused without running their transformations again, including
+   mods already present in an existing installation.
    **Purge** restores managed game files while keeping your mod library. Reinstall
    an archive to change its options or contents.
 

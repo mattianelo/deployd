@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Fixed MELE redeployment reporting “Historical routing references missing source
+  content” when reusing installed mods.
+
 - Legendary Edition games now appear together in an expandable game-picker group.
   Trilogy profiles share a save-mode choice while keeping separate mod lists and
   save-bank portions for LE1, LE2 and LE3. Existing profiles can be grouped

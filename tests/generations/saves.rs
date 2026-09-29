@@ -907,6 +907,33 @@ fn trilogy_deploys_switch_saves_independently_without_reinstalling_mods() -> Res
                 let history = History::open(&tracker, &game.id, &cache, true).await?;
                 let previous = super::super::ownership::initialize(&history).await?;
                 let data = paths::deployd_data_dir()?;
+                let mod_id = uuid::Uuid::new_v4().to_string();
+                let source = cache.join(&mod_id);
+                fs::create_dir_all(&source)?;
+                fs::write(source.join("payload.pcc"), b"installed output")?;
+                let number = game.id.chars().last().context("Missing game number")?;
+                let record = serde_json::json!({"version":3,"target":format!("LE{number}"),"writable_cache":true,"package":{"id":mod_id,"source_sha256":"a".repeat(64),"archive_sha256":null,"manifest_version":"9.1","mod_version":"1.0","enabled":false,"options":[]}});
+                sqlx::query(
+                    "INSERT INTO mods(id,game_id,name,enabled,priority) VALUES (?,?,?,0,1)",
+                )
+                .bind(&mod_id)
+                .bind(&game.id)
+                .bind("Example")
+                .execute(&tracker.pool)
+                .await?;
+                sqlx::query(
+                    "INSERT INTO profile_mods(profile_id,mod_id,enabled,priority) VALUES (?,?,0,1)",
+                )
+                .bind(&profile)
+                .bind(&mod_id)
+                .execute(&tracker.pool)
+                .await?;
+                sqlx::query("INSERT INTO mele_packages(mod_id,document) VALUES (?,?)")
+                    .bind(&mod_id)
+                    .bind(record.to_string())
+                    .execute(&tracker.pool)
+                    .await?;
+                sqlx::query("INSERT INTO mod_files(mod_id,game_rel_lowercase,game_rel_original,cache_path) VALUES (?,?,?,?)").bind(&mod_id).bind(relative.to_lowercase()).bind(relative).bind(source.join("payload.pcc").to_str()).execute(&tracker.pool).await?;
                 let mut manifest =
                     manifest::capture(&history, game, &profile, data.clone(), Control::default())
                         .await?;
