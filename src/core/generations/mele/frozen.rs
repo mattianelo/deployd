@@ -14,6 +14,48 @@ use crate::core::generations::manifest::Source;
 use crate::core::generations::records::{Table, text};
 use crate::core::generations::store::Store;
 
+pub(super) fn matches_preview(manifest: &Manifest, recipe: &Recipe) -> Result<bool> {
+    manifest.validate()?;
+    let captured = manifest
+        .records
+        .iter()
+        .filter(|rows| rows.table == Table::MelePackages)
+        .flat_map(|rows| &rows.rows)
+        .map(|row| text(row, "mod_id"))
+        .collect::<Result<std::collections::BTreeSet<_>>>()?;
+    let expected = recipe
+        .packages
+        .iter()
+        .map(|package| package.id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    if captured != expected {
+        return Ok(false);
+    }
+    Ok(recipe
+        .packages
+        .iter()
+        .all(|package| matches_package(&manifest.sources, package)))
+}
+
+fn matches_package(
+    sources: &[Source],
+    package: &crate::core::game::mass_effect::recipe::Package,
+) -> bool {
+    let prefix = format!("cache/{}/", package.id);
+    let mut files = sources
+        .iter()
+        .filter_map(|source| {
+            Some(SourceFile {
+                relative: source.path.strip_prefix(&prefix)?.to_owned(),
+                size: source.content.as_ref()?.size,
+                sha256: source.content.as_ref()?.sha256.clone(),
+            })
+        })
+        .collect::<Vec<_>>();
+    files.sort_by(|left, right| left.relative.cmp(&right.relative));
+    !files.is_empty() && tree_digest(&files) == package.source_sha256
+}
+
 pub(super) async fn sources(
     history: &History,
     manifest: &Manifest,

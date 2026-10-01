@@ -46,6 +46,7 @@ pub(super) async fn retain(
             ),
         ])];
         retained.outputs.clear();
+        (control.phase)("Retaining prepared MELE outputs…");
         for file in &prepared.snapshot.files {
             control.check()?;
             let identity = history
@@ -71,6 +72,7 @@ pub(super) async fn retain(
                 mod_id: None,
             });
         }
+        (control.phase)("Preparing MELE rollback and file changes…");
         let mut journal =
             activation(history, game, &prepared, &retained.outputs, control.clone()).await?;
         journal.attach_game_shared(history, game, shared).await?;
@@ -200,6 +202,75 @@ pub(super) async fn reuse(
 }
 
 mod frozen;
+
+pub(super) async fn prepare_preview(
+    history: &History,
+    destination: crate::core::game::mass_effect::recipe::Destination,
+    manifest: &mut Manifest,
+    preview: (
+        crate::core::game::mass_effect::recipe::Recipe,
+        crate::core::game::mass_effect::recipe::ValidatedRecipe,
+    ),
+    data: std::path::PathBuf,
+    control: Control,
+) -> Result<Journal> {
+    let (recipe, plan) = preview;
+    if !frozen::matches_preview(manifest, plan.recipe())? {
+        drop(plan);
+        (control.phase)("Preparing MELE files from edited sources…");
+        return prepare(history, destination, manifest, recipe, data, control).await;
+    }
+    let game = destination.game.clone();
+    ensure!(
+        manifest.game_id == game.id && manifest.profile()?.0 == destination.profile,
+        "MELE preparation differs from its captured profile"
+    );
+    (control.phase)("Verifying retained MELE mod sources…");
+    let objects = manifest
+        .sources
+        .iter()
+        .filter_map(|source| source.content.clone())
+        .map(|identity| (identity.sha256.clone(), identity))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let store = history.store.clone();
+    let verifying = control.clone();
+    history
+        .lease
+        .blocking(move || -> Result<()> {
+            for identity in objects.values() {
+                store.verify(identity, &verifying)?;
+            }
+            Ok(())
+        })
+        .await
+        .context("Prepared MELE source verification stopped")??;
+    (control.phase)("Reusing prepared MELE mod files…");
+    let shared = super::shared::prepare(
+        history,
+        &game,
+        plan.recipe().clone(),
+        data.clone(),
+        control.clone(),
+    )
+    .await?;
+    let tracker = history.tracker.clone();
+    let preparing = control.clone();
+    let prepared = history
+        .lease
+        .participant(async move {
+            crate::core::game::mass_effect::generations::prepare(
+                tracker,
+                destination,
+                plan,
+                data,
+                preparing,
+            )
+            .await
+        })
+        .await
+        .context("Prepared MELE generation participant stopped")??;
+    retain(history, &game, manifest, prepared, shared, control).await
+}
 
 pub(super) async fn prepare(
     history: &History,

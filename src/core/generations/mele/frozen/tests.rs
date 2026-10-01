@@ -169,3 +169,37 @@ fn invalid_edits_to_disabled_packages_are_not_skipped() -> Result<()> {
     );
     Ok(())
 }
+
+// @variants: both
+#[test]
+fn preview_reuse_requires_the_complete_matching_package_sources() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let (_, sources, record) = fixture(temp.path(), 1)?;
+    assert!(matches_package(&sources, &record.package));
+    let file = sources
+        .iter()
+        .position(|source| source.content.is_some())
+        .expect("Source file");
+    for change in 0..4 {
+        let mut edited = sources.clone();
+        match change {
+            0 => {
+                edited.remove(file);
+            }
+            1 => {
+                edited[file].content.as_mut().expect("File identity").sha256 = "0".repeat(64);
+            }
+            2 => {
+                edited[file].path.push_str(".renamed");
+            }
+            _ => {
+                let mut added = edited[file].clone();
+                added.path.push_str(".added");
+                edited.push(added);
+            }
+        }
+        assert!(!matches_package(&edited, &record.package));
+    }
+    assert!(!matches_package(&[], &record.package));
+    Ok(())
+}

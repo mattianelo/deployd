@@ -244,7 +244,7 @@ async fn mele_activation_commits_engine_state_with_history_and_recovers_external
 async fn mele_history_restores_complete_sources_and_reuses_outputs_without_a_helper() -> Result<()>
 {
     use crate::core::game::mass_effect::{library, package::PackagePlan, recipe::Destination};
-    use std::os::unix::fs::MetadataExt;
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
     for number in 1..=3 {
         let temp = tempfile::tempdir()?;
@@ -306,6 +306,12 @@ async fn mele_history_restores_complete_sources_and_reuses_outputs_without_a_hel
             let retained = data.join("mele-sources").join(&plan.source_sha256);
             fs::create_dir_all(retained.parent().context("Missing source parent")?)?;
             fs::rename(source, &retained)?;
+            for file in &plan.sources {
+                fs::set_permissions(
+                    retained.join(&file.relative),
+                    fs::Permissions::from_mode(0o400),
+                )?;
+            }
             let record: library::Record = serde_json::from_value(
                 json!({"version":1,"target":format!("LE{number}"),"package":{"id":id,"source_sha256":plan.source_sha256,"archive_sha256":null,"manifest_version":plan.manifest.format,"mod_version":"1.0","enabled":true,"options":[]}}),
             )?;
@@ -343,24 +349,65 @@ async fn mele_history_restores_complete_sources_and_reuses_outputs_without_a_hel
 
         let mut manifest =
             manifest::capture(&history, &game, &profile, data.clone(), Control::default()).await?;
-        let recipe: Recipe = serde_json::from_value(
-            json!({"version":1,"target":format!("LE{number}"),"backend_version":1,"language":"INT","packages":[]}),
-        )?;
-        let journal = super::mele::prepare(
-            &history,
-            Destination {
-                game: game.clone(),
-                profile: profile.clone(),
-                previous: None,
-                repair_components: false,
-                backend: None,
-            },
-            &mut manifest,
-            recipe,
-            data.clone(),
-            Control::default(),
-        )
-        .await?;
+        let mut recipe = library::desired(&tracker, &game, "INT".into(), false).await?;
+        recipe.components.clear();
+        let destination = || Destination {
+            game: game.clone(),
+            profile: profile.clone(),
+            previous: None,
+            repair_components: false,
+            backend: None,
+        };
+        let mut journal = None;
+        for damaged in [true, false] {
+            let plan = crate::core::game::mass_effect::recipe::inspect_prepared_in(
+                tracker.clone(),
+                destination(),
+                recipe.clone(),
+                data.clone(),
+                Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                Arc::new(|_, _| {}),
+            )
+            .await?;
+            if damaged {
+                let mut changed = false;
+                for entry in walkdir::WalkDir::new(data.join("mele-rebuilds")) {
+                    let entry = entry?;
+                    if entry.file_type().is_file() && entry.path().ends_with(ENGINE) {
+                        fs::write(entry.path(), b"damaged preview")?;
+                        changed = true;
+                    }
+                }
+                assert!(changed);
+            }
+            let reused = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let observed = reused.clone();
+            let control = Control {
+                phase: Arc::new(move |phase| {
+                    if phase == "Reusing prepared MELE mod files…" {
+                        observed.store(true, std::sync::atomic::Ordering::Release);
+                    }
+                }),
+                ..Control::default()
+            };
+            let result = super::mele::prepare_preview(
+                &history,
+                destination(),
+                &mut manifest,
+                (recipe.clone(), plan),
+                data.clone(),
+                control,
+            )
+            .await;
+            assert!(reused.load(std::sync::atomic::Ordering::Acquire));
+            if damaged {
+                assert!(result.is_err());
+                assert_eq!(fs::read(game.path.join(ENGINE))?, b"original");
+            } else {
+                journal = Some(result?);
+            }
+        }
+        let journal = journal.context("Missing prepared generation")?;
         assert_eq!(fs::read(game.path.join(ENGINE))?, b"original");
         sqlx::query(
         "INSERT INTO generation_game_state(game_id,live_save_mode,modified) VALUES (?,'global',0)",
@@ -573,7 +620,25 @@ async fn mele_history_restores_complete_sources_and_reuses_outputs_without_a_hel
             .mele_deployment(&game.id)
             .await?
             .context("Missing purged deployment")?;
-        let restored_journal = super::mele::prepare(
+        let stale: Recipe = serde_json::from_value(
+            json!({"version":1,"target":format!("LE{number}"),"backend_version":1,"language":"INT","packages":[]}),
+        )?;
+        let plan = crate::core::game::mass_effect::recipe::inspect_prepared_in(
+            tracker.clone(),
+            Destination {
+                game: game.clone(),
+                profile: restored.clone(),
+                previous: Some(previous.generation.clone()),
+                repair_components: false,
+                backend: None,
+            },
+            stale,
+            data.clone(),
+            Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            Arc::new(|_, _| {}),
+        )
+        .await?;
+        let restored_journal = super::mele::prepare_preview(
             &history,
             Destination {
                 game: game.clone(),
@@ -583,7 +648,7 @@ async fn mele_history_restores_complete_sources_and_reuses_outputs_without_a_hel
                 backend: None,
             },
             &mut draft,
-            recipe,
+            (recipe, plan),
             data.clone(),
             Control::default(),
         )

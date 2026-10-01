@@ -76,6 +76,10 @@ impl App {
                 Phase::Applying
             });
             operation.dialog.set_body(phase);
+            self.shell.status_msg = Some(phase.to_owned());
+            if let Some(status) = &mut self.shell.work_status {
+                status.message = phase.to_owned();
+            }
             operation.cancel.set_visible(cancellable);
             operation
                 .progress
@@ -100,12 +104,16 @@ impl App {
         }
     }
 
-    pub(crate) fn update_deployment_phase(&self, id: u64, phase: &str) {
+    pub(crate) fn update_deployment_phase(&mut self, id: u64, phase: &str) {
         if let Some(operation) = &self.ui.deployment_operation
             && operation.id == id
             && operation.phase.get().accepts_progress()
         {
             operation.dialog.set_body(phase);
+            self.shell.status_msg = Some(phase.to_owned());
+            if let Some(status) = &mut self.shell.work_status {
+                status.message = phase.to_owned();
+            }
             operation
                 .progress
                 .set_fraction(operation.progress.fraction().max(operation_fraction(phase)));

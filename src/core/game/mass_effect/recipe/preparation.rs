@@ -273,7 +273,7 @@ impl Session {
     }
 }
 
-pub(in crate::core::game::mass_effect) async fn inspect(
+pub(crate) async fn inspect(
     tracker: Tracker,
     destination: Destination,
     recipe: Recipe,

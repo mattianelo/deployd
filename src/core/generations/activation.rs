@@ -318,7 +318,7 @@ pub(crate) async fn prepare_mele(
     request: crate::core::game::mass_effect::application::GenerationRequest,
     control: Control,
 ) -> Result<Prepared> {
-    let (destination, recipe, purge) = request.into_parts();
+    let (destination, recipe, purge, plan) = request.into_parts();
     let game = destination.game.clone();
     let profile = destination.profile.clone();
     ensure!(
@@ -338,7 +338,19 @@ pub(crate) async fn prepare_mele(
             mele::purge(&history, &game, data, control.clone()).await?,
         )
     } else {
+        ensure!(
+            crate::core::game::mass_effect::library::desired(
+                tracker,
+                &game,
+                recipe.language.clone(),
+                false
+            )
+            .await?
+                == recipe,
+            "The MELE mod list changed after preview; inspect deployment again"
+        );
         tracker.save_to_profile(&profile, &game.id).await?;
+        (control.phase)("Retaining MELE mod sources…");
         let mut manifest =
             manifest::capture(&history, &game, &profile, data.clone(), control.clone()).await?;
         let journal = match mele::reuse(
@@ -352,11 +364,11 @@ pub(crate) async fn prepare_mele(
         {
             Some(journal) => journal,
             None => {
-                mele::prepare(
+                mele::prepare_preview(
                     &history,
                     destination,
                     &mut manifest,
-                    recipe,
+                    (recipe, plan),
                     data,
                     control.clone(),
                 )

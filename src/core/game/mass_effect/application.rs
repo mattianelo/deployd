@@ -27,9 +27,12 @@ pub(crate) struct Preview {
 
 impl Preview {
     pub(crate) fn into_generation_request(self) -> GenerationRequest {
+        let mut plan = self.plan;
+        plan.family = None;
         GenerationRequest {
             purge: self.purge,
             recipe: self.recipe,
+            plan,
             destination: recipe::Destination {
                 game: self.game,
                 profile: self.profile,
@@ -42,14 +45,15 @@ impl Preview {
 }
 
 pub(crate) struct GenerationRequest {
+    plan: ValidatedRecipe,
     purge: bool,
     recipe: Recipe,
     destination: recipe::Destination,
 }
 
 impl GenerationRequest {
-    pub(crate) fn into_parts(self) -> (recipe::Destination, Recipe, bool) {
-        (self.destination, self.recipe, self.purge)
+    pub(crate) fn into_parts(self) -> (recipe::Destination, Recipe, bool, ValidatedRecipe) {
+        (self.destination, self.recipe, self.purge, self.plan)
     }
 }
 

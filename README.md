@@ -98,7 +98,10 @@ deployments recover after restart. Unexpected
 external changes are preserved and must be resolved before deploying again.
 Large texture installations can take time; follow the progress shown in Deployd.
 Repeat MELE deployments reuse verified files already retained in deployment history
-without writing duplicate history copies. Preparation still checks file contents.
+without writing duplicate history copies. Apply reuses the files already prepared
+for its preview when their captured sources match, instead of preparing those
+files twice. Preparation still checks file contents; the progress status identifies
+source retention, verification, output retention and rollback preparation.
 Unchanged disabled MELE mods stay available in history without being copied into
 temporary deployment sources.
 

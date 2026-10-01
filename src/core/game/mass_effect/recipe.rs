@@ -25,7 +25,8 @@ mod merges;
 mod pipeline;
 mod preparation;
 mod squad_ui;
-pub(super) use preparation::{inspect as inspect_prepared_in, inspect_sources};
+pub(crate) use preparation::inspect as inspect_prepared_in;
+pub(super) use preparation::inspect_sources;
 pub(crate) mod sources;
 
 use sources::StoredPackage;
@@ -180,7 +181,7 @@ pub(crate) struct ValidatedRecipe {
 }
 
 impl ValidatedRecipe {
-    pub(super) fn recipe(&self) -> &Recipe {
+    pub(crate) fn recipe(&self) -> &Recipe {
         &self.recipe
     }
 

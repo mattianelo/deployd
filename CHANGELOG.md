@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- MELE Apply now reuses matching preview preparation instead of copying all
+  package sources and repeating preparation. Source, staged-file and rollback
+  checks remain in place; edited sources use fresh preparation when necessary.
+- MELE deployment status now shows the current retention or verification phase
+  instead of remaining on “Preparing retained MELE generation”.
+
 - Fixed a misleading missing MELE launcher-baseline error after reselecting the
   same installation folder. Existing launcher ownership and trilogy profiles
   are reconnected when renewed folder access can be matched safely.
