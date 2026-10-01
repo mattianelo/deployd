@@ -70,6 +70,7 @@ impl Tracker {
                 .await?;
             }
         }
+        super::locations::mele::reconcile(&mut transaction).await?;
         for baseline in baselines {
             anyhow::ensure!(
                 configs

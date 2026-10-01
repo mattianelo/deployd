@@ -133,6 +133,9 @@ impl App {
             return;
         };
         let request = self.session.game_load.begin(game.id.clone());
+        self.shell.status_loading = true;
+        self.shell.deployment_status = None;
+        self.session.last_deployed_profile_id = None;
         self.session.profile_game_id = None;
         self.update_profile_list(Vec::new(), 0);
         self.location_command(sender, async move {
@@ -184,6 +187,7 @@ impl App {
             return;
         }
         if result.is_err() {
+            self.shell.status_loading = false;
             self.session.location_blocked.insert(request.game_id);
         }
         self.handle_cmd_mods_loaded(result, false, sender);

@@ -11,7 +11,11 @@ impl App {
         sender: ComponentSender<Self>,
         root: &adw::ApplicationWindow,
     ) {
-        if self.session.game_load.is_pending() && requires_game_access(&msg) {
+        if blocks_game_mutation(
+            self.session.game_load.is_pending() || self.session.initializing,
+            self.shell.status_loading,
+            &msg,
+        ) {
             return;
         }
         if self.ui.cache_move.is_some()
@@ -868,6 +872,18 @@ fn requires_game_access(msg: &AppMsg) -> bool {
     }
 }
 
+fn blocks_game_mutation(loading: bool, checking_status: bool, msg: &AppMsg) -> bool {
+    (loading || checking_status)
+        && (requires_game_access(msg)
+            || matches!(
+                msg,
+                AppMsg::Games(
+                    crate::app::messages::GamesMsg::RemoveCurrentGame
+                        | crate::app::messages::GamesMsg::RemoveGameConfirmed { .. }
+                )
+            ))
+}
+
 fn changes_folder_context(msg: &AppMsg) -> bool {
     use crate::app::messages::{GamesMsg, ShellMsg};
     matches!(
@@ -886,6 +902,16 @@ fn changes_folder_context(msg: &AppMsg) -> bool {
 #[cfg(test)]
 mod location_tests {
     use super::*;
+
+    // @variants: both
+    #[test]
+    fn profile_edits_wait_until_deployment_status_finishes_loading() {
+        let edit = AppMsg::Games(crate::app::messages::GamesMsg::ToggleProfileSaveMode);
+        assert!(blocks_game_mutation(true, false, &edit));
+        assert!(blocks_game_mutation(false, true, &edit));
+        assert!(!blocks_game_mutation(false, false, &edit));
+    }
+
     use crate::app::messages::{DownloadsMsg, GamesMsg};
 
     // @variants: both

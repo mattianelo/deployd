@@ -287,7 +287,7 @@ impl History {
         self.load_with_control(id, Control::default()).await
     }
 
-    async fn load_manifest(&self, id: &str) -> Result<super::manifest::Manifest> {
+    pub(super) async fn load_manifest(&self, id: &str) -> Result<super::manifest::Manifest> {
         let (version, document): (i64, String) = sqlx::query_as(
             "SELECT manifest_version,manifest FROM generations WHERE game_id=? AND id=?",
         )

@@ -20,6 +20,7 @@ impl App {
             return;
         };
         let Some(game) = self.selected_game().cloned() else {
+            self.shell.status_loading = false;
             return;
         };
         if self.session.profile_game_id.as_deref() != Some(game.id.as_str()) {
@@ -41,7 +42,10 @@ impl App {
             self.session.last_deployed_profile_id = None;
             self.shell.status_context = Some(context);
         }
-        if self.is_busy() || self.session.initializing || self.shell.location_recovery.is_some() {
+        if self.operation_busy()
+            || self.session.initializing
+            || self.shell.location_recovery.is_some()
+        {
             return;
         }
         let cache = match self.cache_root_for(&game.id) {
@@ -130,7 +134,25 @@ impl App {
 pub(crate) fn affects_status(command: &AppCmdMsg) -> bool {
     match command {
         AppCmdMsg::LocationActivityCompleted(_, command) => affects_status(command),
-        AppCmdMsg::DeploymentStatus(_) | AppCmdMsg::Downloads(_) => false,
+        AppCmdMsg::DeploymentStatus(_) | AppCmdMsg::Downloads(_) | AppCmdMsg::Tools(_) => false,
+        AppCmdMsg::Shell(
+            super::messages::ShellCmdMsg::NexusAvatarLoaded(_)
+            | super::messages::ShellCmdMsg::NexusUserRefreshed(..)
+            | super::messages::ShellCmdMsg::NexusUserRefreshFailed(_)
+            | super::messages::ShellCmdMsg::NexusLogoutDone(_)
+            | super::messages::ShellCmdMsg::AppUpdateResult(_),
+        ) => false,
+        AppCmdMsg::Games(
+            super::messages::GamesCmdMsg::TrilogyCandidates(..)
+            | super::messages::GamesCmdMsg::SaveBackupsLoaded(_)
+            | super::messages::GamesCmdMsg::OrderSnapshotsLoaded(..)
+            | super::messages::GamesCmdMsg::OrderSnapshotDeleted(_),
+        ) => false,
+        AppCmdMsg::Mods(
+            super::messages::ModsCmdMsg::ModFilesLoaded { .. }
+            | super::messages::ModsCmdMsg::ModNexusMetadataRefreshed { .. }
+            | super::messages::ModsCmdMsg::ModOrderSnapshotSaved(_),
+        ) => false,
         _ => true,
     }
 }
@@ -146,6 +168,24 @@ impl Update {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // @variants: both
+    #[test]
+    fn read_only_dialog_results_do_not_rescan_deployment_sources() {
+        use super::super::messages::{GamesCmdMsg, ShellCmdMsg};
+        assert!(!affects_status(&AppCmdMsg::Games(
+            GamesCmdMsg::SaveBackupsLoaded(Ok(Vec::new()))
+        )));
+        assert!(!affects_status(&AppCmdMsg::Shell(
+            ShellCmdMsg::NexusAvatarLoaded(None)
+        )));
+        assert!(affects_status(&AppCmdMsg::Shell(
+            ShellCmdMsg::PrioritySaved(Ok(()))
+        )));
+        assert!(affects_status(&AppCmdMsg::Games(
+            GamesCmdMsg::SaveModeToggled(Ok(()))
+        )));
+    }
 
     // @variants: both
     #[test]

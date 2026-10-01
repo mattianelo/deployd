@@ -1155,6 +1155,52 @@ fn trilogy_deploys_switch_saves_independently_without_reinstalling_mods() -> Res
                     assert_eq!(fs::read(path)?, bytes);
                 }
             }
+            let game = &configs[0].game;
+            let profile = tracker
+                .get_active_profile(&game.id)
+                .await?
+                .context("Missing profile")?
+                .id;
+            let request = Request {
+                game: game.clone(),
+                profile,
+                language: "INT".into(),
+                purge: false,
+                repair: false,
+            };
+            let history = History::open(&tracker, &game.id, &cache, true).await?;
+            let generation: String = sqlx::query_scalar(
+                "SELECT deployed_generation_id FROM generation_game_state WHERE game_id=?",
+            )
+            .bind(&game.id)
+            .fetch_one(&tracker.pool)
+            .await?;
+            let manifest = history.load_manifest(&generation).await?;
+            let output = manifest
+                .outputs
+                .iter()
+                .find_map(|output| output.content.as_ref())
+                .context("Missing retained output")?;
+            fs::remove_file(history.store.source(output)?)?;
+            drop(history);
+            sqlx::query("UPDATE mods SET enabled=1 WHERE game_id=?")
+                .bind(&game.id)
+                .execute(&tracker.pool)
+                .await?;
+            assert!(
+                activation::prepare_unchanged(&tracker, &cache, &request, Control::default())
+                    .await?
+                    .is_none()
+            );
+            sqlx::query("UPDATE mods SET enabled=0 WHERE game_id=?")
+                .bind(&game.id)
+                .execute(&tracker.pool)
+                .await?;
+            assert!(
+                activation::prepare_unchanged(&tracker, &cache, &request, Control::default())
+                    .await
+                    .is_err()
+            );
             Ok(())
         },
     )

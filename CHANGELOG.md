@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+- Fixed a misleading missing MELE launcher-baseline error after reselecting the
+  same installation folder. Existing launcher ownership and trilogy profiles
+  are reconnected when renewed folder access can be matched safely.
+- Manage Games now shares installation-folder and Wine-prefix controls across
+  LE1, LE2 and LE3; changing the prefix applies to all three games.
+- Profile and mod editing now wait for initial deployment checks to finish,
+  with an explicit checking status instead of a temporary “None”.
+- Reduced redundant deployment checks during UI interaction and skipped full
+  retained-file verification when changed mods require a fresh deployment.
+
 - Restored manual save sync for Legendary Edition trilogy profiles and refreshed
   the last-sync indicator after deployment creates or updates a save bank.
 - Prefix selection now asks for the containing folder once, followed by a prefix

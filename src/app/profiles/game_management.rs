@@ -147,6 +147,7 @@ impl App {
             self.ui.mele_setup = Some(crate::ui::mele_dialog::SetupProgress::new(root));
         }
         let progress_sender = sender.input_sender().clone();
+        let repair_sender = progress_sender.clone();
         sender.oneshot_command(async move {
             let result = crate::core::game::mass_effect::baseline::configure(
                 &tracker,
@@ -161,6 +162,20 @@ impl App {
             .await
             .map(|()| configs_for_db)
             .map_err(|error| format!("{error:#}"));
+            let lease = if result.is_ok() && crate::utils::snap::is_snap() {
+                drop(lease);
+                {
+                    let _repair = crate::core::location_recovery::activity_lock().write_owned().await;
+                    if let Err(error) = crate::core::location_recovery::resume_repairs(&tracker).await {
+                        let _ = repair_sender.send(AppMsg::Shell(crate::app::messages::ShellMsg::ShowToast(
+                            format!("Game settings saved, but folder recovery needs attention: {error:#}. Use Manage Games → Restore folder access to retry.")
+                        )));
+                    }
+                }
+                crate::core::location_recovery::activity_lock().read_owned().await
+            } else {
+                lease
+            };
             AppCmdMsg::LocationActivityCompleted(
                 lease,
                 Box::new(AppCmdMsg::Games(

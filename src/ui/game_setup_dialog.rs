@@ -21,6 +21,22 @@ struct GameEntry {
     locations: Vec<FolderSelection>,
 }
 
+fn assign_prefix(entries: &mut [GameEntry], selected: usize, prefix: &std::path::Path) {
+    let trilogy = entries
+        .get(selected)
+        .is_some_and(|entry| entry.game.engine == crate::models::game::GameEngine::MassEffect);
+    for (index, entry) in entries.iter_mut().enumerate() {
+        if index == selected
+            || trilogy && entry.game.engine == crate::models::game::GameEngine::MassEffect
+        {
+            entry.game.wine_prefix = Some(prefix.to_owned());
+            entry
+                .locations
+                .retain(|location| location.role != FolderRole::Prefix);
+        }
+    }
+}
+
 pub struct GameSetupDialog {
     entries: Vec<GameEntry>,
     selected_locations: HashMap<PathBuf, SelectedLocation>,
@@ -121,8 +137,22 @@ impl GameSetupDialog {
 
         for (idx, entry) in self.entries.iter().enumerate() {
             let cache_dir = self.game_cache_dirs.get(&entry.game.id).cloned();
-            self.games_list
-                .append(&Self::build_entry_row(idx, entry, cache_dir, sender));
+            let shared_controls = entry.game.engine != crate::models::game::GameEngine::MassEffect
+                || !self.entries[..idx]
+                    .iter()
+                    .any(|other| other.game.engine == crate::models::game::GameEngine::MassEffect);
+            self.games_list.append(&Self::build_entry_row(
+                idx,
+                entry,
+                cache_dir,
+                shared_controls,
+                entry.game.engine == crate::models::game::GameEngine::MassEffect
+                    && self.entries.iter().any(|other| {
+                        other.game.engine == crate::models::game::GameEngine::MassEffect
+                            && other.game.wine_prefix != entry.game.wine_prefix
+                    }),
+                sender,
+            ));
         }
     }
 
@@ -131,6 +161,8 @@ impl GameSetupDialog {
         idx: usize,
         entry: &GameEntry,
         cache_dir: Option<PathBuf>,
+        shared_controls: bool,
+        different_prefixes: bool,
         sender: &ComponentSender<Self>,
     ) -> adw::ExpanderRow {
         let row = adw::ExpanderRow::new();
@@ -169,9 +201,22 @@ impl GameSetupDialog {
 
         // Game folder row.
         let path_row = adw::ActionRow::new();
-        path_row.set_title("Game Folder");
+        path_row.set_title(
+            if entry.game.engine == crate::models::game::GameEngine::MassEffect {
+                "Trilogy installation folder"
+            } else {
+                "Game Folder"
+            },
+        );
+        path_row.set_visible(shared_controls);
+        let folder = entry
+            .locations
+            .iter()
+            .find(|selection| selection.role == crate::utils::location::FolderRole::Game)
+            .map(|selection| selection.location.root.as_path())
+            .unwrap_or(&entry.game.path);
         path_row.set_subtitle(&gtk::glib::markup_escape_text(
-            entry.game.path.to_string_lossy().as_ref(),
+            folder.to_string_lossy().as_ref(),
         ));
 
         let path_btn = gtk::Button::from_icon_name("folder-symbolic");
@@ -189,8 +234,18 @@ impl GameSetupDialog {
 
         // Wine prefix row.
         let prefix_row = adw::ActionRow::new();
-        prefix_row.set_title("Wine Prefix");
-        if let Some(ref pfx) = entry.game.wine_prefix {
+        prefix_row.set_title(
+            if entry.game.engine == crate::models::game::GameEngine::MassEffect {
+                "Trilogy Wine prefix"
+            } else {
+                "Wine Prefix"
+            },
+        );
+        prefix_row.set_visible(shared_controls);
+        if different_prefixes {
+            prefix_row
+                .set_subtitle("Different prefixes are configured; select one for all three games");
+        } else if let Some(ref pfx) = entry.game.wine_prefix {
             prefix_row.set_subtitle(&gtk::glib::markup_escape_text(
                 pfx.to_string_lossy().as_ref(),
             ));
@@ -711,9 +766,7 @@ impl Component for GameSetupDialog {
                         host_hint,
                     },
                 );
-                if let Some(entry) = self.entries.get_mut(idx) {
-                    entry.game.wine_prefix = Some(path);
-                }
+                assign_prefix(&mut self.entries, idx, &path);
                 self.rebuild_games(&sender);
             }
 
@@ -1031,5 +1084,53 @@ impl Component for GameSetupDialog {
                 root.close();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // @variants: both
+    #[test]
+    fn selecting_one_trilogy_prefix_updates_all_members_and_keeps_other_games() {
+        let mut entries: Vec<_> = (1..=4)
+            .map(|number| GameEntry {
+                game: Game {
+                    id: format!("game-{number}"),
+                    title: "Game".into(),
+                    path: format!("/games/{number}").into(),
+                    data_subdir: "BioGame".into(),
+                    engine: if number <= 3 {
+                        crate::models::game::GameEngine::MassEffect
+                    } else {
+                        crate::models::game::GameEngine::Bethesda
+                    },
+                    wine_prefix: Some("/old/prefix".into()),
+                },
+                enabled: true,
+                locations: vec![FolderSelection {
+                    role: FolderRole::Prefix,
+                    location: SelectedLocation {
+                        root: "/old/prefix".into(),
+                        host_hint: None,
+                    },
+                    relative: Default::default(),
+                }],
+            })
+            .collect();
+        assign_prefix(&mut entries, 1, std::path::Path::new("/selected/prefix"));
+        for entry in &entries[..3] {
+            assert_eq!(
+                entry.game.wine_prefix.as_deref(),
+                Some(std::path::Path::new("/selected/prefix"))
+            );
+            assert!(entry.locations.is_empty());
+        }
+        assert_eq!(
+            entries[3].game.wine_prefix.as_deref(),
+            Some(std::path::Path::new("/old/prefix"))
+        );
+        assert_eq!(entries[3].locations.len(), 1);
     }
 }

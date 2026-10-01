@@ -459,7 +459,7 @@ pub(super) async fn root(tracker: &Tracker, game: &Game, location_id: i64) -> Re
                 &location.selection.root,
                 Path::new(&format!("Game/ME{number}"))
             )? == game.path,
-        "MELE launcher support requires the shared Legendary Edition folder; add the installation as a group"
+        "Select the shared Legendary Edition installation folder once in Manage Games → Change folder to restore trilogy launcher access"
     );
     resolve_relative(&location.selection.root, Path::new("Game/Launcher"))
 }
@@ -472,10 +472,9 @@ pub(super) async fn inspect(
     control: Control,
 ) -> Result<Option<Plan>> {
     let location = tracker.folder_location(&game.id, FolderRole::Game).await?;
-    let existing = tracker
-        .mele_family(location.id)
-        .await?
-        .context("MELE launcher baseline is missing; remove and add the game again")?;
+    let existing = tracker.mele_family(location.id).await?.context(
+        "MELE launcher metadata is unavailable; restore installation access in Manage Games",
+    )?;
     let root = root(tracker, game, location.id).await?;
     let mut owners = existing.owners.clone();
     for binding in &location.bindings {

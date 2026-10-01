@@ -52,6 +52,15 @@ impl App {
     }
 
     fn deployment_status(&self) -> String {
+        if self.session.initializing
+            || self.session.game_load.is_pending()
+            || self.shell.status_loading
+        {
+            return "Checking profiles and deployment…".into();
+        }
+        if self.shell.deployment_status_error.is_some() {
+            return "Deployment status unavailable".into();
+        }
         let selected = self
             .session
             .profiles
@@ -86,6 +95,10 @@ impl App {
     }
 
     pub(crate) fn is_busy(&self) -> bool {
+        self.operation_busy() || self.session.initializing || self.shell.status_loading
+    }
+
+    pub(crate) fn operation_busy(&self) -> bool {
         self.session.game_load.is_pending()
             || self.ui.cache_move.is_some()
             || self.ui.override_saving
@@ -146,6 +159,9 @@ impl App {
                 "Checking game files…"
             }
             .into();
+        }
+        if self.shell.status_loading {
+            return "Checking profiles and deployment…".into();
         }
         if let Some(status) = &self.shell.work_status {
             if let Some(progress) = status.progress {

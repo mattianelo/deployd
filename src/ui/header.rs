@@ -210,6 +210,8 @@ impl SimpleComponent for Header {
             pack_start = &gtk::Button {
                 set_icon_name: "window-close-symbolic",
                 set_tooltip_text: Some("Stop managing this game"),
+                #[watch]
+                set_sensitive: !model.state.is_busy,
                 add_css_class: "flat",
                 #[watch]
                 set_visible: model.state.has_games && !model.state.initializing,

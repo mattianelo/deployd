@@ -772,18 +772,7 @@ impl Component for App {
     }
 
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, root: &Self::Root) {
-        let refresh = matches!(
-            &msg,
-            AppMsg::Games(_)
-                | AppMsg::Mods(_)
-                | AppMsg::Plugins(_)
-                | AppMsg::Tools(_)
-                | AppMsg::Generations(_)
-        );
         self.dispatch_input(msg, sender.clone(), root);
-        if refresh {
-            self.refresh_deployment_status(&sender);
-        }
         self.sync_archive_drop();
         self.ui.header.sender().send(self.header_state()).ok();
         self.ui

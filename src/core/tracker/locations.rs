@@ -9,6 +9,8 @@ use crate::utils::location::{
 
 use super::Tracker;
 
+pub(super) mod mele;
+
 #[cfg(test)]
 mod tests;
 

@@ -32,9 +32,7 @@ pub(crate) async fn prepare_unchanged(
     };
     let mut current = records::capture_state(&mut tx, &game.id, profile, true).await?;
     tx.rollback().await?;
-    let mut manifest = history
-        .load_with_control(generation, control.clone())
-        .await?;
+    let mut manifest = history.load_manifest(generation).await?;
     if manifest.version < 2 {
         return Ok(None);
     }
@@ -53,6 +51,9 @@ pub(crate) async fn prepare_unchanged(
     if !manifest::sources_match(tracker, game, cache, &manifest).await? {
         return Ok(None);
     }
+    history
+        .load_with_control(generation, control.clone())
+        .await?;
     ensure!(
         tracker
             .get_active_profile(&game.id)

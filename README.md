@@ -65,6 +65,12 @@ and LE1/LE2 localized menu and plot-map packages.
    **Purge** restores managed game files while keeping your mod library. Reinstall
    an archive to change its options or contents.
 
+Manage Games offers one installation-folder control and one Wine-prefix control
+for the trilogy. Reselecting the same installation preserves its launcher
+restoration point and trilogy profiles, including after renewed folder access.
+While profiles and deployed files are being checked, Deployd shows a checking
+status and keeps editing controls unavailable until loading finishes.
+
 Trilogy profiles share their name, selection and **Global / Profile-specific**
 save-bank choice. Each game keeps its own portion of the bank: its live saves
 switch only when that game's Deploy succeeds. Selecting a profile alone does not

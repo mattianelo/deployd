@@ -332,6 +332,16 @@ impl Tracker {
         }
 
         let mut warnings = Vec::new();
+        let mut location_tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        match locations::mele::reconcile(&mut location_tx).await {
+            Ok(()) => location_tx.commit().await?,
+            Err(error) => {
+                location_tx.rollback().await?;
+                warnings.push(format!(
+                    "Trilogy folder reconnection needs attention: {error:#}"
+                ));
+            }
+        }
 
         if let Err(e) = migrations::migrate_version_columns(&pool).await {
             warnings.push(format!("Version metadata backfill will be retried: {e}"));
