@@ -378,6 +378,7 @@ pub(super) fn build_model(
             pending_mono_tool: None,
         },
         ui: UiState {
+            deployment_metrics: None,
             deployment_operation: None,
             cache_move: None,
             scope_dropdown: gtk::DropDown::from_strings(&[

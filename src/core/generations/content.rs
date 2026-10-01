@@ -98,6 +98,29 @@ pub(crate) fn inspect(path: &Path, control: &Control) -> Result<Identity> {
     Ok(identity)
 }
 
+pub(super) fn copy_to(
+    source: &Path,
+    destination: &mut File,
+    control: &Control,
+) -> Result<Identity> {
+    control.check()?;
+    let input = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(source)?;
+    let before = input.metadata()?;
+    if crate::utils::verified_files::try_clone(&input, destination)? {
+        let identity = inspect(source, control)?;
+        ensure!(
+            stamp(&before) == stamp(&input.metadata()?)
+                && stamp(&before) == stamp(&fs::symlink_metadata(source)?),
+            "Source changed while cloning retained content"
+        );
+        return Ok(identity);
+    }
+    transfer(source, destination, control)
+}
+
 pub(super) fn transfer(
     source: &Path,
     destination: &mut impl Write,
@@ -162,8 +185,9 @@ pub(crate) fn copy(
         .parent()
         .context("Destination has no parent directory")?;
     let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
+    let identity = copy_to(source, temporary.as_file_mut(), control)?;
     ensure!(
-        &transfer(source, temporary.as_file_mut(), control)? == expected,
+        &identity == expected,
         "Source no longer matches prepared content: {}",
         source.display()
     );

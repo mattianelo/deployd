@@ -263,7 +263,7 @@ impl Job {
         }
     }
 
-    pub(super) fn inputs(&self) -> Vec<&FileIdentity> {
+    pub(in crate::core::game::mass_effect) fn inputs(&self) -> Vec<&FileIdentity> {
         match self {
             Self::Texture {
                 manifests,

@@ -341,13 +341,17 @@ fn parse(text: &str, target: Target) -> Result<Manifest> {
     Ok(manifest)
 }
 
-fn read_manifest(root: &Path, source: &SourceFile, target: Target) -> Result<Manifest> {
+fn read_manifest(
+    root: &super::candidate::Sources,
+    source: &SourceFile,
+    target: Target,
+) -> Result<Manifest> {
     ensure!(
         source.size <= 16 * 1024 * 1024,
         "M3TO manifest exceeds 16 MiB"
     );
     let mut bytes = Vec::new();
-    File::open(root.join(&source.relative))?
+    File::open(root.resolve(&source.relative))?
         .take(source.size + 1)
         .read_to_end(&mut bytes)?;
     ensure!(
@@ -369,7 +373,7 @@ pub(super) fn inspect(
     format: &str,
 ) -> Result<Vec<M3toPlan>> {
     inspect_controlled(
-        root,
+        &root.to_path_buf().into(),
         sources,
         files,
         target,
@@ -379,7 +383,7 @@ pub(super) fn inspect(
 }
 
 fn inspect_controlled(
-    root: &Path,
+    root: &super::candidate::Sources,
     sources: &[SourceFile],
     files: &[FileMapping],
     target: Target,
@@ -543,7 +547,12 @@ fn inspect_controlled(
         let source = index
             .get(mapping.source.as_str())
             .context("Missing DLC mount source")?;
-        let mount = mount(root, source, target)?;
+        let (source_root, relative) = root.location(&source.relative);
+        let resolved = SourceFile {
+            relative: relative.to_owned(),
+            ..(*source).clone()
+        };
+        let mount = mount(source_root, &resolved, target)?;
         plans.push(M3toPlan {
             dlc,
             layout,
@@ -624,7 +633,7 @@ pub(super) fn mount(root: &Path, source: &SourceFile, target: Target) -> Result<
 }
 
 pub(super) fn validate_staged(
-    root: &Path,
+    root: &super::candidate::Sources,
     sources: &[SourceFile],
     target: Target,
     control: &super::operation::Control,

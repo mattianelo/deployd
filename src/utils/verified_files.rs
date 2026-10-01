@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs::{File, Metadata};
 use std::io::{Read, Seek, SeekFrom};
+use std::os::fd::AsRawFd;
 use std::os::unix::fs::MetadataExt;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -48,6 +49,7 @@ fn cache() -> &'static Mutex<Cache> {
 
 static HASHED_BYTES: AtomicU64 = AtomicU64::new(0);
 static CACHE_HITS: AtomicU64 = AtomicU64::new(0);
+static CLONED_BYTES: AtomicU64 = AtomicU64::new(0);
 static COPIED_BYTES: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) fn record_copy(bytes: u64) {
@@ -60,6 +62,7 @@ pub(crate) struct Metrics {
     pub(crate) hashed_bytes: u64,
     pub(crate) cache_hits: u64,
     pub(crate) copied_bytes: u64,
+    pub(crate) cloned_bytes: u64,
 }
 
 pub(crate) fn metrics() -> Metrics {
@@ -67,6 +70,7 @@ pub(crate) fn metrics() -> Metrics {
         hashed_bytes: HASHED_BYTES.load(Ordering::Relaxed),
         cache_hits: CACHE_HITS.load(Ordering::Relaxed),
         copied_bytes: COPIED_BYTES.load(Ordering::Relaxed),
+        cloned_bytes: CLONED_BYTES.load(Ordering::Relaxed),
     }
 }
 
@@ -140,6 +144,47 @@ pub(crate) fn hash(
         cache.entries.insert(stamp, hash.clone());
     }
     Ok(hash)
+}
+
+pub(crate) fn try_clone(source: &File, destination: &mut File) -> Result<bool> {
+    let before = source.metadata()?;
+    let target = destination.metadata()?;
+    ensure!(
+        before.is_file()
+            && target.is_file()
+            && target.len() == 0
+            && target.nlink() == 1
+            && (before.dev(), before.ino()) != (target.dev(), target.ino()),
+        "Cloning requires an empty independent destination"
+    );
+    // FICLONE operates on these owned file descriptors; it does not share writable inodes.
+    let result = unsafe { libc::ioctl(destination.as_raw_fd(), libc::FICLONE, source.as_raw_fd()) };
+    if result == 0 {
+        ensure!(
+            Stamp::from(&source.metadata()?) == Stamp::from(&before),
+            "Source changed while cloning"
+        );
+        CLONED_BYTES.fetch_add(before.len(), Ordering::Relaxed);
+        return Ok(true);
+    }
+    let error = std::io::Error::last_os_error();
+    if matches!(
+        error.raw_os_error(),
+        Some(
+            libc::EOPNOTSUPP
+                | libc::EXDEV
+                | libc::EINVAL
+                | libc::ENOTTY
+                | libc::ENOSYS
+                | libc::EPERM
+                | libc::EACCES
+        )
+    ) {
+        destination.set_len(0)?;
+        destination.seek(SeekFrom::Start(0))?;
+        return Ok(false);
+    }
+    Err(error.into())
 }
 
 #[cfg(test)]

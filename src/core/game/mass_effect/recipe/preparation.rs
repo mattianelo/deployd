@@ -31,8 +31,7 @@ impl Cached {
             );
         }
         for file in &self.prepared.files {
-            journal::files::verify(
-                root,
+            self.prepared.sources.verify(
                 &file.relative,
                 Some(&Identity {
                     size: file.size,
@@ -147,7 +146,7 @@ impl Session {
             .root
             .clone();
         let has_jobs = !step.m3m.is_empty() || !step.tlk.is_empty();
-        let prepared = self.runtime.block_on(async {
+        let mut prepared = self.runtime.block_on(async {
             if !has_jobs {
                 let candidate = pipeline::copy_step(
                     (prepared, current),
@@ -225,6 +224,7 @@ impl Session {
                     merges: merges::Merges::originals(originals.clone()),
                     installation: installation::Installation {
                         steps: vec![step.clone()],
+                        defer_textures: true,
                         ..Default::default()
                     },
                     packages: BTreeMap::from([(
@@ -253,8 +253,7 @@ impl Session {
         for (path, identity) in &installation.originals {
             let relative = format!("BioGame/{path}");
             if has_jobs && !prepared.files.iter().any(|file| file.relative == relative) {
-                journal::files::verify(
-                    prepared.directory.path(),
+                prepared.sources.remove(
                     &relative,
                     Some(&Identity {
                         size: identity.size,
@@ -262,7 +261,6 @@ impl Session {
                     }),
                     &self.control,
                 )?;
-                std::fs::remove_file(prepared.directory.path().join(relative))?;
             }
         }
         let files = prepared.files.clone();
@@ -327,10 +325,12 @@ pub(in crate::core::game::mass_effect) async fn inspect_sources(
         )?;
         let parent = data.join("mele-rebuilds");
         journal::files::create_directory(&parent)?;
+        let directory = tempfile::Builder::new()
+            .prefix("preparation-")
+            .tempdir_in(parent)?;
         let prepared = Prepared {
-            directory: tempfile::Builder::new()
-                .prefix("preparation-")
-                .tempdir_in(parent)?,
+            sources: directory.path().to_path_buf().into(),
+            directory,
             removals: Default::default(),
             files: Vec::new(),
             recipe: recipe.clone(),
@@ -367,7 +367,7 @@ pub(in crate::core::game::mass_effect) async fn inspect_sources(
             sources::verify(stored, &control)?;
         }
         control.check()?;
-        if !plan.installation.has_raw_m3to() {
+        {
             plan.prepared = Some(Cached {
                 inputs: session.inputs,
                 prepared,

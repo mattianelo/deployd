@@ -35,7 +35,7 @@ pub(super) async fn verify_game_inputs(
 }
 
 pub(super) async fn run(
-    work: Work,
+    mut work: Work,
     control: Control,
     progress: Progress,
     lease: Arc<Lease>,
@@ -43,7 +43,6 @@ pub(super) async fn run(
     let (work, mut current) = {
         let control = control.clone();
         tokio::task::spawn_blocking(move || {
-            let root = work.prepared.directory.path();
             let mut current = BTreeMap::new();
             for file in work
                 .prepared
@@ -57,16 +56,15 @@ pub(super) async fn run(
             for (path, original) in &work.merges.originals {
                 if !current.contains_key(path) {
                     let relative = format!("BioGame/{path}");
-                    journal::files::copy(
-                        &work
-                            .originals
+                    work.prepared.sources.insert(
+                        relative.clone(),
+                        work.originals
                             .as_ref()
                             .context("Missing preserved MELE inputs")?
-                            .root,
-                        &relative,
-                        root,
-                        &relative,
-                        &Identity {
+                            .root
+                            .clone(),
+                        relative,
+                        Identity {
                             size: original.size,
                             sha256: original.sha256.clone(),
                         },
@@ -85,7 +83,12 @@ pub(super) async fn run(
     };
     let mut prepared = work.prepared;
     let mut texture_compilations = Vec::new();
-    for step in &work.installation.steps {
+    for step in work
+        .installation
+        .steps
+        .iter()
+        .filter(|_| !work.installation.defer_textures)
+    {
         texture_compilations.extend(super::super::m3to::compilations(
             &step.m3to,
             &step.files,
@@ -93,7 +96,7 @@ pub(super) async fn run(
         )?);
     }
     let texture_compilations = super::super::m3to::combine(texture_compilations)?;
-    if !work.installation.steps.is_empty() {
+    if !work.installation.steps_prepared && !work.installation.steps.is_empty() {
         let total = work.installation.steps.len();
         for (index, step) in work.installation.steps.into_iter().enumerate() {
             let source = work
@@ -137,7 +140,7 @@ pub(super) async fn run(
                     helper::m3m::Sources {
                         package: source,
                         original: originals.clone(),
-                        candidate: prepared.directory.path().join("BioGame"),
+                        candidate: prepared.sources.subtree("BioGame"),
                         packages,
                         plans: step.m3m,
                     },
@@ -151,7 +154,7 @@ pub(super) async fn run(
                     work.backend.clone(),
                     helper::Inputs {
                         game: work.game.clone(),
-                        candidate: inputs.root().to_path_buf(),
+                        candidate: inputs.root().to_path_buf().into(),
                         original: Some(originals),
                     },
                     work.data.join("mele-transformations"),
@@ -176,7 +179,7 @@ pub(super) async fn run(
                     work.backend.clone(),
                     helper::Inputs {
                         game: work.game.clone(),
-                        candidate: prepared.directory.path().join("BioGame"),
+                        candidate: prepared.sources.subtree("BioGame"),
                         original: None,
                     },
                     work.data.join("mele-transformations"),
@@ -208,7 +211,7 @@ pub(super) async fn run(
             work.backend.clone(),
             helper::Inputs {
                 game: work.game.clone(),
-                candidate: prepared.directory.path().join("BioGame"),
+                candidate: prepared.sources.subtree("BioGame"),
                 original: None,
             },
             work.data.join("mele-transformations"),
@@ -248,7 +251,7 @@ pub(super) async fn run(
                         .root
                         .join("BioGame"),
                 ),
-                candidate: prepared.directory.path().join("BioGame"),
+                candidate: prepared.sources.subtree("BioGame"),
             },
             work.data.join("mele-transformations"),
             job,
@@ -268,6 +271,12 @@ pub(super) async fn run(
                 .iter()
                 .any(|file| file.path.starts_with(".merge-ui/"))
         {
+            let images = current
+                .keys()
+                .filter(|path| path.contains("SFXHenchImages_"))
+                .map(|path| format!("BioGame/{path}"))
+                .collect();
+            prepared = materialize(prepared, images, control.clone()).await?;
             let inputs = super::squad_ui::prepare(
                 super::squad_ui::Sources {
                     candidate: prepared.directory.path().join("BioGame"),
@@ -294,7 +303,7 @@ pub(super) async fn run(
                     helper::Inputs {
                         game: work.game.clone(),
                         original: None,
-                        candidate: inputs.root(),
+                        candidate: inputs.root().into(),
                     },
                     work.data.join("mele-transformations"),
                     inputs.job.clone(),
@@ -348,51 +357,53 @@ pub(super) async fn copy_step(
             .map(|file| (file.relative.clone(), file))
             .collect();
         for file in files {
-            let input = if file.destination.relative.starts_with("BioGame/") {
-                let input = merges::identity(&file.destination)?;
-                remove_candidate(
-                    prepared.directory.path(),
-                    &input.path,
-                    current.get(&input.path),
-                    &control,
-                )?;
-                Some(input)
-            } else {
-                super::super::binary::destination(&file.destination.relative)?;
-                let before = managed.get(&file.destination.relative);
-                journal::files::verify(
-                    prepared.directory.path(),
-                    &file.destination.relative,
-                    before
+            let before = managed
+                .get(&file.destination.relative)
+                .map(|file| Identity {
+                    size: file.size,
+                    sha256: file.sha256.clone(),
+                })
+                .or_else(|| {
+                    file.destination
+                        .relative
+                        .strip_prefix("BioGame/")
+                        .and_then(|path| current.get(path))
                         .map(|file| Identity {
                             size: file.size,
                             sha256: file.sha256.clone(),
                         })
-                        .as_ref(),
-                    &control,
-                )?;
-                if before.is_some() {
-                    std::fs::remove_file(
-                        prepared.directory.path().join(&file.destination.relative),
-                    )?;
-                }
-                None
-            };
-            journal::files::copy(
-                &source,
-                &file.source,
-                prepared.directory.path(),
-                &file.destination.relative,
-                &Identity {
+                });
+            prepared
+                .sources
+                .remove(&file.destination.relative, before.as_ref(), &control)?;
+            if file.destination.relative.starts_with("BioGame/") {
+                let input = merges::identity(&file.destination)?;
+                current.insert(input.path.clone(), input);
+            } else {
+                super::super::binary::destination(&file.destination.relative)?;
+            }
+            prepared.sources.insert(
+                file.destination.relative.clone(),
+                source.clone(),
+                file.source,
+                Identity {
                     size: file.destination.size,
                     sha256: file.destination.sha256.clone(),
                 },
                 &control,
             )?;
-            if let Some(input) = input {
-                current.insert(input.path.clone(), input);
-            }
             managed.insert(file.destination.relative.clone(), file.destination);
+        }
+        for plan in &dlc_config {
+            for edit in &plan.edits {
+                let expected = format!("BioGame/DLC/{}/CookedPCConsole/{}", plan.dlc, edit.file);
+                if let Some(path) = managed
+                    .keys()
+                    .find(|path| path.eq_ignore_ascii_case(&expected))
+                {
+                    prepared.sources.materialize(path, &control)?;
+                }
+            }
         }
         super::super::m3cd::apply_dlc_config(
             prepared.directory.path(),
@@ -419,7 +430,7 @@ pub(super) async fn remove_step(
             let path = relative
                 .strip_prefix("BioGame/")
                 .context("Removal outside BioGame")?;
-            remove_candidate(prepared.directory.path(), path, current.get(path), &control)?;
+            remove_candidate(&mut prepared.sources, path, current.get(path), &control)?;
             current.remove(path);
             prepared.files.retain(|file| file.relative != relative);
         }
@@ -460,14 +471,12 @@ async fn accept_new(
                 "Unexpected MELE merge output"
             );
             let relative = format!("BioGame/{}", file.path);
-            let root = prepared.directory.path();
-            remove_candidate(root, &file.path, before, &control)?;
-            journal::files::copy(
-                &output.root(),
-                &file.path,
-                root,
-                &relative,
-                &Identity {
+            remove_candidate(&mut prepared.sources, &file.path, before, &control)?;
+            prepared.sources.insert(
+                relative.clone(),
+                output.root(),
+                file.path.clone(),
+                Identity {
                     size: file.size,
                     sha256: file.sha256.clone(),
                 },
@@ -483,6 +492,7 @@ async fn accept_new(
                 },
             );
         }
+        prepared.sources.keep(output);
         prepared.files = files.into_values().collect();
         Ok((prepared, current))
     })
@@ -491,15 +501,13 @@ async fn accept_new(
 }
 
 fn remove_candidate(
-    root: &std::path::Path,
+    sources: &mut super::super::candidate::Sources,
     path: &str,
     before: Option<&helper::FileIdentity>,
     control: &Control,
 ) -> Result<()> {
-    let relative = format!("BioGame/{path}");
-    journal::files::verify(
-        root,
-        &relative,
+    sources.remove(
+        &format!("BioGame/{path}"),
         before
             .map(|file| Identity {
                 size: file.size,
@@ -507,9 +515,20 @@ fn remove_candidate(
             })
             .as_ref(),
         control,
-    )?;
-    if before.is_some() {
-        std::fs::remove_file(root.join(relative))?;
-    }
-    Ok(())
+    )
+}
+
+async fn materialize(
+    mut prepared: Prepared,
+    paths: Vec<String>,
+    control: Control,
+) -> Result<Prepared> {
+    tokio::task::spawn_blocking(move || {
+        for path in paths {
+            prepared.sources.materialize(&path, &control)?;
+        }
+        Ok(prepared)
+    })
+    .await
+    .context("MELE input materialization failed")?
 }

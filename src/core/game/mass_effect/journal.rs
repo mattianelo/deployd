@@ -86,7 +86,7 @@ pub(crate) struct Deployment {
     pub(crate) repair_components: bool,
     pub(crate) previous: Option<String>,
     pub(crate) profile: String,
-    pub(crate) source: PathBuf,
+    pub(crate) source: super::candidate::Sources,
     pub(crate) files: Vec<SourceFile>,
     pub(crate) recipe: Option<super::recipe::Recipe>,
 }

@@ -154,6 +154,7 @@ impl App {
                     return;
                 };
                 self.shell.deploying = true;
+                self.deployment_timing("preparation");
                 self.begin_work(WorkKind::Deploying, "Preparing MELE deployment...");
                 sender.oneshot_command(async move {
                     let language = tracker
@@ -188,6 +189,7 @@ impl App {
                     return;
                 };
                 self.shell.deploying = true;
+                self.deployment_timing("preview");
                 self.begin_work(WorkKind::Deploying, "Preparing MELE deployment...");
                 let cancelled = Arc::new(AtomicBool::new(false));
                 self.ui.mele_operation = Some(mele_dialog::progress(
@@ -274,6 +276,7 @@ impl App {
                 });
             }
             Msg::Cancel => {
+                self.finish_deployment_timing("Deployment cancelled");
                 self.shell.deploying = false;
                 self.finish_work(WorkKind::Deploying);
             }
@@ -434,11 +437,13 @@ impl App {
                 }
             }
             Command::Setup { language, purge } => {
+                self.deployment_timing("confirmation");
                 self.finish_work(WorkKind::Deploying);
                 let language = match language {
                     Ok(language) => language,
                     Err(error) => {
                         self.shell.deploying = false;
+                        self.finish_deployment_timing("Deployment stopped");
                         self.push_notification(&error);
                         return;
                     }
@@ -499,6 +504,7 @@ impl App {
                     Ok(preview) => sender.input(AppMsg::Mele(Msg::Apply(preview))),
                     Err(error) => {
                         self.shell.deploying = false;
+                        self.finish_deployment_timing("Deployment stopped");
                         self.push_notification(&format!("Cannot deploy MELE: {error}"));
                     }
                 }

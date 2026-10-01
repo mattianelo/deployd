@@ -97,10 +97,19 @@ so profiles that need ASI/DLL support can be prepared and restored. Interrupted
 deployments recover after restart. Unexpected
 external changes are preserved and must be resolved before deploying again.
 Large texture installations can take time; follow the progress shown in Deployd.
+MELE reuses verified transformation results across restarts when their inputs and
+helper version still match. Toggling a mod rebuilds affected transformations while
+unchanged package files avoid unnecessary preparation copies. This uses additional
+cache space, with older unused results cleaned automatically after deployment.
+Missing or damaged cached results are rebuilt; deployment history and restoration
+files remain separate. The first deployment after upgrading may need to populate
+this cache.
 Generations reuse verified file hashes while Deployd stays open when file identity,
 size, timestamps, permissions and link count are unchanged. Changed files are
 hashed again; rollback copies and transaction checks remain in place. The first
-verification after restarting Deployd still reads file contents.
+verification after restarting Deployd still reads file contents. Independent file
+copies use copy-on-write where the filesystem permits, with ordinary copying as a
+fallback; editing deployed files does not modify their retained copies.
 Use **Deployment history → Full integrity check** to reread retained generations
 and deployed files, including checks for corruption that leaves file metadata
 unchanged. The check reports external edits without replacing files and can be

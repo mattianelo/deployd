@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
-use std::io::{Read, Write};
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -17,7 +16,7 @@ use super::{Abandon, Control, files, jobs, overlaps};
 pub(crate) struct Sources {
     pub(crate) package: PathBuf,
     pub(crate) original: PathBuf,
-    pub(crate) candidate: PathBuf,
+    pub(crate) candidate: super::super::candidate::Sources,
     pub(crate) packages: Vec<TargetPackage>,
     pub(crate) plans: Vec<M3mPlan>,
 }
@@ -77,7 +76,12 @@ pub(in crate::core::game::mass_effect) async fn prepare_with_lease(
 fn stage(sources: Sources, parent: &Path, control: &Control) -> Result<Prepared> {
     control.check()?;
     files::directory(parent)?;
-    for root in [&sources.package, &sources.original, &sources.candidate] {
+    super::super::journal::files::create_directory(&sources.candidate)?;
+    for root in [
+        sources.package.as_path(),
+        sources.original.as_path(),
+        sources.candidate.as_ref(),
+    ] {
         files::directory(root)?;
         ensure!(
             !overlaps(root, parent),
@@ -335,34 +339,24 @@ impl Builder<'_> {
     }
 }
 
-fn copy(root: &Path, input: &FileIdentity, destination: &Path, control: &Control) -> Result<()> {
-    files::identity(root, input, control)?;
-    let path = destination.join(&input.path);
-    fs::create_dir_all(path.parent().context("Missing M3M input parent")?)?;
-    let mut output = File::create_new(path)?;
-    let mut source = File::options()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(root.join(&input.path))?;
-    let metadata = source.metadata()?;
-    ensure!(
-        metadata.is_file() && metadata.nlink() == 1 && metadata.len() == input.size,
-        "M3M candidate changed before copying"
-    );
-    let mut buffer = [0_u8; 65536];
-    let mut remaining = input.size;
-    while remaining > 0 {
-        control.check()?;
-        let count = source.read(&mut buffer[..remaining.min(65536) as usize])?;
-        ensure!(count > 0, "M3M candidate changed during preparation");
-        output.write_all(&buffer[..count])?;
-        remaining -= count as u64;
-    }
-    ensure!(
-        source.read(&mut buffer[..1])? == 0,
-        "M3M candidate grew during preparation"
-    );
-    files::identity(destination, input, control)
+fn copy(
+    root: &super::super::candidate::Sources,
+    input: &FileIdentity,
+    destination: &Path,
+    control: &Control,
+) -> Result<()> {
+    let (source, relative) = root.location(&input.path);
+    super::super::journal::files::copy(
+        source,
+        relative,
+        destination,
+        &input.path,
+        &super::super::journal::Identity {
+            size: input.size,
+            sha256: input.sha256.clone(),
+        },
+        control,
+    )
 }
 
 #[cfg(test)]
@@ -386,7 +380,7 @@ mod tests {
         let mut sources = Sources {
             package: root.path().join("package"),
             original: root.path().join("original"),
-            candidate: root.path().join("candidate"),
+            candidate: root.path().join("candidate").into(),
             packages: Vec::new(),
             plans: Vec::new(),
         };

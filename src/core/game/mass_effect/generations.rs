@@ -119,7 +119,7 @@ impl Snapshot {
 pub(crate) struct Prepared {
     pub(crate) snapshot: Snapshot,
     pub(crate) journal: journal::Journal,
-    source: std::path::PathBuf,
+    source: super::candidate::Sources,
     pub(crate) data: std::path::PathBuf,
     _directory: Option<tempfile::TempDir>,
     _lease: std::sync::Arc<super::operation::Lease>,
@@ -128,6 +128,7 @@ pub(crate) struct Prepared {
 impl Drop for Prepared {
     fn drop(&mut self) {
         if let Some(directory) = self._directory.take() {
+            let source = std::mem::replace(&mut self.source, std::path::PathBuf::new().into());
             let lease = self._lease.clone();
             let journal = self.journal.clone();
             let data = self.data.clone();
@@ -136,7 +137,7 @@ impl Drop for Prepared {
                 if let Err(error) = journal.discard_abandoned_generation_stage(&data) {
                     eprintln!("Abandoned MELE preparation cleanup failed: {error:#}");
                 }
-                drop(directory);
+                drop((source, directory));
             });
         }
     }
@@ -157,7 +158,7 @@ impl Prepared {
                 .join("new")
                 .join(path)
         } else {
-            self.source.join(path)
+            self.source.resolve(path)
         }
     }
 
@@ -165,11 +166,12 @@ impl Prepared {
         let journal = self.journal.clone();
         let data = self.data.clone();
         let directory = self._directory.take();
+        let source = std::mem::replace(&mut self.source, std::path::PathBuf::new().into());
         let lease = self._lease.clone();
         tokio::spawn(async move {
             let _lease = lease;
             let result = journal.discard_generation_stage(data).await;
-            tokio::task::spawn_blocking(move || drop(directory))
+            tokio::task::spawn_blocking(move || drop((source, directory)))
                 .await
                 .context("MELE preparation cleanup worker stopped")?;
             result
@@ -283,7 +285,7 @@ pub(crate) async fn retained(
         repair_components: destination.repair_components,
         previous: destination.previous,
         profile: destination.profile,
-        source: source.path().to_path_buf(),
+        source: source.path().to_path_buf().into(),
         files: snapshot.files.clone(),
         recipe: Some(snapshot.recipe.clone()),
     };
@@ -300,7 +302,7 @@ pub(crate) async fn retained(
     Ok(Prepared {
         snapshot,
         journal,
-        source: source.path().to_path_buf(),
+        source: source.path().to_path_buf().into(),
         data,
         _directory: Some(source),
         _lease: lease,
@@ -362,8 +364,8 @@ pub(crate) async fn fresh(
         std::sync::Arc::new(move |done, total| progress(done as u64, total as u64)),
     )
     .await?;
-    let prepared = prepare(tracker, destination, plan, data, control).await?;
-    drop(sources);
+    let mut prepared = prepare(tracker, destination, plan, data, control).await?;
+    prepared.source.keep_directory(sources);
     Ok(prepared)
 }
 
@@ -427,6 +429,35 @@ pub(crate) async fn purge(
         _directory: Some(source),
         _lease: lease,
     })
+}
+
+pub(crate) async fn finish_result_cache(recipe: Recipe, profile: String) {
+    match crate::utils::paths::deployd_data_dir() {
+        Ok(data) => finish_result_cache_in(data, recipe, profile).await,
+        Err(_) => eprintln!("deployd: transformation cache location is unavailable"),
+    }
+}
+
+pub(super) async fn finish_result_cache_in(
+    data: std::path::PathBuf,
+    recipe: Recipe,
+    profile: String,
+) {
+    let result = async {
+        let control = super::operation::Control::recovery();
+        let lease = super::operation::Lease::acquire(&control).await?;
+        tokio::task::spawn_blocking(move || {
+            let _lease = lease;
+            super::helper::cache::committed(&data, &recipe, &profile)
+        })
+        .await?
+    }
+    .await;
+    if let Err(_error) = result {
+        eprintln!(
+            "deployd: transformation cache cleanup will be retried after the next deployment"
+        );
+    }
 }
 
 #[cfg(test)]

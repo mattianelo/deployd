@@ -58,7 +58,17 @@ pub(super) async fn activate(
     } else {
         "Recovering deployment…"
     });
-    finish(history, game, journal, attempt).await
+    finish(history, game, journal, attempt).await?;
+    if let Some(deployment) = deployment
+        && let Some(snapshot) = &deployment.manifest.mele
+    {
+        crate::core::game::mass_effect::generations::finish_result_cache(
+            snapshot.recipe.clone(),
+            deployment.manifest.profile()?.0.to_owned(),
+        )
+        .await;
+    }
+    Ok(())
 }
 
 async fn validate(

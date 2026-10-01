@@ -204,7 +204,13 @@ pub(in crate::core::game::mass_effect) fn copy(
         .context("MELE deployment file has no parent")?;
     create_directory(parent)?;
     let mut temp = NamedTempFile::with_prefix_in(".deployd-mele-", parent)?;
-    transfer(&mut source, Some(temp.as_file_mut()), expected, control)?;
+    control.check()?;
+    if crate::utils::verified_files::try_clone(&source, temp.as_file_mut())? {
+        let hash = crate::utils::verified_files::hash(&mut source, || control.check(), |_, _| {})?;
+        ensure!(hash == expected.sha256, "MELE copy source changed");
+    } else {
+        transfer(&mut source, Some(temp.as_file_mut()), expected, control)?;
+    }
     temp.as_file().sync_all()?;
     temp.persist_noclobber(&destination)
         .map_err(|error| error.error)
@@ -215,7 +221,7 @@ pub(in crate::core::game::mass_effect) fn copy(
 
 pub(super) fn stage(
     game: &Path,
-    source: &Path,
+    source: &super::super::candidate::Sources,
     root: &Path,
     journal: &Journal,
     originals: Option<&Path>,
@@ -255,7 +261,7 @@ pub(super) fn stage(
         verify(game, path, None, control)?;
     }
     for (path, identity) in &desired {
-        verify(source, path, Some(identity), control)?;
+        source.verify(path, Some(identity), control)?;
         if !changed.contains(path) {
             verify(game, path, Some(identity), control)?;
         }
@@ -292,14 +298,17 @@ pub(super) fn stage(
             )?;
         }
         if let Some(after) = &operation.after {
-            let source = if desired.contains_key(operation.path.as_str()) {
-                source
+            let (source, relative) = if desired.contains_key(operation.path.as_str()) {
+                source.location(&operation.path)
             } else {
-                originals.context("Missing preserved original for MELE restoration")?
+                (
+                    originals.context("Missing preserved original for MELE restoration")?,
+                    operation.path.as_str(),
+                )
             };
             copy(
                 source,
-                &operation.path,
+                relative,
                 root,
                 &format!("new/{}", operation.path),
                 after,

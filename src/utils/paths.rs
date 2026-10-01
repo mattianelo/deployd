@@ -134,6 +134,10 @@ pub(crate) fn generation_store_in(cache: &Path, game_id: &str) -> Result<PathBuf
     Ok(cache.join("deployd-history").join(game_id))
 }
 
+pub(crate) fn mele_result_cache_in(data: &Path) -> PathBuf {
+    data.join("mele-results-v1")
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;

@@ -94,7 +94,7 @@ impl Corpus {
             backend,
             inputs: Inputs {
                 game: root.path().join("game"),
-                candidate: root.path().join("input"),
+                candidate: root.path().join("input").into(),
                 original: Some(root.path().join("original")),
             },
             staging: root.path().join("staging"),

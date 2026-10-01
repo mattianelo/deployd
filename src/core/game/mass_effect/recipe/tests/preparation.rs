@@ -194,6 +194,7 @@ async fn preparation_rejects_tampered_outputs_and_changed_condition_inputs() -> 
         .directory
         .path()
         .to_path_buf();
+    fs::create_dir_all(root.join("BioGame/CookedPCConsole"))?;
     fs::write(root.join(ENGINE), b"edited")?;
     assert!(fixture.apply_prepared(plan, None, None).await.is_err());
     assert!(!root.exists());
@@ -214,6 +215,7 @@ async fn preparation_rejects_tampered_outputs_and_changed_condition_inputs() -> 
         .directory
         .path()
         .to_path_buf();
+    fs::create_dir_all(root.join("BioGame"))?;
     fs::write(root.join("BioGame/Unexpected.pcc"), b"unexpected")?;
     assert!(fixture.apply_prepared(plan, None, None).await.is_err());
     assert!(!root.exists());

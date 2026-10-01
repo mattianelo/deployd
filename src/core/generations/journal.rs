@@ -701,6 +701,9 @@ impl Journal {
                             format!("Cannot apply deployment change to '{}'", path.display())
                         })?;
                     }
+                    if change.before != change.after {
+                        crate::utils::deployment_metrics::changed_file();
+                    }
                     ensure!(
                         inspect(&path, &control)? == change.after,
                         "Activation verification failed: {}",

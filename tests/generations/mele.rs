@@ -373,8 +373,15 @@ async fn mele_history_restores_complete_sources_and_reuses_outputs_without_a_hel
                 let mut changed = false;
                 for entry in walkdir::WalkDir::new(data.join("mele-rebuilds")) {
                     let entry = entry?;
-                    if entry.file_type().is_file() && entry.path().ends_with(ENGINE) {
-                        fs::write(entry.path(), b"damaged preview")?;
+                    if entry.file_type().is_dir()
+                        && entry
+                            .file_name()
+                            .to_str()
+                            .is_some_and(|name| name.starts_with("preparation-"))
+                    {
+                        let shadow = entry.path().join(ENGINE);
+                        fs::create_dir_all(shadow.parent().context("Missing preview parent")?)?;
+                        fs::write(shadow, b"damaged preview")?;
                         changed = true;
                     }
                 }

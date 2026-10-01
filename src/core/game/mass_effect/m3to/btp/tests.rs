@@ -1,4 +1,5 @@
 use std::fs;
+use std::path::Path;
 
 use super::*;
 use crate::core::game::mass_effect::operation::Control;
@@ -120,14 +121,24 @@ fn accepts_precompiled_overrides_and_revalidates_the_combined_staging_tree() -> 
                 file.relative = destination;
                 files.push(file);
             }
-            super::super::validate_staged(staged.path(), &files, game, &Control::recovery())?;
+            super::super::validate_staged(
+                &staged.path().into(),
+                &files,
+                game,
+                &Control::recovery(),
+            )?;
             let btm = staged
                 .path()
                 .join("BioGame/DLC/DLC_MOD_Test/BTPMetadata.btm");
             fs::write(btm, b"replaced")?;
             assert!(
-                super::super::validate_staged(staged.path(), &files, game, &Control::recovery())
-                    .is_err()
+                super::super::validate_staged(
+                    &staged.path().into(),
+                    &files,
+                    game,
+                    &Control::recovery()
+                )
+                .is_err()
             );
         }
     }
@@ -262,7 +273,7 @@ fn inspect_corpus(target: Target, inputs: [(&str, &str); 2]) -> Result<()> {
             if dlc == "DLC_MOD_ALOT" { 23433 } else { 23434 }
         );
         let textures = inspect(
-            &root,
+            &root.clone().into(),
             &source(format!("{dlc}/CombinedTextureOverrides.btp"), false)?,
             &source(format!("{dlc}/BTPMetadata.btm"), true)?,
             dlc,
@@ -287,7 +298,7 @@ fn cancellation_stops_texture_validation() -> Result<()> {
         .store(true, std::sync::atomic::Ordering::Release);
     assert!(
         super::super::inspect_controlled(
-            temp.path(),
+            &temp.path().into(),
             &plan.sources,
             &plan.files,
             Target::Le2,

@@ -99,3 +99,49 @@ fn full_verification_discards_previous_hashes_and_rejects_changes_during_reads()
     assert_eq!(content::inspect(&path, &control)?.size, 7);
     Ok(())
 }
+
+// @variants: both
+#[test]
+fn independent_copy_preserves_source_and_existing_destination_on_failure() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let source = temp.path().join("source");
+    let target = temp.path().join("target");
+    fs::write(&source, vec![7; 256 * 1024])?;
+    let control = Control::default();
+    let identity = content::inspect(&source, &control)?;
+    content::copy(&source, &target, &identity, 0o600, &control)?;
+    assert_ne!(fs::metadata(&source)?.ino(), fs::metadata(&target)?.ino());
+    assert_eq!(fs::metadata(&target)?.nlink(), 1);
+    fs::write(&target, b"independent")?;
+    assert_eq!(content::inspect(&source, &control)?, identity);
+    fs::write(&source, b"changed")?;
+    assert!(content::copy(&source, &target, &identity, 0o600, &control).is_err());
+    assert_eq!(fs::read(&target)?, b"independent");
+    control.cancelled.store(true, Ordering::Release);
+    assert!(content::copy(&source, &target, &identity, 0o600, &control).is_err());
+    assert_eq!(fs::read(&target)?, b"independent");
+    Ok(())
+}
+
+// @variants: both
+#[test]
+fn unsupported_and_cross_device_clones_fall_back_to_verified_copies() -> Result<()> {
+    let memory = tempfile::tempdir_in("/dev/shm")?;
+    let disk = tempfile::tempdir()?;
+    let source = memory.path().join("source");
+    fs::write(&source, b"independent content")?;
+    let control = Control::default();
+    let expected = content::inspect(&source, &control)?;
+    for root in [memory.path(), disk.path()] {
+        let target = root.join("target");
+        let before = metrics();
+        content::copy(&source, &target, &expected, 0o640, &control)?;
+        assert_eq!(content::inspect(&target, &control)?, expected);
+        assert_eq!(metrics().copied_bytes - before.copied_bytes, expected.size);
+        assert_eq!(metrics().cloned_bytes, before.cloned_bytes);
+        assert_eq!(fs::metadata(&target)?.permissions().mode() & 0o777, 0o640);
+        fs::write(&target, b"changed")?;
+        assert_eq!(content::inspect(&source, &control)?, expected);
+    }
+    Ok(())
+}

@@ -20,9 +20,28 @@ pub(crate) struct Operation {
     cancel: gtk::Button,
     cancelled: Arc<AtomicBool>,
     phase: Rc<Cell<Phase>>,
+    metrics: Arc<std::sync::Mutex<crate::utils::deployment_metrics::Recorder>>,
 }
 
 impl App {
+    pub(crate) fn deployment_timing(&mut self, phase: &str) {
+        let metrics = self
+            .ui
+            .deployment_metrics
+            .get_or_insert_with(crate::utils::deployment_metrics::Recorder::start);
+        if let Ok(mut metrics) = metrics.lock() {
+            metrics.phase(phase);
+        }
+    }
+
+    pub(crate) fn finish_deployment_timing(&mut self, heading: &str) {
+        if let Some(metrics) = self.ui.deployment_metrics.take()
+            && let Ok(mut metrics) = metrics.lock()
+        {
+            metrics.finish(heading);
+        }
+    }
+
     pub(crate) fn begin_integrity_check(&mut self) {
         self.deployment_phase("Checking deployment integrity…", true);
         if let Some(operation) = &self.ui.deployment_operation {
@@ -31,6 +50,7 @@ impl App {
     }
 
     pub(crate) fn deployment_phase(&mut self, phase: &str, cancellable: bool) {
+        self.deployment_timing(phase);
         if self
             .ui
             .deployment_operation
@@ -68,6 +88,12 @@ impl App {
             content.append(&cancel);
             dialog.set_extra_child(Some(&content));
             self.ui.deployment_operation = Some(Operation {
+                metrics: self
+                    .ui
+                    .deployment_metrics
+                    .as_ref()
+                    .cloned()
+                    .unwrap_or_else(crate::utils::deployment_metrics::Recorder::start),
                 id: self.shell.operation_id,
                 dialog,
                 progress,
@@ -77,6 +103,9 @@ impl App {
             });
         }
         if let Some(operation) = &self.ui.deployment_operation {
+            if let Ok(mut metrics) = operation.metrics.lock() {
+                metrics.phase(phase);
+            }
             operation.phase.set(if cancellable {
                 Phase::Preparing
             } else {
@@ -102,8 +131,12 @@ impl App {
         let id = operation.id;
         let sender = self.ui.notification_sender.clone();
         let phases = sender.clone();
+        let metrics = operation.metrics.clone();
         Control {
             phase: Arc::new(move |phase| {
+                if let Ok(mut metrics) = metrics.lock() {
+                    metrics.phase(phase);
+                }
                 let _ = phases.send(AppMsg::Shell(ShellMsg::DeploymentPhase { id, phase }));
             }),
             cancelled: operation.cancelled.clone(),
@@ -129,6 +162,9 @@ impl App {
 
     pub(crate) fn pause_deployment_dialog(&self) {
         if let Some(operation) = &self.ui.deployment_operation {
+            if let Ok(mut metrics) = operation.metrics.lock() {
+                metrics.phase("confirmation");
+            }
             operation.dialog.force_close();
         }
     }
@@ -137,6 +173,7 @@ impl App {
         if self.ui.deployment_operation.is_none() {
             self.deployment_phase(heading, false);
         }
+        self.finish_deployment_timing(heading);
         if let Some(operation) = &mut self.ui.deployment_operation {
             operation.phase.set(Phase::Finished);
             operation.progress.set_visible(false);

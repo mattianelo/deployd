@@ -45,7 +45,7 @@ impl Fixture {
         }
         let inputs = Inputs {
             game: root.path().join("game"),
-            candidate: root.path().join("candidate"),
+            candidate: root.path().join("candidate").into(),
             original: None,
         };
         let parent = root.path().join("staging");
@@ -408,7 +408,7 @@ fn uses_explicit_granted_roots_and_rejects_unavailable_access() -> Result<()> {
         .is_err()
     );
     let mut inputs = fixture.inputs.clone();
-    inputs.candidate = inputs.game.clone();
+    inputs.candidate = inputs.game.clone().into();
     assert!(
         prepare(
             &fixture.backend,
@@ -636,4 +636,229 @@ fn confines_content_library_search_to_the_running_snap() -> Result<()> {
         assert!(!paths.iter().any(|path| path.starts_with(other.path())));
     }
     Ok(())
+}
+
+// @variants: both
+#[tokio::test]
+async fn cached_helper_child() -> Result<()> {
+    let Some(root) = std::env::var_os("DEPLOYD_TEST_RESULT_CACHE") else {
+        return Ok(());
+    };
+    let root = PathBuf::from(root);
+    let candidate = root.join("candidate");
+    let texture = std::env::var_os("DEPLOYD_TEST_TEXTURE_CACHE").is_some();
+    let job = if texture {
+        texture_job(&candidate)?
+    } else {
+        Job::Tlk {
+            targets: vec![identity(&candidate, "CookedPCConsole/Example.pcc")?],
+            changes: vec![TlkChange {
+                target: "CookedPCConsole/Example.pcc".into(),
+                export: "Example.tlk".into(),
+                strings: vec![],
+            }],
+        }
+    };
+    let output = transform(
+        Backend {
+            runtime: root.join("backend/runtime"),
+            assembly: root.join("backend/Deployd.Mele.dll"),
+            native_library: root.join("backend/libdeployd_oodle.so"),
+        },
+        Inputs {
+            game: root.join("game"),
+            candidate: candidate.into(),
+            original: None,
+        },
+        root.join("staging"),
+        job,
+        Arc::new(AtomicBool::new(false)),
+        Arc::new(|_, _| {}),
+    )
+    .await?;
+    if texture {
+        for file in &output.files {
+            assert_eq!(
+                fs::read(output.root().join(&file.path))?,
+                b"compiled texture"
+            );
+        }
+    } else {
+        assert_eq!(
+            fs::read(output.root().join("CookedPCConsole/Example.pcc"))?,
+            b"transformed"
+        );
+    }
+    Ok(())
+}
+
+// @variants: both
+#[tokio::test]
+async fn transformations_reuse_results_in_a_fresh_process_and_rebuild_changed_inputs() -> Result<()>
+{
+    let body = format!(
+        "with (pathlib.Path(sys.argv[0]).parent.parent / 'calls').open('a') as calls: calls.write('run\\n')\n{SUCCESS}"
+    );
+    let mut fixture = Fixture::new(&body)?;
+    fs::create_dir_all(fixture.inputs.game.join("Binaries/Win64"))?;
+    fs::write(
+        fixture
+            .inputs
+            .game
+            .join("Binaries/Win64/oo2core_8_win64.dll"),
+        b"fixture codec",
+    )?;
+    drop(fixture.run().await?);
+    let before = crate::utils::verified_files::metrics();
+    drop(fixture.run().await?);
+    assert_eq!(
+        crate::utils::verified_files::metrics().copied_bytes,
+        before.copied_bytes
+    );
+    let executable = std::env::current_exe()?;
+    let root = fixture.root.path().to_path_buf();
+    let status = tokio::task::spawn_blocking(move || {
+        std::process::Command::new(executable)
+            .arg("--exact")
+            .arg("core::game::mass_effect::helper::tests::cached_helper_child")
+            .env("DEPLOYD_TEST_RESULT_CACHE", root)
+            .status()
+    })
+    .await??;
+    assert!(status.success());
+    assert_eq!(
+        fs::read_to_string(fixture.root.path().join("calls"))?,
+        "run\n"
+    );
+    let path = fixture.inputs.candidate.join("CookedPCConsole/Example.pcc");
+    fs::write(&path, b"modified")?;
+    assert!(fixture.run().await.is_err());
+    if let Job::Tlk { targets, .. } = &mut fixture.job {
+        targets[0] = identity(&fixture.inputs.candidate, "CookedPCConsole/Example.pcc")?;
+    }
+    drop(fixture.run().await?);
+    assert_eq!(
+        fs::read_to_string(fixture.root.path().join("calls"))?,
+        "run\nrun\n"
+    );
+    fs::write(&fixture.backend.native_library, b"updated native backend")?;
+    drop(fixture.run().await?);
+    assert_eq!(
+        fs::read_to_string(fixture.root.path().join("calls"))?,
+        "run\nrun\nrun\n"
+    );
+    Ok(())
+}
+
+// @variants: both
+#[tokio::test]
+async fn unrelated_mod_toggles_leave_texture_results_reusable() -> Result<()> {
+    let body = r#"
+with (pathlib.Path(sys.argv[0]).parent.parent / 'calls').open('a') as calls: calls.write('texture\n')
+outputs = []
+for name in request['outputs']:
+ output = pathlib.Path(request['output_root']) / name
+ output.parent.mkdir(parents=True, exist_ok=True)
+ output.write_bytes(b'compiled texture')
+ outputs.append(dict(path=name, size=16, sha256=hashlib.sha256(b'compiled texture').hexdigest()))
+print(json.dumps(dict(protocol=1, type='progress', completed=1, total=1)), flush=True)
+print(json.dumps(dict(protocol=1, type='complete', outputs=outputs)), flush=True)
+"#;
+    let mut fixture = Fixture::new(body)?;
+    let runtime = fs::read_to_string(&fixture.backend.runtime)?.replace("le1-tlk", "mele-m3to");
+    fs::write(&fixture.backend.runtime, runtime)?;
+    fs::create_dir_all(fixture.inputs.game.join("Binaries/Win64"))?;
+    fs::write(
+        fixture
+            .inputs
+            .game
+            .join("Binaries/Win64/oo2core_8_win64.dll"),
+        b"fixture codec",
+    )?;
+    let manifest = "DLC/DLC_MOD_Test/CookedPCConsole/TextureOverride-Test.m3to";
+    let package = "DLC/DLC_MOD_Test/CookedPCConsole/TO_Test.pcc";
+    fs::create_dir_all(
+        fixture
+            .inputs
+            .candidate
+            .join("DLC/DLC_MOD_Test/CookedPCConsole"),
+    )?;
+    fs::write(fixture.inputs.candidate.join(manifest), b"texture manifest")?;
+    fs::write(fixture.inputs.candidate.join(package), b"texture input")?;
+    fixture.job = texture_job(&fixture.inputs.candidate)?;
+    let first = fixture.run().await?;
+    let original: Vec<_> = first.files.iter().map(|file| file.sha256.clone()).collect();
+    drop(first);
+    for enabled in [true, false, true] {
+        let unrelated = fixture.inputs.candidate.join("CookedPCConsole/Example.pcc");
+        if enabled {
+            fs::write(&unrelated, b"appearance mod")?;
+        } else {
+            fs::remove_file(&unrelated)?;
+        }
+        crate::utils::verified_files::invalidate()?;
+        let before = crate::utils::verified_files::metrics();
+        let output = fixture.run().await?;
+        assert_eq!(
+            output
+                .files
+                .iter()
+                .map(|file| file.sha256.clone())
+                .collect::<Vec<_>>(),
+            original
+        );
+        assert_eq!(
+            crate::utils::verified_files::metrics().copied_bytes,
+            before.copied_bytes
+        );
+    }
+    let executable = std::env::current_exe()?;
+    let root = fixture.root.path().to_path_buf();
+    let status = tokio::task::spawn_blocking(move || {
+        std::process::Command::new(executable)
+            .arg("--exact")
+            .arg("core::game::mass_effect::helper::tests::cached_helper_child")
+            .env("DEPLOYD_TEST_RESULT_CACHE", root)
+            .env("DEPLOYD_TEST_TEXTURE_CACHE", "1")
+            .status()
+    })
+    .await??;
+    assert!(status.success());
+    assert_eq!(
+        fs::read_to_string(fixture.root.path().join("calls"))?,
+        "texture\n"
+    );
+    fs::remove_dir_all(crate::utils::paths::mele_result_cache_in(
+        fixture.root.path(),
+    ))?;
+    let clean = fixture.run().await?;
+    assert_eq!(
+        clean
+            .files
+            .iter()
+            .map(|file| file.sha256.clone())
+            .collect::<Vec<_>>(),
+        original
+    );
+    assert_eq!(
+        fs::read_to_string(fixture.root.path().join("calls"))?,
+        "texture\ntexture\n"
+    );
+    Ok(())
+}
+
+fn texture_job(candidate: &Path) -> Result<Job> {
+    let manifest = "DLC/DLC_MOD_Test/CookedPCConsole/TextureOverride-Test.m3to";
+    let package = "DLC/DLC_MOD_Test/CookedPCConsole/TO_Test.pcc";
+    Ok(Job::Texture {
+        game: super::super::Target::Le1,
+        dlc: "DLC_MOD_Test".into(),
+        manifests: vec![identity(candidate, manifest)?],
+        packages: vec![identity(candidate, package)?],
+        outputs: vec![
+            "DLC/DLC_MOD_Test/CombinedTextureOverrides.btp".into(),
+            "DLC/DLC_MOD_Test/BTPMetadata.btm".into(),
+        ],
+        textures: 1,
+    })
 }

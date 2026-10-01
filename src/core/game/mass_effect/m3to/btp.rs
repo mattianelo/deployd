@@ -2,7 +2,6 @@ use std::collections::BTreeSet;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
-use std::path::Path;
 
 use anyhow::{Context, Result, ensure};
 use sha2::{Digest, Sha256};
@@ -10,11 +9,11 @@ use sha2::{Digest, Sha256};
 use super::super::Target;
 use super::super::package::SourceFile;
 
-fn open(root: &Path, source: &SourceFile) -> Result<File> {
+fn open(root: &super::super::candidate::Sources, source: &SourceFile) -> Result<File> {
     let file = File::options()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(root.join(&source.relative))?;
+        .open(root.resolve(&source.relative))?;
     let metadata = file.metadata()?;
     ensure!(
         metadata.is_file() && metadata.nlink() == 1 && metadata.len() == source.size,
@@ -74,7 +73,7 @@ fn target_hash(target: Target, dlc: &str) -> u32 {
 }
 
 pub(super) fn inspect(
-    root: &Path,
+    root: &super::super::candidate::Sources,
     package: &SourceFile,
     metadata: &SourceFile,
     dlc: &str,

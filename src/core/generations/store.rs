@@ -200,7 +200,7 @@ impl Store {
             .write(true)
             .create_new(true)
             .open(&path)?;
-        let identity = content::transfer(source, &mut file, control)?;
+        let identity = content::copy_to(source, &mut file, control)?;
         ensure!(
             expected.is_none_or(|expected| *expected == identity),
             "Source no longer matches prepared content: {}",

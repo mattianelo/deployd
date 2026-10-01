@@ -303,7 +303,7 @@ impl Fixture {
             repair_components: false,
             previous: previous.map(|state| state.generation.clone()),
             profile: self.profile.clone(),
-            source,
+            source: source.into(),
             files,
             recipe: None,
         })

@@ -17,6 +17,7 @@ use super::operation::{Control, Lease};
 use protocol::{Capabilities, HelperError, Transcript};
 pub(crate) use protocol::{FileIdentity, Job};
 
+pub(super) mod cache;
 mod dlc_jobs;
 mod files;
 pub(super) mod jobs;
@@ -33,18 +34,30 @@ pub(crate) struct Backend {
 #[derive(Clone)]
 pub(crate) struct Inputs {
     pub(crate) game: PathBuf,
-    pub(crate) candidate: PathBuf,
+    pub(crate) candidate: super::candidate::Sources,
     pub(crate) original: Option<PathBuf>,
 }
 
+enum OutputStorage {
+    Temporary(TempDir),
+    Cached {
+        root: PathBuf,
+        _pin: Arc<cache::Pin>,
+    },
+}
+
 pub(crate) struct ValidatedOutput {
-    stage: TempDir,
+    storage: OutputStorage,
+    pub(super) cache_key: Option<String>,
     pub(crate) files: Vec<FileIdentity>,
 }
 
 impl ValidatedOutput {
     pub(crate) fn root(&self) -> PathBuf {
-        self.stage.path().join("output")
+        match &self.storage {
+            OutputStorage::Temporary(stage) => stage.path().join("output"),
+            OutputStorage::Cached { root, .. } => root.join("output"),
+        }
     }
 }
 
@@ -105,17 +118,43 @@ pub(super) async fn transform_with_lease(
     _lease: Arc<Lease>,
 ) -> Result<ValidatedOutput> {
     control.check()?;
-    let prepared = {
+    let cache_parent = staging_parent.clone();
+    let (prepared, ticket, cached) = {
         let backend = backend.clone();
         let inputs = inputs.clone();
         let job = job.clone();
         let control = control.clone();
+        let lease = _lease.clone();
         tokio::task::spawn_blocking(move || {
-            prepare(&backend, &inputs, &staging_parent, &job, &control)
+            let _lease = lease;
+            let stage = prepare(&backend, &inputs, &staging_parent, &job, &control)?;
+            let ticket = cache::ticket(&backend, &inputs, &staging_parent, &job, &control)
+                .ok()
+                .flatten();
+            control.check()?;
+            let cached = ticket
+                .as_ref()
+                .and_then(|ticket| ticket.load(&job, &control).ok());
+            control.check()?;
+            if cached.is_none() {
+                write_request(stage.path(), &inputs, &job, &control)?;
+            } else {
+                verify_inputs(&inputs, &job, &control)?;
+                ensure!(
+                    cache::ticket(&backend, &inputs, &staging_parent, &job, &control)? == ticket,
+                    "MELE backend or game codec changed during cache verification; retry preparation"
+                );
+            }
+            Ok::<_, anyhow::Error>((stage, ticket, cached))
         })
         .await
         .context("MELE staging preparation failed")??
     };
+    if let Some(cached) = cached {
+        crate::utils::deployment_metrics::cache_hit();
+        return Ok(cached);
+    }
+    crate::utils::deployment_metrics::helper_run();
     let mut command = backend.command(prepared.path())?;
     command.arg("capabilities");
     let capabilities = process(
@@ -143,6 +182,7 @@ pub(super) async fn transform_with_lease(
     let outputs: Vec<FileIdentity> = serde_json::from_slice(&manifest)?;
     let expected = job.outputs();
     tokio::task::spawn_blocking(move || {
+        let _lease = _lease;
         control.check()?;
         files::outputs(
             &prepared.path().join("output"),
@@ -152,11 +192,29 @@ pub(super) async fn transform_with_lease(
             &control,
         )?;
         verify_inputs(&inputs, &job, &control)?;
+        let staged_inputs = prepared.path().join("input");
+        if staged_inputs.try_exists()? {
+            for input in job.inputs() {
+                files::identity(&staged_inputs, input, &control)?;
+            }
+        }
         control.check()?;
-        Ok(ValidatedOutput {
-            stage: prepared,
+        let output = ValidatedOutput {
+            storage: OutputStorage::Temporary(prepared),
+            cache_key: None,
             files: outputs,
-        })
+        };
+        if ticket.is_some() {
+            ensure!(
+                cache::ticket(&backend, &inputs, &cache_parent, &job, &control)? == ticket,
+                "MELE backend or game codec changed during transformation; retry preparation"
+            );
+        }
+        let cached = ticket
+            .as_ref()
+            .and_then(|ticket| ticket.publish(&output, &job, &control).ok());
+        control.check()?;
+        Ok(cached.unwrap_or(output))
     })
     .await
     .context("MELE output verification failed")?
@@ -255,13 +313,13 @@ fn prepare(
     backend.validate()?;
     files::directory(parent)?;
     files::directory(&inputs.game)?;
-    files::directory(&inputs.candidate)?;
+    super::journal::files::create_directory(&inputs.candidate)?;
     ensure!(
         !overlaps(&inputs.game, &inputs.candidate),
         "Helper candidates must be separate copies outside the game"
     );
-    let roots = [&inputs.game, &inputs.candidate];
-    for root in roots.into_iter().chain(inputs.original.as_ref()) {
+    let roots = [inputs.game.as_path(), inputs.candidate.as_ref()];
+    for root in roots.into_iter().chain(inputs.original.as_deref()) {
         files::directory(root)?;
         for binary in [&backend.runtime, &backend.assembly, &backend.native_library] {
             ensure!(
@@ -299,6 +357,35 @@ fn prepare(
         .tempdir_in(parent)?;
     fs::create_dir(stage.path().join("output"))?;
     fs::create_dir(stage.path().join("temporary"))?;
+    Ok(stage)
+}
+
+fn write_request(stage: &Path, inputs: &Inputs, job: &Job, control: &Control) -> Result<()> {
+    let candidate = if job
+        .inputs()
+        .iter()
+        .any(|file| inputs.candidate.is_referenced(&file.path))
+    {
+        let candidate = stage.join("input");
+        super::journal::files::create_directory(&candidate)?;
+        for input in job.inputs() {
+            let (root, relative) = inputs.candidate.location(&input.path);
+            super::journal::files::copy(
+                root,
+                relative,
+                &candidate,
+                &input.path,
+                &super::journal::Identity {
+                    size: input.size,
+                    sha256: input.sha256.clone(),
+                },
+                control,
+            )?;
+        }
+        candidate
+    } else {
+        inputs.candidate.to_path_buf()
+    };
     #[derive(Serialize)]
     struct Request<'a> {
         protocol: u32,
@@ -313,17 +400,17 @@ fn prepare(
     let bytes = serde_json::to_vec(&Request {
         protocol: 1,
         game_root: &inputs.game,
-        input_root: &inputs.candidate,
+        input_root: &candidate,
         original_root: inputs.original.as_deref(),
-        output_root: stage.path().join("output"),
+        output_root: stage.join("output"),
         job,
     })?;
     ensure!(
         bytes.len() <= 4 * 1024 * 1024,
         "MELE request exceeds its size limit"
     );
-    fs::write(stage.path().join("request.json"), bytes)?;
-    Ok(stage)
+    fs::write(stage.join("request.json"), bytes)?;
+    Ok(())
 }
 
 fn tlk_target(path: &str) -> bool {
@@ -362,7 +449,14 @@ fn verify_inputs(inputs: &Inputs, job: &Job, control: &Control) -> Result<()> {
         files::identity(root, file, control)
     };
     for input in job.inputs() {
-        check(&inputs.candidate, input)?;
+        let (root, relative) = inputs.candidate.location(&input.path);
+        check(
+            root,
+            &FileIdentity {
+                path: relative.to_owned(),
+                ..input.clone()
+            },
+        )?;
     }
     for original in job.originals() {
         check(

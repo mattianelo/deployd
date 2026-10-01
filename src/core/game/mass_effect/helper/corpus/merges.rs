@@ -243,15 +243,18 @@ async fn supervises_real_community_patch_m3m_prepared_in_rust() -> Result<()> {
     ] {
         assert_eq!(jobs.iter().filter(|job| job.kind == kind).count(), count);
     }
-    corpus.inputs.candidate = prepared.root().to_path_buf();
+    corpus.inputs.candidate = prepared.root().into();
     let result = corpus.run(prepared.job.clone()).await;
     corpus.verify()?;
     let output = result?;
     record(&corpus, &output, "merged")?;
     let verification = corpus._root.path().join("verification");
     fs::create_dir(&verification)?;
-    let mut request: serde_json::Value =
-        serde_json::from_slice(&fs::read(output.stage.path().join("request.json"))?)?;
+    let mut request = serde_json::to_value(&prepared.job)?;
+    request["protocol"] = 1.into();
+    request["game_root"] = serde_json::to_value(&corpus.inputs.game)?;
+    request["input_root"] = serde_json::to_value(prepared.root())?;
+    request["original_root"] = serde_json::to_value(&corpus.inputs.original)?;
     request["output_root"] = serde_json::to_value(&verification)?;
     fs::write(
         corpus._root.path().join("semantic-request.json"),
@@ -278,11 +281,11 @@ async fn supervises_real_community_patch_m3m_prepared_in_rust() -> Result<()> {
             )?;
         }
     }
-    corpus.inputs.candidate = previous;
+    corpus.inputs.candidate = previous.into();
     let again = corpus.run(repeated).await?;
     record(&corpus, &again, "reapplied")?;
     reference(&corpus, "--community-patch-m3m").await?;
-    corpus.inputs.candidate = prepared.root().to_path_buf();
+    corpus.inputs.candidate = prepared.root().into();
     let mut failed = prepared.job.clone();
     if let Job::M3m { jobs, .. } = &mut failed {
         jobs.last_mut().context("Missing final job")?.entry = "MissingExport".into();
@@ -359,7 +362,7 @@ async fn supervises_supplied_le3_options_scaling_merge() -> Result<()> {
         Arc::new(AtomicBool::new(false)),
     )
     .await?;
-    corpus.inputs.candidate = prepared.root().to_path_buf();
+    corpus.inputs.candidate = prepared.root().into();
     let result = corpus.run(prepared.job.clone()).await;
     corpus.verify()?;
     let output = result?;
@@ -369,8 +372,11 @@ async fn supervises_supplied_le3_options_scaling_merge() -> Result<()> {
     record(&corpus, &output, "merged")?;
     let verification = corpus._root.path().join("verification");
     fs::create_dir(&verification)?;
-    let mut request: serde_json::Value =
-        serde_json::from_slice(&fs::read(output.stage.path().join("request.json"))?)?;
+    let mut request = serde_json::to_value(&prepared.job)?;
+    request["protocol"] = 1.into();
+    request["game_root"] = serde_json::to_value(&corpus.inputs.game)?;
+    request["input_root"] = serde_json::to_value(prepared.root())?;
+    request["original_root"] = serde_json::to_value(&corpus.inputs.original)?;
     request["output_root"] = serde_json::to_value(&verification)?;
     fs::write(
         corpus._root.path().join("semantic-request.json"),
@@ -390,7 +396,7 @@ async fn supervises_supplied_le3_options_scaling_merge() -> Result<()> {
         output.root().join(specification.0),
         previous.join(specification.0),
     )?;
-    corpus.inputs.candidate = previous;
+    corpus.inputs.candidate = previous.into();
     let again = corpus.run(repeated).await?;
     record(&corpus, &again, "reapplied")?;
     reference(&corpus, "--community-patch-m3m").await?;

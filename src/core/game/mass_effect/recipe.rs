@@ -507,13 +507,19 @@ pub(super) async fn deploy_in(
             tracker,
             game,
             built.deployment,
-            data,
+            data.clone(),
             control,
             built.progress,
             built.lease,
         )
         .await;
         drop(built.directory);
+        if let Ok(state) = &result
+            && let Some(recipe) = &state.recipe
+        {
+            super::generations::finish_result_cache_in(data, recipe.clone(), state.profile.clone())
+                .await;
+        }
         result
     })
     .await
@@ -761,7 +767,7 @@ pub(super) async fn prepare_with_control(
                 sources::verify(stored, &control)?;
             }
             cached.verify_outputs(&control)?;
-            plan.installation.steps.clear();
+            plan.installation.steps_prepared = true;
             Ok::<_, anyhow::Error>((cached.prepared, plan))
         })
         .await
@@ -811,7 +817,7 @@ pub(super) async fn prepare_with_control(
         let control = control.clone();
         tokio::task::spawn_blocking(move || {
             super::m3to::validate_staged(
-                prepared.directory.path(),
+                &prepared.sources,
                 &prepared.files,
                 prepared.recipe.target,
                 &control,
@@ -829,6 +835,14 @@ pub(super) async fn prepare_with_control(
         progress
     };
     preparation::verify_inputs(game.path.clone(), condition_inputs, control.clone()).await?;
+    let cached_data = data.clone();
+    let cached_recipe = prepared.recipe.clone();
+    let cached_keys = prepared.sources.cache_keys();
+    tokio::task::spawn_blocking(move || {
+        if super::helper::cache::prepared(&cached_data, &cached_recipe, cached_keys).is_err() {
+            eprintln!("deployd: transformation cache usage could not be saved; deployment remains available");
+        }
+    }).await.context("MELE cache bookkeeping worker failed")?;
     Ok(Built {
         deployment: journal::Deployment {
             removals: prepared.removals,
@@ -836,7 +850,7 @@ pub(super) async fn prepare_with_control(
             repair_components,
             previous,
             profile,
-            source: prepared.directory.path().to_path_buf(),
+            source: prepared.sources,
             files: prepared.files,
             recipe: Some(prepared.recipe),
         },
@@ -848,6 +862,7 @@ pub(super) async fn prepare_with_control(
 }
 
 struct Prepared {
+    sources: super::candidate::Sources,
     removals: super::removal::Removals,
     directory: TempDir,
     files: Vec<SourceFile>,
@@ -868,6 +883,7 @@ fn stage(plan: &ValidatedRecipe, data: &std::path::Path, control: &Control) -> R
         .iter()
         .map(|(id, stored)| (id.as_str(), stored.root.as_path()))
         .collect();
+    let mut candidate: super::candidate::Sources = directory.path().to_path_buf().into();
     let mut files = Vec::new();
     let mappings = if !plan.merges.generated.is_empty() {
         &[][..]
@@ -879,12 +895,11 @@ fn stage(plan: &ValidatedRecipe, data: &std::path::Path, control: &Control) -> R
         let source = sources
             .get(file.package.as_str())
             .context("Missing MELE source package")?;
-        journal::files::copy(
-            source,
-            &file.source,
-            directory.path(),
-            &file.destination.relative,
-            &Identity {
+        candidate.insert(
+            file.destination.relative.clone(),
+            (*source).to_path_buf(),
+            file.source.clone(),
+            Identity {
                 size: file.destination.size,
                 sha256: file.destination.sha256.clone(),
             },
@@ -897,6 +912,7 @@ fn stage(plan: &ValidatedRecipe, data: &std::path::Path, control: &Control) -> R
     }
     control.check()?;
     Ok(Prepared {
+        sources: candidate,
         removals: plan.installation.removals.clone(),
         directory,
         files,

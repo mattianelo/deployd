@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+- MELE now caches verified transformation results across restarts and avoids
+  copying unchanged package files into preparation, reducing repeated work when
+  enabling, disabling or reordering mods. Older unused cached results are cleaned
+  automatically; missing or damaged results are rebuilt.
+- Deployment copies use copy-on-write on supported filesystems, with ordinary
+  copying as a fallback. Retained files remain independent of live game files.
+- Added bounded local deployment timings that separate processing from time
+  spent waiting for confirmation, helping diagnose slow deployments.
+
 - Generations and MELE verification now reuse file hashes within the application
   session when file identity and metadata remain unchanged, reducing repeated
   whole-installation reads during redeployment. Changed files are rehashed;

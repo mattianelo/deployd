@@ -1,11 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
-use std::io::Read;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Component, Path};
 
 use anyhow::{Context, Result, ensure};
-use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
 use super::Control;
@@ -75,25 +73,26 @@ pub(super) fn identity(root: &Path, input: &FileIdentity, control: &Control) -> 
             && opened.dev() == metadata.dev(),
         "Helper file changed before verification"
     );
-    let mut hash = Sha256::new();
-    let mut buffer = [0_u8; 65536];
-    let mut remaining = input.size;
-    while remaining > 0 {
-        control.check()?;
-        let limit = remaining.min(buffer.len() as u64) as usize;
-        let count = file.read(&mut buffer[..limit])?;
-        ensure!(count > 0, "Helper file was truncated");
-        hash.update(&buffer[..count]);
-        remaining -= count as u64;
-    }
+    let hash = crate::utils::verified_files::hash(&mut file, || control.check(), |_, _| {})?;
+    let current = fs::symlink_metadata(&path)?;
+    let after = file.metadata()?;
     ensure!(
-        file.read(&mut buffer[..1])? == 0,
-        "Helper file grew during verification"
+        current.is_file()
+            && current.nlink() == 1
+            && current.dev() == opened.dev()
+            && current.ino() == opened.ino()
+            && current.len() == opened.len()
+            && current.ctime() == opened.ctime()
+            && current.ctime_nsec() == opened.ctime_nsec()
+            && after.ctime() == opened.ctime()
+            && after.ctime_nsec() == opened.ctime_nsec(),
+        "Helper file changed during verification"
     );
     ensure!(
-        format!("{:x}", hash.finalize()).eq_ignore_ascii_case(&input.sha256),
+        hash.eq_ignore_ascii_case(&input.sha256),
         "Helper file hash does not match its identity"
     );
+    control.check()?;
     Ok(())
 }
 

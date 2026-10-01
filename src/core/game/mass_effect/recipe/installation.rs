@@ -32,6 +32,8 @@ pub(crate) struct SkippedTlk {
 
 #[derive(Default)]
 pub(super) struct Installation {
+    pub(super) steps_prepared: bool,
+    pub(super) defer_textures: bool,
     pub(super) removals: super::super::removal::Removals,
     pub(super) dlc: BTreeSet<String>,
     pub(super) versions: BTreeMap<String, String>,

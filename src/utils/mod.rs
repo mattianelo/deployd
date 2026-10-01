@@ -1,3 +1,4 @@
+pub(crate) mod deployment_metrics;
 pub mod fomod_resolver;
 pub(crate) mod location;
 pub mod nxm_handler;

@@ -157,6 +157,7 @@ fn mutation_lock() -> std::sync::Arc<tokio::sync::Mutex<()>> {
 }
 
 mod alternates;
+mod candidate;
 mod dependency;
 #[cfg_attr(
     not(test),
