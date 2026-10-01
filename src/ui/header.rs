@@ -2,6 +2,8 @@ use adw::prelude::*;
 use gtk::prelude::*;
 use relm4::prelude::*;
 
+use crate::models::profile::SaveMode;
+
 pub(crate) const DEPLOY_SELECTION_TOOLTIP: &str =
     "Finish Select Mode with Done before deploying changes";
 
@@ -17,6 +19,10 @@ fn deploy_button_tooltip(selection_active: bool) -> &'static str {
     }
 }
 
+fn save_sync_visible(supported: bool, mode: &SaveMode) -> bool {
+    supported && *mode == SaveMode::ProfileSpecific
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct HeaderState {
     pub(crate) mele: bool,
@@ -26,6 +32,7 @@ pub(crate) struct HeaderState {
     pub(crate) initializing: bool,
     pub(crate) profile_count: usize,
     pub(crate) save_mode_label: String,
+    pub(crate) save_mode: SaveMode,
     pub(crate) game_has_save_management: bool,
     pub(crate) appearance_presets: bool,
     pub(crate) can_sync_saves: bool,
@@ -311,7 +318,7 @@ impl SimpleComponent for Header {
                         sync_saves_btn -> gtk::Button {
                             set_icon_name: "view-refresh-symbolic",
                             #[watch]
-                            set_visible: model.state.game_has_save_management && model.state.save_mode_label.starts_with("Saves: Profile"),
+                            set_visible: save_sync_visible(model.state.game_has_save_management, &model.state.save_mode),
                             #[watch]
                             set_sensitive: !model.state.is_busy && model.state.can_sync_saves,
                             #[watch]
@@ -731,6 +738,15 @@ impl SimpleComponent for Header {
 #[cfg(test)]
 mod tests {
     use super::{DEPLOY_SELECTION_TOOLTIP, deploy_button_sensitive, deploy_button_tooltip};
+
+    // @variants: both
+    #[test]
+    fn profile_save_sync_is_available_independently_of_the_scope_label() {
+        use super::{SaveMode, save_sync_visible};
+        assert!(save_sync_visible(true, &SaveMode::ProfileSpecific));
+        assert!(!save_sync_visible(true, &SaveMode::Global));
+        assert!(!save_sync_visible(false, &SaveMode::ProfileSpecific));
+    }
 
     #[test]
     fn selection_mode_blocks_deployment() {

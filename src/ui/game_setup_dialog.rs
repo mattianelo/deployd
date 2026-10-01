@@ -37,6 +37,7 @@ pub struct GameSetupDialog {
     new_game_type_idx: usize,
     new_path: Option<PathBuf>,
     new_prefix: Option<PathBuf>,
+    prefix_picker_open: bool,
     new_path_entry: adw::EntryRow,
     new_prefix_entry: adw::EntryRow,
     add_btn: gtk::Button,
@@ -73,6 +74,7 @@ pub enum GameSetupMsg {
     NewPathChosen(PathBuf, Option<PathBuf>),
     /// Browse for the new game's wine prefix.
     BrowseNewPrefix,
+    PrefixPickerClosed,
     NewPrefixChosen(PathBuf, Option<PathBuf>),
     /// Commit the pending "add" form.
     ConfirmAdd,
@@ -199,7 +201,7 @@ impl GameSetupDialog {
         let prefix_btn = gtk::Button::from_icon_name("folder-symbolic");
         prefix_btn.set_valign(gtk::Align::Center);
         prefix_btn.add_css_class("flat");
-        prefix_btn.set_tooltip_text(Some("Select the Wine prefix or its containing folder…"));
+        prefix_btn.set_tooltip_text(Some("Select the folder containing your Wine prefixes…"));
         {
             let input = sender.input_sender().clone();
             prefix_btn.connect_clicked(move |_| {
@@ -477,7 +479,7 @@ impl Component for GameSetupDialog {
 
         let prefix_browse_btn = gtk::Button::from_icon_name("folder-symbolic");
         prefix_browse_btn
-            .set_tooltip_text(Some("Select the Wine prefix or its containing folder…"));
+            .set_tooltip_text(Some("Select the folder containing your Wine prefixes…"));
         prefix_browse_btn.set_valign(gtk::Align::Center);
         prefix_browse_btn.add_css_class("flat");
         {
@@ -545,6 +547,7 @@ impl Component for GameSetupDialog {
             new_game_type_idx: 0,
             new_path: None,
             new_prefix: None,
+            prefix_picker_open: false,
             new_path_entry,
             new_prefix_entry,
             add_btn,
@@ -674,10 +677,15 @@ impl Component for GameSetupDialog {
             }
 
             GameSetupMsg::BrowsePrefix(idx) => {
+                if std::mem::replace(&mut self.prefix_picker_open, true) {
+                    return;
+                }
                 let input = sender.input_sender().clone();
                 let window = root.clone();
                 gtk::glib::spawn_future_local(async move {
-                    match crate::ui::prefix_picker::select(&window).await {
+                    let result = crate::ui::prefix_picker::select(&window).await;
+                    let _ = input.send(GameSetupMsg::PrefixPickerClosed);
+                    match result {
                         Ok(Some(location)) => {
                             let _ = input.send(GameSetupMsg::PrefixChosen(
                                 idx,
@@ -813,11 +821,19 @@ impl Component for GameSetupDialog {
                 self.update_add_btn();
             }
 
+            GameSetupMsg::PrefixPickerClosed => {
+                self.prefix_picker_open = false;
+            }
             GameSetupMsg::BrowseNewPrefix => {
+                if std::mem::replace(&mut self.prefix_picker_open, true) {
+                    return;
+                }
                 let input = sender.input_sender().clone();
                 let window = root.clone();
                 gtk::glib::spawn_future_local(async move {
-                    match crate::ui::prefix_picker::select(&window).await {
+                    let result = crate::ui::prefix_picker::select(&window).await;
+                    let _ = input.send(GameSetupMsg::PrefixPickerClosed);
+                    match result {
                         Ok(Some(location)) => {
                             let _ = input.send(GameSetupMsg::NewPrefixChosen(
                                 location.root,

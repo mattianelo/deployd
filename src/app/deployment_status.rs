@@ -9,7 +9,7 @@ pub(crate) struct Update {
     request: u64,
     game: String,
     profile: String,
-    result: Result<Status, String>,
+    result: Result<(Status, Option<std::time::SystemTime>), String>,
 }
 
 impl App {
@@ -57,9 +57,18 @@ impl App {
             let _lease = crate::core::location_recovery::activity_lock()
                 .read_owned()
                 .await;
-            let result = status::read(&tracker, &game, &profile, &cache)
-                .await
-                .map_err(|error| format!("{error:#}"));
+            let result = async {
+                let status = status::read(&tracker, &game, &profile, &cache).await?;
+                let game_id = game.id.clone();
+                let profile_id = profile.clone();
+                let synced = tokio::task::spawn_blocking(move || {
+                    crate::core::save_manager::last_save_sync_time(&game_id, &profile_id)
+                })
+                .await?;
+                anyhow::Ok((status, synced))
+            }
+            .await
+            .map_err(|error| format!("{error:#}"));
             AppCmdMsg::DeploymentStatus(Update {
                 request,
                 game: game.id,
@@ -88,7 +97,14 @@ impl App {
         }
         self.shell.status_loading = false;
         match update.result {
-            Ok(status) => {
+            Ok((status, synced)) => {
+                if let Some(profile) = self
+                    .session
+                    .profiles
+                    .get_mut(self.session.active_profile_idx)
+                {
+                    profile.save_synced_at = synced;
+                }
                 self.session.last_deployed_profile_id = status.deployed_profile.clone();
                 self.shell.deployment_status = Some(status);
                 self.shell.deployment_status_error = None;
@@ -138,7 +154,7 @@ mod tests {
             request: 4,
             game: "game".into(),
             profile: "profile".into(),
-            result: Ok(Status::default()),
+            result: Ok((Status::default(), None)),
         };
         assert!(update.matches(4, Some("game"), Some("profile")));
         assert!(!update.matches(5, Some("game"), Some("profile")));

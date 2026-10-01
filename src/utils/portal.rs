@@ -76,7 +76,7 @@ pub(crate) async fn select_prefix_parent(
     initial: Option<&Path>,
 ) -> Result<Option<(crate::utils::location::SelectedLocation, Option<OsString>)>> {
     let Some(selected) = select_location(
-        "Select the Wine prefix or its containing folder",
+        "Select the folder containing your Wine prefixes",
         initial,
         crate::utils::snap::SelectedFolderKind::WinePrefix,
     )
@@ -89,25 +89,21 @@ pub(crate) async fn select_prefix_parent(
     if !direct {
         return Ok(Some((selected, None)));
     }
-    let (initial, child) = prefix_recovery_parent(&selected)?;
-    let parent =
-        if let Some(parent) = granted_prefix_parent(&selected, crate::utils::snap::is_snap())? {
-            parent
-        } else {
-            let Some(parent) = select_location(
-                "Keep prefix access after Proton updates — allow its containing folder",
-                initial.as_deref(),
-                crate::utils::snap::SelectedFolderKind::WinePrefix,
-            )
-            .await?
-            else {
-                return Ok(None);
-            };
-            parent
-        };
+    let (parent, child) = direct_prefix_parent(&selected, crate::utils::snap::is_snap())?;
     let prefix = select_prefix_child(parent.clone(), child.clone()).await?;
     prefix.validate_identity(&selected)?;
     Ok(Some((parent, Some(child))))
+}
+
+fn direct_prefix_parent(
+    selected: &crate::utils::location::SelectedLocation,
+    confined: bool,
+) -> Result<(crate::utils::location::SelectedLocation, OsString)> {
+    let (_, child) = prefix_recovery_parent(selected)?;
+    let parent = granted_prefix_parent(selected, confined)?.context(
+        "Select the folder containing this Wine prefix, then choose the prefix inside it. Access to the prefix alone cannot survive Proton replacing it."
+    )?;
+    Ok((parent, child))
 }
 
 fn granted_prefix_parent(
@@ -543,6 +539,30 @@ mod tests {
                 assert!(granted_prefix_parent(&selected, false)?.is_none());
             }
         }
+        Ok(())
+    }
+
+    // @variants: both
+    #[test]
+    fn direct_prefix_selection_does_not_expand_a_snap_grant() -> Result<()> {
+        let selected = crate::utils::location::SelectedLocation {
+            root: "/run/user/1000/doc/grant/pfx".into(),
+            host_hint: Some("/games/example/pfx".into()),
+        };
+        let error = direct_prefix_parent(&selected, true).unwrap_err();
+        assert!(error.to_string().contains("Select the folder containing"));
+        let nested = crate::utils::location::SelectedLocation {
+            root: "/run/user/1000/doc/grant/example/pfx".into(),
+            host_hint: selected.host_hint.clone(),
+        };
+        let (parent, child) = direct_prefix_parent(&nested, true)?;
+        assert_eq!(append_selected_child(parent, &child), nested);
+        let native = crate::utils::location::SelectedLocation {
+            root: "/games/example/pfx".into(),
+            host_hint: None,
+        };
+        let (parent, child) = direct_prefix_parent(&native, false)?;
+        assert_eq!(append_selected_child(parent, &child), native);
         Ok(())
     }
 

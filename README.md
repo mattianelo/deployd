@@ -122,11 +122,12 @@ save and change hairstyle/accessory asset names, texture references and material
 values. The editor shows which save set owns the file and creates a backup before
 saving. Close the game before editing. Existing face shape is preserved when
 editing these fields; importing a complete preset replaces its face shape too.
-When setting or reconnecting a Wine prefix, select either the **prefix itself**
-or its **containing folder**. For Steam, either `pfx` or its numbered compatdata
-parent works. Deployd asks which prefix to use if the parent contains several.
-If Snap grants only the prefix, a second folder chooser requests its containing
-folder to keep access after Proton replaces the prefix.
+When setting or reconnecting a Wine prefix, select its **containing folder** once,
+then choose the prefix if that folder contains several. For Steam, select the
+numbered compatdata folder containing `pfx`. This keeps access after Proton replaces
+the prefix. Direct prefix selections still work in AppImage or beneath an existing
+Snap parent-folder grant; otherwise, Deployd explains which containing folder to
+select without opening a second folder chooser.
 
 Import TSE RON or Gibbed headmorph presets, and export presets as RON. Presets without
 a game identity require an explicit target-game choice; Deployd does not convert
@@ -454,9 +455,8 @@ For Bethesda games, manage plugins separately in the **Plugins** tab:
 
 - Click the **profile selector** in the toolbar to create or switch profiles
 - Each profile saves which mods are enabled, their priority order, and the full plugin load order
-- Opening a game restores the profile used by its most recent successful deployment, and rapid
-  game changes cannot apply a delayed profile load from another game
-- Switching profiles re-deploys automatically
+- Selecting a profile changes the editable configuration; choose **Deploy** to apply its mods
+  and save-bank choice. Other games' successful deployments remain in place
 - Snap installations report expired folder grants and ask for the affected game or Wine-prefix
   folder to be reselected instead of presenting inaccessible official plugins as missing
 
@@ -471,6 +471,12 @@ Use **Profile options → Manage save backups** to create named backups or inspe
 delete recovery points. Manual backups are retained until you delete them. Automatic backups use
 a configurable per-game storage cap, set under **Settings → Save Backups**. Close the game before
 switching save sets, changing save mode, or restoring a backup.
+
+For profile-specific saves, use the toolbar's **Sync** button to copy current live
+saves into the selected game's bank and keep a recovery point of its previous
+contents. This also applies to trilogy profiles. Deploy that profile first; the
+sync action stays disabled while another profile owns the live saves. The last-sync
+indicator refreshes after deployment and manual sync.
 
 Cloning a profile also clones its save mode and current isolated save state. Operations that can
 replace or permanently delete saves show a confirmation dialog first. Snap installations validate

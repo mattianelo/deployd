@@ -176,6 +176,7 @@ pub(super) fn build_model(
                 game_has_save_management: false,
                 appearance_presets: false,
                 can_sync_saves: false,
+                save_mode: Default::default(),
                 is_busy: false,
                 busy_message: "Working...".to_string(),
                 deploying: false,

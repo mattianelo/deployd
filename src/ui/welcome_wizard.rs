@@ -154,7 +154,7 @@ impl WelcomeWizard {
             let prefix_btn = gtk::Button::from_icon_name("folder-symbolic");
             prefix_btn.set_valign(gtk::Align::Center);
             prefix_btn.add_css_class("flat");
-            prefix_btn.set_tooltip_text(Some("Select the Wine prefix or its containing folder…"));
+            prefix_btn.set_tooltip_text(Some("Select the folder containing your Wine prefixes…"));
             {
                 let input = sender.input_sender().clone();
                 prefix_btn.connect_clicked(move |_| {

@@ -1083,6 +1083,78 @@ fn trilogy_deploys_switch_saves_independently_without_reinstalling_mods() -> Res
                     .profile_id(),
                 Some(cloned.as_str())
             );
+            for config in &configs {
+                let game = &config.game;
+                let profile = tracker
+                    .get_active_profile(&game.id)
+                    .await?
+                    .context("Missing profile")?
+                    .id;
+                let target = SaveSetId::Profile {
+                    game_id: game.id.clone(),
+                    profile_id: profile.clone(),
+                };
+                if super::super::session::live_saves(&tracker, game).await? != target {
+                    activation::prepare_unchanged(
+                        &tracker,
+                        &cache,
+                        &Request {
+                            game: game.clone(),
+                            profile: profile.clone(),
+                            language: "INT".into(),
+                            purge: false,
+                            repair: false,
+                        },
+                        Control::default(),
+                    )
+                    .await?
+                    .context("Retry should reuse installed mods")?
+                    .activate(Control::default())
+                    .await?;
+                }
+                assert!(save_manager::last_save_sync_time(&game.id, &profile).is_some());
+                let live =
+                    crate::core::game::detect_save_dir(game).context("Missing live saves")?;
+                let initial = fs::read(live.join("save.dat"))?;
+                let siblings = configs
+                    .iter()
+                    .filter(|other| other.game.id != game.id)
+                    .map(|other| {
+                        let path = crate::core::game::detect_save_dir(&other.game)
+                            .context("Missing sibling saves")?
+                            .join("save.dat");
+                        Ok((path.clone(), fs::read(path)?))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                assert!(
+                    save_manager::list_backups(&game.id)
+                        .await?
+                        .iter()
+                        .any(|backup| backup.save_set.profile_id().is_none())
+                );
+                fs::write(live.join("save.dat"), b"new playthrough progress")?;
+                save_manager::sync_save_set(game, &target, u64::MAX).await?;
+                let bank = paths::saves_root()?
+                    .join(&game.id)
+                    .join("sets/profiles")
+                    .join(&profile)
+                    .join("data/save.dat");
+                assert_eq!(fs::read(&bank)?, b"new playthrough progress");
+                let backups = save_manager::list_backups(&game.id).await?;
+                let backup = backups
+                    .iter()
+                    .find(|backup| {
+                        backup.save_set == target
+                            && backup.trigger == save_manager::BackupTrigger::ManualSync
+                    })
+                    .context("Missing manual sync recovery backup")?;
+                save_manager::restore_backup(game, &backup.backup_id, &target, u64::MAX).await?;
+                assert_eq!(fs::read(live.join("save.dat"))?, initial);
+                assert_eq!(fs::read(&bank)?, initial);
+                for (path, bytes) in siblings {
+                    assert_eq!(fs::read(path)?, bytes);
+                }
+            }
             Ok(())
         },
     )

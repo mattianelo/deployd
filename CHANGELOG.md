@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Restored manual save sync for Legendary Edition trilogy profiles and refreshed
+  the last-sync indicator after deployment creates or updates a save bank.
+- Prefix selection now asks for the containing folder once, followed by a prefix
+  choice when needed. Manage Games prevents overlapping prefix pickers.
+
 - Fixed “database is locked” errors when saving newly installed mods to profiles,
   including empty Legendary Edition trilogy profiles.
 
@@ -16,9 +21,9 @@
   only on success. Profile or save-only changes reuse unchanged installed mods
   without rerunning their transformations.
 
-- Wine-prefix setup, changes and access recovery now accept either the prefix
-  itself or its containing folder. Snap requests access to the containing folder
-  when needed to retain access after Proton replaces the prefix.
+- Wine-prefix setup, changes and access recovery retain access through the
+  containing folder after Proton replaces the prefix. Direct selection remains
+  supported in AppImage and under an existing Snap parent-folder grant.
 
 - Appearance editing now identifies a Steam compatdata folder selected instead
   of its Wine prefix and distinguishes missing save paths from Snap restrictions.

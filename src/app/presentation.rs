@@ -16,6 +16,12 @@ impl App {
             initializing: self.session.initializing,
             profile_count: self.session.profiles.len(),
             save_mode_label: self.save_mode_label(),
+            save_mode: self
+                .session
+                .profiles
+                .get(self.session.active_profile_idx)
+                .map(|profile| profile.save_mode.clone())
+                .unwrap_or_default(),
             game_has_save_management: self.game_has_save_management(),
             appearance_presets: self.selected_game().is_some_and(|game| {
                 self.session
