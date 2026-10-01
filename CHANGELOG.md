@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Fixed “database is locked” errors when saving newly installed mods to profiles,
+  including empty Legendary Edition trilogy profiles.
+
 - Fixed MELE redeployment reporting “Historical routing references missing source
   content” when reusing installed mods.
 

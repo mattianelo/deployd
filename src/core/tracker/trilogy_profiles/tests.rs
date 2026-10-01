@@ -1,9 +1,13 @@
 use super::*;
 
 async fn fixture() -> Result<Tracker> {
+    fixture_at("sqlite::memory:").await
+}
+
+async fn fixture_at(database: &str) -> Result<Tracker> {
     use crate::models::game::{Game, GameConfig, GameEngine};
     use crate::utils::location::{FolderRole, FolderSelection, SelectedLocation};
-    let tracker = Tracker::open("sqlite::memory:").await?.tracker;
+    let tracker = Tracker::open(database).await?.tracker;
     let configs = GAMES
         .iter()
         .enumerate()
@@ -195,5 +199,69 @@ async fn non_mele_profiles_remain_independent() -> Result<()> {
         .set_profile_save_mode(&first, SaveMode::ProfileSpecific)
         .await?;
     assert!(tracker.get_active_profile(GAMES[0]).await?.is_none());
+    Ok(())
+}
+
+async fn with_competing_writer<T>(
+    tracker: &Tracker,
+    operation: impl std::future::Future<Output = Result<T>>,
+) -> Result<T> {
+    let mut writer = tracker.pool.begin_with("BEGIN IMMEDIATE").await?;
+    sqlx::query("UPDATE mods SET priority=priority+1")
+        .execute(&mut *writer)
+        .await?;
+    tokio::pin!(operation);
+    let early = tokio::time::timeout(std::time::Duration::from_millis(100), &mut operation).await;
+    writer.commit().await?;
+    assert!(
+        early.is_err(),
+        "Profile mutation must wait for the competing writer"
+    );
+    operation.await
+}
+
+// @variants: both
+#[tokio::test]
+async fn trilogy_profile_mutations_wait_for_competing_writes() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let database = format!(
+        "sqlite://{}?mode=rwc",
+        directory.path().join("tracker.db").display()
+    );
+    let tracker = fixture_at(&database).await?;
+    let initial = tracker.ensure_default_profile(GAMES[0]).await?;
+    let clean =
+        with_competing_writer(&tracker, tracker.create_clean_profile(GAMES[0], "Clean")).await?;
+    with_competing_writer(&tracker, tracker.switch_profile(GAMES[0], &clean)).await?;
+    for game in GAMES {
+        assert_eq!(
+            tracker.get_active_profile(game).await?.unwrap().name,
+            "Clean"
+        );
+        let enabled: bool = sqlx::query_scalar("SELECT enabled FROM mods WHERE game_id=?")
+            .bind(game)
+            .fetch_one(&tracker.pool)
+            .await?;
+        assert!(!enabled);
+    }
+    let cloned =
+        with_competing_writer(&tracker, tracker.clone_profile(&clean, "Copy", GAMES[0])).await?;
+    assert_eq!(tracker.profile_parts(&cloned).await?.len(), 3);
+    with_competing_writer(&tracker, tracker.delete_profile(&cloned)).await?;
+    assert!(tracker.profile_parts(&cloned).await?.is_empty());
+    let mut ids = Vec::new();
+    for game in GAMES {
+        ids.push(tracker.create_profile(game, "Ungrouped").await?);
+    }
+    let mapping = Mapping {
+        name: "Grouped".into(),
+        profiles: ids.try_into().unwrap(),
+        mode: SaveMode::Global,
+    };
+    let grouped =
+        with_competing_writer(&tracker, tracker.group_trilogy_profiles(GAMES[0], &mapping)).await?;
+    assert_eq!(tracker.profile_parts(&grouped).await?.len(), 3);
+    assert_eq!(tracker.profile_parts(&initial.id).await?.len(), 3);
+    tracker.pool.close().await;
     Ok(())
 }

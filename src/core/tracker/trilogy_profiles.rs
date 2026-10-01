@@ -135,7 +135,7 @@ impl Tracker {
         game: &str,
         mapping: &Mapping,
     ) -> Result<String> {
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         let location = family(&mut tx, game)
             .await?
             .context("Legendary Edition is not configured as a trilogy")?;
@@ -200,7 +200,7 @@ impl Tracker {
         name: &str,
         clean: bool,
     ) -> Result<Option<String>> {
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         let Some(location) = family(&mut tx, game).await? else {
             return Ok(None);
         };
@@ -239,7 +239,7 @@ impl Tracker {
     }
 
     pub(super) async fn select_trilogy_profile(&self, game: &str, profile: &str) -> Result<bool> {
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         let Some(group) = group(&mut tx, profile).await? else {
             return Ok(false);
         };
@@ -262,7 +262,7 @@ impl Tracker {
         name: &str,
         game: &str,
     ) -> Result<Option<String>> {
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         let Some(group_id) = group(&mut tx, source).await? else {
             return Ok(None);
         };
@@ -308,7 +308,7 @@ impl Tracker {
     }
 
     pub(super) async fn delete_trilogy_profile(&self, profile: &str) -> Result<bool> {
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         let Some(group) = group(&mut tx, profile).await? else {
             return Ok(false);
         };

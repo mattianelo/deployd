@@ -251,7 +251,7 @@ impl Tracker {
 
     /// Save the current mods/plugins state into the given profile (snapshot).
     pub async fn save_to_profile(&self, profile_id: &str, game_id: &str) -> Result<()> {
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         snapshot(&mut tx, profile_id, game_id).await?;
         tx.commit().await.context("Failed to update profile")
     }
@@ -261,7 +261,7 @@ impl Tracker {
         if self.select_trilogy_profile(game_id, profile_id).await? {
             return Ok(());
         }
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         select(&mut tx, game_id, profile_id).await?;
         tx.commit().await.context("Failed to update profile")
     }
@@ -458,6 +458,60 @@ mod tests {
 
     async fn profile_tracker() -> Result<Tracker> {
         Ok(Tracker::open("sqlite::memory:").await?.tracker)
+    }
+
+    // @variants: both
+    #[tokio::test]
+    async fn empty_profile_autosave_waits_for_install_writes_before_and_after_deploy() -> Result<()>
+    {
+        for game in ["mass-effect-le1", "other-game"] {
+            for deployed in [false, true] {
+                let directory = tempfile::tempdir()?;
+                let database = format!(
+                    "sqlite://{}?mode=rwc",
+                    directory.path().join("tracker.db").display()
+                );
+                let tracker = Tracker::open(&database).await?.tracker;
+                let profile = tracker.create_clean_profile(game, "Empty").await?;
+                tracker.switch_profile(game, &profile).await?;
+                if deployed {
+                    tracker.record_deployed_profile(game, &profile).await?;
+                    sqlx::query("INSERT INTO generation_game_state(game_id,deployed_profile_id,live_save_mode,modified) VALUES (?,?,'global',0)")
+                        .bind(game).bind(&profile).execute(&tracker.pool).await?;
+                }
+                let mut installation = tracker.pool.begin_with("BEGIN IMMEDIATE").await?;
+                sqlx::query("INSERT INTO mods(id,game_id,name,enabled,priority) VALUES ('new-mod',?,'New mod',1,7)")
+                    .bind(game).execute(&mut *installation).await?;
+                let saving = tracker.save_to_profile(&profile, game);
+                tokio::pin!(saving);
+                let early =
+                    tokio::time::timeout(std::time::Duration::from_millis(100), &mut saving).await;
+                installation.commit().await?;
+                assert!(
+                    early.is_err(),
+                    "Autosave must wait for the writer, got {early:?}"
+                );
+                saving.await?;
+                tracker.pool.close().await;
+                let reopened = Tracker::open(&database).await?.tracker;
+                let saved: (String, bool, i64) = sqlx::query_as(
+                    "SELECT mod_id,enabled,priority FROM profile_mods WHERE profile_id=?",
+                )
+                .bind(&profile)
+                .fetch_one(&reopened.pool)
+                .await?;
+                assert_eq!(saved, ("new-mod".into(), true, 7));
+                assert_eq!(
+                    reopened
+                        .get_active_profile(game)
+                        .await?
+                        .map(|value| value.id),
+                    Some(profile.clone())
+                );
+                reopened.pool.close().await;
+            }
+        }
+        Ok(())
     }
 
     // @variants: both

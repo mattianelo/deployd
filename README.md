@@ -73,7 +73,8 @@ switch any live saves. Save backups and manual sync apply to the selected game.
 For existing installations, choose **Group trilogy profiles…** in the profile
 menu and explicitly select one existing profile for each game and a shared save
 mode. Their save banks and backups are preserved; unmatched profiles remain
-available as **ungrouped** profiles. New profiles cover all three games. Cloning
+available as **ungrouped** profiles. New profiles cover all three games. You can
+install mods into a new empty profile before its first deployment. Cloning
 copies all three configurations and, for isolated profiles, their save banks.
 Keep another trilogy profile before deleting one, and deploy it in any game
 still using the deleted profile's isolated saves first. Restored deployment-history profiles remain
