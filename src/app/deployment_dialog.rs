@@ -23,6 +23,13 @@ pub(crate) struct Operation {
 }
 
 impl App {
+    pub(crate) fn begin_integrity_check(&mut self) {
+        self.deployment_phase("Checking deployment integrity…", true);
+        if let Some(operation) = &self.ui.deployment_operation {
+            operation.dialog.set_heading(Some("Full integrity check"));
+        }
+    }
+
     pub(crate) fn deployment_phase(&mut self, phase: &str, cancellable: bool) {
         if self
             .ui

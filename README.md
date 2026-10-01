@@ -97,6 +97,15 @@ so profiles that need ASI/DLL support can be prepared and restored. Interrupted
 deployments recover after restart. Unexpected
 external changes are preserved and must be resolved before deploying again.
 Large texture installations can take time; follow the progress shown in Deployd.
+Generations reuse verified file hashes while Deployd stays open when file identity,
+size, timestamps, permissions and link count are unchanged. Changed files are
+hashed again; rollback copies and transaction checks remain in place. The first
+verification after restarting Deployd still reads file contents.
+Use **Deployment history → Full integrity check** to reread retained generations
+and deployed files, including checks for corruption that leaves file metadata
+unchanged. The check reports external edits without replacing files and can be
+cancelled. Save backups are managed separately.
+
 Repeat MELE deployments reuse verified files already retained in deployment history
 without writing duplicate history copies. Apply reuses the files already prepared
 for its preview when their captured sources match, instead of preparing those

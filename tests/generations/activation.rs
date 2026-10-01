@@ -86,12 +86,22 @@ async fn coordinator_reuses_history_and_purge_preserves_retained_configuration()
     assert_eq!(first.generation, Some(fixture.manifest.id()?));
     assert_eq!(fs::read(fixture.live())?, b"winner");
     assert_eq!(fixture.pending().await?, 0);
+    let before_redeploy = crate::utils::verified_files::metrics();
     let (manifest, files, journal) =
         unpublished(&fixture.history, &fixture.game, &fixture.profile).await?;
     fixture.manifest = manifest;
     fixture.files = files;
     fixture.journal = journal;
     fixture.deploy(Some(&first), Control::default()).await?;
+    let after_redeploy = crate::utils::verified_files::metrics();
+    assert_eq!(
+        after_redeploy.hashed_bytes - before_redeploy.hashed_bytes,
+        0
+    );
+    assert_eq!(
+        after_redeploy.copied_bytes - before_redeploy.copied_bytes,
+        0
+    );
     assert_eq!(fixture.state().await?, Some(first.clone()));
     let generations: i64 = sqlx::query_scalar("SELECT count(*) FROM generations")
         .fetch_one(&fixture.history.tracker.pool)

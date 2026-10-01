@@ -790,7 +790,7 @@ pub(super) fn scan(root: &Path) -> Result<Vec<SourceFile>> {
             metadata.is_file() && metadata.nlink() == 1,
             "Package sources must be independent regular files"
         );
-        let file = File::options()
+        let mut file = File::options()
             .read(true)
             .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
             .open(entry.path())
@@ -806,21 +806,23 @@ pub(super) fn scan(root: &Path) -> Result<Vec<SourceFile>> {
                 && sources.len() < 100_000,
             "Package source changed or exceeds inspection limits"
         );
-        let mut hash = Sha256::new();
-        let copied = std::io::copy(&mut (&file).take(size + 1), &mut hash)?;
+        let sha256 = crate::utils::verified_files::hash(&mut file, || Ok(()), |_, _| {})?;
         let after = file.metadata()?;
+        let current = std::fs::symlink_metadata(entry.path())?;
         ensure!(
-            copied == size
-                && after.len() == size
+            after.len() == size
                 && before.ctime() == after.ctime()
                 && before.ctime_nsec() == after.ctime_nsec()
-                && after.nlink() == 1,
+                && after.nlink() == 1
+                && current.is_file()
+                && current.dev() == after.dev()
+                && current.ino() == after.ino(),
             "Package file '{relative}' changed during inspection"
         );
         sources.push(SourceFile {
             relative,
             size,
-            sha256: format!("{:x}", hash.finalize()),
+            sha256,
         });
     }
     sources.sort_by(|left, right| left.relative.cmp(&right.relative));

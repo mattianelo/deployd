@@ -63,7 +63,23 @@ pub(in crate::core::game::mass_effect) fn verify(
     let target = root.join(path);
     if let Some(expected) = expected {
         let mut file = open(&target, expected)?;
-        transfer(&mut file, None, expected, control)
+        let sha256 = crate::utils::verified_files::hash(&mut file, || control.check(), |_, _| {})?;
+        let current = fs::symlink_metadata(&target)?;
+        let opened = file.metadata()?;
+        ensure!(
+            current.is_file()
+                && current.nlink() == 1
+                && current.dev() == opened.dev()
+                && current.ino() == opened.ino()
+                && current.ctime() == opened.ctime()
+                && current.ctime_nsec() == opened.ctime_nsec(),
+            "MELE file changed during deployment verification"
+        );
+        ensure!(
+            sha256 == expected.sha256,
+            "MELE file hash changed; reconcile external changes before deploying"
+        );
+        control.check()
     } else {
         ensure!(
             !target.try_exists()?,
@@ -116,6 +132,7 @@ fn transfer(
             destination
                 .write_all(&buffer[..count])
                 .context("MELE deployment copy failed; check free space and folder access")?;
+            crate::utils::verified_files::record_copy(count as u64);
         }
         remaining -= count as u64;
     }

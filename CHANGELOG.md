@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Generations and MELE verification now reuse file hashes within the application
+  session when file identity and metadata remain unchanged, reducing repeated
+  whole-installation reads during redeployment. Changed files are rehashed;
+  transaction and rollback checks remain enabled.
+- Added a cancellable **Full integrity check** in Deployment history to reread
+  retained generations and deployed files and report damage or external edits.
+
 - MELE Apply now reuses matching preview preparation instead of copying all
   package sources and repeating preparation. Source, staged-file and rollback
   checks remain in place; edited sources use fresh preparation when necessary.

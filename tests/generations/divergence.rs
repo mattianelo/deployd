@@ -269,3 +269,58 @@ async fn concurrent_deployed_state_changes_prevent_stale_inspection_publication(
     assert_eq!(fs::read(fixture.game.data_dir().join("File.txt"))?, edited);
     Ok(())
 }
+
+// @variants: both
+#[tokio::test]
+async fn full_integrity_check_reads_again_reports_edits_and_rejects_damaged_history() -> Result<()>
+{
+    let fixture = Fixture::new().await?;
+    let generation = fixture.state().await?.generation.context("Generation")?;
+    let manifest = fixture.history.load(&generation).await?;
+    let object = manifest
+        .outputs
+        .iter()
+        .find_map(|output| output.content.as_ref())
+        .context("Output identity")?;
+    let retained = fixture.history.store.source(object)?;
+    let Fixture {
+        history,
+        game,
+        _temp,
+    } = fixture;
+    let tracker = history.tracker.clone();
+    let cache = history.cache.clone();
+    drop(history);
+    for _ in 0..2 {
+        let report =
+            super::super::api::verify_integrity(&tracker, &game, &cache, Control::default())
+                .await?;
+        assert_eq!(report.generations, 1);
+        assert_eq!(report.differing_files, 0);
+        assert!(report.hashed_bytes > 0);
+    }
+    let live = game.data_dir().join("File.txt");
+    fs::write(&live, b"edited")?;
+    let report =
+        super::super::api::verify_integrity(&tracker, &game, &cache, Control::default()).await?;
+    assert_eq!(report.differing_files, 1);
+    assert_eq!(fs::read(&live)?, b"edited");
+    let control = Control::default();
+    control
+        .cancelled
+        .store(true, std::sync::atomic::Ordering::Release);
+    assert!(
+        super::super::api::verify_integrity(&tracker, &game, &cache, control)
+            .await
+            .is_err()
+    );
+    fs::set_permissions(&retained, fs::Permissions::from_mode(0o600))?;
+    fs::write(&retained, b"broken")?;
+    assert!(
+        super::super::api::verify_integrity(&tracker, &game, &cache, Control::default())
+            .await
+            .is_err()
+    );
+    assert_eq!(fs::read(&live)?, b"edited");
+    Ok(())
+}

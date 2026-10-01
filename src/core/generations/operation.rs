@@ -9,6 +9,21 @@ pub(crate) struct Lease {
     // Field drop order keeps the next history operation behind location release.
     _location: OwnedRwLockReadGuard<()>,
     _history: OwnedMutexGuard<()>,
+    started: std::time::Instant,
+    metrics: crate::utils::verified_files::Metrics,
+}
+
+impl Drop for Lease {
+    fn drop(&mut self) {
+        let after = crate::utils::verified_files::metrics();
+        crate::dlog!(
+            "deployd: generations elapsed_ms={} hashed_bytes={} reused_hashes={} verified_copy_bytes={}",
+            self.started.elapsed().as_millis(),
+            after.hashed_bytes.saturating_sub(self.metrics.hashed_bytes),
+            after.cache_hits.saturating_sub(self.metrics.cache_hits),
+            after.copied_bytes.saturating_sub(self.metrics.copied_bytes)
+        );
+    }
 }
 
 impl Lease {
@@ -25,6 +40,8 @@ impl Lease {
         Ok(Arc::new(Self {
             _history: history,
             _location: location,
+            started: std::time::Instant::now(),
+            metrics: crate::utils::verified_files::metrics(),
         }))
     }
 

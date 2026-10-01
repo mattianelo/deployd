@@ -71,7 +71,31 @@ fn stamp(metadata: &Metadata) -> (u64, u64, u64, i64, i64, i64, i64) {
 }
 
 pub(crate) fn inspect(path: &Path, control: &Control) -> Result<Identity> {
-    transfer(path, &mut std::io::sink(), control)
+    let mut file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+        .with_context(|| format!("Cannot read '{}'", path.display()))?;
+    let before = file.metadata()?;
+    let sha256 = crate::utils::verified_files::hash(
+        &mut file,
+        || control.check(),
+        |done, total| (control.progress)(done, total),
+    )?;
+    let current = fs::symlink_metadata(path)?;
+    ensure!(
+        current.is_file()
+            && stamp(&before) == stamp(&current)
+            && stamp(&before) == stamp(&file.metadata()?),
+        "Source changed while verifying '{}'; close tools or updaters and retry",
+        path.display()
+    );
+    let identity = Identity {
+        size: before.len(),
+        sha256,
+    };
+    identity.validate()?;
+    Ok(identity)
 }
 
 pub(super) fn transfer(
@@ -97,6 +121,7 @@ pub(super) fn transfer(
             break;
         }
         destination.write_all(&buffer[..count])?;
+        crate::utils::verified_files::record_copy(count as u64);
         hasher.update(&buffer[..count]);
         size += count as u64;
         (control.progress)(size, before.len());

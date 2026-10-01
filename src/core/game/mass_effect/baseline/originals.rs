@@ -311,7 +311,21 @@ fn verify(
     control: &Control,
     advance: &mut impl FnMut(u64),
 ) -> Result<()> {
-    transfer(file, None, expected, control, advance)
+    let mut last = 0;
+    let sha256 = crate::utils::verified_files::hash(
+        file,
+        || control.check(),
+        |done, _| {
+            advance(done.saturating_sub(last));
+            last = done;
+        },
+    )?;
+    ensure!(
+        file.metadata()?.len() == expected.size && sha256 == expected.sha256,
+        "MELE original '{}' does not match the setup baseline; reconcile the installation or its backup before continuing",
+        expected.relative
+    );
+    Ok(())
 }
 
 fn transfer(
@@ -335,6 +349,7 @@ fn transfer(
             output
                 .write_all(&buffer[..count])
                 .context("Cannot preserve MELE originals; check free space and folder access")?;
+            crate::utils::verified_files::record_copy(count as u64);
         }
         remaining -= count as u64;
         advance(count as u64);

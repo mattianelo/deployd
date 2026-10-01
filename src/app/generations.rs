@@ -10,6 +10,9 @@ use super::{App, AppCmdMsg, AppMsg};
 #[derive(Debug)]
 pub(crate) enum Msg {
     Open,
+    Verify {
+        game: String,
+    },
     Restore {
         game: String,
         generation: String,
@@ -26,6 +29,7 @@ pub(crate) enum Cmd {
     Listed(String, Result<api::Overview, String>),
     Restored(Box<Result<LoadedData, String>>),
     Deleted(Result<(), String>),
+    Verified(Result<api::IntegrityReport, String>),
 }
 
 impl App {
@@ -55,15 +59,26 @@ impl App {
         };
         let requested_game = match &message {
             Msg::Open => &game.id,
-            Msg::Restore { game, .. } | Msg::Delete { game, .. } => game,
+            Msg::Restore { game, .. } | Msg::Delete { game, .. } | Msg::Verify { game } => game,
         };
         if requested_game != &game.id {
             self.show_toast("Reopen deployment history for the selected game");
             return;
         }
         self.begin_work(WorkKind::Deploying, "Working with deployment history…");
+        let control = if matches!(&message, Msg::Verify { .. }) {
+            self.begin_integrity_check();
+            self.deployment_control()
+        } else {
+            Control::default()
+        };
         self.location_command(sender, async move {
             let result = match message {
+                Msg::Verify { .. } => Cmd::Verified(
+                    api::verify_integrity(&tracker, &game, &cache, control)
+                        .await
+                        .map_err(|error| format!("{error:#}")),
+                ),
                 Msg::Open => Cmd::Listed(
                     game.id.clone(),
                     api::list(&tracker, &game.id)
@@ -117,6 +132,10 @@ impl App {
     ) {
         self.finish_work(WorkKind::Deploying);
         match message {
+            Cmd::Verified(result) => match result {
+                Ok(report) => self.deployment_result("Integrity check complete", &format!("Checked {} generations and the deployed files, reading {} bytes. {} deployed file(s) differ from their recorded state. No game files or saves were changed.", report.generations, report.hashed_bytes, report.differing_files)),
+                Err(error) => self.deployment_result("Integrity check stopped", &error),
+            },
             Cmd::Listed(game, Ok(overview)) => {
                 if self
                     .selected_game()
@@ -155,6 +174,15 @@ fn show_history(
         .body(format!("Retained content: {} bytes. Restore a generation as a new editable profile, then Deploy it when ready. Saves are not included.", overview.bytes)).build();
     dialog.add_response("close", "Close");
     dialog.set_close_response("close");
+    dialog.add_response("verify", "Full integrity check");
+    dialog.set_response_enabled("verify", !overview.entries.is_empty());
+    let input = sender.input_sender().clone();
+    let selected_game = game.to_owned();
+    dialog.connect_response(Some("verify"), move |_, _| {
+        let _ = input.send(AppMsg::Generations(Msg::Verify {
+            game: selected_game.clone(),
+        }));
+    });
     let list = gtk::ListBox::new();
     list.set_selection_mode(gtk::SelectionMode::None);
     list.add_css_class("boxed-list");
