@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [3.1.0]
 
 - MELE now caches verified transformation results across restarts and avoids
   copying unchanged package files into preparation, reducing repeated work when
