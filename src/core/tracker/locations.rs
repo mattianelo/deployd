@@ -361,6 +361,13 @@ impl Tracker {
     }
 
     pub(crate) async fn ensure_location_ready(&self, game_id: &str) -> Result<()> {
+        let removing: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM settings WHERE key='game_removal_' || ? OR key IN (SELECT 'game_removal_' || peer.game_id FROM game_locations own JOIN game_locations peer ON own.location_id=peer.location_id WHERE own.game_id=?))")
+            .bind(game_id).bind(game_id).fetch_one(&self.pool).await?;
+        if removing {
+            bail!(
+                "Game reset cleanup is incomplete. Restore cache access and choose Purge & delete all Deployd data again before using this game"
+            )
+        }
         let pending: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM location_repairs r JOIN game_locations b ON b.location_id=r.location_id WHERE b.game_id=?)")
             .bind(game_id).fetch_one(&self.pool).await?;
         if pending {

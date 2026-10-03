@@ -349,6 +349,29 @@ pub(in crate::core::game::mass_effect) fn committed(
         recipes.insert(0, key);
         recipes.truncate(2);
     }
+    collect(&root, &mut usage)
+}
+
+pub(in crate::core::game::mass_effect) fn forget(
+    data: &Path,
+    target: crate::core::game::mass_effect::Target,
+    profiles: &[String],
+) -> Result<()> {
+    let root = paths::mele_result_cache_in(data);
+    if !root.try_exists()? {
+        return Ok(());
+    }
+    files::directory(&root)?;
+    let mut usage = usage(&root)?;
+    for profile in profiles {
+        usage
+            .profiles
+            .remove(&digest(&serde_json::to_vec(&(target, profile))?));
+    }
+    collect(&root, &mut usage)
+}
+
+fn collect(root: &Path, usage: &mut Usage) -> Result<()> {
     let active = pins()
         .lock()
         .map_err(|_| anyhow::anyhow!("Result cache is unavailable"))?;
@@ -375,7 +398,7 @@ pub(in crate::core::game::mass_effect) fn committed(
             }
         }
     }
-    for entry in fs::read_dir(&root)? {
+    for entry in fs::read_dir(root)? {
         let entry = entry?;
         if entry
             .file_name()
@@ -386,7 +409,7 @@ pub(in crate::core::game::mass_effect) fn committed(
             fs::remove_dir_all(entry.path())?;
         }
     }
-    write(&root.join("usage.json"), &usage)
+    write(&root.join("usage.json"), usage)
 }
 
 #[cfg(test)]

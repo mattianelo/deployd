@@ -27,6 +27,16 @@ impl Tracker {
             .await
             .context("Failed to begin game settings update")?;
         for config in configs {
+            let removing: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM settings WHERE key='game_removal_' || ?)",
+            )
+            .bind(&config.game.id)
+            .fetch_one(&mut *transaction)
+            .await?;
+            anyhow::ensure!(
+                !removing,
+                "Finish pending full reset cleanup before adding this game again"
+            );
             let engine = config.game.engine.as_str();
             sqlx::query(
                 "INSERT INTO games
@@ -89,7 +99,13 @@ impl Tracker {
             super::mele_families::insert(&mut transaction, game_id, family).await?;
         }
         for game_id in hidden_ids {
-            super::removal::reset(&mut transaction, game_id).await?;
+            for id in super::removal::scope(game_id) {
+                anyhow::ensure!(
+                    !configs.iter().any(|config| config.game.id == id),
+                    "MELE games must be stopped together; deselect all three games"
+                );
+                super::removal::reset(&mut transaction, id).await?;
+            }
         }
         if let Some(first) = configs.first() {
             sqlx::query(
@@ -119,6 +135,7 @@ impl Tracker {
         wine_prefix: Option<&std::path::Path>,
         custom: bool,
     ) -> Result<()> {
+        self.ensure_location_ready(id).await?;
         let engine = engine.parse::<crate::models::game::GameEngine>()?;
         let mut transaction = self.pool.begin().await?;
         sqlx::query(
@@ -242,7 +259,10 @@ impl Tracker {
             .begin()
             .await
             .context("Failed to begin game removal")?;
-        let mod_ids = super::removal::reset(&mut transaction, game_id).await?;
+        let mut mod_ids = Vec::new();
+        for id in super::removal::scope(game_id) {
+            mod_ids.extend(super::removal::reset(&mut transaction, id).await?);
+        }
         transaction
             .commit()
             .await

@@ -183,3 +183,57 @@ async fn reset_clears_legacy_download_flags_but_preserves_archives_used_by_other
     );
     Ok(())
 }
+
+// @variants: both
+#[tokio::test]
+async fn existing_reset_choices_and_manage_games_remove_mele_together_atomically() -> Result<()> {
+    for mode in 0..3 {
+        let tracker = Tracker::open("sqlite::memory:").await?.tracker;
+        for id in scope("mass-effect-le2") {
+            sqlx::query("INSERT INTO games(id,hidden) VALUES (?,0)")
+                .bind(id)
+                .execute(&tracker.pool)
+                .await?;
+            sqlx::query("INSERT INTO mods(id,game_id,name) VALUES (?,?,'Mod')")
+                .bind(id)
+                .bind(id)
+                .execute(&tracker.pool)
+                .await?;
+        }
+        sqlx::query("INSERT INTO download_entries(id,mod_name,game_domain,status) VALUES ('legacy','Old mod','masseffectlegendaryedition','installed')").execute(&tracker.pool).await?;
+        sqlx::query("CREATE TRIGGER reject_last_reset BEFORE DELETE ON mods WHEN OLD.game_id='mass-effect-le3' BEGIN SELECT RAISE(ABORT,'injected failure'); END").execute(&tracker.pool).await?;
+        assert!(
+            tracker
+                .remove_managed_game("mass-effect-le2", true)
+                .await
+                .is_err()
+        );
+        assert!(tracker.load_hidden_game_ids().await?.is_empty());
+        for id in scope("mass-effect-le2") {
+            assert_eq!(tracker.list_mods(id).await?.len(), 1);
+        }
+        sqlx::query("DROP TRIGGER reject_last_reset")
+            .execute(&tracker.pool)
+            .await?;
+        if mode == 2 {
+            tracker
+                .persist_game_configs(&[], &["mass-effect-le2".into()])
+                .await?;
+        } else {
+            let removed = tracker
+                .remove_managed_game("mass-effect-le2", mode == 1)
+                .await?;
+            assert_eq!(removed.len(), if mode == 1 { 3 } else { 0 });
+        }
+        assert_eq!(tracker.load_hidden_game_ids().await?.len(), 3);
+        let status: String =
+            sqlx::query_scalar("SELECT status FROM download_entries WHERE id='legacy'")
+                .fetch_one(&tracker.pool)
+                .await?;
+        assert_eq!(status, "downloaded");
+        for id in scope("mass-effect-le2") {
+            assert!(tracker.list_mods(id).await?.is_empty());
+        }
+    }
+    Ok(())
+}

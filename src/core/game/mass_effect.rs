@@ -149,11 +149,25 @@ pub(crate) mod library;
 )]
 pub(crate) mod recipe;
 
-fn mutation_lock() -> std::sync::Arc<tokio::sync::Mutex<()>> {
+pub(crate) fn mutation_lock() -> std::sync::Arc<tokio::sync::Mutex<()>> {
     static LOCK: std::sync::OnceLock<std::sync::Arc<tokio::sync::Mutex<()>>> =
         std::sync::OnceLock::new();
     LOCK.get_or_init(|| std::sync::Arc::new(tokio::sync::Mutex::new(())))
         .clone()
+}
+
+pub(crate) fn forget_results(
+    data: &std::path::Path,
+    game: &str,
+    profiles: &[String],
+) -> Result<()> {
+    if let Some(target) = [Target::Le1, Target::Le2, Target::Le3]
+        .into_iter()
+        .find(|target| target.game_id() == game)
+    {
+        helper::cache::forget(data, target, profiles)?;
+    }
+    Ok(())
 }
 
 mod alternates;

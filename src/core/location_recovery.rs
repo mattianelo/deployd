@@ -76,15 +76,18 @@ pub(crate) async fn resume_repairs(tracker: &Tracker) -> Result<()> {
 }
 
 pub(crate) async fn blocked_games(tracker: &Tracker) -> Result<Vec<String>> {
+    let removing: Vec<String> = sqlx::query_scalar("SELECT DISTINCT own.game_id FROM game_locations own JOIN game_locations peer ON own.location_id=peer.location_id JOIN settings s ON s.key='game_removal_' || peer.game_id UNION SELECT id FROM games JOIN settings ON settings.key='game_removal_' || games.id")
+        .fetch_all(&tracker.pool).await?;
     if !snap::is_snap() {
-        return Ok(Vec::new());
+        return Ok(removing);
     }
-    let pending: HashSet<_> = tracker
+    let mut pending: HashSet<_> = tracker
         .pending_location_repairs()
         .await?
         .into_iter()
         .flat_map(|repair| repair.changes.into_iter().map(|change| change.game_id))
         .collect();
+    pending.extend(removing);
     let games = tracker.load_persisted_games().await?;
     tokio::task::spawn_blocking(move || {
         games

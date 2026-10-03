@@ -121,6 +121,7 @@ pub(crate) enum GamesMsg {
     RemoveGameConfirmed {
         game_id: String,
         delete_mods: bool,
+        purge: bool,
     },
     /// User chose a new custom cache directory for a game (from the Manage Games dialog).
     CacheDirChangeRequested {
@@ -525,6 +526,7 @@ pub(crate) enum GamesCmdMsg {
     GamesPersisted(Result<Vec<crate::models::game::GameConfig>, String>),
     GameRemoved {
         game_id: String,
+        purge: bool,
         result: Result<Vec<String>, String>,
     },
 }

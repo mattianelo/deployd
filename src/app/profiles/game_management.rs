@@ -223,16 +223,30 @@ impl App {
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
+        let trilogy = crate::core::tracker::removal::scope(&game_id).len() > 1;
+        let heading = if trilogy {
+            "Stop managing the MELE trilogy?"
+        } else {
+            "Stop managing this game?"
+        };
+        let mut body = String::from(
+            "Reset clears the mod list, profiles and deployment history while leaving deployed files in place. The full reset first purges deployment, restoring original game files, then deletes this game’s managed cache and settings so you can add it again from scratch. All choices preserve saves and downloaded archives. Shared content needed by other games is kept.",
+        );
+        if trilogy {
+            body.push_str("\n\nEvery option applies to LE1, LE2 and LE3 together. Full reset clears their data only after all three purges succeed. If a purge fails, all three stay managed; retry finishes the remaining purges.");
+        }
         let dialog = adw::AlertDialog::builder()
-            .heading("Stop managing this game?")
-            .body("This clears Deployd’s mod list, profiles, deployment history and installed download status. Game files, saves and downloaded archives stay untouched. Choose whether to keep or permanently delete the editable mod cache.")
+            .heading(heading)
+            .body(&body)
             .build();
         dialog.add_response("cancel", "Cancel");
         dialog.add_response("remove", "Reset, keep cached files");
         dialog.add_response("remove-delete", "Reset & delete mod cache");
+        dialog.add_response("purge-delete", "Purge & delete all Deployd data");
         dialog.set_close_response("cancel");
         dialog.set_response_appearance("remove", adw::ResponseAppearance::Destructive);
         dialog.set_response_appearance("remove-delete", adw::ResponseAppearance::Destructive);
+        dialog.set_response_appearance("purge-delete", adw::ResponseAppearance::Destructive);
         let s = sender.input_sender().clone();
         dialog.connect_response(None, move |_, response| match response {
             "remove" => {
@@ -240,6 +254,7 @@ impl App {
                     crate::app::messages::GamesMsg::RemoveGameConfirmed {
                         game_id: game_id.clone(),
                         delete_mods: false,
+                        purge: false,
                     },
                 ));
             }
@@ -248,6 +263,16 @@ impl App {
                     crate::app::messages::GamesMsg::RemoveGameConfirmed {
                         game_id: game_id.clone(),
                         delete_mods: true,
+                        purge: false,
+                    },
+                ));
+            }
+            "purge-delete" => {
+                let _ = s.send(AppMsg::Games(
+                    crate::app::messages::GamesMsg::RemoveGameConfirmed {
+                        game_id: game_id.clone(),
+                        delete_mods: true,
+                        purge: true,
                     },
                 ));
             }
@@ -260,16 +285,29 @@ impl App {
         &mut self,
         game_id: String,
         delete_mods: bool,
+        purge: bool,
         sender: &ComponentSender<Self>,
     ) {
-        if !self.session.games.iter().any(|game| game.id == game_id) {
+        if self.is_busy() {
+            self.push_notification(
+                "Wait for the current operation to finish before removing a game",
+            );
             return;
         }
+        let Some(game) = self
+            .session
+            .games
+            .iter()
+            .find(|game| game.id == game_id)
+            .cloned()
+        else {
+            return;
+        };
         let Some(tracker) = self.session.tracker.clone() else {
             self.push_notification("Database not ready yet");
             return;
         };
-        let cache_root = if delete_mods {
+        let cache_root = if delete_mods || purge {
             match self.cache_root_for(&game_id) {
                 Ok(path) => Some(path),
                 Err(error) => {
@@ -280,18 +318,63 @@ impl App {
         } else {
             None
         };
+        self.shell.deploying = true;
+        self.deployment_phase(
+            if purge {
+                "Purging and removing game…"
+            } else {
+                "Removing game…"
+            },
+            false,
+        );
+        self.begin_work(crate::app::types::WorkKind::Purging, "Removing game...");
+        let control = self.deployment_control();
         self.location_command(sender, async move {
             let result: Result<Vec<String>, String> = async {
+                if purge {
+                    let cache = cache_root
+                        .as_deref()
+                        .ok_or("Cannot resolve the mod cache")?;
+                    crate::core::generations::removal::remove(&tracker, &game, cache, control)
+                        .await
+                        .map_err(|error| format!("{error:#}"))?;
+                    return Ok(Vec::new());
+                }
+                let mut caches = std::collections::HashMap::new();
+                if delete_mods {
+                    for id in crate::core::tracker::removal::scope(&game_id) {
+                        let root = match tracker
+                            .get_setting(&format!("cache_dir_{id}"))
+                            .await
+                            .map_err(|error| error.to_string())?
+                        {
+                            Some(path) => std::path::PathBuf::from(path),
+                            None => crate::utils::paths::cache_root()
+                                .map_err(|error| error.to_string())?,
+                        };
+                        for item in tracker
+                            .list_mods(id)
+                            .await
+                            .map_err(|error| error.to_string())?
+                        {
+                            caches.insert(item.id, root.clone());
+                        }
+                    }
+                }
                 let mod_ids = tracker
                     .remove_managed_game(&game_id, delete_mods)
                     .await
                     .map_err(|error| error.to_string())?;
                 let mut warnings = Vec::new();
-                if let Some(cache_root) = cache_root {
+                if delete_mods {
                     for mod_id in mod_ids {
-                        let cache = crate::utils::paths::mod_cache_dir_in(&cache_root, &mod_id);
-                        if let Err(error) = std::fs::remove_dir_all(&cache)
-                            && error.kind() != std::io::ErrorKind::NotFound
+                        let cache_root = caches
+                            .get(&mod_id)
+                            .ok_or("Cannot resolve a removed mod's cache")?;
+                        if let Err(error) = crate::core::generations::removal::delete_mod_cache(
+                            &tracker, cache_root, &mod_id,
+                        )
+                        .await
                         {
                             warnings.push(format!(
                                 "Could not remove cached files for mod '{mod_id}': {error}"
@@ -302,33 +385,48 @@ impl App {
                 Ok(warnings)
             }
             .await;
-            AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::GameRemoved { game_id, result })
+            AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::GameRemoved {
+                game_id,
+                purge,
+                result,
+            })
         });
     }
 
     pub(crate) fn handle_cmd_game_removed(
         &mut self,
         game_id: String,
+        purge: bool,
         result: Result<Vec<String>, String>,
         sender: &ComponentSender<Self>,
     ) {
+        self.shell.deploying = false;
+        self.finish_work(crate::app::types::WorkKind::Purging);
         let warnings = match result {
             Ok(warnings) => warnings,
             Err(error) => {
+                self.deployment_failure(&format!("Could not remove game: {error}"));
                 self.push_notification(&format!("Could not remove game: {error}"));
+                if purge {
+                    let selected = self.selected_game().map(|game| game.id.clone());
+                    self.refresh_game_selection(selected.as_deref(), sender);
+                }
                 return;
             }
         };
-        let Some(index) = self
-            .session
-            .games
-            .iter()
-            .position(|game| game.id == game_id)
-        else {
-            return;
-        };
+        self.deployment_result("Game removed", "The selected game-removal option has completed. Saves and downloaded archives were preserved.");
         let selected_id = self.selected_game().map(|game| game.id.clone());
-        self.session.games.remove(index);
+        let ids = crate::core::tracker::removal::scope(&game_id);
+        self.session
+            .games
+            .retain(|game| !ids.contains(&game.id.as_str()));
+        if purge {
+            for id in ids {
+                self.session.game_cache_dirs.remove(id);
+                self.session.appearance_presets.remove(id);
+                self.session.location_blocked.remove(id);
+            }
+        }
         for warning in warnings {
             self.push_notification(&format!("Game removal warning: {warning}"));
         }

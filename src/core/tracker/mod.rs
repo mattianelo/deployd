@@ -18,7 +18,7 @@ pub mod mods;
 pub mod order_snapshots;
 pub mod plugins;
 pub mod profiles;
-mod removal;
+pub(crate) mod removal;
 pub mod settings;
 pub(crate) mod trilogy_profiles;
 pub mod vanilla;

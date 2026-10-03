@@ -269,6 +269,16 @@ editing or replacing files in the writable mod cache cannot change an older gene
 external cache or its portal grant is unavailable, restoration remains blocked until access is
 restored; Deployd does not substitute content from another location.
 
+When stopping management of a game, **Purge & delete all Deployd data** restores its managed
+deployment first, then removes its mod cache, profiles, history and game settings. Add the game
+again to start from scratch. Original game files, all saves and downloaded mod archives are
+preserved, as is shared content needed by other games. The two Reset choices remain available
+if you want to leave deployed files in place. If full-reset cleanup is interrupted, Deployd
+retries it on startup; restore cache access and retry the same option if cleanup remains blocked.
+For Mass Effect Legendary Edition, every removal choice applies to LE1, LE2 and LE3 together.
+Full reset waits for all three purges to succeed before clearing their data. If a purge fails,
+all three remain managed with their data retained; retrying finishes the remaining purges.
+
 **Why would you move it?**  
 Most supported games use **hardlinks**, which avoid duplicate file storage when the
 cache and game share a compatible filesystem. Moving the cache can make that possible

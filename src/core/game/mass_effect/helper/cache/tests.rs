@@ -159,3 +159,42 @@ fn cleanup_keeps_two_successful_recipes_other_profiles_and_active_outputs() -> R
     }
     Ok(())
 }
+
+// @variants: both
+#[test]
+fn forgetting_a_game_reclaims_its_results_and_preserves_shared_results() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let root = paths::mele_result_cache_in(temp.path());
+    let exclusive = Ticket {
+        root: root.clone(),
+        key: digest(b"exclusive"),
+    };
+    let shared = Ticket {
+        root: root.clone(),
+        key: digest(b"shared"),
+    };
+    let outputs = [
+        exclusive.publish(&output(temp.path())?, &job(), &Control::recovery())?,
+        shared.publish(&output(temp.path())?, &job(), &Control::recovery())?,
+    ];
+    let first = recipe("INT");
+    let mut second = recipe("INT");
+    second.target = crate::core::game::mass_effect::Target::Le2;
+    prepared(
+        temp.path(),
+        &first,
+        BTreeSet::from([exclusive.key.clone(), shared.key.clone()]),
+    )?;
+    committed(temp.path(), &first, "profile")?;
+    prepared(temp.path(), &second, BTreeSet::from([shared.key.clone()]))?;
+    committed(temp.path(), &second, "profile")?;
+    drop(outputs);
+    forget(temp.path(), first.target, &["profile".into()])?;
+    assert!(!exclusive.directory().exists());
+    assert!(shared.directory().exists());
+    assert_eq!(usage(&root)?.profiles.len(), 1);
+    forget(temp.path(), second.target, &["profile".into()])?;
+    assert!(!shared.directory().exists());
+    assert!(usage(&root)?.profiles.is_empty());
+    Ok(())
+}

@@ -38,11 +38,7 @@ pub(crate) async fn load_game_data(
 ) -> Result<LoadedData, String> {
     let game_id = &game.id;
     let mut access_warnings = Vec::new();
-    let repair_pending = if snap::is_snap() {
-        tracker.ensure_location_ready(game_id).await.err()
-    } else {
-        None
-    };
+    let repair_pending = tracker.ensure_location_ready(game_id).await.err();
     if let Some(error) = &repair_pending {
         access_warnings.push(error.to_string());
     }

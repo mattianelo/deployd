@@ -160,7 +160,8 @@ impl App {
             GamesMsg::RemoveGameConfirmed {
                 game_id,
                 delete_mods,
-            } => self.handle_remove_game(game_id, delete_mods, &sender),
+                purge,
+            } => self.handle_remove_game(game_id, delete_mods, purge, &sender),
             GamesMsg::CacheDirChangeRequested { game_id, new_dir } => {
                 self.handle_cache_dir_change_requested(game_id, new_dir, &sender)
             }
@@ -638,9 +639,11 @@ impl App {
                 self.handle_cmd_save_backup_mutation(result, &sender)
             }
             GamesCmdMsg::GamesPersisted(result) => self.handle_cmd_games_persisted(result, &sender),
-            GamesCmdMsg::GameRemoved { game_id, result } => {
-                self.handle_cmd_game_removed(game_id, result, &sender)
-            }
+            GamesCmdMsg::GameRemoved {
+                game_id,
+                purge,
+                result,
+            } => self.handle_cmd_game_removed(game_id, purge, result, &sender),
             GamesCmdMsg::OrderSnapshotsLoaded(mod_snapshots, plugin_snapshots) => {
                 self.handle_cmd_order_snapshots_loaded(mod_snapshots, plugin_snapshots, &sender)
             }

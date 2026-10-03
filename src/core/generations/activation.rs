@@ -140,6 +140,10 @@ impl Prepared {
     }
 
     pub(crate) async fn activate(self, control: Control) -> Result<Option<String>> {
+        self.apply(control).await
+    }
+
+    async fn apply(&self, control: Control) -> Result<Option<String>> {
         let profile = self
             .manifest
             .as_ref()
@@ -170,6 +174,66 @@ impl Prepared {
     pub(crate) async fn discard(self) -> Result<()> {
         journal::discard_save_preparation(&self.history, &self.game, &self.journal.id).await
     }
+}
+
+pub(super) async fn purge_for_removal(
+    tracker: &Tracker,
+    game: &Game,
+    cache: &Path,
+    data: PathBuf,
+    control: Control,
+    lease: Option<std::sync::Arc<super::operation::Lease>>,
+) -> Result<History> {
+    if game.engine != GameEngine::MassEffect {
+        let vanilla = tracker.get_vanilla_metadata(&game.id).await?;
+        for file in tracker.get_deployed_files(&game.id).await? {
+            ensure!(
+                !vanilla.contains_key(&file.game_rel_lowercase)
+                    || tracker
+                        .get_vanilla_backup(&game.id, &file.game_rel_lowercase)
+                        .await?
+                        .is_some(),
+                "No original backup is available for '{}'; full reset was stopped to preserve recovery data. Restore the original installation before resetting management",
+                file.game_rel_original
+            );
+        }
+        let prepared = prepare(tracker, game, cache, None, false, control.clone()).await?;
+        prepared.apply(control).await?;
+        return Ok(prepared.history);
+    }
+    tracker.ensure_location_ready(&game.id).await?;
+    let history = match lease {
+        Some(lease) => History::bind(tracker, &game.id, cache, true, lease).await?,
+        None => History::open(tracker, &game.id, cache, true).await?,
+    };
+    recovery::recover(&history, game).await?;
+    tracker.ensure_no_mele_journal(&game.id).await?;
+    let tracked: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM deployed_files WHERE game_id=? UNION ALL SELECT 1 FROM generation_game_state WHERE game_id=? AND deployed_generation_id IS NOT NULL UNION ALL SELECT 1 FROM mele_families f JOIN game_locations g ON g.location_id=f.location_id, json_each(f.document,'$.mods') m WHERE g.game_id=? AND json_extract(m.value,'$.owner')=?)")
+        .bind(&game.id).bind(&game.id).bind(&game.id).bind(&game.id).fetch_one(&tracker.pool).await?;
+    if let Some(state) = tracker.mele_deployment(&game.id).await? {
+        if state.recipe.is_none() && state.files.is_empty() && state.removals.is_empty() && !tracked
+        {
+            return Ok(history);
+        }
+        let previous = ownership::initialize(&history).await?;
+        let journal = mele::purge(&history, game, data, control.clone()).await?;
+        coordinator::activate(
+            &history,
+            game,
+            &journal,
+            Some(&previous),
+            None,
+            &previous.saves,
+            control,
+        )
+        .await?;
+    } else {
+        ensure!(
+            !tracked,
+            "MELE deployment records are incomplete; restore the installation before removing its recovery data"
+        );
+    }
+    Ok(history)
 }
 
 pub(crate) async fn prepare(

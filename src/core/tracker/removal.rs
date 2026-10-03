@@ -1,7 +1,25 @@
 use anyhow::{Context, Result, ensure};
 use sqlx::{Sqlite, Transaction};
 
-pub(super) async fn reset(tx: &mut Transaction<'_, Sqlite>, game: &str) -> Result<Vec<String>> {
+pub(crate) fn scope(game: &str) -> Vec<&str> {
+    const TRILOGY: [&str; 3] = ["mass-effect-le1", "mass-effect-le2", "mass-effect-le3"];
+    if TRILOGY.contains(&game) {
+        TRILOGY.to_vec()
+    } else {
+        vec![game]
+    }
+}
+
+pub(crate) async fn reset(tx: &mut Transaction<'_, Sqlite>, game: &str) -> Result<Vec<String>> {
+    let removing: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM settings WHERE key='game_removal_' || ?)")
+            .bind(game)
+            .fetch_one(&mut **tx)
+            .await?;
+    ensure!(
+        !removing,
+        "Full reset cleanup is incomplete; retry Purge & delete all Deployd data so its cleanup record is preserved"
+    );
     ensure!(
         !game.is_empty()
             && game
@@ -28,9 +46,21 @@ pub(super) async fn reset(tx: &mut Transaction<'_, Sqlite>, game: &str) -> Resul
         .bind(game)
         .fetch_all(&mut **tx)
         .await?;
-    let domain = crate::core::game::all_nexus_domains()
+    let ids = scope(game);
+    let mut domain = crate::core::game::all_nexus_domains()
         .into_iter()
-        .find(|domain| crate::core::game::game_ids_for_nexus_domain(domain) == [game]);
+        .find(|domain| crate::core::game::game_ids_for_nexus_domain(domain) == ids);
+    for peer in ids.iter().filter(|id| **id != game) {
+        let managed: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM games WHERE id=? AND COALESCE(hidden,0)=0)",
+        )
+        .bind(peer)
+        .fetch_one(&mut **tx)
+        .await?;
+        if managed {
+            domain = None;
+        }
+    }
     sqlx::query("UPDATE download_entries SET status='downloaded' WHERE status='installed' AND (COALESCE(game_domain,nexus_domain)=? OR EXISTS(SELECT 1 FROM mods m WHERE m.game_id=? AND (m.archive_hash=download_entries.archive_hash OR (m.nexus_domain=download_entries.nexus_domain AND m.nexus_mod_id=download_entries.nexus_mod_id AND m.nexus_file_id=download_entries.nexus_file_id)))) AND NOT EXISTS(SELECT 1 FROM mods m WHERE m.game_id<>? AND (m.archive_hash=download_entries.archive_hash OR (m.nexus_domain=download_entries.nexus_domain AND m.nexus_mod_id=download_entries.nexus_mod_id AND m.nexus_file_id=download_entries.nexus_file_id)))")
         .bind(domain).bind(game).bind(game).execute(&mut **tx).await?;
     for sql in [

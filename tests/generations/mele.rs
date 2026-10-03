@@ -779,6 +779,21 @@ async fn mele_history_restores_complete_sources_and_reuses_outputs_without_a_hel
             Control::default(),
         )
         .await?;
+        drop(history);
+        super::removal::remove_in(
+            &tracker,
+            &game,
+            temp.path(),
+            temp.path().join("data"),
+            Control::default(),
+        )
+        .await?;
+        assert_eq!(fs::read(game.path.join(ENGINE))?, b"original");
+        assert!(tracker.list_mods(&game.id).await?.is_empty());
+        assert!(tracker.list_profiles(&game.id).await?.is_empty());
+        assert!(tracker.load_mele_baseline(&game.id).await?.is_none());
+        assert!(tracker.mele_deployment(&game.id).await?.is_none());
+        assert!(!temp.path().join("deployd-history").join(&game.id).exists());
     }
     Ok(())
 }

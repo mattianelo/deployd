@@ -757,6 +757,11 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
         let open_report = Tracker::open(&db_url).await.map_err(|e| e.to_string())?;
         let tracker = open_report.tracker;
         let mut startup_warnings = open_report.warnings;
+        startup_warnings.extend(
+            crate::core::generations::removal::resume_all(&tracker)
+                .await
+                .map_err(|error| format!("Cannot inspect pending game cleanup: {error:#}"))?,
+        );
         if crate::utils::snap::is_snap() {
             let _lease = crate::core::location_recovery::activity_lock()
                 .write_owned()

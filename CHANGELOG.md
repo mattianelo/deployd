@@ -2,6 +2,14 @@
 
 ## [3.1.0]
 
+- Added **Purge & delete all Deployd data** alongside the existing stop-managing
+  options. It restores the managed deployment and clears the game's mod cache,
+  profiles, history and settings for a fresh start, while preserving original
+  game files, saves, downloaded archives and content needed by other games.
+  Interrupted cleanup can be retried without losing its remaining work. MELE
+  removal applies to the whole trilogy. If a purge fails, all three games remain
+  managed with their data retained, and retrying finishes the remaining purges.
+
 - MELE now caches verified transformation results across restarts and avoids
   copying unchanged package files into preparation, reducing repeated work when
   enabling, disabling or reordering mods. Older unused cached results are cleaned

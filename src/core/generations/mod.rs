@@ -17,6 +17,7 @@ mod journal;
 mod prepared;
 mod recovery;
 pub(crate) mod relocation;
+pub(crate) mod removal;
 mod restore;
 mod saves;
 mod shared;

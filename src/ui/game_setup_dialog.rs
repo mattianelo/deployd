@@ -39,6 +39,7 @@ fn assign_prefix(entries: &mut [GameEntry], selected: usize, prefix: &std::path:
 
 pub struct GameSetupDialog {
     entries: Vec<GameEntry>,
+    removed_ids: Vec<String>,
     selected_locations: HashMap<PathBuf, SelectedLocation>,
     dirty: bool,
     /// Custom cache dirs per game_id (passed in at init, updated on change).
@@ -175,7 +176,12 @@ impl GameSetupDialog {
         let check = gtk::CheckButton::new();
         check.set_active(entry.enabled);
         check.set_valign(gtk::Align::Center);
-        check.set_tooltip_text(Some("Include this game"));
+        let trilogy = crate::core::tracker::removal::scope(&entry.game.id).len() > 1;
+        check.set_tooltip_text(Some(if trilogy {
+            "Include all three MELE games"
+        } else {
+            "Include this game"
+        }));
         {
             let input = sender.input_sender().clone();
             check.connect_toggled(move |_| {
@@ -188,7 +194,11 @@ impl GameSetupDialog {
         let remove_btn = gtk::Button::from_icon_name("user-trash-symbolic");
         remove_btn.set_valign(gtk::Align::Center);
         remove_btn.add_css_class("flat");
-        remove_btn.set_tooltip_text(Some("Remove"));
+        remove_btn.set_tooltip_text(Some(if trilogy {
+            "Remove all three MELE games"
+        } else {
+            "Remove"
+        }));
         {
             let input = sender.input_sender().clone();
             remove_btn.connect_clicked(move |_| {
@@ -593,6 +603,7 @@ impl Component for GameSetupDialog {
 
         let model = GameSetupDialog {
             entries,
+            removed_ids: Vec::new(),
             selected_locations: HashMap::new(),
             dirty: false,
             game_cache_dirs,
@@ -643,8 +654,15 @@ impl Component for GameSetupDialog {
 
             GameSetupMsg::ToggleEnabled(idx) => {
                 self.dirty = true;
-                if let Some(entry) = self.entries.get_mut(idx) {
-                    entry.enabled = !entry.enabled;
+                if let Some(entry) = self.entries.get(idx) {
+                    let enabled = !entry.enabled;
+                    let id = entry.game.id.clone();
+                    let ids = crate::core::tracker::removal::scope(&id);
+                    for entry in &mut self.entries {
+                        if ids.contains(&entry.game.id.as_str()) {
+                            entry.enabled = enabled;
+                        }
+                    }
                 }
                 self.rebuild_games(&sender);
             }
@@ -814,7 +832,14 @@ impl Component for GameSetupDialog {
 
             GameSetupMsg::RemoveGame(idx) => {
                 self.dirty = true;
-                self.entries.remove(idx);
+                if let Some(entry) = self.entries.get(idx) {
+                    let id = entry.game.id.clone();
+                    let ids = crate::core::tracker::removal::scope(&id);
+                    self.removed_ids
+                        .extend(ids.iter().map(|id| (*id).to_owned()));
+                    self.entries
+                        .retain(|entry| !ids.contains(&entry.game.id.as_str()));
+                }
                 self.rebuild_games(&sender);
             }
 
@@ -1071,6 +1096,12 @@ impl Component for GameSetupDialog {
                     .iter()
                     .filter(|e| !e.enabled)
                     .map(|e| e.game.id.clone())
+                    .chain(
+                        self.removed_ids
+                            .iter()
+                            .filter(|id| !enabled.iter().any(|config| &config.game.id == *id))
+                            .cloned(),
+                    )
                     .collect();
                 let _ = sender.output(GameSetupOutput::Confirmed {
                     enabled,
