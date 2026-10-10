@@ -104,6 +104,11 @@ cache space, with older unused results cleaned automatically after deployment.
 Missing or damaged cached results are rebuilt; deployment history and restoration
 files remain separate. The first deployment after upgrading may need to populate
 this cache.
+Redeployments reuse filename lookups for unchanged folders on supported local
+filesystems, reducing repeated folder scans on large mod lists, including Skyrim
+Special Edition. Folder changes refresh those lookups; conflicting filename casing
+and redirected folders still block deployment. Locations without reliable change
+notifications, including portal-backed folders, continue to use full folder scans.
 Generations reuse verified file hashes while Deployd stays open when file identity,
 size, timestamps, permissions and link count are unchanged. Changed files are
 hashed again; rollback copies and transaction checks remain in place. The first

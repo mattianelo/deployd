@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 use crate::core::game;
 use crate::models::game::{Game, GameEngine};
 
+#[path = "target_directory.rs"]
+mod directory;
+
 pub(super) fn relative(value: &str) -> Result<&Path> {
     ensure!(
         !value.is_empty()
@@ -182,32 +185,14 @@ fn resolve_casing_with(
                 "Deployment parent is redirected or is not a directory: {}",
                 resolved.display()
             ),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error).context("Cannot inspect deployment parent"),
-        }
-        let entries = match std::fs::read_dir(&resolved) {
-            Ok(entries) => entries,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 resolved.push(name);
                 continue;
             }
-            Err(error) => {
-                return Err(error).with_context(|| {
-                    format!(
-                        "Cannot inspect deployment directory '{}'",
-                        resolved.display()
-                    )
-                });
-            }
-        };
-        let expected = name.to_string_lossy().to_lowercase();
-        let mut matched = Vec::new();
-        for entry in entries {
-            let entry = entry?;
-            if entry.file_name().to_string_lossy().to_lowercase() == expected {
-                matched.push(entry.path());
-            }
+            Err(error) => return Err(error).context("Cannot inspect deployment parent"),
         }
+        let expected = name.to_string_lossy().to_lowercase();
+        let mut matched = directory::matching(&resolved, &expected)?;
         matched.sort();
         if matched.len() > 1 {
             let exact = resolved.join(name);
@@ -247,6 +232,27 @@ mod tests {
         );
         std::fs::write(temp.path().join("data/Textures/example.dds"), b"other")?;
         assert!(resolve_casing(temp.path(), Path::new("Data/textures/Example.dds")).is_err());
+        Ok(())
+    }
+
+    // @variants: both
+    #[test]
+    fn refreshes_missing_parents_and_rejects_redirected_cached_parents() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let relative = Path::new("Data/textures/example.dds");
+        assert_eq!(
+            resolve_casing(temp.path(), relative)?,
+            temp.path().join(relative)
+        );
+        std::fs::create_dir_all(temp.path().join("data/Textures"))?;
+        std::fs::write(temp.path().join("data/Textures/Example.dds"), b"texture")?;
+        assert_eq!(
+            resolve_casing(temp.path(), relative)?,
+            temp.path().join("data/Textures/Example.dds")
+        );
+        std::fs::rename(temp.path().join("data/Textures"), temp.path().join("moved"))?;
+        std::os::unix::fs::symlink(temp.path().join("moved"), temp.path().join("data/Textures"))?;
+        assert!(resolve_casing(temp.path(), relative).is_err());
         Ok(())
     }
 }

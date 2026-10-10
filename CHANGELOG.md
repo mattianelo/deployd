@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+- Reduced repeated folder scans during redeployment on supported local
+  filesystems, including Skyrim Special Edition mod lists. Folder changes refresh
+  filename lookups; conflicting names and redirected deployment folders still
+  block unsafe changes. Other locations keep using full folder scans.
+
 ## [3.1.0]
 
 - Added **Purge & delete all Deployd data** alongside the existing stop-managing
