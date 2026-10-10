@@ -454,11 +454,27 @@ async fn mele_history_restores_complete_sources_and_reuses_outputs_without_a_hel
         drop(history);
         tracker.pool.close().await;
         let tracker = Tracker::open(&database).await?.tracker;
+        crate::utils::verified_files::invalidate()?;
+        let before = crate::utils::verified_files::metrics().hashed_bytes;
         super::session::initialize(&tracker, &game).await?;
-        assert_eq!(
-            super::session::inspect_live(&tracker, &game).await?,
-            Some(0)
-        );
+        assert_eq!(crate::utils::verified_files::metrics().hashed_bytes, before);
+        let report =
+            super::api::verify_integrity(&tracker, &game, temp.path(), Control::default()).await?;
+        assert_eq!(report.differing_files, 0);
+        assert!(report.hashed_bytes > 0);
+        fs::write(game.path.join(ENGINE), b"edited")?;
+        crate::utils::verified_files::invalidate()?;
+        let before = crate::utils::verified_files::metrics().hashed_bytes;
+        super::session::initialize(&tracker, &game).await?;
+        assert_eq!(crate::utils::verified_files::metrics().hashed_bytes, before);
+        let report =
+            super::api::verify_integrity(&tracker, &game, temp.path(), Control::default()).await?;
+        assert_eq!(report.differing_files, 1);
+        assert_eq!(fs::read(game.path.join(ENGINE))?, b"edited");
+        fs::write(game.path.join(ENGINE), b"winner")?;
+        let report =
+            super::api::verify_integrity(&tracker, &game, temp.path(), Control::default()).await?;
+        assert_eq!(report.differing_files, 0);
         let mut tx = tracker.pool.begin().await?;
         let reopened = super::records::capture_state(&mut tx, &game.id, &profile, true).await?;
         tx.rollback().await?;

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Fixed stale file-hash reuse after rapid same-size edits with matching timestamps,
+  which could incorrectly block MELE package retention with a hash-mismatch error.
+  File-change notifications now guard cached hashes; locations without reliable
+  notifications fall back to full content reads.
+
 - Faster startup and game opening: full retained-file and deployed-file audits no
   longer run automatically while loading. Interrupted-operation recovery and
   folder-access checks still run before editing; deployment, restoration and

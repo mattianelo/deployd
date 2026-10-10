@@ -1,6 +1,8 @@
 use std::fs::{self, FileTimes};
 use std::os::unix::fs::{PermissionsExt, symlink};
 
+use anyhow::Context;
+
 use super::*;
 use crate::core::generations::content::{self, Control};
 
@@ -78,7 +80,9 @@ fn full_verification_discards_previous_hashes_and_rejects_changes_during_reads()
         .lock()
         .unwrap()
         .entries
-        .insert(stamp, "0".repeat(64));
+        .get_mut(&stamp)
+        .context("Cached file")?
+        .1 = "0".repeat(64);
     invalidate()?;
     let before = metrics();
     assert_ne!(content::inspect(&path, &control)?.sha256, "0".repeat(64));
@@ -143,5 +147,100 @@ fn unsupported_and_cross_device_clones_fall_back_to_verified_copies() -> Result<
         fs::write(&target, b"changed")?;
         assert_eq!(content::inspect(&source, &control)?, expected);
     }
+    Ok(())
+}
+
+// @variants: both
+#[test]
+fn change_notifications_reject_cached_hashes_even_when_metadata_matches() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("same-size");
+    fs::write(&path, b"first")?;
+    let first = content::inspect(&path, &Control::default())?;
+    let old_stamp = Stamp::from(&fs::metadata(&path)?);
+    let cached = cache()
+        .lock()
+        .unwrap()
+        .entries
+        .get(&old_stamp)
+        .cloned()
+        .context("Cached hash")?;
+    fs::write(&path, b"other")?;
+    let stamp = Stamp::from(&fs::metadata(&path)?);
+    // Simulate coarse filesystem timestamps without depending on the test machine's clock.
+    cache().lock().unwrap().entries.insert(stamp, cached);
+    let current = content::inspect(&path, &Control::default())?;
+    assert_ne!(current.sha256, first.sha256);
+    assert_eq!(current.sha256, format!("{:x}", Sha256::digest(b"other")));
+    Ok(())
+}
+
+// @variants: both
+#[test]
+fn rapid_same_size_rewrites_always_use_current_contents() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("manifest");
+    for index in 0..256 {
+        let bytes = if index % 2 == 0 {
+            b"cmmver=9.2"
+        } else {
+            b"cmmver=8.2"
+        };
+        fs::write(&path, bytes)?;
+        assert_eq!(
+            content::inspect(&path, &Control::default())?.sha256,
+            format!("{:x}", Sha256::digest(bytes))
+        );
+    }
+    Ok(())
+}
+
+// @variants: both
+#[test]
+fn unavailable_notifications_fall_back_to_reading_and_unrelated_edits_preserve_reuse() -> Result<()>
+{
+    let temp = tempfile::tempdir()?;
+    let first = temp.path().join("first");
+    let second = temp.path().join("second");
+    fs::write(&first, b"first")?;
+    fs::write(&second, b"second")?;
+    let control = Control::default();
+    let original = content::inspect(&first, &control)?;
+    content::inspect(&second, &control)?;
+    fs::write(&second, b"edited")?;
+    let before = metrics();
+    assert_eq!(content::inspect(&first, &control)?, original);
+    assert_eq!(metrics().hashed_bytes, before.hashed_bytes);
+    cache().lock().unwrap().notifications = None;
+    let before = metrics();
+    assert_eq!(content::inspect(&first, &control)?, original);
+    assert_eq!(content::inspect(&first, &control)?, original);
+    assert_eq!(metrics().hashed_bytes - before.hashed_bytes, 10);
+    invalidate()?;
+    Ok(())
+}
+
+// @variants: both
+#[test]
+fn invalidating_the_cache_during_verification_falls_back_to_fresh_reads() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("file");
+    fs::write(&path, b"value")?;
+    content::inspect(&path, &Control::default())?;
+    let before = metrics();
+    let mut invalidated = false;
+    let actual = hash(
+        &mut File::open(&path)?,
+        || Ok(()),
+        |_, _| {
+            if !invalidated {
+                invalidate().unwrap();
+                invalidated = true;
+            }
+        },
+    )?;
+    assert_eq!(actual, format!("{:x}", Sha256::digest(b"value")));
+    assert_eq!(metrics().hashed_bytes - before.hashed_bytes, 5);
+    assert!(cache().lock().unwrap().entries.is_empty());
     Ok(())
 }

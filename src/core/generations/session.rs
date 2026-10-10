@@ -21,27 +21,6 @@ pub(crate) async fn initialize(tracker: &Tracker, game: &Game) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
-pub(crate) async fn inspect_live(tracker: &Tracker, game: &Game) -> Result<Option<usize>> {
-    let cache: Option<String> =
-        sqlx::query_scalar("SELECT cache_root FROM generation_stores WHERE game_id=?")
-            .bind(&game.id)
-            .fetch_optional(&tracker.pool)
-            .await?;
-    let Some(cache) = cache else {
-        return Ok(None);
-    };
-    let history = History::open(tracker, &game.id, std::path::Path::new(&cache), false).await?;
-    Ok(
-        divergence::inspect(&history, game, super::content::Control::default())
-            .await?
-            .map(|inspection| {
-                let _generation = inspection.generation;
-                inspection.differences.len()
-            }),
-    )
-}
-
 pub(crate) async fn live_saves(tracker: &Tracker, game: &Game) -> Result<save_manager::SaveSetId> {
     let mut tx = durable(tracker).await?;
     Ok(state::read(&mut tx, &game.id)

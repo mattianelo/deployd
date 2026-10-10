@@ -268,7 +268,8 @@ async fn conditional_tlk_options_rebuild_when_preceding_dlc_changes() -> Result<
             cancel(),
             Arc::new(|_, _| {}),
         )
-        .await?;
+        .await
+        .context("Initial conditional TLK deployment failed")?;
     assert_eq!(fs::read(fixture.game.path.join(ENGINE))?, b"base-tlk");
     recipe.packages[0].enabled = false;
     let removed = fixture
@@ -279,7 +280,8 @@ async fn conditional_tlk_options_rebuild_when_preceding_dlc_changes() -> Result<
             cancel(),
             Arc::new(|_, _| {}),
         )
-        .await?;
+        .await
+        .context("Disabling the preceding DLC failed")?;
     assert_eq!(fs::read(fixture.game.path.join(ENGINE))?, b"original");
     recipe.packages[0].enabled = true;
     fixture
@@ -290,7 +292,8 @@ async fn conditional_tlk_options_rebuild_when_preceding_dlc_changes() -> Result<
             cancel(),
             Arc::new(|_, _| {}),
         )
-        .await?;
+        .await
+        .context("Re-enabling the preceding DLC failed")?;
     assert_eq!(fs::read(fixture.game.path.join(ENGINE))?, b"base-tlk");
     fs::write(
         source.join("moddesc.ini"),

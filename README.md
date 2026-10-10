@@ -110,8 +110,10 @@ Special Edition. Folder changes refresh those lookups; conflicting filename casi
 and redirected folders still block deployment. Locations without reliable change
 notifications, including portal-backed folders, continue to use full folder scans.
 Generations reuse verified file hashes while Deployd stays open when file identity,
-size, timestamps, permissions and link count are unchanged. Changed files are
-hashed again; rollback copies and transaction checks remain in place. The first
+size, timestamps, permissions and link count are unchanged and file-change
+notifications confirm the cached result is still valid. Rapid same-size edits are
+hashed again even when timestamps match. Locations without reliable notifications
+use full reads; rollback copies and transaction checks remain in place. The first
 verification after restarting Deployd still reads file contents. Independent file
 copies use copy-on-write where the filesystem permits, with ordinary copying as a
 fallback; editing deployed files does not modify their retained copies.

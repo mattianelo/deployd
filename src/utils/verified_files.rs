@@ -9,6 +9,10 @@ use std::sync::{Mutex, OnceLock};
 use anyhow::{Result, anyhow, ensure};
 use sha2::{Digest, Sha256};
 
+mod notifications;
+
+use notifications::{Notifications, Ticket};
+
 const CAPACITY: usize = 65_536;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -36,10 +40,45 @@ impl From<&Metadata> for Stamp {
     }
 }
 
-#[derive(Default)]
 struct Cache {
     epoch: u64,
-    entries: HashMap<Stamp, String>,
+    entries: HashMap<Stamp, (Ticket, String)>,
+    notifications: Option<Notifications>,
+}
+
+impl Default for Cache {
+    fn default() -> Self {
+        Self {
+            epoch: 0,
+            entries: HashMap::new(),
+            notifications: Notifications::new().ok(),
+        }
+    }
+}
+
+impl Cache {
+    fn reset(&mut self) {
+        let epoch = self.epoch.wrapping_add(1);
+        *self = Self::default();
+        self.epoch = epoch;
+    }
+
+    fn refresh(&mut self) {
+        if self
+            .notifications
+            .as_mut()
+            .is_some_and(|events| events.refresh().is_err())
+        {
+            self.reset();
+            self.notifications = None;
+        }
+    }
+
+    fn valid(&self, ticket: Ticket) -> bool {
+        self.notifications
+            .as_ref()
+            .is_some_and(|events| events.valid(ticket))
+    }
 }
 
 fn cache() -> &'static Mutex<Cache> {
@@ -78,8 +117,7 @@ pub(crate) fn invalidate() -> Result<()> {
     let mut cache = cache()
         .lock()
         .map_err(|_| anyhow!("File verification cache is unavailable"))?;
-    cache.epoch = cache.epoch.wrapping_add(1);
-    cache.entries.clear();
+    cache.reset();
     Ok(())
 }
 
@@ -95,11 +133,33 @@ pub(crate) fn hash(
         "File verification requires a regular file"
     );
     let stamp = Stamp::from(&before);
-    let (epoch, cached) = {
-        let cache = cache()
+    let (epoch, mut ticket, cached) = {
+        let mut cache = cache()
             .lock()
             .map_err(|_| anyhow!("File verification cache is unavailable"))?;
-        (cache.epoch, cache.entries.get(&stamp).cloned())
+        cache.refresh();
+        if cache.entries.len() >= CAPACITY
+            || cache
+                .notifications
+                .as_ref()
+                .is_some_and(|events| events.len() >= CAPACITY)
+        {
+            cache.reset();
+        }
+        let cached = cache
+            .entries
+            .get(&stamp)
+            .filter(|(ticket, _)| cache.valid(*ticket))
+            .cloned();
+        let ticket = if let Some((ticket, _)) = &cached {
+            Some(*ticket)
+        } else {
+            cache
+                .notifications
+                .as_mut()
+                .and_then(|events| events.watch(file, stamp).ok().flatten())
+        };
+        (cache.epoch, ticket, cached.map(|(_, hash)| hash))
     };
     if let Some(hash) = cached {
         file.seek(SeekFrom::End(0))?;
@@ -109,8 +169,19 @@ pub(crate) fn hash(
             Stamp::from(&file.metadata()?) == stamp,
             "File changed during verification"
         );
-        CACHE_HITS.fetch_add(1, Ordering::Relaxed);
-        return Ok(hash);
+        let mut cache = cache()
+            .lock()
+            .map_err(|_| anyhow!("File verification cache is unavailable"))?;
+        cache.refresh();
+        if cache.epoch == epoch {
+            ensure!(
+                ticket.is_some_and(|ticket| cache.valid(ticket)),
+                "File changed during verification; retry the operation"
+            );
+            CACHE_HITS.fetch_add(1, Ordering::Relaxed);
+            return Ok(hash);
+        }
+        ticket = None;
     }
     file.seek(SeekFrom::Start(0))?;
     let mut hash = Sha256::new();
@@ -137,11 +208,15 @@ pub(crate) fn hash(
     let mut cache = cache()
         .lock()
         .map_err(|_| anyhow!("File verification cache is unavailable"))?;
-    if cache.epoch == epoch {
-        if cache.entries.len() >= CAPACITY {
-            cache.entries.clear();
-        }
-        cache.entries.insert(stamp, hash.clone());
+    cache.refresh();
+    if cache.epoch == epoch
+        && let Some(ticket) = ticket
+    {
+        ensure!(
+            cache.valid(ticket),
+            "File changed during verification; retry the operation"
+        );
+        cache.entries.insert(stamp, (ticket, hash.clone()));
     }
     Ok(hash)
 }
