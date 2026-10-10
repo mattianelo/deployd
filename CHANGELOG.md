@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [3.2.0]
 
 - Fixed stale file-hash reuse after rapid same-size edits with matching timestamps,
   which could incorrectly block MELE package retention with a hash-mismatch error.
@@ -18,8 +18,6 @@
   filename lookups; conflicting names and redirected deployment folders still
   block unsafe changes. Other locations keep using full folder scans.
 
-## [3.1.0]
-
 - Added **Purge & delete all Deployd data** alongside the existing stop-managing
   options. It restores the managed deployment and clears the game's mod cache,
   profiles, history and settings for a fresh start, while preserving original
@@ -27,6 +25,8 @@
   Interrupted cleanup can be retried without losing its remaining work. MELE
   removal applies to the whole trilogy. If a purge fails, all three games remain
   managed with their data retained, and retrying finishes the remaining purges.
+
+## [3.1.0]
 
 - MELE now caches verified transformation results across restarts and avoids
   copying unchanged package files into preparation, reducing repeated work when
