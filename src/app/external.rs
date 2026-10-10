@@ -298,13 +298,15 @@ impl App {
         let Some(game) = self.selected_game().cloned() else {
             return;
         };
+        if self.session.location_blocked.contains(&game.id) {
+            return;
+        }
         sender.oneshot_command(async move {
             let result = async {
-                crate::core::generations::session::inspect_live(&tracker, &game)
+                tracker
+                    .ensure_location_ready(&game.id)
                     .await
-                    .map_err(|error| {
-                        format!("Cannot inspect the deployed generation: {error:#}")
-                    })?;
+                    .map_err(|error| error.to_string())?;
                 if game.engine == crate::models::game::GameEngine::MassEffect {
                     return Ok(Vec::new());
                 }
@@ -321,16 +323,23 @@ impl App {
                     .await
                     .map_err(|e: anyhow::Error| e.to_string())?;
                 tokio::task::spawn_blocking(move || {
+                    crate::utils::snap::validate_readable_folder(
+                        &game.path,
+                        crate::utils::snap::SelectedFolderKind::GameFolder,
+                    )
+                    .map_err(|error| error.to_string())?;
+                    std::fs::read_dir(&game.path)
+                        .map_err(|error| format!("Cannot read game folder: {error}"))?;
                     let mut files = detector::scan_external_files(&game, &tracked, &vanilla);
                     files.extend(detector::scan_modified_managed_plugins(
                         &game.id,
                         &game,
                         &plugin_files,
                     ));
-                    files
+                    Ok::<_, String>(files)
                 })
                 .await
-                .map_err(|error| format!("External file inspection failed: {error}"))
+                .map_err(|error| format!("External file inspection failed: {error}"))?
             }
             .await;
             AppCmdMsg::Mods(crate::app::messages::ModsCmdMsg::ExternalScanDone(result))

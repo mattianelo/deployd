@@ -59,6 +59,7 @@ pub(crate) struct ShellState {
     pub(crate) search_debounce: Option<glib::SourceId>,
     pub(crate) search_scope: SearchScope,
     pub(crate) nexus_username: Option<String>,
+    pub(crate) startup_nexus_pending: bool,
     pub(crate) nexus_avatar_url: Option<String>,
     pub(crate) nexus_is_premium: bool,
     pub(crate) app_update_version: Option<String>,

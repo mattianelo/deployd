@@ -139,6 +139,7 @@ pub(crate) fn affects_status(command: &AppCmdMsg) -> bool {
             super::messages::ShellCmdMsg::NexusAvatarLoaded(_)
             | super::messages::ShellCmdMsg::NexusUserRefreshed(..)
             | super::messages::ShellCmdMsg::NexusUserRefreshFailed(_)
+            | super::messages::ShellCmdMsg::StartupNexusRefreshed(_)
             | super::messages::ShellCmdMsg::NexusLogoutDone(_)
             | super::messages::ShellCmdMsg::AppUpdateResult(_),
         ) => false,
@@ -178,6 +179,9 @@ mod tests {
         )));
         assert!(!affects_status(&AppCmdMsg::Shell(
             ShellCmdMsg::NexusAvatarLoaded(None)
+        )));
+        assert!(!affects_status(&AppCmdMsg::Shell(
+            ShellCmdMsg::StartupNexusRefreshed(Ok(None))
         )));
         assert!(affects_status(&AppCmdMsg::Shell(
             ShellCmdMsg::PrioritySaved(Ok(()))

@@ -63,6 +63,7 @@ impl App {
     }
 
     pub(crate) fn handle_nexus_api_key_updated(&mut self, sender: &ComponentSender<Self>) {
+        self.shell.startup_nexus_pending = false;
         self.show_toast("Nexus Mods key updated.");
         // Re-validate to refresh username and avatar displayed in the headerbar.
         if let Some(tracker) = self.session.tracker.clone() {
@@ -148,6 +149,7 @@ impl App {
     }
 
     pub(crate) fn handle_nexus_logout_clicked(&mut self, sender: &ComponentSender<Self>) {
+        self.shell.startup_nexus_pending = false;
         self.ui.nexus_user_btn.popdown();
         let Some(tracker) = self.session.tracker.clone() else {
             return;

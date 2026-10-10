@@ -557,6 +557,28 @@ impl App {
             ShellCmdMsg::NexusUserRefreshFailed(error) => {
                 self.push_notification(&format!("Failed to update Nexus account: {error}"));
             }
+            ShellCmdMsg::StartupNexusRefreshed(result) => {
+                if self.shell.startup_nexus_pending {
+                    self.shell.startup_nexus_pending = false;
+                    match result {
+                        Ok(Some(account)) => {
+                            if let Some(rate_limit) = account.rate_limit {
+                                self.download.rate_limit = Some(rate_limit);
+                            }
+                            self.handle_cmd_nexus_user_refreshed(
+                                account.username,
+                                account.avatar_url,
+                                account.premium,
+                                &sender,
+                            );
+                        }
+                        Ok(None) => {}
+                        Err(error) => self.push_notification(&format!(
+                            "Could not refresh cached Nexus account: {error}"
+                        )),
+                    }
+                }
+            }
             ShellCmdMsg::NexusLogoutDone(result) => match result {
                 Ok(()) => {
                     self.handle_cmd_nexus_user_refreshed(None, None, false, &sender);

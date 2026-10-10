@@ -474,6 +474,7 @@ pub(crate) enum ShellCmdMsg {
     /// Nexus user data refreshed after key validation (username, avatar_url, is_premium).
     NexusUserRefreshed(Option<String>, Option<String>, bool),
     NexusUserRefreshFailed(String),
+    StartupNexusRefreshed(Result<Option<super::startup::Account>, String>),
     NexusLogoutDone(Result<(), String>),
 }
 

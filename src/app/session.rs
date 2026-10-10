@@ -45,7 +45,7 @@ pub(crate) async fn load_game_data(
     let mut game_folder_accessible = if repair_pending.is_some() {
         false
     } else if matches!(mode, GameLoadMode::OpenGame) || snap::is_snap() {
-        match snap::validate_selected_folder(&game.path, SelectedFolderKind::GameFolder) {
+        match validate_folder(&game.path, SelectedFolderKind::GameFolder).await {
             Ok(()) => true,
             Err(error) => {
                 access_warnings.push(format!(
@@ -63,19 +63,17 @@ pub(crate) async fn load_game_data(
         false
     } else if matches!(mode, GameLoadMode::OpenGame) || snap::is_snap() {
         match game.wine_prefix.as_deref() {
-            Some(prefix) => {
-                match snap::validate_selected_folder(prefix, SelectedFolderKind::WinePrefix) {
-                    Ok(()) => true,
-                    Err(error) => {
-                        access_warnings.push(format!(
-                            "Access to {}'s Wine prefix is no longer valid. Open Settings → \
+            Some(prefix) => match validate_folder(prefix, SelectedFolderKind::WinePrefix).await {
+                Ok(()) => true,
+                Err(error) => {
+                    access_warnings.push(format!(
+                        "Access to {}'s Wine prefix is no longer valid. Open Settings → \
                              Manage Games and choose Restore Wine-prefix access. {error}",
-                            game.title
-                        ));
-                        false
-                    }
+                        game.title
+                    ));
+                    false
                 }
-            }
+            },
             None => true,
         }
     } else {
@@ -118,27 +116,18 @@ pub(crate) async fn load_game_data(
         access_warnings.push(format!("Deployment recovery needs attention: {error:#}"));
     }
 
-    // Take a one-time vanilla snapshot so the external-file detector can exclude
-    // files that were already present before any mod was installed.
     if game_folder_accessible && game.engine == crate::models::game::GameEngine::MassEffect {
         game::mass_effect::baseline::ensure_baseline(tracker, game)
             .await
             .map_err(|error| error.to_string())?;
     } else if game_folder_accessible {
-        let vanilla_entries = detector::snapshot_game_files(game);
-        tracker
-            .ensure_vanilla_snapshot(game_id, &vanilla_entries)
-            .await
-            .map_err(|e| e.to_string())?;
+        ensure_vanilla_snapshot(tracker, game).await?;
     }
 
     if matches!(mode, GameLoadMode::OpenGame) && game_folder_accessible && wine_prefix_accessible {
         crate::core::generations::session::reconcile_plugins(tracker, game)
             .await
             .map_err(|error| error.to_string())?;
-        crate::core::generations::session::inspect_live(tracker, game)
-            .await
-            .map_err(|error| format!("Cannot inspect the deployed generation: {error:#}"))?;
     }
 
     let mods = tracker
@@ -278,6 +267,36 @@ pub(crate) async fn load_game_data(
     })
 }
 
+async fn validate_folder(path: &Path, kind: SelectedFolderKind) -> Result<(), String> {
+    let path = path.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        snap::validate_selected_folder(&path, kind).map_err(|error| error.to_string())?;
+        std::fs::read_dir(&path)
+            .map(|_| ())
+            .map_err(|error| format!("Cannot read '{}': {error}", path.display()))
+    })
+    .await
+    .map_err(|error| format!("Folder access check stopped: {error}"))?
+}
+
+async fn ensure_vanilla_snapshot(tracker: &Tracker, game: &Game) -> Result<(), String> {
+    if tracker
+        .has_vanilla_snapshot(&game.id)
+        .await
+        .map_err(|error| error.to_string())?
+    {
+        return Ok(());
+    }
+    let scanning = game.clone();
+    let entries = tokio::task::spawn_blocking(move || detector::snapshot_game_files(&scanning))
+        .await
+        .map_err(|error| format!("Vanilla inventory worker stopped: {error}"))?;
+    tracker
+        .ensure_vanilla_snapshot(&game.id, &entries)
+        .await
+        .map_err(|error| error.to_string())
+}
+
 fn scan_vanilla_plugins(data_dir: &Path) -> Result<HashSet<String>, String> {
     let entries = std::fs::read_dir(data_dir)
         .map_err(|error| format!("Cannot read '{}': {error}", data_dir.display()))?;
@@ -365,6 +384,10 @@ pub(crate) async fn fetch_avatar_bytes(url: &str) -> Option<Vec<u8>> {
     );
     bytes
 }
+
+#[cfg(test)]
+#[path = "../../tests/app/startup.rs"]
+mod startup_tests;
 
 #[cfg(test)]
 mod tests {

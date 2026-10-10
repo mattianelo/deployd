@@ -313,6 +313,7 @@ pub(super) fn build_model(
             search_debounce: None,
             search_scope: SearchScope::All,
             nexus_username: None,
+            startup_nexus_pending: false,
             nexus_avatar_url: None,
             nexus_is_premium: false,
             app_update_version: None,
@@ -775,7 +776,7 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
                 ));
             }
         }
-        let location_blocked = crate::core::location_recovery::blocked_games(&tracker)
+        let mut location_blocked = crate::core::location_recovery::blocked_games(&tracker)
             .await
             .map_err(|error| error.to_string())?;
 
@@ -831,6 +832,9 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             override_mod_ids,
         ) = if let Some(game) = &init_game {
             let loaded = load_game_data(&tracker, game, GameLoadMode::OpenGame).await?;
+            if !loaded.location_accessible && !location_blocked.contains(&game.id) {
+                location_blocked.push(game.id.clone());
+            }
             (
                 loaded.mods,
                 loaded.plugins,
@@ -882,56 +886,9 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             .await
             .map_err(|e| e.to_string())?;
 
-        // Fetch fresh rate limits and user info from the API; fall back to DB-cached values
-        let (rate_limit_info, nexus_username, nexus_avatar_url, nexus_is_premium) =
-            if let Some(api_key) = tracker
-                .get_setting("nexus_api_key")
-                .await
-                .map_err(|e| format!("Failed to load the Nexus API key: {e}"))?
-                .filter(|k| !k.is_empty())
-            {
-                let client = crate::core::nexus_api::NexusClient::new(api_key);
-                match client.validate_key().await {
-                    Ok((user, rl)) => {
-                        if let Err(error) = tracker.save_nexus_user(&user).await {
-                            startup_warnings
-                                .push(format!("Could not cache Nexus user details: {error}"));
-                        }
-                        let premium = user.is_premium;
-                        let avatar = user.profile_url.clone();
-                        (rl, Some(user.name), avatar, premium)
-                    }
-                    _ => {
-                        let rl = super::startup::optional(
-                            tracker.load_rate_limits().await,
-                            "Could not load cached Nexus rate limits",
-                            &mut startup_warnings,
-                        )
-                        .flatten();
-                        let (name, avatar) = super::startup::optional(
-                            tracker.load_nexus_user().await,
-                            "Could not load cached Nexus user details",
-                            &mut startup_warnings,
-                        )
-                        .unwrap_or((None, None));
-                        let premium = tracker
-                            .get_setting("nexus_is_premium")
-                            .await
-                            .map_err(|e| format!("Failed to load Nexus account status: {e}"))?
-                            .map(|v| v == "true")
-                            .unwrap_or(false);
-                        (rl, name, avatar, premium)
-                    }
-                }
-            } else {
-                let rl = super::startup::optional(
-                    tracker.load_rate_limits().await,
-                    "Could not load cached Nexus rate limits",
-                    &mut startup_warnings,
-                )
-                .flatten();
-                (rl, None, None, false)
-            };
+        let account = super::startup::cached_account(&tracker, &mut startup_warnings)
+            .await
+            .map_err(|error| error.to_string())?;
 
         let hidden_game_ids = tracker
             .load_hidden_game_ids()
@@ -985,7 +942,7 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             downloads_dir,
             game_cache_dirs,
             download_entries,
-            rate_limit_info,
+            rate_limit_info: account.rate_limit,
             vanilla_plugins,
             groups,
             vanilla_plugin_master_counts,
@@ -994,9 +951,9 @@ pub(super) async fn load_init_data() -> AppCmdMsg {
             hidden_game_ids,
             last_deployed_profile_id,
             first_launch,
-            nexus_username,
-            nexus_avatar_url,
-            nexus_is_premium,
+            nexus_username: account.username,
+            nexus_avatar_url: account.avatar_url,
+            nexus_is_premium: account.premium,
             color_scheme_idx,
             restored_from_backup,
             access_warnings: startup_warnings,

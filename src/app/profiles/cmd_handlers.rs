@@ -184,6 +184,16 @@ impl App {
                 self.shell.nexus_username = data.nexus_username.clone();
                 self.shell.nexus_avatar_url = data.nexus_avatar_url.clone();
                 self.shell.nexus_is_premium = data.nexus_is_premium;
+                if let Some(tracker) = self.session.tracker.clone() {
+                    self.shell.startup_nexus_pending = true;
+                    sender.oneshot_command(async move {
+                        AppCmdMsg::Shell(crate::app::messages::ShellCmdMsg::StartupNexusRefreshed(
+                            super::super::startup::refresh_account(&tracker)
+                                .await
+                                .map_err(|error| error.to_string()),
+                        ))
+                    });
+                }
                 crate::dlog!(
                     "[avatar] init: username={:?} avatar_url={:?}",
                     self.shell.nexus_username,

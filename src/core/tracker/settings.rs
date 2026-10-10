@@ -4,8 +4,45 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use super::Tracker;
+use crate::core::nexus_api::RateLimitInfo;
+use crate::models::nexus::NexusUser;
 
 impl Tracker {
+    pub(crate) async fn cache_nexus_account_if_current(
+        &self,
+        key: &str,
+        user: &NexusUser,
+        rate_limit: Option<&RateLimitInfo>,
+    ) -> Result<bool> {
+        let mut tx = self.pool.begin().await?;
+        let current: Option<String> =
+            sqlx::query_scalar("SELECT value FROM settings WHERE key='nexus_api_key'")
+                .fetch_optional(&mut *tx)
+                .await?;
+        if current.as_deref() != Some(key) {
+            return Ok(false);
+        }
+        let mut settings = vec![
+            ("nexus_username", user.name.clone()),
+            (
+                "nexus_avatar_url",
+                user.profile_url.clone().unwrap_or_default(),
+            ),
+            ("nexus_is_premium", user.is_premium.to_string()),
+        ];
+        if let Some(rate_limit) = rate_limit {
+            settings.push(("nexus_rate_limits", serde_json::to_string(rate_limit)?));
+        }
+        for (name, value) in settings {
+            sqlx::query("INSERT INTO settings(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+            .bind(name).bind(value).execute(&mut *tx).await?;
+        }
+        tx.commit()
+            .await
+            .context("Could not cache refreshed Nexus account")?;
+        Ok(true)
+    }
+
     /// Get a setting value by key.
     pub async fn get_setting(&self, key: &str) -> Result<Option<String>> {
         let row = sqlx::query_as::<_, (String,)>("SELECT value FROM settings WHERE key = ?")
@@ -305,5 +342,60 @@ impl Tracker {
                 Some((game_id, PathBuf::from(value)))
             })
             .collect())
+    }
+}
+
+#[cfg(test)]
+mod startup_tests {
+    use super::*;
+    fn user() -> NexusUser {
+        NexusUser {
+            user_id: 1,
+            name: "Cached user".into(),
+            is_premium: true,
+            is_supporter: false,
+            profile_url: Some("https://example.invalid/avatar".into()),
+        }
+    }
+
+    // @variants: both
+    #[tokio::test]
+    async fn background_account_results_cannot_restore_logged_out_or_replaced_credentials()
+    -> Result<()> {
+        let tracker = Tracker::open("sqlite::memory:").await?.tracker;
+        tracker.set_setting("nexus_api_key", "original").await?;
+        tracker.clear_nexus_user().await?;
+        assert!(
+            !tracker
+                .cache_nexus_account_if_current("original", &user(), None)
+                .await?
+        );
+        assert_eq!(tracker.load_nexus_user().await?, (None, None));
+        tracker.set_setting("nexus_api_key", "replacement").await?;
+        assert!(
+            !tracker
+                .cache_nexus_account_if_current("original", &user(), None)
+                .await?
+        );
+        assert_eq!(tracker.load_nexus_user().await?, (None, None));
+        Ok(())
+    }
+
+    // @variants: both
+    #[tokio::test]
+    async fn account_cache_failure_does_not_publish_partial_details() -> Result<()> {
+        let tracker = Tracker::open("sqlite::memory:").await?.tracker;
+        tracker.set_setting("nexus_api_key", "key").await?;
+        sqlx::query("CREATE TRIGGER reject_avatar BEFORE INSERT ON settings WHEN NEW.key='nexus_avatar_url' BEGIN SELECT RAISE(ABORT,'injected failure'); END")
+            .execute(&tracker.pool).await?;
+        assert!(
+            tracker
+                .cache_nexus_account_if_current("key", &user(), None)
+                .await
+                .is_err()
+        );
+        assert_eq!(tracker.load_nexus_user().await?, (None, None));
+        assert!(tracker.get_setting("nexus_is_premium").await?.is_none());
+        Ok(())
     }
 }

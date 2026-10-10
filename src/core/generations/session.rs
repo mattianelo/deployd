@@ -21,6 +21,7 @@ pub(crate) async fn initialize(tracker: &Tracker, game: &Game) -> Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
 pub(crate) async fn inspect_live(tracker: &Tracker, game: &Game) -> Result<Option<usize>> {
     let cache: Option<String> =
         sqlx::query_scalar("SELECT cache_root FROM generation_stores WHERE game_id=?")

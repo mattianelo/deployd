@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Faster startup and game opening: full retained-file and deployed-file audits no
+  longer run automatically while loading. Interrupted-operation recovery and
+  folder-access checks still run before editing; deployment, restoration and
+  **Full integrity check** retain content verification. Existing vanilla inventories
+  are reused, and Nexus account refresh no longer delays startup.
+
 - Reduced repeated folder scans during redeployment on supported local
   filesystems, including Skyrim Special Edition mod lists. Folder changes refresh
   filename lookups; conflicting names and redirected deployment folders still

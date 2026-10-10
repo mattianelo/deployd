@@ -115,6 +115,10 @@ hashed again; rollback copies and transaction checks remain in place. The first
 verification after restarting Deployd still reads file contents. Independent file
 copies use copy-on-write where the filesystem permits, with ordinary copying as a
 fallback; editing deployed files does not modify their retained copies.
+Opening a game performs recovery and access checks without rereading every retained
+and deployed file. Content verification remains part of deployment and restoration;
+external edits to other files may not appear in deployment status until checked.
+Cached Nexus account details appear immediately and refresh in the background.
 Use **Deployment history → Full integrity check** to reread retained generations
 and deployed files, including checks for corruption that leaves file metadata
 unchanged. The check reports external edits without replacing files and can be

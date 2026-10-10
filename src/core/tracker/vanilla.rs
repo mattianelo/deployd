@@ -3,6 +3,14 @@ use anyhow::{Context, Result};
 use super::Tracker;
 
 impl Tracker {
+    pub(crate) async fn has_vanilla_snapshot(&self, game_id: &str) -> Result<bool> {
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vanilla_files WHERE game_id=?)")
+            .bind(game_id)
+            .fetch_one(&self.pool)
+            .await
+            .context("Failed to check vanilla snapshot")
+    }
+
     /// Record the pre-mod state of a game's file tree as the vanilla baseline.
     ///
     /// Each entry is `(game_rel_lowercase, size_bytes, mtime_secs)`. Idempotent:
@@ -12,14 +20,7 @@ impl Tracker {
         game_id: &str,
         entries: &[(String, u64, i64)],
     ) -> Result<()> {
-        let (count,): (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM vanilla_files WHERE game_id = ?")
-                .bind(game_id)
-                .fetch_one(&self.pool)
-                .await
-                .context("Failed to count vanilla_files")?;
-
-        if count > 0 {
+        if self.has_vanilla_snapshot(game_id).await? {
             return Ok(());
         }
 
