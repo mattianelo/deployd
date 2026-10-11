@@ -149,13 +149,17 @@ async fn discards_wrong_hashes_extra_files_and_failed_publication() -> Result<()
 #[tokio::test]
 async fn surfaces_structured_helper_failures_without_publishing() -> Result<()> {
     let fixture = Fixture::new(
-        "print(json.dumps(dict(protocol=1,type='error',code='InvalidDataException',message='Missing TLK export',at=[])),file=sys.stderr)\nsys.exit(1)",
+        "print(json.dumps(dict(protocol=1,type='error',code='InvalidDataException',message='Missing TLK export',at=['FindExport',None,'Execute'])),file=sys.stderr)\nsys.exit(1)",
     )?;
     let error = fixture.run().await.err().context("Expected failure")?;
     assert!(
-        error.to_string().contains("Missing TLK export"),
+        format!("{error:#}").contains("Missing TLK export"),
         "{error:#}"
     );
+    let message = format!("{error:#}");
+    assert!(message.contains("FindExport → Execute"), "{message}");
+    assert!(message.contains("le1-tlk"), "{message}");
+    assert!(message.contains("CookedPCConsole/Example.pcc"), "{message}");
     fixture.empty()
 }
 
@@ -861,4 +865,31 @@ fn texture_job(candidate: &Path) -> Result<Job> {
         ],
         textures: 1,
     })
+}
+
+// @variants: both
+#[test]
+fn bounds_structured_failure_locations() -> Result<()> {
+    let response = |at: serde_json::Value| {
+        serde_json::json!({
+            "protocol": 1, "type": "error", "code": "NullReferenceException",
+            "message": "Transformation failed", "at": at,
+        })
+    };
+    let frames = (0..12)
+        .map(|index| format!("Method{index}"))
+        .collect::<Vec<_>>();
+    let error: protocol::HelperError = serde_json::from_value(response(serde_json::json!(frames)))?;
+    let message = error.message()?;
+    assert!(message.contains("Method7"));
+    assert!(!message.contains("Method8"));
+    for invalid in [
+        serde_json::json!(["bad\nframe"]),
+        serde_json::json!(["x".repeat(1025)]),
+        serde_json::json!(vec!["frame"; 129]),
+    ] {
+        let error: protocol::HelperError = serde_json::from_value(response(invalid))?;
+        assert!(error.message().is_err());
+    }
+    Ok(())
 }

@@ -123,6 +123,7 @@ minutes and need substantial free disk space.
   are reported before installation. Install dependencies before the mods needing them.
 - Installer options and M3TO texture manifests accept the formatting used by
   ME3Tweaks mods, including single-option lists and commented texture manifests.
+  M3TO textures can use external texture caches, including picture replacements.
   Configuration patches can add missing LE1 config assets and LE2 DLC INI files.
 - LE1 and LE2 configuration deltas support typed additions, including ESA’s
   optional New Armors for Femshep LE2 patch. Select that patch only when using

@@ -14,11 +14,27 @@ def identity(root, relative):
 
 
 def run(root):
-    option = root / "modTesting/No Headgear for Squadmates - LE2/Options/Garrus No Mic"
-    manifest_name = "TextureOverride-DLC_MOD_NoHeadgearSquad_GarrusNoMic.m3to"
-    package_name = "TO_DLC_MOD_NoHeadgearSquad_GarrusNoMic.pcc"
-    if not option.is_dir():
-        raise ValueError("The ignored No Headgear reference fixture is required for the M3TO compiler test")
+    fixtures = []
+    legacy = root / "modTesting/No Headgear for Squadmates - LE2/Options/Garrus No Mic"
+    if legacy.is_dir():
+        fixtures.append((legacy, "TextureOverride-DLC_MOD_NoHeadgearSquad_GarrusNoMic.m3to",
+                         "TO_DLC_MOD_NoHeadgearSquad_GarrusNoMic.pcc", 2, b"TeamSelect_I111"))
+    pictures = root / ".ci-artifacts/mele-fixtures/m3to-pictures"
+    for folder, manifest, package, texture in [
+        ("liara-lotsb", "Liara_LotSB_Picture_Picture", "Liara_LotSB_Picture", "BioVFX_Env_Hologram.Textures.Liara_1"),
+        ("liara-le3", "Liara_LE3_Picture_Picture", "Liara_LE3_Picture", "BioVFX_Env_Hologram.Textures.Liara_1"),
+        ("kahlee", "Unique_Kahlee_Picture", "Unique_Kahlee_Picture", "BioVFX_Env_Hologram.Textures.Kahlee_01"),
+    ]:
+        if (pictures / folder).is_dir():
+            fixtures.append((pictures / folder, f"TextureOverride-{manifest}.m3to",
+                             f"TO_{package}.pcc", 1, texture.encode()))
+    if not fixtures:
+        raise ValueError("An ignored No Headgear or M3TO picture reference fixture is required")
+    for fixture in fixtures:
+        compile_fixture(root, *fixture)
+
+
+def compile_fixture(root, option, manifest_name, package_name, textures, texture):
     build = Path("/build/mele")
     sdk = next(build.glob("sdk-*/dotnet"))
     helper = build / "source/Deployd.Mele/bin/Release/net10.0/Deployd.Mele.dll"
@@ -45,7 +61,7 @@ def run(root):
             "dlc": "DLC_MOD_NoHeadgearSquad", "manifests": [identity(inputs, manifest)],
             "packages": [identity(inputs, package)],
             "outputs": ["DLC/DLC_MOD_NoHeadgearSquad/CombinedTextureOverrides.btp",
-                        "DLC/DLC_MOD_NoHeadgearSquad/BTPMetadata.btm"], "textures": 2,
+                        "DLC/DLC_MOD_NoHeadgearSquad/BTPMetadata.btm"], "textures": textures,
         }
         request_path = stage / "request.json"
         request_path.write_text(json.dumps(request))
@@ -79,8 +95,8 @@ def run(root):
 
         reject("malformed", b"{")
         reject("wrong-game", original_manifest.replace(b'"LE2"', b'"LE1"'))
-        reject("missing-export", original_manifest.replace(b"TeamSelect_I111", b"TeamSelect_Missing"))
+        reject("missing-export", original_manifest.replace(texture, b"Missing.Texture"))
         reject("wrong-hash", original_manifest,
                lambda value: value["manifests"][0].update(sha256="0" * 64))
         (inputs / manifest).write_bytes(original_manifest)
-        print("Raw LE2 M3TO fixture compiled successfully", flush=True)
+        print(f"Raw LE2 M3TO fixture compiled successfully: {manifest_name}", flush=True)

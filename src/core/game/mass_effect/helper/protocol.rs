@@ -401,6 +401,11 @@ impl HelperError {
             self.protocol == 1
                 && self.kind == "error"
                 && self.at.len() <= 128
+                && self
+                    .at
+                    .iter()
+                    .flatten()
+                    .all(|frame| frame.len() <= 1024 && !frame.chars().any(char::is_control))
                 && !self.code.is_empty()
                 && self.code.len() <= 128
                 && !self.code.chars().any(char::is_control)
@@ -408,7 +413,23 @@ impl HelperError {
                 && self.message.len() <= 8192,
             "Invalid MELE helper error response"
         );
-        Ok(format!("MELE helper {}: {}", self.code, self.message))
+        let frames = self
+            .at
+            .iter()
+            .flatten()
+            .filter(|frame| !frame.is_empty())
+            .take(8)
+            .cloned()
+            .collect::<Vec<_>>();
+        let location = if frames.is_empty() {
+            String::new()
+        } else {
+            format!(" [at {}]", frames.join(" → "))
+        };
+        Ok(format!(
+            "MELE helper {}: {}{location}",
+            self.code, self.message
+        ))
     }
 }
 

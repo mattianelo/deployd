@@ -3,6 +3,9 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 
+using LegendaryExplorerCore.Unreal;
+using LegendaryExplorerCore.Unreal.BinaryConverters;
+
 namespace Deployd.Mele;
 
 internal static class TextureCompileTests
@@ -10,6 +13,7 @@ internal static class TextureCompileTests
     internal static void Run(string root)
     {
         AcceptsUpstreamManifestSyntax();
+        DistinguishesExternalAndInlineMips();
         string game = Path.Combine(root, "texture-game");
         string input = Path.Combine(root, "texture-input");
         string output = Path.Combine(root, "texture-output");
@@ -29,6 +33,31 @@ internal static class TextureCompileTests
         Reject(() => TextureCompile.Validate(request with { Packages = new[] { package with { Size = 512L * 1024 * 1024 + 1 } } }));
         Reject(() => TextureCompile.Validate(request with { Manifests = new[] { manifest, manifest } }));
         Reject(() => TextureCompile.Validate(request with { Outputs = new[] { outputs[1], outputs[0] } }));
+    }
+
+    private static void DistinguishesExternalAndInlineMips()
+    {
+        var mip = new UTexture2D.Texture2DMipMap
+        {
+            SizeX = 64, SizeY = 64, UncompressedSize = 4096,
+            CompressedSize = 1024, StorageType = StorageTypes.extOodle,
+        };
+        if (TextureOverrideCompiler.HasInlineData(mip))
+            throw new InvalidOperationException("An external mip was treated as inline data.");
+        mip.StorageType = StorageTypes.empty;
+        if (TextureOverrideCompiler.HasInlineData(mip))
+            throw new InvalidOperationException("An empty mip was treated as inline data.");
+        mip.StorageType = StorageTypes.pccUnc;
+        Reject(() => TextureOverrideCompiler.HasInlineData(mip));
+        mip.Mip = new byte[4096];
+        if (!TextureOverrideCompiler.HasInlineData(mip))
+            throw new InvalidOperationException("An inline mip was skipped.");
+        mip.StorageType = StorageTypes.extOodle;
+        mip.SizeX = 4097;
+        Reject(() => TextureOverrideCompiler.HasInlineData(mip));
+        mip.SizeX = 64;
+        mip.CompressedSize = -1;
+        Reject(() => TextureOverrideCompiler.HasInlineData(mip));
     }
 
     private static void AcceptsUpstreamManifestSyntax()

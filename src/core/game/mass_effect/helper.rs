@@ -178,7 +178,18 @@ pub(super) async fn transform_with_lease(
         &progress,
         Duration::from_secs(30 * 60),
     )
-    .await?;
+    .await
+    .map_err(|error| {
+        anyhow::anyhow!(
+            "MELE {} failed for {}: {error:#}",
+            job.operation(),
+            job.outputs()
+                .into_iter()
+                .take(3)
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    })?;
     let outputs: Vec<FileIdentity> = serde_json::from_slice(&manifest)?;
     let expected = job.outputs();
     tokio::task::spawn_blocking(move || {

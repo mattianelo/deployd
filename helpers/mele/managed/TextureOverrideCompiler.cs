@@ -174,6 +174,20 @@ namespace Deployd.Mele
             btpStream.Flush();
         }
 
+        internal static bool HasInlineData(UTexture2D.Texture2DMipMap mip)
+        {
+            if (mip.SizeX is < 1 or > 4096 || mip.SizeY is < 1 or > 4096
+                || mip.UncompressedSize is < 0 or > 256 * 1024 * 1024
+                || mip.CompressedSize is < 0 or > 256 * 1024 * 1024)
+                throw new InvalidDataException("An M3TO texture mip exceeds its safety limits.");
+            // External and empty mips have metadata but no inline byte array.
+            if (!mip.IsLocallyStored || mip.IsEmpty)
+                return false;
+            if (mip.Mip is null || mip.Mip.Length > 256 * 1024 * 1024)
+                throw new InvalidDataException("An M3TO inline texture mip has missing or oversized data.");
+            return true;
+        }
+
         /// <summary>
         /// Returns if an export is something stored in a BTP
         /// </summary>
@@ -230,12 +244,8 @@ namespace Deployd.Mele
                 for (int i = 0; i < texBin.Mips.Count; i++)
                 {
                     var sourceMip = texBin.Mips[i];
-                    if (sourceMip.SizeX is < 1 or > 4096 || sourceMip.SizeY is < 1 or > 4096
-                        || sourceMip.Mip.Length > 256 * 1024 * 1024 || sourceMip.UncompressedSize is < 0 or > 256 * 1024 * 1024
-                        || sourceMip.CompressedSize is < 0 or > 256 * 1024 * 1024)
-                        throw new InvalidDataException("An M3TO texture mip exceeds its safety limits.");
-                    if (!sourceMip.IsLocallyStored || sourceMip.StorageType == StorageTypes.empty)
-                        continue; // Nothing to see here
+                    if (!HasInlineData(sourceMip))
+                        continue;
 
                     var serializationInfo = new SerializedBTPMip();
                     serializationInfo.Digest = Convert.ToHexString(SHA256.HashData(sourceMip.Mip));
