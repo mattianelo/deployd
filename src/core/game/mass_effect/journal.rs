@@ -19,6 +19,8 @@ use super::package::{SourceFile, validate_payload_name};
 
 pub(super) mod files;
 mod generation;
+mod indexes;
+pub(crate) use indexes::generated as generated_index;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -76,6 +78,8 @@ pub(crate) struct Journal {
     pub(crate) desired: State,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     missing_components: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    indexes: BTreeMap<String, Identity>,
     operations: Vec<Operation>,
     directories: Vec<String>,
 }
@@ -338,7 +342,7 @@ impl Journal {
     fn validate(&self, game: &Game, baseline: &Baseline) -> Result<()> {
         let target = target(game)?;
         ensure!(
-            (1..=6).contains(&self.version)
+            (1..=7).contains(&self.version)
                 && self.id == Uuid::parse_str(&self.id)?.to_string()
                 && self.game_id == game.id
                 && self.baseline == baseline.sha256
@@ -374,11 +378,15 @@ impl Journal {
         if let Some(change) = &self.family {
             change.validate(&game.id, &self.desired)?;
         }
+        if let Some(previous) = &self.previous {
+            state_files(previous, baseline, target)?;
+        }
+        let previous = self.observed_previous()?;
         ensure!(
             self.operations
                 == operations(
                     baseline,
-                    self.previous.as_ref(),
+                    previous.as_ref(),
                     &self.desired,
                     target,
                     &self.missing_components
@@ -665,9 +673,11 @@ pub(super) async fn prepare_with_lease(
     } else {
         Vec::new()
     };
+    let indexes = indexes::capture(game.path.clone(), previous.clone(), control.clone()).await?;
+    let observed = indexes::observed(previous.as_ref(), &indexes)?;
     let changes = operations(
         &baseline,
-        previous.as_ref(),
+        observed.as_ref(),
         &desired,
         target(&game)?,
         &missing_components,
@@ -721,6 +731,7 @@ pub(super) async fn prepare_with_lease(
         } else {
             1
         },
+        indexes,
         missing_components,
         id: desired.generation.clone(),
         game_id: game.id.clone(),
@@ -730,6 +741,9 @@ pub(super) async fn prepare_with_lease(
         operations: changes,
         directories: Vec::new(),
     };
+    if !journal.indexes.is_empty() {
+        journal.version = 7;
+    }
     let root = storage(&data, &game.id, &journal.id);
     let staged = {
         let data = data.clone();
@@ -744,7 +758,7 @@ pub(super) async fn prepare_with_lease(
             super::removal::verify(
                 &game.path,
                 &baseline,
-                journal.previous.as_ref(),
+                journal.observed_previous()?.as_ref(),
                 &super::removal::scopes(journal.previous.as_ref(), &journal.desired),
                 &control,
             )?;

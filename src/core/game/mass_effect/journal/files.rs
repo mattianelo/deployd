@@ -89,6 +89,28 @@ pub(in crate::core::game::mass_effect) fn verify(
     }
 }
 
+pub(in crate::core::game::mass_effect) fn inspect(
+    root: &Path,
+    path: &str,
+    control: &Control,
+) -> Result<Identity> {
+    check_path(root, path)?;
+    control.check()?;
+    let target = root.join(path);
+    let size = fs::symlink_metadata(&target)?.len();
+    let mut file = open(
+        &target,
+        &Identity {
+            size,
+            sha256: String::new(),
+        },
+    )?;
+    let sha256 = crate::utils::verified_files::hash(&mut file, || control.check(), |_, _| {})?;
+    let identity = Identity { size, sha256 };
+    verify(root, path, Some(&identity), control)?;
+    Ok(identity)
+}
+
 fn open(path: &Path, expected: &Identity) -> Result<File> {
     let metadata = fs::symlink_metadata(path)
         .with_context(|| format!("Cannot read MELE file '{}'", path.display()))?;
@@ -104,10 +126,17 @@ fn open(path: &Path, expected: &Identity) -> Result<File> {
     ensure!(
         opened.is_file()
             && opened.nlink() == 1
-            && opened.len() == expected.size
             && opened.dev() == metadata.dev()
             && opened.ino() == metadata.ino(),
-        "MELE file changed before deployment verification"
+        "MELE file '{}' changed while opening for deployment verification",
+        path.display()
+    );
+    ensure!(
+        opened.len() == expected.size,
+        "MELE file '{}' changed size (expected {} bytes, found {}); reconcile external changes before deploying",
+        path.display(),
+        expected.size,
+        opened.len()
     );
     Ok(file)
 }
@@ -266,7 +295,7 @@ pub(super) fn stage(
             verify(game, path, Some(identity), control)?;
         }
     }
-    if let Some(previous) = &journal.previous {
+    if let Some(previous) = &journal.observed_previous()? {
         for file in &previous.files {
             if !changed.contains(file.relative.as_str()) {
                 verify(

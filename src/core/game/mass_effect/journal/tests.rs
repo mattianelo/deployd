@@ -146,6 +146,7 @@ async fn committed_removal_cleanup_resumes_without_deleting_late_external_files(
         },
     };
     let journal = Journal {
+        indexes: BTreeMap::new(),
         version: 4,
         id: desired.generation.clone(),
         game_id: fixture.game.id.clone(),
@@ -353,6 +354,7 @@ impl Fixture {
         };
         let operations = operations(&baseline, None, &desired, Target::Le1, &[])?;
         let journal = Journal {
+            indexes: BTreeMap::new(),
             family: None,
             missing_components: Vec::new(),
             version: 1,
@@ -1075,5 +1077,161 @@ async fn helper_upgrades_preserve_old_deployments_and_allow_restoration() -> Res
         fs::read(fixture.game.path.join(ENGINE))?,
         b"original package"
     );
+    Ok(())
+}
+
+// @variants: both
+#[tokio::test]
+async fn regenerated_indexes_redeploy_and_rollback_without_accepting_asset_edits() -> Result<()> {
+    const TOC: &str = "BioGame/DLC/DLC_MOD_Test/PCConsoleTOC.bin";
+    for target in [Target::Le1, Target::Le2, Target::Le3] {
+        let fixture = Fixture::for_target(target).await?;
+        let entries: &[(&str, &[u8])] = &[(DLC, b"asset"), (TOC, b"packaged index")];
+        let installed = fixture.publish(fixture.deployment(entries, None)?).await?;
+        fs::write(fixture.game.path.join(TOC), b"runtime regenerated index")?;
+        let control = Control::recovery();
+        let lease = Lease::acquire(&control).await?;
+        let journal = prepare_with_lease(
+            fixture.tracker.clone(),
+            fixture.game.clone(),
+            fixture.deployment(entries, Some(&installed))?,
+            fixture.data.clone(),
+            control.clone(),
+            lease.clone(),
+            false,
+        )
+        .await?;
+        assert_eq!(journal.version, 7);
+        assert_eq!(journal.operations.len(), 1);
+        assert_eq!(journal.previous, Some(installed.clone()));
+        let root = storage(&fixture.data, &fixture.game.id, &journal.id);
+        assert_eq!(
+            fs::read(root.join("old").join(TOC))?,
+            b"runtime regenerated index"
+        );
+        let encoded = serde_json::to_string(&journal)?;
+        let recovered: Journal = serde_json::from_str(&encoded)?;
+        for operation in &recovered.operations {
+            files::replace(&fixture.game.path, &root, operation, false, &control)?;
+        }
+        assert_eq!(fs::read(fixture.game.path.join(TOC))?, b"packaged index");
+        files::rollback(&fixture.game.path, &root, &recovered)?;
+        assert_eq!(
+            fs::read(fixture.game.path.join(TOC))?,
+            b"runtime regenerated index"
+        );
+        recovered
+            .generation_verify(&fixture.tracker, &fixture.game, false)
+            .await?;
+        files::cleanup(&root, &recovered)?;
+        drop(lease);
+        fs::write(fixture.game.path.join(DLC), b"edited actual asset")?;
+        assert!(
+            fixture
+                .publish(fixture.deployment(entries, Some(&installed))?)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            fs::read(fixture.game.path.join(DLC))?,
+            b"edited actual asset"
+        );
+        fs::write(fixture.game.path.join(DLC), b"asset")?;
+        let updated = fixture
+            .publish(fixture.deployment(entries, Some(&installed))?)
+            .await?;
+        assert_eq!(fs::read(fixture.game.path.join(TOC))?, b"packaged index");
+        fs::write(
+            fixture.game.path.join(TOC),
+            b"runtime index after playing again",
+        )?;
+        fixture
+            .publish(fixture.deployment(&[], Some(&updated))?)
+            .await?;
+        assert!(!fixture.game.path.join(TOC).exists());
+    }
+    Ok(())
+}
+
+// @variants: both
+#[tokio::test]
+async fn generated_index_reselection_rejects_links_races_and_forged_asset_overrides() -> Result<()>
+{
+    const TOC: &str = "BioGame/DLC/DLC_MOD_Test/PCConsoleTOC.bin";
+    let fixture = Fixture::for_target(Target::Le3).await?;
+    let installed = fixture
+        .publish(fixture.deployment(&[(TOC, b"index"), (DLC, b"asset")], None)?)
+        .await?;
+    fs::write(fixture.game.path.join(TOC), b"runtime index")?;
+    let journal =
+        Journal::reselect(&fixture.tracker, &fixture.game, fixture.profile.clone()).await?;
+    assert_eq!(journal.operations.len(), 1);
+    journal
+        .generation_verify(&fixture.tracker, &fixture.game, false)
+        .await?;
+    fs::write(fixture.game.path.join(TOC), b"late runtime edit")?;
+    assert!(
+        journal
+            .generation_verify(&fixture.tracker, &fixture.game, false)
+            .await
+            .is_err()
+    );
+    let baseline = fixture
+        .tracker
+        .load_mele_baseline(&fixture.game.id)
+        .await?
+        .context("baseline")?;
+    let mut forged = journal.clone();
+    let identity = forged.indexes.remove(TOC).context("index identity")?;
+    forged.indexes.insert(DLC.into(), identity);
+    assert!(forged.validate(&fixture.game, &baseline).is_err());
+    let mut legacy = journal;
+    legacy.version = 6;
+    assert!(legacy.validate(&fixture.game, &baseline).is_err());
+    fs::remove_file(fixture.game.path.join(TOC))?;
+    symlink(fixture.game.path.join(DLC), fixture.game.path.join(TOC))?;
+    assert!(
+        Journal::reselect(&fixture.tracker, &fixture.game, fixture.profile.clone())
+            .await
+            .is_err()
+    );
+    fs::remove_file(fixture.game.path.join(TOC))?;
+    fs::hard_link(fixture.game.path.join(DLC), fixture.game.path.join(TOC))?;
+    assert!(
+        Journal::reselect(&fixture.tracker, &fixture.game, fixture.profile.clone())
+            .await
+            .is_err()
+    );
+    fs::remove_file(fixture.game.path.join(TOC))?;
+    fs::write(fixture.game.path.join(TOC), b"INDEX")?;
+    let same_size =
+        Journal::reselect(&fixture.tracker, &fixture.game, fixture.profile.clone()).await?;
+    assert_eq!(same_size.operations.len(), 1);
+    let cancelled = Control::new(
+        Arc::new(AtomicBool::new(true)),
+        Arc::new(AtomicBool::new(false)),
+    );
+    assert!(
+        indexes::capture(
+            fixture.game.path.clone(),
+            Some(installed.clone()),
+            cancelled
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(
+        fixture.tracker.mele_deployment(&fixture.game.id).await?,
+        Some(installed)
+    );
+    for path in [
+        "../system/PCConsoleTOC.bin",
+        "~docs~/PCConsoleTOC.bin",
+        "Data/PCConsoleTOC.bin",
+        "BioGame/DLC/DLC_MOD_Test/CookedPCConsole/PCConsoleTOC.bin",
+        "BioGame/DLC/DLC_MOD_Test/asset.pcc",
+    ] {
+        assert!(!generated_index(path), "{path}");
+    }
     Ok(())
 }

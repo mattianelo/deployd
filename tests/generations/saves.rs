@@ -843,6 +843,7 @@ fn trilogy_deploys_switch_saves_independently_without_reinstalling_mods() -> Res
             fs::write(family.join("Game/Launcher/bink2w64.dll"), b"bink")?;
             let mut configs = Vec::new();
             let relative = "BioGame/CookedPCConsole/Engine.pcc";
+            let toc = "BioGame/PCConsoleTOC.bin";
             for number in 1..=3 {
                 let game = Game {
                     id: format!("mass-effect-le{number}"),
@@ -860,6 +861,7 @@ fn trilogy_deploys_switch_saves_independently_without_reinstalling_mods() -> Res
                     b"executable",
                 )?;
                 fs::write(game.path.join(relative), b"original")?;
+                fs::write(game.path.join(toc), b"original")?;
                 let live = prefix.join(format!("drive_c/users/test/Documents/BioWare/Mass Effect Legendary Edition/Save/ME{number}"));
                 fs::create_dir_all(&live)?;
                 fs::write(live.join("save.dat"), format!("LE{number} progress"))?;
@@ -945,32 +947,54 @@ fn trilogy_deploys_switch_saves_independently_without_reinstalling_mods() -> Res
                     .await?
                     .context("Missing baseline")?;
                 let recipe = library::desired(&tracker, game, "INT".into(), false).await?;
-                let snapshot = Snapshot {
+                let mut snapshot = Snapshot {
                     recipe,
                     removals: Default::default(),
-                    required: Vec::new(),
+                    required: vec![SourceFile {
+                        relative: toc.into(),
+                        size: 8,
+                        sha256: super::super::content::inspect(
+                            &game.path.join(toc),
+                            &Control::default(),
+                        )?
+                        .sha256,
+                    }],
                     files: vec![SourceFile {
                         relative: relative.into(),
                         size: identity.size,
                         sha256: identity.sha256.clone(),
                     }],
                 };
+                snapshot.files.push(SourceFile {
+                    relative: toc.into(),
+                    size: identity.size,
+                    sha256: identity.sha256.clone(),
+                });
                 let id = uuid::Uuid::new_v4().to_string();
                 let engine: Mele = serde_json::from_value(
-                    serde_json::json!({"version":5,"id":id,"game_id":game.id,"baseline":baseline.sha256,"previous":null,"desired":snapshot.state(id.clone(),profile.clone()),"operations":[{"path":relative,"before":{"size":8,"sha256":super::super::content::inspect(&game.path.join(relative),&Control::default())?.sha256},"after":{"size":identity.size,"sha256":identity.sha256}}],"directories":[]}),
+                    serde_json::json!({"version":5,"id":id,"game_id":game.id,"baseline":baseline.sha256,"previous":null,"desired":snapshot.state(id.clone(),profile.clone()),"operations":[{"path":relative,"before":{"size":8,"sha256":super::super::content::inspect(&game.path.join(relative),&Control::default())?.sha256},"after":{"size":identity.size,"sha256":identity.sha256}},{"path":toc,"before":{"size":8,"sha256":snapshot.required[0].sha256},"after":{"size":identity.size,"sha256":identity.sha256}}],"directories":[]}),
                 )?;
                 let mut journal = Journal::prepare(
                     &history,
                     game,
-                    vec![(
-                        Target::MassEffect {
-                            path: relative.into(),
-                        },
-                        Node::File {
-                            identity: identity.clone(),
-                            mode: 0o644,
-                        },
-                    )],
+                    vec![
+                        (
+                            Target::MassEffect { path: toc.into() },
+                            Node::File {
+                                identity: identity.clone(),
+                                mode: 0o644,
+                            },
+                        ),
+                        (
+                            Target::MassEffect {
+                                path: relative.into(),
+                            },
+                            Node::File {
+                                identity: identity.clone(),
+                                mode: 0o644,
+                            },
+                        ),
+                    ],
                     Control::default(),
                 )
                 .await?;
@@ -988,6 +1012,12 @@ fn trilogy_deploys_switch_saves_independently_without_reinstalling_mods() -> Res
                 manifest.mele = Some(snapshot);
                 manifest.shared_revision =
                     super::super::shared::identity(journal.dependency.as_ref())?;
+                manifest.outputs.push(Output {
+                    target: Target::MassEffect { path: toc.into() },
+                    content: Some(identity.clone()),
+                    mode: 0o644,
+                    mod_id: None,
+                });
                 manifest.outputs.push(Output {
                     target: Target::MassEffect {
                         path: relative.into(),
@@ -1027,6 +1057,7 @@ fn trilogy_deploys_switch_saves_independently_without_reinstalling_mods() -> Res
                     .await?
                     .context("Missing selected trilogy member")?
                     .id;
+                fs::write(game.path.join(toc), b"runtime regenerated index")?;
                 let metadata = fs::metadata(game.path.join(relative))?;
                 let request = Request {
                     game: game.clone(),
@@ -1039,7 +1070,7 @@ fn trilogy_deploys_switch_saves_independently_without_reinstalling_mods() -> Res
                     activation::prepare_unchanged(&tracker, &cache, &request, Control::default())
                         .await?
                         .context("Unchanged mods should bypass the helper")?;
-                assert_eq!(prepared.change_counts(), (0, 0, 0));
+                assert_eq!(prepared.change_counts(), (0, 0, 1));
                 if index == 1 {
                     sqlx::query("CREATE TRIGGER fail_second BEFORE UPDATE ON generation_game_state WHEN NEW.game_id='mass-effect-le2' BEGIN SELECT RAISE(FAIL,'injected'); END").execute(&tracker.pool).await?;
                     assert!(prepared.activate(Control::default()).await.is_err());
@@ -1061,6 +1092,14 @@ fn trilogy_deploys_switch_saves_independently_without_reinstalling_mods() -> Res
                         Some(profile.as_str())
                     );
                 }
+                assert_eq!(
+                    fs::read(game.path.join(toc))?,
+                    if index == 1 {
+                        b"runtime regenerated index".as_slice()
+                    } else {
+                        b"installed output".as_slice()
+                    }
+                );
                 let after = fs::metadata(game.path.join(relative))?;
                 assert_eq!(
                     (metadata.ino(), metadata.mtime(), metadata.mtime_nsec()),

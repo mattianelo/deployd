@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+- Fixed MELE deployment and profile switching being blocked by regenerated
+  `PCConsoleTOC.bin` indexes. Their current contents are preserved for rollback,
+  while edited mod assets and damaged retained files remain protected.
+
+- Simplified the user guide around installation and everyday mod management, and
+  corrected the external-tool instructions: closing a tool scans for changes but
+  does not automatically sort or deploy mods.
+
 ## [3.2.0]
 
 - Fixed stale file-hash reuse after rapid same-size edits with matching timestamps,

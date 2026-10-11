@@ -121,9 +121,17 @@ pub(crate) async fn prepare_unchanged(
         journal
             .changes
             .iter()
-            .all(|change| change.before == change.after),
+            .all(|change| change.before == change.after
+                || engine.generation_targets().iter().any(
+                    |(path, _, _)| change.target == (Target::MassEffect { path: path.clone() })
+                )),
         "Installed MELE files changed; reconcile external edits before switching profiles"
     );
+    let differences = engine
+        .generation_targets()
+        .iter()
+        .map(|(path, _, _)| format!("Change: {path}"))
+        .collect();
     journal.attach_mele(game, engine)?;
     let checking_tracker = tracker.clone();
     let checking_game = game.clone();
@@ -156,7 +164,7 @@ pub(crate) async fn prepare_unchanged(
         manifest: Some(manifest),
         files: Vec::new(),
         saves: target_saves,
-        differences: Vec::new(),
+        differences,
         outcome: empty_outcome(),
     }))
 }

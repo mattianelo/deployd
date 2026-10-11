@@ -101,10 +101,11 @@ impl Journal {
         let game = game.clone();
         tokio::task::spawn_blocking(move || {
             let control = Control::recovery();
+            let previous = journal.observed_previous()?;
             let state = if applied {
                 Some(&journal.desired)
             } else {
-                journal.previous.as_ref()
+                previous.as_ref()
             };
             for operation in &journal.operations {
                 files::verify(
@@ -191,8 +192,16 @@ impl Journal {
         let mut desired = previous.clone();
         desired.generation = Uuid::new_v4().to_string();
         desired.profile = profile;
+        let indexes = super::indexes::capture(
+            game.path.clone(),
+            Some(previous.clone()),
+            Control::recovery(),
+        )
+        .await?;
+        let observed = super::indexes::observed(Some(&previous), &indexes)?;
+        let operations = operations(&baseline, observed.as_ref(), &desired, target(game)?, &[])?;
         let journal = Self {
-            version: 6,
+            version: if indexes.is_empty() { 6 } else { 7 },
             id: desired.generation.clone(),
             game_id: game.id.clone(),
             baseline: baseline.sha256.clone(),
@@ -200,7 +209,8 @@ impl Journal {
             desired,
             family: None,
             missing_components: Vec::new(),
-            operations: Vec::new(),
+            indexes,
+            operations,
             directories: Vec::new(),
         };
         journal.validate(game, &baseline)?;

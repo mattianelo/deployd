@@ -327,6 +327,10 @@ impl Snapshot {
         tokio::task::spawn_blocking(move || {
             let control = super::operation::Control::recovery();
             for input in inputs {
+                if journal::generated_index(&input.relative) && state.as_ref().is_some_and(|state| state.files.iter().any(|file| file.relative == input.relative)) {
+                    journal::files::inspect(&root, &input.relative, &control)?;
+                    continue;
+                }
                 let expected = if state.as_ref().is_some_and(|state| state.removals.paths.contains(&input.relative)) { None } else {
                     let file = state.as_ref().and_then(|state| state.files.iter().find(|file|file.relative == input.relative)).unwrap_or(&input);
                     Some(Identity {size:file.size,sha256:file.sha256.clone()})
