@@ -1,11 +1,13 @@
 # Changelog
 
-## [Unreleased]
+## [3.3.2]
 
 - Fixed MELE deployment preparation crashing on M3TO textures with externally
   stored mip levels, including Liara and Kahlee picture replacements.
 - Helper errors now identify the failed transformation, target, and available
   failure locations instead of hiding those diagnostic details.
+- Shortened the quick-start guide and updated the wiki with profiles, saves,
+  restoration, and MELE guidance.
 
 ## [3.3.1]
 
