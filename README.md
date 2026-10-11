@@ -75,8 +75,9 @@ Profiles can share **Global** saves or use **Profile-specific** saves. The first
 profile-specific save bank starts with the current live saves. Save banks switch
 when you deploy, so close the game before switching profiles or restoring saves.
 Use **Profile options → Manage save backups** to create or restore backups.
-**Sync** copies live saves into the selected profile's bank; deploy that profile
-first if Sync is unavailable.
+**Sync** backs up outgoing live saves to their own banks. For trilogy profiles, it also
+loads the selected profile’s saves across all three games without redeploying mods.
+For other games, deploy the selected profile first if Sync is unavailable.
 
 ## Storage and restoring game files
 
@@ -112,7 +113,9 @@ minutes and need substantial free disk space.
 - LE1, LE2, and LE3 share trilogy profiles, with separate mod lists for each game.
   Deploy applies only to the selected game, including its portion of the save bank.
   Before changing trilogy profiles, Deployd syncs all three games to the banks
-  that currently own their live saves. Manual sync does the same. Deploying then
+  that currently own their live saves. Manual Sync backs up outgoing saves and
+  loads the selected trilogy profile’s banks for all three games, independently
+  of deployed mods. A failed switch restores the outgoing saves. Deploying then
   loads the selected game’s target character bank, with rollback if deployment fails.
 - Supported mods include Community Patch, content and cosmetic mods, M3TO textures
   (including ALOT and ISL), shaders, and squadmate outfits. Unsupported packages

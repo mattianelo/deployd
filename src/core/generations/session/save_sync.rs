@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, ensure};
 
-use crate::core::save_manager::{BackupTrigger, SaveSyncResult};
+use crate::core::save_manager::{BackupTrigger, SaveSetId, SaveSyncResult};
 use crate::core::{game, save_manager, tracker::Tracker};
 use crate::models::game::{Game, GameEngine};
 
@@ -34,7 +34,8 @@ async fn run(
         ensure!(parts.iter().any(|(game, id)| game == &selected.id && id == &profile), "Profile does not belong to the selected game");
         let games = tracker.load_persisted_games().await?;
         let mut captures = Vec::new();
-        for (id, _) in parts {
+        let trilogy = parts.len() > 1 && selected.engine == GameEngine::MassEffect;
+        for (id, member_profile) in parts {
             let member = if id == selected.id { selected.clone() } else {
                 let stored = games.iter().find(|game| game.id == id).context("Restore the missing trilogy game before syncing saves")?;
                 Game { id: stored.id.clone(), title: stored.title.clone(), path: stored.path.clone(), data_subdir: stored.data_subdir.clone(), engine: stored.engine.clone(), wine_prefix: stored.wine_prefix.clone() }
@@ -48,23 +49,35 @@ async fn run(
             }
             tracker.ensure_location_ready(&member.id).await?;
             if member.engine == GameEngine::MassEffect { tracker.ensure_no_mele_journal(&member.id).await?; }
+            super::super::save_switch::recover(&tracker, &member).await?;
             let owner = ownership::import(&tracker, &member.id).await?.saves;
+            let mode: String = sqlx::query_scalar("SELECT save_mode FROM profiles WHERE id=? AND game_id=?")
+                .bind(&member_profile).bind(&member.id).fetch_one(&tracker.pool).await?;
+            let target = match mode.as_str() {
+                "global" => SaveSetId::Global { game_id: member.id.clone() },
+                "profile" => SaveSetId::Profile { game_id: member.id.clone(), profile_id: member_profile },
+                _ => anyhow::bail!("The selected profile has an unsupported save mode"),
+            };
+            ensure!(select || trilogy || owner == target, "Deploy the selected profile before syncing its saves");
             let checking = member.clone();
             tokio::task::spawn_blocking(move || save_manager::validate_sync_access(&checking)).await??;
-            captures.push((member, owner));
+            captures.push((member, owner, target));
         }
         let cap = save_manager::configured_backup_cap_bytes(&tracker).await;
         let mut total = SaveSyncResult::default();
-        for (member, owner) in captures {
-            save_manager::activation::recovery::recover(&member).await?;
+        for (member, owner, _) in &captures {
+            save_manager::activation::recovery::recover(member).await?;
             let result = if select {
-                save_manager::capture_save_set(&member, &owner, BackupTrigger::ProfileSwitch, cap).await
+                save_manager::capture_save_set(member, owner, BackupTrigger::ProfileSwitch, cap).await
             } else {
-                save_manager::sync_save_set(&member, &owner, cap).await
+                save_manager::sync_save_set(member, owner, cap).await
             }.with_context(|| format!("Could not sync {} saves to their current bank; profile selection was not changed", member.title))?;
             total.added += result.added;
             total.modified += result.modified;
             total.removed += result.removed;
+        }
+        if !select && trilogy {
+            super::super::save_switch::switch(&tracker, &captures, cap).await?;
         }
         if select {
             tracker.switch_profile(&selected.id, &profile).await?;

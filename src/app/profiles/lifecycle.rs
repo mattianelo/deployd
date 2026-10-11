@@ -161,8 +161,8 @@ impl App {
             return;
         }
         let dialog = adw::AlertDialog::builder()
-            .heading("Sync live saves to their banks?")
-            .body("Live saves will be backed up to the banks that currently own them. For trilogy profiles this includes all three games. Recovery points are kept, including for saves deleted in-game. Deploy loads the selected profile’s bank into the game.")
+            .heading("Sync the selected profile’s saves?")
+            .body("Close the game before syncing. Current saves will be backed up to their owning banks. For trilogy profiles, all three games will then load the selected profile’s saves without changing deployed mods. Saves already belonging to this profile are backed up in place. Other profiles’ banks remain separate.")
             .build();
         dialog.add_response("cancel", "Cancel");
         dialog.add_response("sync", "Sync");

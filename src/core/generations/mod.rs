@@ -19,6 +19,7 @@ mod recovery;
 pub(crate) mod relocation;
 pub(crate) mod removal;
 mod restore;
+mod save_switch;
 mod saves;
 mod shared;
 mod state;

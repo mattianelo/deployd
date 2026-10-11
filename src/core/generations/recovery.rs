@@ -37,6 +37,7 @@ pub(super) async fn recover_journal(history: &History, game: &Game) -> Result<()
                 journal.recover(history, game, committed).await?;
             }
             ("restore", 1) => super::restore::recover(history).await?,
+            ("restore", 2) => super::save_switch::recover(&history.tracker, game).await?,
             _ => bail!(
                 "The pending {kind} operation requires its compatible recovery handler; records were preserved"
             ),

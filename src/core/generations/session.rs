@@ -11,6 +11,15 @@ use super::{divergence, ownership, recovery, state};
 
 pub(crate) async fn initialize(tracker: &Tracker, game: &Game) -> Result<()> {
     super::relocation::recover(tracker, &game.id).await?;
+    {
+        let lease = super::operation::Lease::acquire().await?;
+        let tracker = tracker.clone();
+        let game = game.clone();
+        lease
+            .participant(async move { super::save_switch::recover(&tracker, &game).await })
+            .await
+            .context("Save sync recovery worker stopped")??;
+    }
     let cache: Option<String> =
         sqlx::query_scalar("SELECT cache_root FROM generation_stores WHERE game_id=?")
             .bind(&game.id)

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Trilogy save Sync now backs up outgoing saves and loads the selected profile’s
+  banks for all three games without redeploying mods. Failed switches roll back,
+  and new empty banks no longer inherit another character during Sync.
+
 - Trilogy profile changes now sync all three games to their current save banks
   before changing selection. Manual sync also handles the trilogy without writing
   one character’s saves into another character’s bank. Deploy loads the selected

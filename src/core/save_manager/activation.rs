@@ -343,6 +343,43 @@ pub(crate) async fn prepare(
     .context("Save preparation worker stopped")?
 }
 
+pub(crate) async fn prepare_sync(
+    operation: &str,
+    game: &Game,
+    source: &SaveSetId,
+    target: &SaveSetId,
+    cap_bytes: u64,
+) -> Result<Transition> {
+    let runtime = tokio::runtime::Handle::current();
+    let operation = operation.to_owned();
+    let game = game.clone();
+    let source = source.clone();
+    let target = target.clone();
+    tokio::task::spawn_blocking(move || {
+        runtime.block_on(async {
+            ensure!(
+                source != target && source.game_id() == game.id && target.game_id() == game.id,
+                "Invalid save sync transition"
+            );
+            uuid::Uuid::parse_str(&operation).context("Invalid save sync identity")?;
+            let control = Control::default();
+            let root = super::bank_root(&target)?;
+            bank::recover(&root, &target)?;
+            super::migrate_legacy_profile_bank(&target).await?;
+            if !root.try_exists()? {
+                let empty = tempfile::tempdir()?;
+                bank::replace(&root, &target, empty.path(), &control)?;
+            }
+            prepare_inner(
+                &operation, &game, &source, &target, false, cap_bytes, control,
+            )
+            .await
+        })
+    })
+    .await
+    .context("Save sync preparation worker stopped")?
+}
+
 async fn prepare_inner(
     operation: &str,
     game: &Game,

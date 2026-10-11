@@ -1109,7 +1109,52 @@ fn trilogy_deploys_switch_saves_independently_without_reinstalling_mods() -> Res
                     format!("{} latest first character", game.id).as_bytes()
                 );
             }
+            sqlx::query("CREATE TRIGGER fail_trilogy_save_commit BEFORE UPDATE ON generation_game_state WHEN NEW.game_id='mass-effect-le3' BEGIN SELECT RAISE(FAIL,'injected trilogy save failure'); END").execute(&tracker.pool).await?;
+            assert!(
+                super::super::session::sync_live_saves(&tracker, &configs[0].game, &cloned)
+                    .await
+                    .is_err()
+            );
+            sqlx::query("DROP TRIGGER fail_trilogy_save_commit")
+                .execute(&tracker.pool)
+                .await?;
+            for config in &configs {
+                assert!(
+                    super::super::session::live_saves(&tracker, &config.game)
+                        .await?
+                        .profile_id()
+                        .is_none()
+                );
+                let live = crate::core::game::detect_save_dir(&config.game).context("live")?;
+                assert_eq!(
+                    fs::read(live.join("save.dat"))?,
+                    format!("{} latest first character", config.game.id).as_bytes()
+                );
+                fs::write(live.join("outgoing-only.dat"), b"other character")?;
+            }
             super::super::session::sync_live_saves(&tracker, &configs[0].game, &cloned).await?;
+            for config in &configs {
+                let live = crate::core::game::detect_save_dir(&config.game).context("live")?;
+                assert!(!live.join("outgoing-only.dat").exists());
+                assert_eq!(
+                    fs::read(live.join("save.dat"))?,
+                    format!("{} second character", config.game.id).as_bytes()
+                );
+            }
+            super::super::session::select_profile(&tracker, &configs[0].game, &first.id).await?;
+            super::super::session::sync_live_saves(&tracker, &configs[0].game, &first.id).await?;
+            for config in &configs {
+                let live = crate::core::game::detect_save_dir(&config.game).context("live")?;
+                assert_eq!(
+                    fs::read(live.join("outgoing-only.dat"))?,
+                    b"other character"
+                );
+                assert_eq!(
+                    fs::read(live.join("save.dat"))?,
+                    format!("{} latest first character", config.game.id).as_bytes()
+                );
+            }
+            super::super::session::select_profile(&tracker, &configs[0].game, &cloned).await?;
             for (index, config) in configs.iter().enumerate() {
                 let game = &config.game;
                 let profile = tracker
@@ -1198,8 +1243,33 @@ fn trilogy_deploys_switch_saves_independently_without_reinstalling_mods() -> Res
                 .get_active_profile(&configs[2].game.id)
                 .await?
                 .context("profile")?;
+            sqlx::query("CREATE TRIGGER fail_save_switch BEFORE UPDATE ON generation_game_state WHEN NEW.game_id='mass-effect-le2' BEGIN SELECT RAISE(FAIL,'injected save commit failure'); END").execute(&tracker.pool).await?;
+            assert!(
+                super::super::session::sync_live_saves(&tracker, &configs[2].game, &selected.id)
+                    .await
+                    .is_err()
+            );
+            sqlx::query("DROP TRIGGER fail_save_switch")
+                .execute(&tracker.pool)
+                .await?;
+            assert!(
+                super::super::session::live_saves(&tracker, &configs[1].game)
+                    .await?
+                    .profile_id()
+                    .is_none()
+            );
+            for config in &configs {
+                let live = crate::core::game::detect_save_dir(&config.game).context("live")?;
+                assert_eq!(
+                    fs::read(live.join("save.dat"))?,
+                    format!("{} mixed-owner progress", config.game.id).as_bytes()
+                );
+            }
+            let deployed: Vec<(String, Option<String>, Option<String>)> = sqlx::query_as("SELECT game_id,deployed_generation_id,deployed_profile_id FROM generation_game_state ORDER BY game_id").fetch_all(&tracker.pool).await?;
             super::super::session::sync_live_saves(&tracker, &configs[2].game, &selected.id)
                 .await?;
+            let after: Vec<(String, Option<String>, Option<String>)> = sqlx::query_as("SELECT game_id,deployed_generation_id,deployed_profile_id FROM generation_game_state ORDER BY game_id").fetch_all(&tracker.pool).await?;
+            assert_eq!(deployed, after);
             for config in &configs {
                 let owner = super::super::session::live_saves(&tracker, &config.game).await?;
                 let bank = paths::saves_root()?.join(&config.game.id).join("sets");
@@ -1209,7 +1279,17 @@ fn trilogy_deploys_switch_saves_independently_without_reinstalling_mods() -> Res
                 };
                 assert_eq!(
                     fs::read(bank.join("data/save.dat"))?,
-                    format!("{} mixed-owner progress", config.game.id).as_bytes()
+                    if config.game.id == configs[1].game.id {
+                        format!("{} second character", config.game.id)
+                    } else {
+                        format!("{} mixed-owner progress", config.game.id)
+                    }
+                    .as_bytes()
+                );
+                let live = crate::core::game::detect_save_dir(&config.game).context("live")?;
+                assert_eq!(
+                    fs::read(live.join("save.dat"))?,
+                    fs::read(bank.join("data/save.dat"))?
                 );
             }
             let second_target = tracker
@@ -1354,3 +1434,6 @@ fn trilogy_deploys_switch_saves_independently_without_reinstalling_mods() -> Res
         },
     )
 }
+
+#[path = "save_switch.rs"]
+mod switching;

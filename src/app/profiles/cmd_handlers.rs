@@ -634,7 +634,16 @@ impl App {
         self.finish_work(WorkKind::SyncingSaves);
         match result {
             Ok(sync) => {
-                self.show_toast(&sync.to_toast());
+                if self
+                    .session
+                    .profiles
+                    .get(self.session.active_profile_idx)
+                    .is_some_and(|profile| profile.trilogy)
+                {
+                    self.show_toast("Selected trilogy profile’s saves are active; outgoing saves were backed up.");
+                } else {
+                    self.show_toast(&sync.to_toast());
+                }
             }
             Err(e) => {
                 self.push_notification(&format!("Save sync failed: {e}"));
