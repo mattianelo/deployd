@@ -315,3 +315,122 @@ fn advanced_installer_metadata_validates_images_and_hidden_options() -> Result<(
     assert!(PackagePlan::inspect(root.path(), None).is_err());
     Ok(())
 }
+
+// @variants: both
+#[test]
+fn automatic_dlc_options_accept_requirements_and_ignore_manual_defaults() -> Result<()> {
+    for condition in [
+        "COND_DLC_PRESENT",
+        "COND_ANY_DLC_PRESENT",
+        "COND_ALL_DLC_PRESENT",
+    ] {
+        let text = format!(
+            "(FriendlyName=Patch,Condition={condition},ConditionalDLC=DLC_MOD_Base,ModOperation=OP_NOTHING,DLCRequirements=DLC_MOD_Required,CheckedByDefault=True,Hidden=TRUE)"
+        );
+        let definitions = Alternate::parse(Some(&text), true, Target::Le2)?;
+        assert!(!definitions[0].default);
+        assert!(definitions[0].hidden);
+        let model = choices::Model::new(&definitions, "9.2")?;
+        let sizes = BTreeMap::new();
+        for (available, expected) in [
+            (BTreeSet::from(["dlc_mod_base".into()]), false),
+            (BTreeSet::from(["dlc_mod_required".into()]), false),
+            (
+                BTreeSet::from(["dlc_mod_base".into(), "dlc_mod_required".into()]),
+                true,
+            ),
+        ] {
+            let context = Context {
+                available: &available,
+                sizes: &sizes,
+                versions: None,
+                options: None,
+            };
+            let state = model.evaluate_context(&BTreeSet::new(), None, Some(&context))?;
+            assert_eq!(
+                state.selected.contains(&definitions[0].key),
+                expected,
+                "{condition}"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn single_struct_options_match_list_wrapped_options() -> Result<()> {
+    for folders in [false, true] {
+        let single = "(FriendlyName=\"A, (B)\",Condition=COND_MANUAL,ModOperation=OP_NOTHING,CheckedByDefault=TRUE,Hidden=False)";
+        assert_eq!(
+            Alternate::parse(Some(single), folders, Target::Le1)?,
+            Alternate::parse(Some(&format!("({single})")), folders, Target::Le1)?
+        );
+    }
+    for text in [
+        "FriendlyName=A",
+        "(FriendlyName=A",
+        "(FriendlyName=A))",
+        "(FriendlyName=A),(FriendlyName=B)",
+    ] {
+        assert!(syntax::parse(text).is_err(), "{text}");
+    }
+    Ok(())
+}
+
+// @variants: both
+#[test]
+fn accepts_every_upstream_alternate_operation_in_its_supported_context() -> Result<()> {
+    for (folders, operation, fields) in [
+        (
+            false,
+            "OP_SUBSTITUTE",
+            "ModFile=CookedPCConsole/Test.pcc,AltFile=Extras/Test.pcc",
+        ),
+        (
+            false,
+            "OP_INSTALL",
+            "ModFile=CookedPCConsole/Test.pcc,ModAltFile=Extras/Test.pcc",
+        ),
+        (false, "OP_NOINSTALL", "ModFile=CookedPCConsole/Test.pcc"),
+        (
+            false,
+            "OP_APPLY_MULTILISTFILES",
+            "MultiListId=1,MultiListRootPath=Extras,MultiListTargetPath=CookedPCConsole,FlattenMultiListOutput=TRUE",
+        ),
+        (
+            false,
+            "OP_NOINSTALL_MULTILISTFILES",
+            "MultiListId=1,MultiListTargetPath=CookedPCConsole",
+        ),
+        (false, "OP_APPLY_MERGEMODS", "MergeFiles=Choice.m3m"),
+        (false, "OP_NOTHING", "Description=None"),
+        (
+            true,
+            "OP_ADD_CUSTOMDLC",
+            "ModAltDLC=Extras,ModDestDLC=DLC_MOD_Test",
+        ),
+        (
+            true,
+            "OP_ADD_FOLDERFILES_TO_CUSTOMDLC",
+            "ModAltDLC=Extras,ModDestDLC=DLC_MOD_Test/CookedPCConsole",
+        ),
+        (
+            true,
+            "OP_ADD_MULTILISTFILES_TO_CUSTOMDLC",
+            "MultiListId=1,MultiListRootPath=Extras,ModDestDLC=DLC_MOD_Test/CookedPCConsole",
+        ),
+        (
+            true,
+            "OP_ENABLE_TLKMERGE_OPTIONKEY",
+            "LE1TLKOptionKey=Choice",
+        ),
+        (true, "OP_NOTHING", "Description=None"),
+    ] {
+        let text = format!(
+            "(FriendlyName=Choice,Condition=COND_MANUAL,ModOperation={operation},{fields})"
+        );
+        Alternate::parse_in(Some(&text), folders, Target::Le1, !folders)
+            .with_context(|| operation)?;
+    }
+    Ok(())
+}

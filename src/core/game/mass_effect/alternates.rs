@@ -294,10 +294,7 @@ impl Alternate {
                 })
                 .transpose()?
                 .unwrap_or(false);
-            ensure!(
-                !default || condition == Condition::Manual,
-                "Only manual alternates can be checked by default"
-            );
+            let default = default && condition == Condition::Manual;
             let group = fields.remove("optiongroup");
             if let Some(group) = &group {
                 ensure!(
@@ -327,13 +324,14 @@ impl Alternate {
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default();
-            ensure!(
-                requirements.is_empty() || condition == Condition::Manual,
-                "DLCRequirements only applies to manual choices"
-            );
             let hidden = fields
                 .remove("hidden")
-                .map(|value| value.parse::<bool>().context("Invalid Hidden boolean"))
+                .map(|value| {
+                    value
+                        .to_ascii_lowercase()
+                        .parse::<bool>()
+                        .context("Invalid Hidden boolean")
+                })
                 .transpose()?
                 .unwrap_or(false);
             ensure!(

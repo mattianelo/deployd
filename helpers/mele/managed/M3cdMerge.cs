@@ -79,8 +79,14 @@ internal static class M3cdMerge
     {
         foreach (var edit in edits)
         {
-            var file = config.Files.SingleOrDefault(file => file.Basename.Equals(edit.File, StringComparison.OrdinalIgnoreCase))
-                ?? throw new InvalidDataException("M3CD names an asset absent from the original configuration.");
+            var file = config.Files.SingleOrDefault(file => file.Basename.Equals(edit.File, StringComparison.OrdinalIgnoreCase));
+            if (file is null)
+            {
+                if (config.Files.Count >= 256)
+                    throw new InvalidDataException("M3CD exceeds the configuration asset limit.");
+                file = new ConfigFile($@"..\..\biogame\config\{edit.File.ToLowerInvariant()}", new List<ConfigSection>());
+                config.Files.Add(file);
+            }
             var matches = file.Sections.Where(section => section.Name.Equals(edit.Section, StringComparison.OrdinalIgnoreCase)).ToArray();
             if (matches.Length > 1)
                 throw new InvalidDataException("M3CD target section is ambiguous.");

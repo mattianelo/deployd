@@ -3,12 +3,13 @@ use std::collections::BTreeMap;
 use anyhow::{Context, Result, ensure};
 
 pub(super) fn parse(text: &str) -> Result<Vec<BTreeMap<String, String>>> {
-    let text = text
-        .trim()
+    let text = text.trim();
+    let inner = text
         .strip_prefix('(')
         .and_then(|text| text.strip_suffix(')'))
         .context("Alternate list must be parenthesized")?;
-    let mut remaining = text.trim();
+    let wrapped = inner.trim_start().starts_with('(') || inner.trim().is_empty();
+    let mut remaining = if wrapped { inner.trim() } else { text };
     let mut result = Vec::new();
     while !remaining.is_empty() {
         ensure!(result.len() < 1024, "Too many alternates");
@@ -54,6 +55,7 @@ pub(super) fn parse(text: &str) -> Result<Vec<BTreeMap<String, String>>> {
         if remaining.is_empty() {
             break;
         }
+        ensure!(wrapped, "Multiple alternates require a parenthesized list");
         remaining = remaining
             .strip_prefix(',')
             .context("Expected alternate separator")?

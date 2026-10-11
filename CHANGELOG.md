@@ -1,5 +1,14 @@
 # Changelog
 
+## [3.3.1]
+
+- Fixed MELE mods being rejected for automatic DLC options with requirements,
+  single-option installer lists, or capitalized option booleans.
+- M3TO textures now accept comments, trailing commas, and additional descriptive
+  fields during both import and deployment.
+- Configuration patches now create missing LE1 config assets and LE2 DLC INI files,
+  fixing patches such as Oriana that do not ship a base `BIOGame.ini`.
+
 ## [3.3.0]
 
 - Updated MELE texture processing to remove a vulnerable image dependency.

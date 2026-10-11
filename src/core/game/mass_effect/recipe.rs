@@ -97,6 +97,7 @@ impl Recipe {
                         | "0.10.0"
                         | "0.11.0"
                         | "0.12.0"
+                        | "0.13.0"
                 )),
             "Unsupported MELE transformation helper version"
         );

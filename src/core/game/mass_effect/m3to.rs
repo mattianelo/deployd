@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 mod btp;
+mod json;
 
 use super::Target;
 use super::helper::{FileIdentity, Job};
@@ -281,14 +282,12 @@ pub(super) fn validate_job(
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct Manifest {
     game: Target,
     textures: Vec<Entry>,
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct Entry {
     sourcepackage: String,
     textureifp: String,
@@ -299,8 +298,8 @@ fn parse(text: &str, target: Target) -> Result<Manifest> {
         text.len() <= 16 * 1024 * 1024,
         "M3TO manifest exceeds 16 MiB"
     );
-    let manifest: Manifest =
-        serde_json::from_str(text).context("Invalid or unsupported M3TO manifest")?;
+    let manifest: Manifest = serde_json::from_str(&json::normalize(text)?)
+        .context("Invalid or unsupported M3TO manifest")?;
     ensure!(
         manifest.game == target,
         "M3TO targets a different game than moddesc.ini"
@@ -667,7 +666,25 @@ mod tests {
 
     // @variants: both
     #[test]
-    fn validates_game_paths_versions_and_unknown_texture_semantics() -> Result<()> {
+    fn accepts_upstream_manifest_syntax_without_weakening_content_checks() -> Result<()> {
+        let source = "\u{feff}{/* comment */\"Game\":\"LE2\",\"comment\":\"https://example.org/,}\",\"Textures\":[{\"SourcePackage\":\"TO_Test.pcc\",\"TextureIFP\":\"Example.Texture\",\"note\":true,},],// end\n}";
+        let manifest = parse(source, Target::Le2)?;
+        assert_eq!(manifest.textures[0].sourcepackage, "TO_Test.pcc");
+        assert_eq!(manifest.textures[0].textureifp, "Example.Texture");
+        for invalid in [
+            source.replace("TO_Test.pcc", "../TO_Test.pcc"),
+            source.replace("\"Game\":\"LE2\"", "\"game\":\"LE2\",\"Game\":\"LE1\""),
+            source.replace("\"LE2\"", "\"LE3\""),
+            source.replace("Example.Texture", "RootTexture"),
+        ] {
+            assert!(parse(&invalid, Target::Le2).is_err());
+        }
+        Ok(())
+    }
+
+    // @variants: both
+    #[test]
+    fn validates_game_paths_and_texture_semantics() -> Result<()> {
         for (game, name) in [
             (Target::Le1, "LE1"),
             (Target::Le2, "LE2"),
@@ -693,7 +710,7 @@ mod tests {
             }
             let mut invalid = valid.clone();
             invalid["textures"][0]["future"] = true.into();
-            assert!(parse(&invalid.to_string(), game).is_err());
+            parse(&invalid.to_string(), game)?;
             invalid = valid.clone();
             invalid["game"] = "ME1".into();
             assert!(parse(&invalid.to_string(), game).is_err());

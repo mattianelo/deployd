@@ -36,7 +36,7 @@ internal static class Program
                 {
                     protocol = 1,
                     backend = "deployd-mele",
-                    version = "0.13.0",
+                    version = "0.13.1",
                     games = new[] { "LE1", "LE2", "LE3" },
                     capabilities = new[] { "le1-m3da", "le1-m3cd", "le1-m3m-assets", "le1-m3m-scripts", "mele-m3m-ordered", "le1-tlk", "le1-plot", "mele-plot", "mele-merge-dlc", "le2-squad-ui", "mele-m3gs", "mele-m3to" },
                     validation = new[] { "package-roundtrip" },

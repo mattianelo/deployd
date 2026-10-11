@@ -1,6 +1,6 @@
 # Deployd
 
-![Version](https://img.shields.io/badge/version-3.3.0-blue)
+![Version](https://img.shields.io/badge/version-3.3.1-blue)
 ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey?logo=linux)
 ![License](https://img.shields.io/badge/license-GPL--3.0--only-green)
 [![deployd](https://snapcraft.io/deployd/badge.svg)](https://snapcraft.io/deployd)
@@ -8,7 +8,7 @@
 Deployd is a Linux mod manager. Install mod archives, download from Nexus Mods,
 organize load orders, and switch between mod profiles.
 
-> **v3.3.0** · [Release notes](CHANGELOG.md) · [Report a problem](https://gitlab.com/mattianelo/deployd/-/issues)
+> **v3.3.1** · [Release notes](CHANGELOG.md) · [Report a problem](https://gitlab.com/mattianelo/deployd/-/issues)
 
 ## Install
 
@@ -121,6 +121,9 @@ minutes and need substantial free disk space.
 - Supported mods include Community Patch, content and cosmetic mods, M3TO textures
   (including ALOT and ISL), shaders, and squadmate outfits. Unsupported packages
   are reported before installation. Install dependencies before the mods needing them.
+- Installer options and M3TO texture manifests accept the formatting used by
+  ME3Tweaks mods, including single-option lists and commented texture manifests.
+  Configuration patches can add missing LE1 config assets and LE2 DLC INI files.
 - LE1 and LE2 configuration deltas support typed additions, including ESA’s
   optional New Armors for Femshep LE2 patch. Select that patch only when using
   its required armor mod, and follow the author’s installation order.

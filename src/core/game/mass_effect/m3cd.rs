@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 
 use anyhow::{Context, Result, ensure};
@@ -184,20 +185,27 @@ pub(super) fn apply_dlc_config(
             let relative = managed
                 .keys()
                 .find(|path| path.eq_ignore_ascii_case(&expected))
-                .cloned()
-                .with_context(|| {
-                    format!(
-                        "M3CD target '{}' is missing from custom DLC '{}'",
-                        edit.file, plan.dlc
-                    )
-                })?;
+                .cloned();
+            let creating = relative.is_none();
+            let relative = relative.unwrap_or(expected);
+            super::journal::destination(&relative)?;
             let path = root.join(&relative);
-            let text = fs::read_to_string(&path)
-                .with_context(|| format!("Cannot read M3CD target '{relative}'"))?;
+            let text = if creating {
+                String::new()
+            } else {
+                fs::read_to_string(&path)
+                    .with_context(|| format!("Cannot read M3CD target '{relative}'"))?
+            };
             let updated = apply_edit(&text, edit)?;
-            fs::write(&path, updated.as_bytes())
+            fs::create_dir_all(path.parent().context("M3CD target has no parent")?)?;
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(creating)
+                .truncate(!creating)
+                .open(&path)
                 .with_context(|| format!("Cannot update M3CD target '{relative}'"))?;
-            fs::File::open(&path)?.sync_all()?;
+            file.write_all(updated.as_bytes())?;
+            file.sync_all()?;
             let identity = SourceFile {
                 relative: relative.clone(),
                 size: updated.len() as u64,
@@ -360,6 +368,55 @@ fn apply_edit(text: &str, edit: &ConfigEdit) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // @variants: both
+    #[test]
+    fn creates_and_tracks_missing_ini_without_overwriting_untracked_files() -> Result<()> {
+        let root = tempfile::tempdir()?;
+        let relative = "BioGame/DLC/DLC_MOD_Oriana/CookedPCConsole/BIOGame.ini";
+        let plan = M3cdPlan {
+            manifest: "ConfigDelta-choice.m3cd".into(),
+            dlc: "DLC_MOD_Oriana".into(),
+            mount: 0,
+            edits: parse("[BIOGame.ini SFXGame.Options]\n++Choice=Enabled")?,
+        };
+        let mut managed = BTreeMap::new();
+        let mut current = BTreeMap::new();
+        apply_dlc_config(
+            root.path(),
+            std::slice::from_ref(&plan),
+            &mut managed,
+            &mut current,
+            &Control::recovery(),
+        )?;
+        let path = root.path().join(relative);
+        let contents = fs::read(&path)?;
+        assert_eq!(contents, b"[SFXGame.Options]\n+Choice=Enabled");
+        assert_eq!(
+            managed[relative].sha256,
+            format!("{:x}", Sha256::digest(&contents))
+        );
+        assert_eq!(
+            current["DLC/DLC_MOD_Oriana/CookedPCConsole/BIOGame.ini"].size,
+            contents.len() as u64
+        );
+
+        managed.clear();
+        current.clear();
+        assert!(
+            apply_dlc_config(
+                root.path(),
+                &[plan],
+                &mut managed,
+                &mut current,
+                &Control::recovery()
+            )
+            .is_err()
+        );
+        assert_eq!(fs::read(path)?, contents);
+        assert!(managed.is_empty() && current.is_empty());
+        Ok(())
+    }
 
     // @variants: both
     #[test]

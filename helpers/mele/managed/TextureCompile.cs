@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 
 using LegendaryExplorerCore.Compression;
@@ -28,6 +30,28 @@ internal static class TextureCompile
     private const long ManifestLimit = 16 * 1024 * 1024;
     private const long PackageLimit = 512 * 1024 * 1024;
     private const long JobLimit = 4L * 1024 * 1024 * 1024;
+
+    private static readonly JsonSerializerOptions ManifestJson = new(TransformProtocol.Json)
+    {
+        PropertyNameCaseInsensitive = true,
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Skip,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+    };
+
+    internal static TextureManifestDocument ReadManifest(Stream bytes)
+    {
+        using var reader = new StreamReader(bytes, new UTF8Encoding(false, true), detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+        using var document = JsonDocument.Parse(reader.ReadToEnd().TrimStart('\uFEFF'), new JsonDocumentOptions
+        {
+            MaxDepth = 8,
+            AllowTrailingCommas = true,
+            CommentHandling = JsonCommentHandling.Skip,
+        });
+        TransformProtocol.RejectDuplicateKeys(document.RootElement);
+        return document.Deserialize<TextureManifestDocument>(ManifestJson)
+            ?? throw new InvalidDataException("An M3TO manifest is required.");
+    }
 
     internal static TextureRequest ReadRequest(string path)
     {
@@ -123,10 +147,7 @@ internal static class TextureCompile
             {
                 cancellation.ThrowIfCancellationRequested();
                 using var bytes = TransformProtocol.ReadVerified(request.InputRoot, identity, ManifestLimit);
-                using var document = JsonDocument.Parse(bytes, new JsonDocumentOptions { MaxDepth = 8 });
-                TransformProtocol.RejectDuplicateKeys(document.RootElement);
-                var manifest = document.Deserialize<TextureManifestDocument>(TransformProtocol.Json)
-                    ?? throw new InvalidDataException("An M3TO manifest is required.");
+                var manifest = ReadManifest(bytes);
                 if (manifest.Game != request.Game || manifest.Textures is null
                     || manifest.Textures.Length is < 1 or > 100_000)
                     throw new InvalidDataException("Invalid M3TO manifest game or texture count.");

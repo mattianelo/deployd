@@ -648,7 +648,7 @@ async fn le2_alternate_config_delta_updates_its_custom_dlc_ini() -> Result<()> {
     fs::create_dir_all(&alternate)?;
     fs::write(
         alternate.join("ConfigDelta-choice.m3cd"),
-        "[BioGame.ini SFXGame.BioGlobalVariableTable]\n+TimedPlotUnlocks=Selected",
+        "[BioGame.ini SFXGame.BioGlobalVariableTable]\n+TimedPlotUnlocks=Selected\n[BIOUI.ini Engine.UI]\n++NewItem=First\n[bioui.ini Engine.UI]\n++NewItem=Second",
     )?;
     let descriptor = source.join("moddesc.ini");
     let text = fs::read_to_string(&descriptor)?.replace(
@@ -686,7 +686,7 @@ async fn le2_alternate_config_delta_updates_its_custom_dlc_ini() -> Result<()> {
         Arc::new(|_, _| {}),
     )
     .await?;
-    deploy_in(
+    let state = deploy_in(
         fixture.tracker.clone(),
         destination(),
         plan,
@@ -706,6 +706,20 @@ async fn le2_alternate_config_delta_updates_its_custom_dlc_ini() -> Result<()> {
         installed.contains("+TimedPlotUnlocks=Selected"),
         "{installed}"
     );
+    let created = fixture
+        .game
+        .path
+        .join("BioGame/DLC/DLC_MOD_Test/CookedPCConsole/BIOUI.ini");
+    assert_eq!(
+        fs::read_to_string(&created)?,
+        "[Engine.UI]\n+NewItem=First\n+NewItem=Second"
+    );
+    assert!(!created.with_file_name("bioui.ini").exists());
+    fixture
+        .deploy(fixture.recipe(Vec::new()), Some(&state))
+        .await?;
+    assert!(!created.exists());
+    assert_eq!(fs::read(fixture.game.path.join(ENGINE))?, b"original");
     Ok(())
 }
 

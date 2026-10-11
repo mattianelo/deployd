@@ -18,6 +18,7 @@ internal static class ConfigTests
     {
         ParsesAndAppliesOrderedOperations();
         PreservesTypedAdditions();
+        CreatesMissingAssetsLikeUpstream();
         RejectsMalformedInputs();
         RebuildsInMountOrder(root);
         Console.WriteLine("LE1 M3CD operation, binary, ordering, removal, integrity, and cancellation tests passed.");
@@ -106,6 +107,27 @@ internal static class ConfigTests
         Require(config.SameAs(Le1Config.Read(output)), "Merged configuration did not round trip.");
     }
 
+    private static void CreatesMissingAssetsLikeUpstream()
+    {
+        var config = Fixture();
+        var existing = config.Files.Single();
+        using var referenceBytes = new Le1Config {
+            Files = { new ConfigFile(existing.Basename, existing.Sections) }
+        }.Serialize();
+        var upstream = ConfigAssetBundle.FromSingleStream(MEGame.LE1, referenceBytes);
+        const string delta = "[Missing.ini Engine.UI]\n+Choice=First\n[missing.ini Engine.UI]\n+Choice=Second";
+        ConfigMerge.PerformMerge(upstream, ConfigFileProxy.ParseIni(delta));
+        M3cdMerge.Apply(config, Parse(delta));
+        var created = config.Files.Single(file => file.Basename == "missing.ini");
+        var expected = CoalesceAsset.ToIni(upstream.GetAsset("Missing.ini"))
+            .Sections.Single(section => section.Header == "Engine.UI").Entries
+            .Select(entry => new ConfigValue(entry.Key, entry.Value));
+        Require(created.Sections.Single().Values.SequenceEqual(expected), "New config asset differs from upstream.");
+        Require(config.Files.Count == 2 && config.Files[0] == existing, "Existing config asset changed.");
+        using var output = config.Serialize();
+        Require(config.SameAs(Le1Config.Read(output)), "New config asset did not survive binary serialization.");
+    }
+
     private static void PreservesTypedAdditions()
     {
         foreach (char outer in "+.")
@@ -149,7 +171,6 @@ internal static class ConfigTests
             Reject(() => Parse($"[BioUI.ini Engine.UI]\n{key}=Value"));
         using (var invalidUtf8 = new MemoryStream(new byte[] { 0xff }))
             Reject(() => M3cdMerge.Parse(invalidUtf8));
-        Reject(() => M3cdMerge.Apply(Fixture(), Parse("[Missing.ini Engine.UI]\nKey=Value")));
         foreach (byte[] bytes in new[] { Array.Empty<byte>(), BitConverter.GetBytes(-1), BitConverter.GetBytes(int.MaxValue),
             new byte[] { 1, 0, 0, 0, 0, 0, 0, 128 } })
         {
