@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -307,10 +307,35 @@ pub fn last_save_sync_time(game_id: &str, profile_id: &str) -> Option<std::time:
         game_id: game_id.to_string(),
         profile_id: profile_id.to_string(),
     };
-    std::fs::metadata(bank_manifest(&bank_root(&set).ok()?))
-        .ok()?
-        .modified()
-        .ok()
+    bank_sync_time(&bank_root(&set).ok()?, &set)
+}
+
+fn bank_sync_time(root: &Path, set: &SaveSetId) -> Option<std::time::SystemTime> {
+    let manifest: SaveBankManifest =
+        serde_json::from_reader(std::fs::File::open(bank_manifest(root)).ok()?).ok()?;
+    if manifest.schema_version != SAVE_SCHEMA_VERSION || manifest.save_set != *set {
+        return None;
+    }
+    Some(
+        chrono::DateTime::parse_from_rfc3339(&manifest.captured_at)
+            .ok()?
+            .into(),
+    )
+}
+
+pub(crate) fn validate_sync_access(game: &Game) -> Result<()> {
+    ensure!(
+        !game_root(&game.id)?.join("transition.json").try_exists()?,
+        "Finish pending save recovery before syncing or changing profiles"
+    );
+    let live = validate_live_save_access(game)?;
+    if live
+        .try_exists()
+        .context("Cannot inspect live saves; restore prefix access")?
+    {
+        std::fs::read_dir(&live).context("Cannot read live saves; restore prefix access")?;
+    }
+    Ok(())
 }
 
 fn validate_live_save_access(game: &Game) -> Result<PathBuf> {
@@ -337,6 +362,12 @@ where
             game.title
         )
     })?;
+    std::fs::read_dir(prefix.join("drive_c/users")).with_context(|| {
+        format!(
+            "Cannot read {}'s Wine users folder; restore prefix access before syncing saves",
+            game.title
+        )
+    })?;
     detect_save_dir(game).ok_or_else(|| anyhow!("Could not locate {}'s save directory", game.title))
 }
 
@@ -357,7 +388,10 @@ async fn hash_file(path: &Path) -> Result<String> {
 }
 
 async fn scan_tree(root: &Path) -> Result<Vec<SaveFileManifest>> {
-    if !root.exists() {
+    if !root
+        .try_exists()
+        .context("Cannot inspect the save folder")?
+    {
         return Ok(Vec::new());
     }
     let mut files = Vec::new();
@@ -407,7 +441,10 @@ async fn scan_tree(root: &Path) -> Result<Vec<SaveFileManifest>> {
 
 async fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
     tokio::fs::create_dir_all(destination).await?;
-    if !source.exists() {
+    if !source
+        .try_exists()
+        .context("Cannot inspect the save source")?
+    {
         return Ok(());
     }
     let mut stack = vec![(source.to_path_buf(), destination.to_path_buf())];
@@ -980,6 +1017,64 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
+
+    // @variants: both
+    #[test]
+    fn sync_timestamp_uses_capture_time_even_with_normalized_file_metadata() -> Result<()> {
+        let root = tempfile::tempdir()?;
+        let set = SaveSetId::Profile {
+            game_id: "game".into(),
+            profile_id: "profile".into(),
+        };
+        let manifest = SaveBankManifest {
+            schema_version: SAVE_SCHEMA_VERSION,
+            save_set: set.clone(),
+            captured_at: "1970-01-01T01:00:00Z".into(),
+            files: Vec::new(),
+        };
+        let path = bank_manifest(root.path());
+        std::fs::write(&path, serde_json::to_vec(&manifest)?)?;
+        std::fs::File::options()
+            .write(true)
+            .open(&path)?
+            .set_modified(std::time::UNIX_EPOCH)?;
+        assert_eq!(
+            bank_sync_time(root.path(), &set),
+            Some(std::time::UNIX_EPOCH + std::time::Duration::from_secs(3600))
+        );
+        assert!(
+            bank_sync_time(
+                root.path(),
+                &SaveSetId::Global {
+                    game_id: "game".into()
+                }
+            )
+            .is_none()
+        );
+        Ok(())
+    }
+
+    // @variants: both
+    #[tokio::test]
+    async fn unreadable_save_folders_are_not_treated_as_empty_banks() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempdir()?;
+        let parent = root.path().join("protected");
+        let source = parent.join("saves");
+        std::fs::create_dir_all(&source)?;
+        std::fs::write(source.join("save.dat"), b"character progress")?;
+        std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0))?;
+        let scanned = scan_tree(&source).await;
+        let copied = copy_tree(&source, &root.path().join("copy")).await;
+        std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o700))?;
+        assert!(scanned.is_err());
+        assert!(copied.is_err());
+        assert_eq!(
+            std::fs::read(source.join("save.dat"))?,
+            b"character progress"
+        );
+        Ok(())
+    }
 
     async fn write_file(path: &Path, bytes: &[u8]) -> Result<()> {
         tokio::fs::create_dir_all(path.parent().unwrap()).await?;

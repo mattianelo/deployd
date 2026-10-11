@@ -337,6 +337,7 @@ impl App {
         root: &adw::ApplicationWindow,
         sender: &ComponentSender<Self>,
     ) {
+        self.finish_work(WorkKind::SyncingSaves);
         match result {
             Ok((data, save_sync)) => {
                 self.session.pending_save_profile_idx = None;
@@ -424,6 +425,7 @@ impl App {
         result: Result<LoadedData, String>,
         sender: &ComponentSender<Self>,
     ) {
+        self.finish_work(WorkKind::SyncingSaves);
         match result {
             Ok(data) => {
                 self.apply_loaded_data(data, sender);
@@ -441,6 +443,7 @@ impl App {
         result: Result<LoadedData, String>,
         sender: &ComponentSender<Self>,
     ) {
+        self.finish_work(WorkKind::SyncingSaves);
         match result {
             Ok(data) => {
                 self.apply_loaded_data(data, sender);
@@ -464,6 +467,7 @@ impl App {
         result: Result<(LoadedData, Option<String>), String>,
         sender: &ComponentSender<Self>,
     ) {
+        self.finish_work(WorkKind::SyncingSaves);
         match result {
             Ok((data, cleanup_warning)) => {
                 self.apply_loaded_data(data, sender);
@@ -627,15 +631,9 @@ impl App {
         &mut self,
         result: Result<crate::core::save_manager::SaveSyncResult, String>,
     ) {
+        self.finish_work(WorkKind::SyncingSaves);
         match result {
             Ok(sync) => {
-                if let Some(p) = self
-                    .session
-                    .profiles
-                    .get_mut(self.session.active_profile_idx)
-                {
-                    p.save_synced_at = Some(std::time::SystemTime::now());
-                }
                 self.show_toast(&sync.to_toast());
             }
             Err(e) => {

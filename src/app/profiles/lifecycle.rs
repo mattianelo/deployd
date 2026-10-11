@@ -1,3 +1,5 @@
+use std::future::Future;
+
 use adw::prelude::*;
 use relm4::prelude::*;
 
@@ -34,6 +36,25 @@ fn resolve_profile_selection(requested_idx: usize, state: ProfileSelectionState)
 }
 
 impl App {
+    fn save_profile_command(
+        &mut self,
+        sender: &ComponentSender<Self>,
+        future: impl Future<Output = AppCmdMsg> + Send + 'static,
+    ) {
+        let Ok(lease) = crate::core::location_recovery::activity_lock().try_read_owned() else {
+            self.push_notification("Wait for folder access recovery before syncing saves");
+            return;
+        };
+        self.begin_work(
+            crate::app::types::WorkKind::SyncingSaves,
+            "Syncing live saves to their banks…",
+        );
+        sender.oneshot_command(async move {
+            let result = future.await;
+            AppCmdMsg::LocationActivityCompleted(lease, Box::new(result))
+        });
+    }
+
     pub(crate) fn handle_new_profile_requested(&mut self, sender: &ComponentSender<Self>) {
         self.ui.profile_menu_btn.popdown();
         self.handle_new_profile_clicked(sender);
@@ -136,12 +157,12 @@ impl App {
     ) {
         self.ui.profile_menu_btn.popdown();
         if !self.can_sync_saves() {
-            self.push_notification("Deploy this profile with Local Saves before syncing; finish any pending recovery first");
+            self.push_notification("Finish loading or pending recovery before syncing. Non-trilogy profiles must own the live saves.");
             return;
         }
         let dialog = adw::AlertDialog::builder()
-            .heading("Sync live saves to this profile?")
-            .body("The current profile bank will be replaced, including stored saves that were deleted from the live directory. A recovery point will be created first.")
+            .heading("Sync live saves to their banks?")
+            .body("Live saves will be backed up to the banks that currently own them. For trilogy profiles this includes all three games. Recovery points are kept, including for saves deleted in-game. Deploy loads the selected profile’s bank into the game.")
             .build();
         dialog.add_response("cancel", "Cancel");
         dialog.add_response("sync", "Sync");
@@ -187,7 +208,7 @@ impl App {
             .get(self.session.active_profile_idx)
             .map(|profile| profile.id.clone());
 
-        self.location_command(sender, async move {
+        self.save_profile_command(sender, async move {
             let result = async {
                 if let Some(old_id) = &old_profile_id {
                     tracker
@@ -198,10 +219,13 @@ impl App {
                 crate::core::generations::session::initialize(&tracker, &game)
                     .await
                     .map_err(|error| error.to_string())?;
-                tracker
-                    .switch_profile(&game.id, &target_profile_id)
-                    .await
-                    .map_err(|error| error.to_string())?;
+                crate::core::generations::session::select_profile(
+                    &tracker,
+                    &game,
+                    &target_profile_id,
+                )
+                .await
+                .map_err(|error| error.to_string())?;
                 let save_sync = None;
                 let data = load_game_data(&tracker, &game, GameLoadMode::Refresh).await?;
                 Ok::<_, String>((data, save_sync))
@@ -296,7 +320,7 @@ impl App {
             .get(self.session.active_profile_idx)
             .map(|p| p.id.clone());
 
-        self.location_command(sender, async move {
+        self.save_profile_command(sender, async move {
             let result = async {
                 if let Some(active_id) = &active_profile_id {
                     tracker
@@ -308,8 +332,7 @@ impl App {
                     .create_clean_profile(&game.id, &new_name)
                     .await
                     .map_err(|e| e.to_string())?;
-                tracker
-                    .switch_profile(&game.id, &new_id)
+                crate::core::generations::session::select_profile(&tracker, &game, &new_id)
                     .await
                     .map_err(|e| e.to_string())?;
                 load_game_data(&tracker, &game, GameLoadMode::Refresh).await
@@ -339,7 +362,7 @@ impl App {
         let new_name = format!("{} (Copy)", source_profile.name);
         let games = self.session.games.clone();
 
-        self.location_command(sender, async move {
+        self.save_profile_command(sender, async move {
             let result = async {
                 tracker
                     .save_to_profile(&source_profile.id, &game.id)
@@ -406,8 +429,7 @@ impl App {
                         return Err(error.to_string());
                     }
                 }
-                tracker
-                    .switch_profile(&game.id, &new_id)
+                crate::core::generations::session::select_profile(&tracker, &game, &new_id)
                     .await
                     .map_err(|e| e.to_string())?;
                 load_game_data(&tracker, &game, GameLoadMode::Refresh).await
@@ -444,7 +466,7 @@ impl App {
             return;
         };
 
-        self.location_command(sender, async move {
+        self.save_profile_command(sender, async move {
             let result = async {
                 let parts = tracker
                     .profile_parts(&delete_id)
@@ -455,10 +477,13 @@ impl App {
                         .await
                         .map_err(|e| e.to_string())?;
                 }
-                tracker
-                    .switch_profile(&game.id, &target_profile.id)
-                    .await
-                    .map_err(|error| error.to_string())?;
+                crate::core::generations::session::select_profile(
+                    &tracker,
+                    &game,
+                    &target_profile.id,
+                )
+                .await
+                .map_err(|error| error.to_string())?;
                 if let Err(error) = tracker.delete_profile(&delete_id).await {
                     tracker
                         .switch_profile(&game.id, &delete_id)
@@ -607,20 +632,11 @@ impl App {
             return;
         };
         let profile_id = profile.id.clone();
-        self.location_command(sender, async move {
-            let save_set =
-                save_manager::SaveSetId::for_profile(&game.id, &profile_id, &profile.save_mode);
-            let result = async {
-                let owner = crate::core::generations::session::live_saves(&tracker, &game).await?;
-                anyhow::ensure!(
-                    owner == save_set,
-                    "Deploy this profile before syncing live saves into its bank"
-                );
-                let backup_cap = save_manager::configured_backup_cap_bytes(&tracker).await;
-                save_manager::sync_save_set(&game, &save_set, backup_cap).await
-            }
-            .await
-            .map_err(|error| error.to_string());
+        self.save_profile_command(sender, async move {
+            let result =
+                crate::core::generations::session::sync_live_saves(&tracker, &game, &profile_id)
+                    .await
+                    .map_err(|error| format!("{error:#}"));
             AppCmdMsg::Games(crate::app::messages::GamesCmdMsg::SavesSynced(result))
         });
     }

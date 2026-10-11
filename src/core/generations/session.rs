@@ -1,3 +1,6 @@
+mod save_sync;
+pub(crate) use save_sync::{select_profile, sync_live_saves};
+
 use anyhow::{Context, Result, ensure};
 
 use crate::core::{game, save_manager, tracker::Tracker};

@@ -1049,7 +1049,67 @@ fn trilogy_deploys_switch_saves_independently_without_reinstalling_mods() -> Res
             tracker
                 .set_profile_save_mode(&cloned, SaveMode::ProfileSpecific)
                 .await?;
-            tracker.switch_profile(&configs[0].game.id, &cloned).await?;
+            for (game_id, profile_id) in tracker.profile_parts(&cloned).await? {
+                let game = &configs
+                    .iter()
+                    .find(|config| config.game.id == game_id)
+                    .context("game")?
+                    .game;
+                let live = crate::core::game::detect_save_dir(game).context("live saves")?;
+                fs::write(live.join("save.dat"), format!("{game_id} second character"))?;
+                save_manager::initialize_save_set(
+                    game,
+                    &SaveSetId::Profile {
+                        game_id: game_id.clone(),
+                        profile_id,
+                    },
+                )
+                .await?;
+                fs::write(
+                    live.join("save.dat"),
+                    format!("{game_id} latest first character"),
+                )?;
+            }
+            sqlx::query("UPDATE games SET wine_prefix=? WHERE id=?")
+                .bind(root.join("missing-prefix").to_str())
+                .bind(&configs[2].game.id)
+                .execute(&tracker.pool)
+                .await?;
+            assert!(
+                super::super::session::select_profile(&tracker, &configs[0].game, &cloned)
+                    .await
+                    .is_err()
+            );
+            assert_eq!(
+                tracker
+                    .get_active_profile(&configs[0].game.id)
+                    .await?
+                    .context("profile")?
+                    .id,
+                first.id
+            );
+            sqlx::query("UPDATE games SET wine_prefix=? WHERE id=?")
+                .bind(prefix.to_str())
+                .bind(&configs[2].game.id)
+                .execute(&tracker.pool)
+                .await?;
+            super::super::session::select_profile(&tracker, &configs[0].game, &cloned).await?;
+            for config in &configs {
+                let game = &config.game;
+                let bank = paths::saves_root()?
+                    .join(&game.id)
+                    .join("sets/global/data/save.dat");
+                assert_eq!(
+                    fs::read(bank)?,
+                    format!("{} latest first character", game.id).as_bytes()
+                );
+                let live = crate::core::game::detect_save_dir(game).context("live saves")?;
+                assert_eq!(
+                    fs::read(live.join("save.dat"))?,
+                    format!("{} latest first character", game.id).as_bytes()
+                );
+            }
+            super::super::session::sync_live_saves(&tracker, &configs[0].game, &cloned).await?;
             for (index, config) in configs.iter().enumerate() {
                 let game = &config.game;
                 let profile = tracker
@@ -1100,6 +1160,16 @@ fn trilogy_deploys_switch_saves_independently_without_reinstalling_mods() -> Res
                         b"installed output".as_slice()
                     }
                 );
+                let live = crate::core::game::detect_save_dir(game).context("live saves")?;
+                assert_eq!(
+                    fs::read(live.join("save.dat"))?,
+                    if index == 1 {
+                        format!("{} latest first character", game.id)
+                    } else {
+                        format!("{} second character", game.id)
+                    }
+                    .as_bytes()
+                );
                 let after = fs::metadata(game.path.join(relative))?;
                 assert_eq!(
                     (metadata.ino(), metadata.mtime(), metadata.mtime_nsec()),
@@ -1116,6 +1186,46 @@ fn trilogy_deploys_switch_saves_independently_without_reinstalling_mods() -> Res
                     }
                 }
             }
+            for config in &configs {
+                let live =
+                    crate::core::game::detect_save_dir(&config.game).context("live saves")?;
+                fs::write(
+                    live.join("save.dat"),
+                    format!("{} mixed-owner progress", config.game.id),
+                )?;
+            }
+            let selected = tracker
+                .get_active_profile(&configs[2].game.id)
+                .await?
+                .context("profile")?;
+            super::super::session::sync_live_saves(&tracker, &configs[2].game, &selected.id)
+                .await?;
+            for config in &configs {
+                let owner = super::super::session::live_saves(&tracker, &config.game).await?;
+                let bank = paths::saves_root()?.join(&config.game.id).join("sets");
+                let bank = match owner.profile_id() {
+                    Some(id) => bank.join("profiles").join(id),
+                    None => bank.join("global"),
+                };
+                assert_eq!(
+                    fs::read(bank.join("data/save.dat"))?,
+                    format!("{} mixed-owner progress", config.game.id).as_bytes()
+                );
+            }
+            let second_target = tracker
+                .get_active_profile(&configs[1].game.id)
+                .await?
+                .context("profile")?;
+            assert_eq!(
+                fs::read(
+                    paths::saves_root()?
+                        .join(&configs[1].game.id)
+                        .join("sets/profiles")
+                        .join(second_target.id)
+                        .join("data/save.dat")
+                )?,
+                format!("{} second character", configs[1].game.id).as_bytes()
+            );
             assert_eq!(
                 super::super::session::live_saves(&tracker, &configs[0].game)
                     .await?

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Trilogy profile changes now sync all three games to their current save banks
+  before changing selection. Manual sync also handles the trilogy without writing
+  one character’s saves into another character’s bank. Deploy loads the selected
+  game’s target bank, and save-sync timestamps reflect the recorded capture time.
+
 - Fixed MELE deployment and profile switching being blocked by regenerated
   `PCConsoleTOC.bin` indexes. Their current contents are preserved for rollback,
   while edited mod assets and damaged retained files remain protected.

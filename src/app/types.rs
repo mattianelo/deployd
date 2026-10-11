@@ -32,6 +32,7 @@ pub enum ModFilter {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WorkKind {
+    SyncingSaves,
     RecoveringLocation,
     PreparingArchive,
     ExtractingArchive,

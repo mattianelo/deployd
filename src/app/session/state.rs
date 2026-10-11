@@ -48,21 +48,24 @@ impl App {
         self.game_has_save_management()
             && self.shell.deployment_status.as_ref().is_some_and(|status| {
                 !status.recovery_pending
-                    && status
-                        .live_saves
-                        .as_ref()
-                        .and_then(crate::core::save_manager::SaveSetId::profile_id)
-                        == self
-                            .session
-                            .profiles
-                            .get(self.session.active_profile_idx)
-                            .map(|profile| profile.id.as_str())
+                    && self
+                        .session
+                        .profiles
+                        .get(self.session.active_profile_idx)
+                        .is_some_and(|profile| {
+                            profile.trilogy
+                                || status
+                                    .live_saves
+                                    .as_ref()
+                                    .and_then(crate::core::save_manager::SaveSetId::profile_id)
+                                    == Some(profile.id.as_str())
+                        })
             })
             && self
                 .session
                 .profiles
                 .get(self.session.active_profile_idx)
-                .is_some_and(|p| p.save_mode == SaveMode::ProfileSpecific)
+                .is_some_and(|p| p.trilogy || p.save_mode == SaveMode::ProfileSpecific)
     }
 
     /// Label for the save mode toggle button based on the active profile.
