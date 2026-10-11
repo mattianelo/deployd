@@ -1,6 +1,6 @@
 # Deployd
 
-![Version](https://img.shields.io/badge/version-3.2.0-blue)
+![Version](https://img.shields.io/badge/version-3.3.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey?logo=linux)
 ![License](https://img.shields.io/badge/license-GPL--3.0--only-green)
 [![deployd](https://snapcraft.io/deployd/badge.svg)](https://snapcraft.io/deployd)
@@ -8,7 +8,7 @@
 Deployd is a Linux mod manager. Install mod archives, download from Nexus Mods,
 organize load orders, and switch between mod profiles.
 
-> **v3.2.0** · [Release notes](CHANGELOG.md) · [Report a problem](https://gitlab.com/mattianelo/deployd/-/issues)
+> **v3.3.0** · [Release notes](CHANGELOG.md) · [Report a problem](https://gitlab.com/mattianelo/deployd/-/issues)
 
 ## Install
 
@@ -89,7 +89,8 @@ file-verification feature.
 Change a game's cache folder under **Settings → Manage Games**. Hardlink deployment
 requires the cache and game to share a compatible filesystem: the same partition,
 Btrfs subvolume, or ZFS dataset. MELE needs additional space for separate copies,
-restoration data, and cached texture processing. Deployment history also uses disk
+restoration data, and cached texture processing. Updates to texture processing
+may require cached results to be rebuilt on the next deployment. Deployment history also uses disk
 space; review and delete unneeded, unprotected entries from its dialog.
 
 To start over, choose **Purge & delete all Deployd data** when removing a game.

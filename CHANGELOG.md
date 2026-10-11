@@ -1,6 +1,9 @@
 # Changelog
 
-## [Unreleased]
+## [3.3.0]
+
+- Updated MELE texture processing to remove a vulnerable image dependency.
+  The first deployment after updating may rebuild cached texture results.
 
 - Fixed ESA’s optional New Armors for Femshep LE2 patch failing to add because
   its configuration delta uses double-prefixed operations. Typed additions now

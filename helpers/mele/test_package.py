@@ -4,10 +4,26 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from package import copy_tree, copy_application, copy_runtime, validate_native_files, TRACE_PROVIDER
+from package import copy_tree, copy_application, copy_runtime, validate_native_files, validate_image_runtime, TRACE_PROVIDER
 
 
 class PackageTests(unittest.TestCase):
+    def test_requires_linux_decoder_and_rejects_stale_image_dependencies(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with self.assertRaisesRegex(ValueError, "missing the Linux"):
+                validate_image_runtime(root)
+            native = root / "runtimes/linux-x64/native/libSkiaSharp.so"
+            native.parent.mkdir(parents=True)
+            native.write_bytes(b"fixture")
+            validate_image_runtime(root)
+            for name in ("SixLabors.ImageSharp.dll", "BCnEncoder.Net.ImageSharp.dll"):
+                stale = root / name
+                stale.write_bytes(b"old dependency")
+                with self.assertRaisesRegex(ValueError, "removed ImageSharp"):
+                    validate_image_runtime(root)
+                stale.unlink()
+
     def test_keeps_linux_native_assets_and_managed_dependencies(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

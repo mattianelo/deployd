@@ -48,6 +48,13 @@ def validate_native_files(root):
                     raise ValueError("Helper bundle contains a native binary for another architecture")
 
 
+def validate_image_runtime(root):
+    if not (root / "runtimes/linux-x64/native/libSkiaSharp.so").is_file():
+        raise ValueError("Helper bundle is missing the Linux SkiaSharp decoder")
+    if any("imagesharp" in path.name.lower() for path in root.rglob("*")):
+        raise ValueError("Helper bundle contains a removed ImageSharp dependency; rebuild its outputs")
+
+
 def assemble(root, output):
     root = root.resolve()
     if os.getuid() == 0 and (root == Path("/workspace") or Path("/workspace") in root.parents):
@@ -71,6 +78,7 @@ def assemble(root, output):
         stage.mkdir()
         app = build / "source/Deployd.Mele/bin/Release/net10.0"
         copy_application(app, stage / "app")
+        validate_image_runtime(stage / "app")
         runtime = stage / "runtime"
         runtime.mkdir()
         shutil.copy2(sdk / "dotnet", runtime / "dotnet")

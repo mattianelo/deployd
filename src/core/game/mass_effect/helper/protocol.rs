@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::super::Target;
 use super::super::m3za::StringEdit;
 
-pub(in crate::core::game::mass_effect) const VERSION: &str = "0.12.0";
+pub(in crate::core::game::mass_effect) const VERSION: &str = "0.13.0";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

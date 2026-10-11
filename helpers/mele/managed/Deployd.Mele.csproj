@@ -34,6 +34,8 @@
     <Compile Include="TextureOverrideTextureEntry.cs" />
     <Compile Include="BtpFormat.cs" />
     <!-- Pinned LEC supplies Unreal package serialization; its Linux Oodle port is built separately. -->
+    <!-- Bundle the headless Linux decoder; no host font or graphics service is needed. -->
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="[4.153.1]" />
     <ProjectReference Include="../LegendaryExplorerCore/LegendaryExplorerCore.csproj" />
   </ItemGroup>
 </Project>

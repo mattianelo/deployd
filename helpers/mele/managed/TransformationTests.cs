@@ -38,6 +38,7 @@ internal static class TransformationTests
             TlkPlotTests.Run(root);
             ShaderMergeTests.Run(root);
             TextureCompileTests.Run(root);
+            ImageCodecTests.Run();
             if (args.Length == 2 && args[0] == "--shaders")
                 ShaderMergeTests.Corpus(args[1]);
             else if (args.Length == 2 && args[0] == "--merge-dlc")

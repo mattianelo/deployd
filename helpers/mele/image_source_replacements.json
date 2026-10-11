@@ -1,0 +1,66 @@
+[
+  [
+    "using BCnEncoder.ImageSharp;\n",
+    ""
+  ],
+  [
+    "using SixLabors.ImageSharp;\n",
+    "using SkiaSharp;\n"
+  ],
+  [
+    "using SixLabors.ImageSharp.Advanced;\n",
+    ""
+  ],
+  [
+    "using SixLabors.ImageSharp.Formats;\n",
+    ""
+  ],
+  [
+    "using SixLabors.ImageSharp.Formats.Jpeg;\n",
+    ""
+  ],
+  [
+    "using SixLabors.ImageSharp.Formats.Png;\n",
+    ""
+  ],
+  [
+    "using SixLabors.ImageSharp.PixelFormats;\n",
+    ""
+  ],
+  [
+    "var image = PngDecoder.Instance.Decode<Rgba32>(new DecoderOptions(), stream);",
+    "using var image = SkiaImageCodec.Decode(stream, SKEncodedImageFormat.Png, SKColorType.Rgba8888);"
+  ],
+  [
+    "var image = JpegDecoder.Instance.Decode<Bgr24>(new DecoderOptions(), stream);",
+    "using var image = SkiaImageCodec.Decode(stream, SKEncodedImageFormat.Jpeg, SKColorType.Bgra8888);"
+  ],
+  [
+    "SLImageToRawBytes<Rgba32>(image)",
+    "image.Bytes"
+  ],
+  [
+    "SLImageToRawBytes(image)",
+    "SkiaImageCodec.BgrBytes(image)"
+  ],
+  [
+    "        public static byte[] ToArray(SixLabors.ImageSharp.Image image, IImageFormat imageFormat)\n        {\n            using var memoryStream = new MemoryStream();\n            var imageEncoder = image.Configuration.ImageFormatsManager.GetEncoder(imageFormat);\n            image.Save(memoryStream, imageEncoder);\n            return memoryStream.ToArray();\n        }\n\n",
+    "        public static byte[] ToArray(SKBitmap image, SKEncodedImageFormat imageFormat)\n        {\n            using var encoded = image.Encode(imageFormat, 100)\n                ?? throw new InvalidDataException(\"Cannot encode texture image.\");\n            return encoded.ToArray();\n        }\n\n"
+  ],
+  [
+    "        /// <summary>\n        /// Converts a SixLabors Image to raw bytes\n        /// </summary>\n        /// <param name=\"image\"></param>\n        /// <returns></returns>\n        private static byte[] SLImageToRawBytes<TPixel>(Image<TPixel> image) where TPixel : unmanaged, IPixel<TPixel>\n        {\n            return MemoryMarshal.AsBytes(image.GetPixelMemoryGroup().ToArray()[0].Span).ToArray();\n        }\n\n",
+    ""
+  ],
+  [
+    "var im = SixLabors.ImageSharp.Image.LoadPixelData<Bgra32>(tmpData, w, h);\n            im.SaveAsPng(ms);",
+    "using var im = SkiaImageCodec.FromPixels(tmpData, w, h, SKColorType.Bgra8888);\n            using var encoded = im.Encode(SKEncodedImageFormat.Png, 100)\n                ?? throw new InvalidDataException(\"Cannot encode texture PNG.\");\n            encoded.SaveTo(ms);"
+  ],
+  [
+    "var i = SixLabors.ImageSharp.Image.LoadPixelData<Rgba32>(imageBytes, w, h);",
+    ""
+  ],
+  [
+    "return encoder.EncodeToRawBytes(i, 0, out var mipW, out var mipH);",
+    "return encoder.EncodeToRawBytes(imageBytes, w, h, BCnEncoder.Encoder.PixelFormat.Rgba32, 0, out var mipW, out var mipH);"
+  ]
+]

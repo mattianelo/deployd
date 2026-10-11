@@ -588,7 +588,7 @@ async fn rejects_conflicting_mounts_missing_originals_and_future_helper_versions
     recipe.helper_version = Some("99.0.0".into());
     assert!(recipe.validate().is_err());
     for version in [
-        "0.7.1", "0.8.0", "0.9.0", "0.9.1", "0.9.2", "0.10.0", "0.11.0",
+        "0.7.1", "0.8.0", "0.9.0", "0.9.1", "0.9.2", "0.10.0", "0.11.0", "0.12.0",
     ] {
         recipe.helper_version = Some(version.into());
         recipe.validate()?;

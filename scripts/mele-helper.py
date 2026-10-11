@@ -55,6 +55,7 @@ def run(command):
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         if command == "test":
+            subprocess.run([sys.executable, str(root / "helpers/mele/test_image_source.py")], check=True)
             subprocess.run([sys.executable, str(root / "helpers/mele/test_license_inventory.py")], check=True)
             module.codec_tests(root)
             module.build(root)

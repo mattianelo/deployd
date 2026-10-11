@@ -11,6 +11,7 @@ import tempfile
 import xml.etree.ElementTree as ET
 
 from build_support import directory, download, verify
+from image_source import project_image_source
 
 
 def prepare_source(root, build, spec):
@@ -60,9 +61,12 @@ def linux_project(data):
                 group.remove(item)
                 continue
             if item.tag == "ContentWithTargetPath" or (
-                item.tag == "PackageReference" and item.get("Include") in {"Microsoft.Win32.Registry", "System.Buffers"}
+                item.tag == "PackageReference" and item.get("Include") in {"Microsoft.Win32.Registry", "System.Buffers", "SixLabors.ImageSharp", "BCnEncoder.Net.ImageSharp"}
             ):
                 group.remove(item)
+    packages = ET.SubElement(project, "ItemGroup")
+    # Image decoding needs security-reviewed, matching managed and native releases.
+    ET.SubElement(packages, "PackageReference", Include="SkiaSharp", Version="[4.153.1]")
     resources = ET.SubElement(project, "ItemGroup")
     ET.SubElement(resources, "EmbeddedResource", Include="Embedded/Infos.zip")
     return ET.tostring(project, encoding="utf-8")
@@ -89,10 +93,18 @@ def verify_source(root, source, archive, spec):
                 raise ValueError("A cached helper source became a symbolic link")
             if relative == Path("LegendaryExplorerCore/LegendaryExplorerCore.csproj"):
                 write_changed(path, linux_project(data))
+            elif relative == Path("LegendaryExplorerCore/Textures/Image.cs"):
+                write_changed(path, project_image_source(data))
+            elif relative in {Path("LegendaryExplorerCore/Unreal/GLTF.cs"), Path("LegendaryExplorerCore/Save/LocalProfileLE1.cs")}:
+                write_changed(path, data.replace(b"using SixLabors.ImageSharp;", b"")
+                              .replace(b"using SixLabors.ImageSharp.PixelFormats;", b""))
             elif relative == Path("LegendaryExplorerCore/Compression/OodleHelper.cs"):
                 write_changed(path, (root / "helpers/mele/managed/OodleHelper.cs").read_bytes())
             else:
                 verify(path, {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+    adapter = Path("LegendaryExplorerCore/Textures/SkiaImageCodec.cs")
+    expected.add(adapter)
+    write_changed(source / adapter, (root / "helpers/mele/managed/SkiaImageCodec.cs").read_bytes())
     for project in projects:
         for path in (source / project).rglob("*"):
             relative = path.relative_to(source)
@@ -121,6 +133,10 @@ def build(root, refresh_lock=False):
     sdk = build / f"sdk-{configuration['sdk']['version']}" / "dotnet"
     environment = dict(os.environ, DOTNET_CLI_TELEMETRY_OPTOUT="1", DOTNET_SKIP_FIRST_TIME_EXPERIENCE="1",
                        DOTNET_NOLOGO="1", NUGET_PACKAGES="/build/mele/nuget")
+    output = helper / "bin/Release/net10.0"
+    # Removed dependencies can otherwise survive incremental builds and enter the package.
+    if output.exists():
+        shutil.rmtree(output)
     subprocess.run([str(sdk), "build", str(helper / "Deployd.Mele.csproj"), "-c", "Release",
                     "--nologo", "-v", "minimal", "-p:RestorePackagesWithLockFile=true",
                     f"-p:RestoreLockedMode={'false' if refresh_lock else 'true'}"],
@@ -211,7 +227,7 @@ def transformation_tests(root, game=None, corpus=None, corpus_kind="m3da"):
     if project.resolve() != project or any(path.is_symlink() for path in project.rglob("*")):
         raise ValueError("Refusing a linked transformation-test directory")
     for name in ("TransformationTests.csproj", "TransformationTests.cs", "CommunityPatchTests.cs", "TransformProtocol.cs",
-                 "M3daMerge.cs", "M3cdMerge.cs", "Le1Config.cs", "M3mAssets.cs", "M3mScripts.cs", "M3mClasses.cs", "M3mOrdered.cs", "PackageOutput.cs", "TlkMerge.cs", "PlotMerge.cs", "ShaderMerge.cs", "GlobalShaderFile.cs", "MergeDlcConfig.cs", "EmailGraph.cs", "SquadStreaming.cs", "MergeStartup.cs", "MergeDlcInputs.cs", "MergeDlc.cs", "SquadUi.cs", "TextureCompile.cs", "TextureOverrideCompiler.cs", "TextureOverrideTextureEntry.cs", "BtpFormat.cs", "TextureCompileTests.cs", "ConfigTests.cs", "AssetMergeTests.cs", "ScriptMergeTests.cs", "OrderedM3mTests.cs", "TlkPlotTests.cs", "PlotCorpusTests.cs", "MergeDlcTests.cs", "ShaderMergeTests.cs"):
+                 "M3daMerge.cs", "M3cdMerge.cs", "Le1Config.cs", "M3mAssets.cs", "M3mScripts.cs", "M3mClasses.cs", "M3mOrdered.cs", "PackageOutput.cs", "TlkMerge.cs", "PlotMerge.cs", "ShaderMerge.cs", "GlobalShaderFile.cs", "MergeDlcConfig.cs", "EmailGraph.cs", "SquadStreaming.cs", "MergeStartup.cs", "MergeDlcInputs.cs", "MergeDlc.cs", "SquadUi.cs", "TextureCompile.cs", "TextureOverrideCompiler.cs", "TextureOverrideTextureEntry.cs", "BtpFormat.cs", "TextureCompileTests.cs", "ImageCodecTests.cs", "ConfigTests.cs", "AssetMergeTests.cs", "ScriptMergeTests.cs", "OrderedM3mTests.cs", "TlkPlotTests.cs", "PlotCorpusTests.cs", "MergeDlcTests.cs", "ShaderMergeTests.cs"):
         write_changed(project / name, (root / "helpers/mele/managed" / name).read_bytes())
     write_changed(project / "packages.lock.json", (root / "helpers/mele/locks/Deployd.Mele.json").read_bytes())
     environment = dict(os.environ, DOTNET_CLI_TELEMETRY_OPTOUT="1", DOTNET_SKIP_FIRST_TIME_EXPERIENCE="1",

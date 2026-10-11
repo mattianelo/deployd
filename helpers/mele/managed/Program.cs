@@ -13,17 +13,30 @@ namespace Deployd.Mele;
 
 internal static class Program
 {
+    private static void VerifyImageCodec()
+    {
+        using var bitmap = new SkiaSharp.SKBitmap(1, 1);
+        bitmap.Erase(SkiaSharp.SKColors.Red);
+        using var png = bitmap.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100)
+            ?? throw new InvalidDataException("The packaged image codec cannot encode PNG textures.");
+        var decoded = new LegendaryExplorerCore.Textures.Image(png.ToArray(),
+            LegendaryExplorerCore.Textures.Image.ImageFormat.PNG);
+        if (!decoded.mipMaps[0].data.SequenceEqual(new byte[] { 255, 0, 0, 255 }))
+            throw new InvalidDataException("The packaged image codec cannot decode PNG textures.");
+    }
+
     private static int Main(string[] args)
     {
         try
         {
             if (args.Length == 1 && args[0] == "capabilities")
             {
+                VerifyImageCodec();
                 Console.WriteLine(JsonSerializer.Serialize(new
                 {
                     protocol = 1,
                     backend = "deployd-mele",
-                    version = "0.12.0",
+                    version = "0.13.0",
                     games = new[] { "LE1", "LE2", "LE3" },
                     capabilities = new[] { "le1-m3da", "le1-m3cd", "le1-m3m-assets", "le1-m3m-scripts", "mele-m3m-ordered", "le1-tlk", "le1-plot", "mele-plot", "mele-merge-dlc", "le2-squad-ui", "mele-m3gs", "mele-m3to" },
                     validation = new[] { "package-roundtrip" },

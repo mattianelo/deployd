@@ -35,6 +35,7 @@
     <Compile Include="TextureOverrideTextureEntry.cs" />
     <Compile Include="BtpFormat.cs" />
     <Compile Include="TextureCompileTests.cs" />
+    <Compile Include="ImageCodecTests.cs" />
     <Compile Include="ConfigTests.cs" />
     <Compile Include="AssetMergeTests.cs" />
     <Compile Include="ScriptMergeTests.cs" />
@@ -42,6 +43,8 @@
     <Compile Include="TlkPlotTests.cs" />
     <Compile Include="PlotCorpusTests.cs" />
     <Compile Include="MergeDlcTests.cs" />
+    <!-- Bundle the headless Linux decoder; no host font or graphics service is needed. -->
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="[4.153.1]" />
     <ProjectReference Include="../LegendaryExplorerCore/LegendaryExplorerCore.csproj" />
   </ItemGroup>
 </Project>
