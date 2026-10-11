@@ -37,6 +37,13 @@ fn identifier(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.'))
 }
 
+fn operation(key: &str) -> (char, &str) {
+    match key.as_bytes().first() {
+        Some(&prefix) if b"+-.!>".contains(&prefix) => (char::from(prefix), &key[1..]),
+        _ => ('.', key),
+    }
+}
+
 fn parse(text: &str) -> Result<Vec<ConfigEdit>> {
     ensure!(text.len() <= 1024 * 1024, "M3CD exceeds 1 MiB");
     let mut header = None;
@@ -73,13 +80,14 @@ fn parse(text: &str) -> Result<Vec<ConfigEdit>> {
             .split_once('=')
             .context("M3CD entry must contain a key/value pair")?;
         let key = key.trim();
-        let (action, key) = match key.as_bytes().first() {
-            Some(&prefix) if b"+-.!>".contains(&prefix) => (char::from(prefix), &key[1..]),
-            _ => ('.', key),
-        };
+        let (action, key) = operation(key);
+        let (_, name) = operation(key);
         ensure!(
-            identifier(key) && !key.starts_with('.') && !key.contains(".."),
-            "Unsupported M3CD key or double-typed operation"
+            (name == key || matches!(action, '+' | '.'))
+                && identifier(name)
+                && !name.starts_with('.')
+                && !name.contains(".."),
+            "Invalid M3CD key: typed entries require one outer add (+ or .) and one inner operation"
         );
         edits.push(ConfigEdit {
             file: file.to_owned(),
@@ -154,7 +162,8 @@ pub(super) fn inspect(
             manifest: file.source.clone(),
             dlc: dlc.to_owned(),
             mount,
-            edits: parse(&read_text(root, source(file)?)?)?,
+            edits: parse(&read_text(root, source(file)?)?)
+                .with_context(|| format!("Cannot parse M3CD '{}'", file.source))?,
         });
     }
     plans.sort_by_key(|plan| (plan.mount, plan.manifest.to_ascii_lowercase()));
@@ -265,7 +274,35 @@ fn apply_edit(text: &str, edit: &ConfigEdit) -> Result<String> {
         }
         end
     };
+    let (inner, name) = operation(&edit.key);
+    ensure!(
+        name == edit.key || matches!(edit.action, '+' | '.'),
+        "Invalid typed M3CD addition"
+    );
     match edit.action {
+        '+' | '.' if name != edit.key => {
+            let duplicate = lines[start..end].iter().any(|line| {
+                let line = line.trim();
+                let Some((key, value)) = line.split_once('=') else {
+                    return false;
+                };
+                let (action, key) = operation(key.trim());
+                action == inner
+                    && key.eq_ignore_ascii_case(name)
+                    && value.trim().eq_ignore_ascii_case(&edit.value)
+            });
+            if edit.action == '.' || !duplicate {
+                let prefix = if matches!(inner, '.' | '>') {
+                    String::new()
+                } else {
+                    inner.to_string()
+                };
+                lines.insert(
+                    insertion(&lines, end),
+                    format!("{prefix}{name}={}", edit.value),
+                );
+            }
+        }
         '-' => {
             let mut index = start;
             let mut current_end = end;
@@ -351,7 +388,12 @@ mod tests {
             "[../BioUI.ini Engine.UI]\nKey=Value",
             "[BioUI.ini Engine.UI\nKey=Value",
             "[BioUI.ini Engine.UI]\nMissing equals",
-            "[BioUI.ini Engine.UI]\n++Key=Value",
+            "[BioUI.ini Engine.UI]\n-+Key=Value",
+            "[BioUI.ini Engine.UI]\n!+Key=Value",
+            "[BioUI.ini Engine.UI]\n>+Key=Value",
+            "[BioUI.ini Engine.UI]\n+++Key=Value",
+            "[BioUI.ini Engine.UI]\n+?Key=Value",
+            "[BioUI.ini Engine.UI]\n+-=Value",
             "[BioUI.ini Engine.UI]\n?Key=Value",
             "[BioUI.ini Engine.UI]\n=Value",
             "[BioUI.ini Engine.UI]\nKey=Val\0ue",
@@ -359,6 +401,104 @@ mod tests {
         ] {
             assert!(parse(text).is_err(), "accepted: {text:?}");
         }
+    }
+
+    // @variants: both
+    #[test]
+    fn preserves_typed_additions_for_the_game() -> Result<()> {
+        for outer in ['+', '.'] {
+            for inner in ['+', '-', '.', '!', '>'] {
+                let text = format!(
+                    "[BioGame.ini SFXGame.SFXPlayerCustomization]\n{outer}{inner}TorsoAppearances=(Id=2001,PlotFlag=-1)\n"
+                );
+                let edits = parse(&text)?;
+                let prefix = if matches!(inner, '.' | '>') {
+                    String::new()
+                } else {
+                    inner.to_string()
+                };
+                let original = "[SFXGame.SFXPlayerCustomization]\r\n+TorsoAppearances=untouched\r\n\r\n[Other]\r\nKey=Value\r\n";
+                let expected = format!(
+                    "[SFXGame.SFXPlayerCustomization]\r\n+TorsoAppearances=untouched\r\n{prefix}TorsoAppearances=(Id=2001,PlotFlag=-1)\r\n\r\n[Other]\r\nKey=Value\r\n"
+                );
+                assert_eq!(apply_edit(original, &edits[0])?, expected);
+                if inner != '>' {
+                    let twice = apply_edit(&expected, &edits[0])?;
+                    assert_eq!(
+                        twice.matches("PlotFlag=-1").count(),
+                        if outer == '+' { 1 } else { 2 }
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    // @variants: both
+    #[test]
+    fn keeps_removal_instructions_distinct_from_additions() -> Result<()> {
+        let original = "[Engine.UI]\n+List=same\n";
+        let edits = parse("[BioUI.ini Engine.UI]\n+-List=same\n+-list=SAME\n.-List=same")?;
+        let mut result = original.to_owned();
+        for edit in edits {
+            result = apply_edit(&result, &edit)?;
+        }
+        assert_eq!(result, "[Engine.UI]\n+List=same\n-List=same\n-List=same\n");
+        let clear = parse("[BioUI.ini Engine.UI]\n!List=ignored")?;
+        assert_eq!(apply_edit(&result, &clear[0])?, "[Engine.UI]\n");
+        Ok(())
+    }
+
+    // @variants: both
+    #[test]
+    #[ignore = "requires the maintainer-supplied ESA package"]
+    fn applies_supplied_esa_config_without_modifying_sources() -> Result<()> {
+        use super::super::package::PackagePlan;
+        use std::collections::BTreeSet;
+
+        let root = Path::new(
+            "modTesting/Expanded Shepard Armory (ESA) Legendary Edition 5 3.4 2026-07-01T17-20Z Qg6rJ8u11",
+        );
+        let mut package = PackagePlan::inspect(root, Some(Target::Le2))?;
+        let mut selected = package.default_options();
+        let patch = package
+            .display_options()
+            .into_iter()
+            .find(|option| option.name == "New Armors for Femshep LE2 Patch")
+            .context("ESA armor patch option is absent")?
+            .key
+            .clone();
+        selected.insert(patch);
+        package.resolve(root, &selected, &BTreeSet::new())?;
+        let mut typed = 0;
+        for plan in &package.m3cd {
+            for file in plan
+                .edits
+                .iter()
+                .map(|edit| &edit.file)
+                .collect::<BTreeSet<_>>()
+            {
+                let path = root.join(&plan.dlc).join("CookedPCConsole").join(file);
+                let original = fs::read_to_string(&path)?;
+                let mut result = original.clone();
+                for edit in plan.edits.iter().filter(|edit| &edit.file == file) {
+                    result = apply_edit(&result, edit)?;
+                    if edit.key.starts_with('-') {
+                        typed += 1;
+                        assert!(
+                            result
+                                .lines()
+                                .any(|line| line == format!("{}={}", edit.key, edit.value))
+                        );
+                    }
+                }
+                assert_ne!(original, result);
+                assert_eq!(fs::read_to_string(&path)?, original);
+            }
+        }
+        assert_eq!(typed, 34);
+        package.verify_sources(root)?;
+        Ok(())
     }
 
     // @variants: both

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Fixed ESA’s optional New Armors for Femshep LE2 patch failing to add because
+  its configuration delta uses double-prefixed operations. Typed additions now
+  preserve the configuration instructions intended for the game.
+
 - Trilogy save Sync now backs up outgoing saves and loads the selected profile’s
   banks for all three games without redeploying mods. Failed switches roll back,
   and new empty banks no longer inherit another character during Sync.

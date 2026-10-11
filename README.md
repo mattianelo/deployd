@@ -120,6 +120,9 @@ minutes and need substantial free disk space.
 - Supported mods include Community Patch, content and cosmetic mods, M3TO textures
   (including ALOT and ISL), shaders, and squadmate outfits. Unsupported packages
   are reported before installation. Install dependencies before the mods needing them.
+- LE1 and LE2 configuration deltas support typed additions, including ESA’s
+  optional New Armors for Femshep LE2 patch. Select that patch only when using
+  its required armor mod, and follow the author’s installation order.
 - MELE respects mod authors' DLC priorities as well as mod order. Reordering mods
   does not change their DLC priorities.
 - Regenerated `PCConsoleTOC.bin` indexes in managed game content are handled

@@ -17,6 +17,7 @@ internal static class ConfigTests
     internal static void Run(string root)
     {
         ParsesAndAppliesOrderedOperations();
+        PreservesTypedAdditions();
         RejectsMalformedInputs();
         RebuildsInMountOrder(root);
         Console.WriteLine("LE1 M3CD operation, binary, ordering, removal, integrity, and cancellation tests passed.");
@@ -105,12 +106,47 @@ internal static class ConfigTests
         Require(config.SameAs(Le1Config.Read(output)), "Merged configuration did not round trip.");
     }
 
+    private static void PreservesTypedAdditions()
+    {
+        foreach (char outer in "+.")
+        foreach (char inner in "+-.!>")
+        {
+            var config = Fixture();
+            using var referenceBytes = new Le1Config {
+                Files = { new ConfigFile("BioUI.ini", new List<ConfigSection> {
+                    new("Engine.UI", new List<ConfigValue> { new("List", "old") }) }) }
+            }.Serialize();
+            var upstream = ConfigAssetBundle.FromSingleStream(MEGame.LE1, referenceBytes);
+            string delta = $"[BioUI.ini Engine.UI]\n{outer}{inner}List=same";
+            M3cdMerge.Apply(config, Parse(delta));
+            ConfigMerge.PerformMerge(upstream, ConfigFileProxy.ParseIni(delta));
+            var expected = CoalesceAsset.ToIni(upstream.GetAsset("BioUI.ini"))
+                .Sections.Single(section => section.Header == "Engine.UI").Entries
+                .Select(entry => new ConfigValue(entry.Key, entry.Value)).ToArray();
+            var actual = config.Files[0].Sections[0].Values.Where(entry => entry.Key != "Untouched").ToArray();
+            Require(actual.SequenceEqual(expected), $"Typed addition {outer}{inner} differs from pinned upstream.");
+            using var serialized = config.Serialize();
+            Require(config.SameAs(Le1Config.Read(serialized)), "Typed addition changed during binary serialization.");
+        }
+        var removal = Fixture();
+        M3cdMerge.Apply(removal, Parse("[BioUI.ini Engine.UI]\n+-List=old\n+-list=OLD\n.-List=old"));
+        Require(removal.Files[0].Sections[0].Values.Count(entry => entry.Key == "List") == 1,
+            "Typed removal executed instead of preserving the original value.");
+        Require(removal.Files[0].Sections[0].Values.Count(entry => entry.Key == "-List") == 2,
+            "Typed add and unique-add did not retain the expected removal instructions.");
+        M3cdMerge.Apply(removal, Parse("[BioUI.ini Engine.UI]\n!List=ignored"));
+        Require(removal.Files[0].Sections[0].Values.All(entry => entry.Key == "Untouched"),
+            "Property clear left typed instructions behind.");
+    }
+
     private static void RejectsMalformedInputs()
     {
         foreach (string text in new[] { "", "Key=Value", "[BioUI.ini]\nKey=Value", "[../BioUI.ini Engine.UI]\nKey=Value",
-            "[BioUI.ini Engine.UI]\n++Key=Value", "[BioUI.ini Engine.UI]\n?Key=Value", "[BioUI.ini Engine.UI]\n+=Value",
+            "[BioUI.ini Engine.UI]\n-+Key=Value", "[BioUI.ini Engine.UI]\n?Key=Value", "[BioUI.ini Engine.UI]\n+=Value",
             "[BioUI.ini Engine.UI]\nKey=V\0alue", "[BioUI.ini Engine.UI]\nKey=V\rOther=X", "[BioUI.ini Engine.UI]\nMissing equals" })
             Reject(() => Parse(text));
+        foreach (string key in new[] { "!+Key", ">+Key", "+++Key", "+?Key", "+-" })
+            Reject(() => Parse($"[BioUI.ini Engine.UI]\n{key}=Value"));
         using (var invalidUtf8 = new MemoryStream(new byte[] { 0xff }))
             Reject(() => M3cdMerge.Parse(invalidUtf8));
         Reject(() => M3cdMerge.Apply(Fixture(), Parse("[Missing.ini Engine.UI]\nKey=Value")));

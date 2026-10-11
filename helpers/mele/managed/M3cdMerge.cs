@@ -23,6 +23,9 @@ internal static class M3cdMerge
     private static bool Identifier(string value) => value.Length is > 0 and <= 1024
         && value.All(character => char.IsAsciiLetterOrDigit(character) || character is '_' or '.');
 
+    private static (char Action, string Key) Operation(string key) => key.Length > 0 && "+-.!>".Contains(key[0])
+        ? (key[0], key[1..]) : ('.', key);
+
     internal static ConfigEdit[] Parse(Stream stream)
     {
         if (stream.Length > 1024 * 1024)
@@ -57,11 +60,12 @@ internal static class M3cdMerge
             if (file is null || separator <= 0)
                 throw new InvalidDataException("M3CD entry must follow a section and contain a key/value pair.");
             string key = line[..separator].Trim();
-            char action = "+-.!>".Contains(key[0]) ? key[0] : '.';
-            if ("+-.!>".Contains(key[0]))
-                key = key[1..];
-            if (!Identifier(key) || "+-.!>".Contains(key[0]) || key.Contains("..", StringComparison.Ordinal))
-                throw new InvalidDataException("Unsupported M3CD key or double-typed operation.");
+            var (action, name) = Operation(key);
+            key = name;
+            var (_, property) = Operation(key);
+            if ((property != key && action is not ('+' or '.')) || !Identifier(property)
+                || property.StartsWith('.') || property.Contains("..", StringComparison.Ordinal))
+                throw new InvalidDataException("Invalid M3CD key: typed entries require one outer add (+ or .) and one inner operation.");
             edits.Add(new ConfigEdit(file, section, key, action, line[(separator + 1)..].Trim()));
             if (edits.Count > 16384)
                 throw new InvalidDataException("M3CD has too many operations.");
@@ -86,7 +90,21 @@ internal static class M3cdMerge
                 section = new ConfigSection(edit.Section, new List<ConfigValue>());
                 file.Sections.Add(section);
             }
-            bool Matches(ConfigValue entry) => entry.Key.Equals(edit.Key, StringComparison.OrdinalIgnoreCase);
+            var (inner, name) = Operation(edit.Key);
+            if (name != edit.Key)
+            {
+                if (edit.Action is not ('+' or '.'))
+                    throw new InvalidDataException("Invalid typed M3CD addition.");
+                bool duplicate = section.Values.Any(entry =>
+                {
+                    var (action, key) = Operation(entry.Key);
+                    return action == inner && key.Equals(name, StringComparison.OrdinalIgnoreCase) && entry.Value.Equals(edit.Value, StringComparison.InvariantCultureIgnoreCase);
+                });
+                if (edit.Action == '.' || !duplicate)
+                    section.Values.Add(new ConfigValue(inner is '.' or '>' ? name : edit.Key, edit.Value));
+                continue;
+            }
+            bool Matches(ConfigValue entry) => Operation(entry.Key).Key.Equals(edit.Key, StringComparison.OrdinalIgnoreCase);
             switch (edit.Action)
             {
                 case '-':
